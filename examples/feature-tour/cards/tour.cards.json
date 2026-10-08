@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "design": "designs/tour.design.json",
+  "name": "Tour",
+  "cards": [
+    {
+      "id": "blue",
+      "level": 3,
+      "stats": [
+        { "name": "Speed", "value": 80 },
+        { "name": "Power", "value": 35 },
+        { "name": "Charm", "value": 100 }
+      ],
+      "title": "Shiro"
+    },
+    {
+      "id": "gold",
+      "accent": "#B0306A",
+      "body": "A short body.",
+      "foil": true,
+      "level": 7,
+      "stats": [
+        { "name": "Speed", "value": 20 },
+        { "name": "Power", "value": 95 }
+      ],
+      "title": "The Foil Variant Deluxe!"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "format": 1,
+  "name": "Cocktail card",
+  "note": "Converted from yoshida-python data/card_designs/cocktail_card.json",
+  "canvas": { "width": 1200, "height": 1800 },
+  "fonts": { "serif": "assets/fonts/Stone Serif Semibold.ttf" },
+  "layers": [
+    {
+      "id": "frame",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
+      "fill": "avg_color(image)"
+    },
+    {
+      "id": "background",
+      "type": "rect",
+      "box": {
+        "x": "frame_width",
+        "y": "frame_width",
+        "w": "100% - 2 * frame_width",
+        "h": "100% - 2 * frame_width"
+      },
+      "fill": "background"
+    },
+    {
+      "id": "photo",
+      "type": "image",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "auto" },
+      "effects": [
+        { "type": "crop", "length": 100, "side": "top" },
+        { "type": "fade", "length": 700, "side": "bottom" }
+      ],
+      "src": "{image}"
+    },
+    {
+      "id": "name_shadow",
+      "type": "text",
+      "align": "center",
+      "anchor": "center",
+      "at": { "x": "50%", "y": "60% + 7" },
+      "color": "#000000",
+      "font": "serif",
+      "size": 120,
+      "text": "{cocktail_name}"
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "extends": "name_shadow",
+      "at": { "y": "60%" },
+      "color": "#FFFFFF",
+      "size": 125
+    },
+    {
+      "id": "ingredient_amount",
+      "type": "text",
+      "align": "right",
+      "anchor": "bottom-right",
+      "at": { "x": "12%", "y": "70% + i * ingredients_space" },
+      "color": "#FFFFFF",
+      "font": "serif",
+      "repeat": { "each": "ingredients", "index": "i", "item": "ing" },
+      "size": 50,
+      "text": "{ing.amount}"
+    },
+    {
+      "id": "ingredient_unit",
+      "type": "text",
+      "extends": "ingredient_amount",
+      "align": "left",
+      "anchor": "bottom-left",
+      "text": "{ing.unit}"
+    },
+    {
+      "id": "ingredient_name",
+      "type": "text",
+      "extends": "ingredient_amount",
+      "align": "left",
+      "anchor": "left",
+      "at": { "x": "17%", "y": "69% + i * ingredients_space" },
+      "text": "{ing.name}"
+    },
+    {
+      "id": "total_volume_text",
+      "type": "text",
+      "anchor": "right",
+      "at": { "x": "95%", "y": "91%" },
+      "color": "#FFFFFF",
+      "font": "serif",
+      "size": 50,
+      "text": "{total_volume}"
+    },
+    {
+      "id": "vol_percentage_text",
+      "type": "text",
+      "extends": "total_volume_text",
+      "at": { "y": "95%" },
+      "text": "{vol_percentage}"
+    },
+    {
+      "id": "card_id",
+      "type": "text",
+      "extends": "total_volume_text",
+      "anchor": "left",
+      "at": { "x": "5%", "y": "95%" },
+      "size": 30,
+      "text": "{card.id}"
+    }
+  ],
+  "params": {
+    "background": { "type": "color", "default": "#000000" },
+    "cocktail_name": { "type": "text", "required": true },
+    "frame_width": { "type": "number", "default": 25, "min": 0 },
+    "image": { "type": "image", "required": true },
+    "ingredients": {
+      "type": "list",
+      "default": [],
+      "item": { "name": "text", "abv": "text", "amount": "text", "unit": "text" }
+    },
+    "ingredients_space": { "type": "number", "default": 70 },
+    "total_volume": { "type": "text", "default": "" },
+    "url": { "type": "text", "note": "Recipe source; not drawn", "default": "" },
+    "vol_percentage": { "type": "text", "default": "" }
+  }
+}

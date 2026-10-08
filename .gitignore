@@ -1,2 +1,9 @@
-*.pyc
-data/output
+.zig-cache/
+zig-out/
+out/
+web/node_modules/
+web/dist/
+web/public/yoshida.wasm
+web/public/examples/
+release/
+web/test-results/

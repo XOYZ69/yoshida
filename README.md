@@ -1,76 +1,81 @@
-# Yoshida
+<p align="center">
+  <img src="logo.png" alt="yoshida" width="360">
+</p>
+<p align="center">
+  <strong>Design, Create, Export - Your cards, your data*</strong>
+</p>
+<p align="center">
+	*There is a toggle to render cards server-side which is <b>OPTIONAL</b> but this will cause your data to leave your local machine.
+</p>
 
-Yoshida is "Card Maker Software" for dynamically creating cards for anything. Design your own Layout and fill the Programm with the needed information. And BOOOM your card is printed.
+> If you are looking for the old version (the cursed origin of this) please checkout [0.3.1-python](https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python)
 
-For more information on how to create a card and how to use the card maker visit the [wiki](https://github.com/XOYZ69/Yoshida/wiki)
+yoshida is the card creator I always wanted. Way too complicated, way too many possibilties... and now with a functional Browser version.
+Design your cards and just apply the data, press export and happy playing, printing, whatever you wanna do.
 
----
+Designs are simple json files that are easy to share, modify and abuse as much as you want.
 
-### Stability information
+<p align="center">
+  <img src="samples/builder-v04-dark-params.png" alt="The yoshida editor" width="100%">
+</p>
 
-The newest release of Yoshida always supports everything used in the example [designs](https://github.com/XOYZ69/Yoshida/tree/master/data/card_designs) and [sets](https://github.com/XOYZ69/Yoshida/tree/master/data/card_sets) since they are getting tested with every commit.
-If anything does not work please check if there are any new versions out or create a [new issue](https://github.com/XOYZ69/Yoshida/issues/new/choose).
+> Some links to wiki entries or content might be broken atm please. Just visit the wiki directly [here](https://github.com/XOYZ69/yoshida/wiki).
 
-With that said until Version 1.0 is released this program should be used with these things in mind.
+## Features
 
-[![Current Yoshida Version](https://img.shields.io/github/v/release/XOYZ69/Yoshida.svg?sort=semver)](https://github.com/XOYZ69/Yoshida/releases/latest)
-[![Version 1.0 Release Progress](https://img.shields.io/github/milestones/progress-percent/XOYZ69/Yoshida/1)](https://github.com/XOYZ69/Yoshida/milestone/1)
+- Fully functional **Browser based Editor**
+- **Layers** to create any shape, text or effect you need (if something is missing open an issue)
+- Use **Formulas** to manipulate every value possible
+- **Clear error messages** - Probably the best feature
+- Easy **Docker** Deployment with `docker compose up --build`
 
-[![Minimum Python Version](https://img.shields.io/badge/Required_python_version-3.10_+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
+## Quick start
 
-[![Unit Test Designs](https://github.com/XOYZ69/Yoshida/actions/workflows/unit_test_designs.yml/badge.svg)](https://github.com/XOYZ69/Yoshida/actions/workflows/unit_test_designs.yml)
+**Run the editor with Docker**
 
+```sh
+docker build -t yoshida .
+docker run -p 8080:8080 yoshida
+```
 
+**Or use a release zip** (prebuilt for Linux, macOS and Windows, nothing to install):
 
-## Setup
+unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `start.bat` (Windows), then open <http://localhost:8080>.
 
-## Setup
+**Or render from the command line**
 
-1. Clone the repo or download the newest release from the [release page](https://github.com/XOYZ69/Yoshida/releases).
+```sh
+yoshida check  examples/feature-tour
+yoshida render examples/feature-tour --out out
+```
 
-    ```
-    gh repo clone XOYZ69/Yoshida
-    ```
-    or
-    ```
-    git clone https://github.com/XOYZ69/Yoshida
-    ```
-    
-    The newest release can be found here:
+## Build from source
 
-    [![Current Yoshida Version](https://img.shields.io/github/v/release/XOYZ69/Yoshida.svg?sort=semver)](https://github.com/XOYZ69/Yoshida/releases/latest)
+You need [Zig 0.16.0](https://ziglang.org/download/) (or `pip install ziglang==0.16.0`) and, for the editor, Node 22.
 
-2. Create your own card design (wiki entries will follow) or use an exisiting one in the folder ```data/card_designs```.
+```sh
+zig build test                        # unit tests
+zig build -Doptimize=ReleaseFast      # zig-out/bin/yoshida and zig-out/bin/yoshida-server
+zig build wasm                        # zig-out/web/yoshida.wasm
 
-    ```
-    Yoshida/
-        data/
-            card_designs/
-                designs.json
-    ```
+cd web && npm install
+npm run wasm && npm run examples && npm run dev    # editor on http://localhost:5173
+```
 
-3. Add a new card set in `data/card_sets` for your card design or use an existing one.
+More in [Building from Source](../../wiki/Building-from-Source).
 
-    ```
-    Yoshida/
-        data/
-            card_sets/
-                set.json
-    ```
+## Documentation
 
-4. Edit the `setup_example.py` to include ` test_card_creation_basis(card_set = your_card_set, show = False)`
-    
-    `card_set` is the name of your card set
-    
-    `show` is a boolean defining if you want to open your exported card instantly or only save it in the `data/output` folder.
+The **[wiki](../../wiki)** has a page for every feature:
 
-5. Call your function from the file and run it with `python setup_example.py` or simply call `pytest -rA setup_example.py` to run all tests.
+|                                                                                             |                                                   |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [Getting Started](../../wiki/Getting-Started)                                               | First card, in the editor and on the command line |
+| [Command Line](../../wiki/Command-Line) · [Server and Docker](../../wiki/Server-and-Docker) | Options, exit codes, the HTTP API                 |
+| [Designs](../../wiki/Designs) · [Params](../../wiki/Params) · [Layers](../../wiki/Layers)   | The file format                                   |
+| [Expressions](../../wiki/Expressions) · [Card Data](../../wiki/Card-Data)                   | Formulas, templates, JSON and CSV                 |
+| [Builder](../../wiki/Builder)                                                               | The visual editor, panel by panel, with shortcuts |
+| [Diagnostics](../../wiki/Diagnostics)                                                       | Every error code and how to fix it                |
+| [Architecture](../../wiki/Architecture)                                                     | Core, WebAssembly, server                         |
 
-    ```
-    test_card_creation_basic(card_set = your_card_set, show = True)
-    ```
-
-6. The finished images are created in the folder `data/output/card_set`
-
-
----
+Working projects are in [`examples/`](examples).

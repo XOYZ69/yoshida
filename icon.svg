@@ -1,0 +1,36 @@
+<svg viewBox="0 0 64 64" width="64" height="64"><title>yoshida icon</title>
+	<g transform="translate(8.98 -3.57) scale(0.9637)">
+		<rect
+			x="16.0"
+			y="12"
+			width="32"
+			height="44"
+			rx="5"
+			fill="#c9d7fd"
+			transform="rotate(-24 32 70)"
+		/>
+		<rect
+			x="16.0"
+			y="12"
+			width="32"
+			height="44"
+			rx="5"
+			fill="#9db5fb"
+			transform="rotate(-10 32 70)"
+		/>
+		<rect
+			x="16.0"
+			y="12"
+			width="32"
+			height="44"
+			rx="5"
+			fill="#3b6cf6"
+			transform="rotate(6 32 70)"
+		/>
+		<path
+			d="M25.16 46.02H28.21C30.77 46.02 32.37 44.78 33.41 42.03L40.68 22.98H35.9L33.12 31.14C32.73 32.31 32.37 33.52 32.01 34.7C31.66 33.52 31.29 32.33 30.91 31.14L28.15 22.98H23.32L29.66 39.42L29.21 40.62C28.77 41.89 28.35 42.38 27.26 42.38H25.16Z"
+			fill="#ffffff"
+			transform="rotate(6 32 70)"
+		/>
+	</g>
+</svg>

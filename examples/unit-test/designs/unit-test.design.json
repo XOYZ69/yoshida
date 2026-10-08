@@ -1,0 +1,39 @@
+{
+  "format": 1,
+  "name": "Unit test card",
+  "note": "Converted from yoshida-python data/card_designs/unit_test_card.json",
+  "canvas": { "width": "5000 * scale", "height": "5000 * scale" },
+  "layers": [
+    {
+      "id": "background",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" }
+    },
+    {
+      "id": "date_background",
+      "type": "rect",
+      "box": { "x": 50, "y": 50, "w": 800, "h": 200 },
+      "fill": "#F4DA20",
+      "radius": 20
+    },
+    {
+      "id": "date_text",
+      "type": "text",
+      "align": "center",
+      "anchor": "center",
+      "at": { "x": "@date_background.bounds.cx", "y": "@date_background.bounds.cy" },
+      "size": 50,
+      "text": "{render.date}"
+    },
+    {
+      "id": "polygon_test",
+      "type": "polygon",
+      "fill": "#334455",
+      "points": [[50, 300], [2500, 300], [2250, 1150], [300, 1150]],
+      "stroke": { "color": "#00FF00", "width": 10 }
+    }
+  ],
+  "params": {
+    "scale": { "type": "number", "default": 1, "min": 0.1 }
+  }
+}

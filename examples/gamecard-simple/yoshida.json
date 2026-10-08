@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "name": "Simple game cards",
+  "sets": [
+    {
+      "name": "drinking-game",
+      "cards": "cards/drinking-game.cards.csv",
+      "design": "designs/gamecard.design.json"
+    }
+  ]
+}
