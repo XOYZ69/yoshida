@@ -221,9 +221,10 @@ ok("undo back to no group", !newGroups(after).length);
 
 // Themed selects
 await p.locator(".toolbar .picker .current").click();
-await p.waitForSelector('.pop input[aria-label="Search cards"]');
-await p.keyboard.type("gol");
-await p.keyboard.press("Enter");
+const pickerSearch = p.locator('.pop input[aria-label="Search cards"]');
+await pickerSearch.waitFor();
+await pickerSearch.fill("gol");
+await pickerSearch.press("Enter");
 await settle();
 ok(
   "card picker search",
