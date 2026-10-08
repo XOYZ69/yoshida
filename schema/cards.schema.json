@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yoshida.local/schema/v1/cards.schema.json",
+  "title": "yoshida card data (format 1)",
+  "type": "object",
+  "required": ["format", "design", "cards"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": 1 },
+    "name": { "type": "string" },
+    "note": { "type": "string" },
+    "design": { "type": "string" },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+        },
+        "description": "Every other key is a param of the design"
+      }
+    }
+  }
+}

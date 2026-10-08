@@ -1,0 +1,8 @@
+# Files left out of the public web build (npm run examples -- --public).
+# These fonts were copied from yoshida-python for private testing; they are
+# commercial and may not be redistributed. Without them the designs fall
+# back to the bundled Lato (warning 4005).
+yugioh/assets/fonts/Yu-Gi-Oh!*
+yugioh/assets/fonts/yumin.ttf
+yugioh/assets/fonts/Stone Serif Semibold.ttf
+cocktail/assets/fonts/Stone Serif Semibold.ttf

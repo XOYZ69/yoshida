@@ -1,8 +1,0 @@
-{
-    "object_move_pixel_to_range":   false,
-    "yoshida_folder_structure": {
-        "templates":    "data/object_templates/",
-        "card_designs": "data/card_designs/",
-        "fonts":        "data/fonts/"
-    }
-}

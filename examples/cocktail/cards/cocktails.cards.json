@@ -1,0 +1,122 @@
+{
+  "format": 1,
+  "name": "Test Cocktail Cards",
+  "cards": [
+    {
+      "id": "001",
+      "background": "#360210",
+      "cocktail_name": "Black Bombai",
+      "image": "https://kaufland.media.schwarz/is/image/schwarz/recipe2525213_black_bombay_cocktail_saft_curacao?JGstbGVnYWN5LW9uc2l0ZS0zJA==",
+      "ingredients": [
+        { "name": "Gin", "abv": "40%", "amount": "4", "unit": "cl" },
+        { "name": "Zitronensaft", "amount": "2", "unit": "cl" },
+        { "name": "Maracujanaktar", "amount": "3", "unit": "cl" },
+        { "name": "Johannisbeernektar", "amount": "6", "unit": "cl" },
+        { "name": "Blue curacao Sirup", "amount": "2", "unit": "cl" }
+      ],
+      "total_volume": "170ml",
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.black-bombay.r_id=Recipe_2525213.html",
+      "vol_percentage": "14,1%"
+    },
+    {
+      "id": "002",
+      "background": "#ba6a08",
+      "cocktail_name": "Paradiesvogel",
+      "image": "https://kaufland.media.schwarz/is/image/schwarz/recipe1872009_paradiesvogel-alkoholfrei-cocktail?JGstbGVnYWN5LW9uc2l0ZS0zJA==",
+      "ingredients": [
+        { "name": "Maracujanektar", "amount": "6", "unit": "cl" },
+        { "name": "Ananassaft", "amount": "6", "unit": "cl" },
+        { "name": "Orangensaft", "amount": "6", "unit": "cl" },
+        { "name": "Zitronensaft", "amount": "3", "unit": "cl" },
+        { "name": "Crushed Ice", "amount": "", "unit": "" }
+      ],
+      "total_volume": "210ml",
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.paradiesvogel.r_id=Recipe_1872009.html",
+      "vol_percentage": "0,0%"
+    },
+    {
+      "id": "003",
+      "background": "#63111a",
+      "cocktail_name": "German Shooter",
+      "image": "https://kaufland.media.schwarz/is/image/schwarz/recipe2522447_deutschland_shooter_cocktail_rum_puschkin?JGstbGVnYWN5LW9uc2l0ZS0zJA==",
+      "ingredients": [
+        { "name": "Maracujanektar", "amount": "1", "unit": "cl" },
+        { "name": "Limettensirup", "amount": "1", "unit": "cl" },
+        { "name": "Erdbeersirup", "amount": "1", "unit": "cl" },
+        { "name": "Weißer Rum", "abv": "37.5%", "amount": "1", "unit": "cl" },
+        { "name": "Puschkin Black Berries", "abv": "16.6%", "amount": "1.5", "unit": "cl" }
+      ],
+      "total_volume": "5,5cl",
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.deutschland-shooter.r_id=Recipe_2522447.html",
+      "vol_percentage": "11,3%"
+    },
+    {
+      "id": "004",
+      "background": "#c33807",
+      "cocktail_name": "Tropical Derby",
+      "image": "https://kaufland.media.schwarz/is/image/schwarz/recipe2525316_tropical_derby_cocktail_gin?JGstbGVnYWN5LW9uc2l0ZS0zJA==",
+      "ingredients": [
+        { "name": "Gin", "abv": "40%", "amount": "5", "unit": "cl" },
+        { "name": "Ananassaft", "amount": "1", "unit": "cl" },
+        { "name": "Orangensaft", "amount": "3", "unit": "cl" },
+        { "name": "Maracujanektar", "amount": "3", "unit": "cl" },
+        { "name": "Grenadine", "amount": "2", "unit": "cl" },
+        { "name": "Zitronensaft", "amount": "2", "unit": "cl" }
+      ],
+      "total_volume": "160ml",
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.tropical-derby.r_id=Recipe_2525316.html",
+      "vol_percentage": "12,5%"
+    },
+    {
+      "id": "005",
+      "background": "#bcae09",
+      "cocktail_name": "Whiskey Sour",
+      "image": "https://kaufland.media.schwarz/is/image/schwarz/recipe2525682_whisky_sour_saft_cocktail_drink?JGstbGVnYWN5LW9uc2l0ZS0zJA==",
+      "ingredients": [
+        { "name": "Zuckersirup", "amount": "2", "unit": "cl" },
+        { "name": "Orangensaft", "amount": "5", "unit": "cl" },
+        { "name": "Whiskey", "abv": "40%", "amount": "5", "unit": "cl" },
+        { "name": "Zitronensaft", "amount": "3", "unit": "cl" }
+      ],
+      "total_volume": "150ml",
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.whisky-sour.r_id=Recipe_2525682.html",
+      "vol_percentage": "13,3%"
+    },
+    {
+      "id": "006",
+      "background": "#02be97",
+      "cocktail_name": "Blue Hawaii",
+      "image": "https://cocktailbart.de/wp-content/uploads/2021/05/Blue-Hawaii-Cocktail-990x990.jpg.webp",
+      "ingredients": [
+        { "name": "Vodka", "abv": "37.5%", "amount": "2", "unit": "cl" },
+        { "name": "Weißer Rum", "abv": "40%", "amount": "2", "unit": "cl" },
+        { "name": "Blue Curacao", "abv": "21%", "amount": "1.5", "unit": "cl" },
+        { "name": "Ananassaft", "amount": "9", "unit": "cl" },
+        { "name": "Limettensaft", "amount": "1.5", "unit": "cl" },
+        { "name": "Zuckersirup", "amount": "1.5", "unit": "cl" }
+      ],
+      "total_volume": "175ml",
+      "url": "https://cocktailbart.de/cocktails/cocktails-mit-rum/blue-hawaii/",
+      "vol_percentage": "8,9%"
+    },
+    {
+      "id": "007",
+      "background": "#eb2a0a",
+      "cocktail_name": "Hurricane",
+      "image": "https://cocktailbart.de/wp-content/uploads/2020/03/Hurricane-Cocktail-Rezept-990x792.png.webp",
+      "ingredients": [
+        { "name": "Dunkler Rum", "abv": "40%", "amount": "6", "unit": "cl" },
+        { "name": "Weißer Rum", "abv": "40%", "amount": "6", "unit": "cl" },
+        { "name": "Maracujanektar", "amount": "6", "unit": "cl" },
+        { "name": "Orangensaft", "amount": "3", "unit": "cl" },
+        { "name": "Grenadine", "amount": "1.5", "unit": "cl" },
+        { "name": "Limettensaft", "amount": "3", "unit": "cl" },
+        { "name": "Zuckersirup", "amount": "1.5", "unit": "cl" }
+      ],
+      "total_volume": "270ml",
+      "url": "https://cocktailbart.de/cocktails/cocktails-mit-rum/hurricane-cocktail/",
+      "vol_percentage": "17.7%"
+    }
+  ],
+  "design": "designs/cocktail.design.json"
+}

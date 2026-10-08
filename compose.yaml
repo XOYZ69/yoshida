@@ -1,0 +1,12 @@
+services:
+  yoshida:
+    build: .
+    image: yoshida:latest
+    ports:
+      - "8080:8080"
+    environment:
+      YOSHIDA_RENDER: "1"        # 0: editor only, rendering stays in the browser
+      YOSHIDA_MAX_CARDS: "1000"
+      YOSHIDA_MAX_BODY_MB: "200"
+      # YOSHIDA_THREADS: "4"     # default: all CPUs
+    restart: unless-stopped

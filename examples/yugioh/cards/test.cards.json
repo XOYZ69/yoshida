@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Test Yu-Gi-Oh Cards",
+  "cards": [
+    {
+      "art": "assets/images/shiro_square.jpg",
+      "author": "XOYZ Productions",
+      "description": "A decription on a card can be very long. So sometimes it is needed to cut off text. A decription on a card can be very long. So sometimes it is needed to cut off text.",
+      "title": "Shiro of the Immanity"
+    }
+  ],
+  "design": "designs/monster.design.json"
+}

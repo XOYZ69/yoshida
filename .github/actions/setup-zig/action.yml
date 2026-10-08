@@ -1,0 +1,30 @@
+name: Set up Zig
+description: Installs Zig from PyPI (the ziglang package ships the official release binaries) and caches Zig's global cache.
+
+inputs:
+  version:
+    description: Zig version
+    default: 0.16.0
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install Zig ${{ inputs.version }}
+      shell: bash
+      run: |
+        python -m pip install --disable-pip-version-check "ziglang==${{ inputs.version }}"
+        python -c "import ziglang, os; print(os.path.dirname(ziglang.__file__))" >> "$GITHUB_PATH"
+
+    - name: Cache Zig builds
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/zig
+          .zig-cache
+        key: zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**') }}
+        restore-keys: |
+          zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-

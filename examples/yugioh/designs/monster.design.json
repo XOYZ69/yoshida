@@ -1,0 +1,175 @@
+{
+  "format": 1,
+  "name": "Yu-Gi-Oh TCG monster",
+  "note": "Converted from yoshida-python data/card_designs/yu-gi-oh_tcg.json. Base size 421 x 614, everything multiplied by scale.",
+  "canvas": { "width": "421 * scale", "height": "614 * scale" },
+  "fonts": {
+    "matrix_book": "assets/fonts/Yu-Gi-Oh! Matrix Book.ttf",
+    "matrix_caps": "assets/fonts/Yu-Gi-Oh! Matrix Regular Small Caps 2.ttf",
+    "stone_caps_bold": "assets/fonts/Yu-Gi-Oh! ITC Stone Serif Small Caps Bold.ttf",
+    "stone_semibold": "assets/fonts/Stone Serif Semibold.ttf",
+    "yumin": "assets/fonts/yumin.ttf"
+  },
+  "layers": [
+    {
+      "id": "frame",
+      "type": "image",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
+      "src": "assets/images/cards/{card_type}.png"
+    },
+    {
+      "id": "level_star",
+      "type": "image",
+      "box": {
+        "x": "(380 - (i + 1) * 27) * scale",
+        "y": "76 * scale",
+        "w": "24 * scale",
+        "h": "24 * scale"
+      },
+      "repeat": { "count": "level", "index": "i" },
+      "src": "assets/images/lvl/level-star-{star_type}.png"
+    },
+    {
+      "id": "art_image",
+      "type": "image",
+      "box": { "x": "51 * scale", "y": "113 * scale", "w": "320 * scale", "h": "320 * scale" },
+      "src": "{art}"
+    },
+    { "id": "artwork_divider", "type": "divider", "label": "Artwork and frame" },
+    {
+      "id": "title_text",
+      "type": "text",
+      "anchor": "left",
+      "at": { "x": "35 * scale", "y": "50 * scale" },
+      "font": "matrix_caps",
+      "size": "40 * scale",
+      "text": "{title}"
+    },
+    {
+      "id": "atk_text",
+      "type": "text",
+      "anchor": "bottom-left",
+      "at": { "x": "263 * scale", "y": "573 * scale" },
+      "font": "stone_caps_bold",
+      "size": "16 * scale",
+      "text": "{atk}"
+    },
+    {
+      "id": "def_text",
+      "type": "text",
+      "extends": "atk_text",
+      "anchor": "bottom-right",
+      "at": { "x": "100% - 33 * scale" },
+      "text": "{def}"
+    },
+    {
+      "id": "monster_type_text",
+      "type": "text",
+      "extends": "atk_text",
+      "anchor": "top-left",
+      "at": { "x": "33 * scale", "y": "465 * scale" },
+      "text": "{monster_attr}"
+    },
+    {
+      "id": "description_text",
+      "type": "text",
+      "align": "justify",
+      "at": { "x": "36 * scale", "y": "480 * scale" },
+      "font": "matrix_book",
+      "line_spacing": 1,
+      "size": "14 * scale",
+      "text": "{description}",
+      "wrap": "100% - 2 * 36 * scale"
+    },
+    {
+      "id": "attribute_icon",
+      "type": "image",
+      "box": { "x": "100% - 70 * scale", "y": "29 * scale", "w": "38 * scale", "h": "38 * scale" },
+      "src": "assets/images/attributes/attribute-{attribute}.png"
+    },
+    { "id": "text_divider", "type": "divider", "label": "Text and stats" },
+    {
+      "id": "card_number_text",
+      "type": "text",
+      "anchor": "bottom-left",
+      "at": { "x": "21 * scale", "y": "100% - 16 * scale" },
+      "font": "yumin",
+      "size": "13 * scale",
+      "text": "{card_number}"
+    },
+    {
+      "id": "edition_text",
+      "type": "text",
+      "anchor": "bottom-left",
+      "at": { "x": "82 * scale", "y": "100% - 17 * scale" },
+      "font": "stone_semibold",
+      "size": "13 * scale",
+      "text": "{edition}"
+    },
+    {
+      "id": "edition_st",
+      "type": "text",
+      "note": "Superscript 'st' for '1  Edition' (two spaces leave room for it)",
+      "anchor": "top-left",
+      "at": { "x": "88 * scale", "y": "100% - 26 * scale" },
+      "font": "stone_semibold",
+      "size": "15 * scale",
+      "text": "st",
+      "visible": "edition == '1  Edition'"
+    },
+    {
+      "id": "set_code_text",
+      "type": "text",
+      "anchor": "top-right",
+      "at": { "x": "100% - 44 * scale", "y": "443 * scale" },
+      "font": "stone_semibold",
+      "size": "13 * scale",
+      "text": "{set_code}"
+    },
+    { "id": "print_divider", "type": "divider", "label": "Print info" }
+  ],
+  "params": {
+    "art": { "type": "image", "required": true },
+    "card_type": {
+      "type": "enum",
+      "default": "monster-effect",
+      "options": ["monster-effect", "monster-slifer"]
+    },
+    "scale": { "type": "number", "default": 2, "min": 0.5 },
+    "title": { "type": "text", "group": "Card text", "default": "Default Title" },
+    "description": {
+      "type": "text",
+      "group": "Card text",
+      "default": "A simple description of a card."
+    },
+    "level": { "type": "integer", "group": "Monster stats", "default": 5, "max": 12, "min": 0 },
+    "attribute": {
+      "type": "enum",
+      "group": "Monster stats",
+      "default": "light",
+      "options": ["light"]
+    },
+    "star_type": {
+      "type": "enum",
+      "group": "Monster stats",
+      "default": "blue",
+      "options": ["blue", "red"]
+    },
+    "monster_attr": {
+      "type": "text",
+      "group": "Monster stats",
+      "default": "[Göttliches Ungeheuer]"
+    },
+    "atk": { "type": "integer", "group": "Monster stats", "default": 666, "min": 0 },
+    "def": { "type": "integer", "group": "Monster stats", "default": 6666, "min": 0 },
+    "set_code": { "type": "text", "group": "Print", "default": "NECH-EN026" },
+    "card_number": { "type": "text", "group": "Print", "default": "00000001" },
+    "edition": { "type": "text", "group": "Print", "default": "Limited Edition" },
+    "author": {
+      "type": "text",
+      "group": "Print",
+      "note": "Not drawn",
+      "default": "Yoshida Card Maker"
+    }
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "format": 1,
+  "name": "Feature tour",
+  "note": "Exercises every layer type, effect and most expression features of format v1.",
+  "canvas": { "width": 1000, "height": 1400, "background": "#1E1E28" },
+  "layers": [
+    {
+      "id": "panel",
+      "type": "rect",
+      "box": { "x": "5%", "y": "5%", "w": "90%", "h": "90%" },
+      "fill": "mix(accent, #FFFFFF, 0.85)",
+      "radius": 40,
+      "stroke": { "color": "accent", "width": 8 }
+    },
+    {
+      "id": "art",
+      "type": "image",
+      "anchor": "top",
+      "box": { "x": "50%", "y": "@panel.bounds.top + 60", "w": "80%", "h": 420 },
+      "effects": [
+        { "type": "fade", "side": "bottom", "length": 120 }
+      ],
+      "fit": "cover",
+      "src": "{art}"
+    },
+    {
+      "id": "art_frame",
+      "type": "rect",
+      "box": {
+        "x": "@art.bounds.left",
+        "y": "@art.bounds.top",
+        "w": "@art.bounds.w",
+        "h": "@art.bounds.h"
+      },
+      "fill": "#00000000",
+      "stroke": { "color": "with_alpha(accent, 0.6)", "width": 4 }
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "align": "center",
+      "anchor": "baseline",
+      "at": { "x": "50%", "y": "@art.bounds.bottom + 90" },
+      "color": "accent",
+      "size": 72,
+      "text": "{upper(title)}",
+      "max_width": "80%",
+      "min_size": 36
+    },
+    {
+      "id": "stars",
+      "type": "image",
+      "anchor": "center",
+      "box": {
+        "x": "50% + (i - (level - 1) / 2) * 56",
+        "y": "@title.bounds.bottom + 50",
+        "w": 48,
+        "h": "auto"
+      },
+      "repeat": { "count": "level", "index": "i" },
+      "src": "assets/star.png"
+    },
+    {
+      "id": "ribbon",
+      "type": "rect",
+      "anchor": "center",
+      "box": { "x": "@art.bounds.left + 70", "y": "@art.bounds.top + 40", "w": 260, "h": 44 },
+      "rotate": -35,
+      "fill": "accent",
+      "stroke": { "color": "#FFFFFF", "width": 3 }
+    },
+    {
+      "id": "ribbon_text",
+      "type": "text",
+      "anchor": "center",
+      "at": { "x": "@ribbon.box.x", "y": "@ribbon.box.y" },
+      "rotate": "@ribbon.rotate",
+      "color": "#FFFFFF",
+      "size": 24,
+      "text": "{foil ? 'FOIL' : 'NEW'}"
+    },
+    {
+      "id": "level_badge",
+      "type": "group",
+      "note": "A group: its layers move, fade and turn together.",
+      "rotate": -10,
+      "layers": [
+        {
+          "id": "badge",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": {
+            "x": "@panel.bounds.right - 70",
+            "y": "@panel.bounds.top + 70",
+            "w": 110,
+            "h": 110
+          },
+          "fill": "foil ? #F5C542 : accent",
+          "stroke": { "color": "#FFFFFF", "width": 6 }
+        },
+        {
+          "id": "badge_text",
+          "type": "text",
+          "anchor": "center",
+          "at": { "x": "@badge.bounds.cx", "y": "@badge.bounds.cy" },
+          "color": "#FFFFFF",
+          "size": 48,
+          "text": "{level}"
+        }
+      ]
+    },
+    {
+      "id": "body",
+      "type": "text",
+      "align": "justify",
+      "at": { "x": "12%", "y": "@title.bounds.bottom + 100" },
+      "color": "#222222",
+      "line_spacing": 6,
+      "max_lines": 5,
+      "size": 30,
+      "text": "{body}",
+      "wrap": "76%"
+    },
+    {
+      "id": "stats_row",
+      "type": "rect",
+      "anchor": "bottom",
+      "box": {
+        "x": "50%",
+        "y": "@panel.bounds.bottom - 40",
+        "w": "80%",
+        "h": "len(stats) * 46 + 20"
+      },
+      "fill": "with_alpha(accent, 0.12)",
+      "radius": 16
+    },
+    {
+      "id": "stat_name",
+      "type": "text",
+      "anchor": "left",
+      "at": { "x": "15%", "y": "@stats_row.bounds.top + 33 + i * 46" },
+      "color": "#333333",
+      "repeat": { "each": "stats", "item": "s", "index": "i" },
+      "size": 30,
+      "text": "{s.name}"
+    },
+    {
+      "id": "stat_bar",
+      "type": "rect",
+      "anchor": "left",
+      "box": {
+        "x": "45%",
+        "y": "@stats_row.bounds.top + 33 + i * 46",
+        "w": "clamp(s.value, 0, 100) * 3.6",
+        "h": 22
+      },
+      "fill": "s.value >= 50 ? accent : #999999",
+      "radius": 11,
+      "repeat": { "each": "stats", "item": "s", "index": "i" }
+    },
+    {
+      "id": "corner",
+      "type": "polygon",
+      "fill": "accent",
+      "opacity": 0.8,
+      "points": [[0, 0], ["@panel.bounds.left + 120", 0], [0, "@panel.bounds.top + 120"]],
+      "stroke": { "color": "#FFFFFF", "width": 3 }
+    },
+    {
+      "id": "card_id",
+      "type": "text",
+      "anchor": "bottom-right",
+      "at": { "x": "100% - 20", "y": "100% - 16" },
+      "color": "#AAAAAA",
+      "size": 22,
+      "text": "#{card.id} · {render.date} · {fmt(level * 1.5, 1)} pts"
+    },
+    {
+      "id": "sharp_copy",
+      "type": "image",
+      "anchor": "bottom-left",
+      "box": { "x": 20, "y": "100% - 16", "w": 64, "h": 64 },
+      "effects": [
+        { "type": "find_edges" }
+      ],
+      "src": "{art}",
+      "visible": "foil"
+    }
+  ],
+  "params": {
+    "accent": { "type": "color", "default": "#3B6CF6" },
+    "art": { "type": "image", "default": "assets/art.jpg" },
+    "body": {
+      "type": "text",
+      "default": "Body text wraps inside the panel and is justified. When it runs longer than five lines it is cut and ends with an ellipsis, and the core reports a warning so nobody misses it. This sentence exists to make the text long enough. And one more line to be safe, because fonts differ in width."
+    },
+    "foil": { "type": "bool", "default": false },
+    "level": { "type": "integer", "default": 3, "min": 0, "max": 9 },
+    "stats": {
+      "type": "list",
+      "default": [],
+      "item": { "name": "text", "value": "number" }
+    },
+    "title": { "type": "text", "default": "Feature tour", "max_length": 24 }
+  }
+}

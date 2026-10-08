@@ -1,0 +1,114 @@
+# Checks and tests: the Zig core and CLI, every release target, and the web
+# editor (types, build, end-to-end test in Chromium).
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  # The deploy workflow runs these checks before it publishes.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  core:
+    name: Core and CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+
+      - name: Zig formatting
+        run: zig fmt --check build.zig src
+
+      - name: Unit tests
+        run: zig build test
+
+      - name: Build
+        run: zig build
+
+      - name: Example files are canonically formatted
+        run: ./zig-out/bin/yoshida fmt --check examples
+
+      - name: Examples check without errors
+        run: |
+          for e in examples/*/; do
+            echo "::group::yoshida check $e"
+            ./zig-out/bin/yoshida check "$e"
+            echo "::endgroup::"
+          done
+
+      # Examples that load images from the web are skipped, so a remote
+      # site cannot break the build.
+      - name: Examples render
+        run: |
+          for e in examples/*/; do
+            if grep -rqE 'https?://' "$e"designs "$e"cards 2>/dev/null; then
+              echo "skipping $e (uses web images)"
+              continue
+            fi
+            ./zig-out/bin/yoshida render "$e" --offline --out "out/$(basename "$e")"
+          done
+          echo "$(find out -name '*.png' | wc -l) card(s) rendered"
+
+  targets:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-linux-musl, aarch64-linux-musl, x86_64-macos, aarch64-macos, x86_64-windows-gnu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dstrip=true
+
+  web:
+    name: Web editor
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Build the WASM core and copy the examples
+        run: |
+          npm run wasm
+          npm run examples
+
+      - name: Type check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end test
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/ > /dev/null && break; sleep 1; done
+          npm run test:ui -- http://localhost:4173/
+
+      - name: Keep screenshots of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: web/test-results/
+          retention-days: 7

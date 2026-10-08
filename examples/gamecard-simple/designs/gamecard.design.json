@@ -1,0 +1,116 @@
+{
+  "format": 1,
+  "name": "Simple game card",
+  "note": "Converted from yoshida-python data/card_designs/gamecard_simple.json",
+  "canvas": { "width": 1180, "height": 1720 },
+  "fonts": { "bebas": "assets/fonts/Bebas-Regular.ttf", "secrcode": "assets/fonts/secrcode.ttf" },
+  "layers": [
+    {
+      "id": "border",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
+      "fill": "border_color",
+      "radius": 5
+    },
+    {
+      "id": "background",
+      "type": "rect",
+      "box": {
+        "x": "border_width",
+        "y": "border_width",
+        "w": "100% - 2 * border_width",
+        "h": "100% - 2 * border_width"
+      },
+      "fill": "background"
+    },
+    {
+      "id": "header",
+      "type": "rect",
+      "box": { "x": "border_width", "y": "border_width", "w": "100% - 2 * border_width", "h": 100 },
+      "fill": "header_color"
+    },
+    {
+      "id": "header_text",
+      "type": "text",
+      "anchor": "bottom",
+      "at": { "x": "50%", "y": 110 },
+      "color": "#FFFFFF",
+      "font": "secrcode",
+      "size": 75,
+      "text": "{title}"
+    },
+    {
+      "id": "card_text",
+      "type": "text",
+      "align": "center",
+      "anchor": "center",
+      "at": { "x": "50%", "y": "50%" },
+      "color": "text_color",
+      "font": "secrcode",
+      "size": 50,
+      "text": "{text}",
+      "wrap": "100% - 2 * border_width - 50"
+    },
+    {
+      "id": "mana_ring",
+      "type": "ellipse",
+      "anchor": "center",
+      "box": {
+        "x": "border_width + mana_circle_rad / 3 + mana_circle_rad / 2",
+        "y": "border_width + 100",
+        "w": "mana_circle_rad * mana_circle_border",
+        "h": "mana_circle_rad * mana_circle_border"
+      },
+      "fill": "#555555"
+    },
+    {
+      "id": "mana_circle",
+      "type": "ellipse",
+      "extends": "mana_ring",
+      "box": { "w": "mana_circle_rad", "h": "mana_circle_rad" },
+      "fill": "#0066AA"
+    },
+    {
+      "id": "mana_text",
+      "type": "text",
+      "anchor": "center",
+      "at": { "x": "@mana_circle.bounds.cx", "y": "@mana_circle.bounds.cy" },
+      "color": "#FFFFFF",
+      "font": "bebas",
+      "size": 50,
+      "text": "{mana_cost}"
+    },
+    {
+      "id": "author_text",
+      "type": "text",
+      "anchor": "bottom-left",
+      "at": { "x": "1.5 * border_width", "y": "100% - 1.5 * border_width" },
+      "color": "#000000",
+      "font": "secrcode",
+      "size": 25,
+      "text": "Author: {author}"
+    },
+    {
+      "id": "serial_text",
+      "type": "text",
+      "extends": "author_text",
+      "anchor": "bottom-right",
+      "at": { "x": "100% - 1.5 * border_width" },
+      "text": "{serial_num}"
+    }
+  ],
+  "params": {
+    "author": { "type": "text", "default": "Card Author" },
+    "background": { "type": "color", "default": "#FFFFFF" },
+    "border_color": { "type": "color", "default": "#000000" },
+    "border_width": { "type": "number", "default": 25, "min": 0 },
+    "header_color": { "type": "color", "default": "#660940" },
+    "mana_circle_border": { "type": "number", "default": 1.2, "min": 1 },
+    "mana_circle_rad": { "type": "number", "default": 80, "min": 0 },
+    "mana_cost": { "type": "text", "default": "5" },
+    "serial_num": { "type": "text", "default": "xxxxxxxx" },
+    "text": { "type": "text", "default": "Some Card Text" },
+    "text_color": { "type": "color", "default": "#F44336" },
+    "title": { "type": "text", "default": "Card Title" }
+  }
+}
