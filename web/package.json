@@ -4,7 +4,7 @@
 	"version": "0.4.0",
 	"type": "module",
 	"scripts": {
-		"wasm": "cd .. && zig build wasm && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm",
+		"wasm": "cd .. && zig build wasm && mkdir -p web/public && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm",
 		"examples": "node scripts/sync-examples.mjs ../examples public/examples",
 		"dev": "vite",
 		"build": "vite build",
