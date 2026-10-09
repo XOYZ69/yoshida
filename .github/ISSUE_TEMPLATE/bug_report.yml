@@ -1,0 +1,38 @@
+name: Bug report
+description: Something is broken or behaves wrong
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A sentence or two is enough. Paste the error message if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where did it happen?
+      options:
+        - Web editor
+        - CLI
+        - Server / Docker
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps or design file (optional)
+      description: Short steps to reproduce, or attach/paste a minimal design or card data file.
+  - type: input
+    id: version
+    attributes:
+      label: Version (optional)
+      placeholder: e.g. 0.4.0 or "latest from main"
