@@ -1,100 +1,104 @@
 <script lang="ts">
-  // The options of an enum param, one row each: Enter adds a row, pasting
-  // several lines adds several options, rows can be dragged to reorder.
-  // Renaming an option also renames it in the default and in card data (the
-  // parent does that through `onrename`).
-  import { confirmAction } from '../ui/overlay.svelte';
+// The options of an enum param, one row each: Enter adds a row, pasting
+// several lines adds several options, rows can be dragged to reorder.
+// Renaming an option also renames it in the default and in card data (the
+// parent does that through `onrename`).
+import { confirmAction } from "../ui/overlay.svelte";
 
-  let {
-    options,
-    usage,
-    templates,
-    onchange,
-    onrename,
-  }: {
-    options: string[];
-    /** How many cards use each option. */
-    usage: Map<string, number>;
-    /** Path templates that use this param; renaming an option affects their files. */
-    templates: string[];
-    onchange: (options: string[]) => void;
-    onrename: (from: string, to: string) => void;
-  } = $props();
+let {
+	options,
+	usage,
+	templates,
+	onchange,
+	onrename,
+}: {
+	options: string[];
+	/** How many cards use each option. */
+	usage: Map<string, number>;
+	/** Path templates that use this param; renaming an option affects their files. */
+	templates: string[];
+	onchange: (options: string[]) => void;
+	onrename: (from: string, to: string) => void;
+} = $props();
 
-  let error = $state('');
-  let adding = $state('');
-  let dragFrom: number | null = $state(null);
-  let dropAt: number | null = $state(null);
+let error = $state("");
+let adding = $state("");
+let dragFrom: number | null = $state(null);
+let dropAt: number | null = $state(null);
 
-  function split(text: string) {
-    return text
-      .split(/[\r\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
+function split(text: string) {
+	return text
+		.split(/[\r\n]+/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
 
-  function add(raw: string) {
-    const fresh = split(raw).filter((s, i, a) => a.indexOf(s) === i);
-    const dup = fresh.filter((s) => options.includes(s));
-    const next = fresh.filter((s) => !options.includes(s));
-    error = dup.length ? `Already an option: ${dup.join(', ')}` : '';
-    if (next.length) onchange([...options, ...next]);
-    adding = '';
-  }
+function add(raw: string) {
+	const fresh = split(raw).filter((s, i, a) => a.indexOf(s) === i);
+	const dup = fresh.filter((s) => options.includes(s));
+	const next = fresh.filter((s) => !options.includes(s));
+	error = dup.length ? `Already an option: ${dup.join(", ")}` : "";
+	if (next.length) onchange([...options, ...next]);
+	adding = "";
+}
 
-  async function rename(i: number, raw: string, input: HTMLInputElement) {
-    const to = raw.trim();
-    const from = options[i];
-    if (to === from) return (error = '');
-    if (!to) {
-      input.value = from;
-      return (error = 'An option cannot be empty; use × to remove it.');
-    }
-    if (options.includes(to)) {
-      input.value = from;
-      return (error = `'${to}' is already an option.`);
-    }
-    error = '';
-    if (templates.length) {
-      const ok = await confirmAction({
-        title: `Rename '${from}' to '${to}'?`,
-        message: `This param is used in ${templates.map((t) => `"${t}"`).join(', ')}. Files named after '${from}' must be renamed too, or those cards will show a missing image.`,
-        confirm: 'Rename',
-      });
-      if (!ok) {
-        input.value = from;
-        return;
-      }
-    }
-    onrename(from, to);
-  }
+async function rename(i: number, raw: string, input: HTMLInputElement) {
+	const to = raw.trim();
+	const from = options[i];
+	if (to === from) return (error = "");
+	if (!to) {
+		input.value = from;
+		return (error = "An option cannot be empty; use × to remove it.");
+	}
+	if (options.includes(to)) {
+		input.value = from;
+		return (error = `'${to}' is already an option.`);
+	}
+	error = "";
+	if (templates.length) {
+		const ok = await confirmAction({
+			title: `Rename '${from}' to '${to}'?`,
+			message: `This param is used in ${templates.map((t) => `"${t}"`).join(", ")}. Files named after '${from}' must be renamed too, or those cards will show a missing image.`,
+			confirm: "Rename",
+		});
+		if (!ok) {
+			input.value = from;
+			return;
+		}
+	}
+	onrename(from, to);
+}
 
-  async function remove(i: number) {
-    const o = options[i];
-    const n = usage.get(o) ?? 0;
-    if (n) {
-      const ok = await confirmAction({
-        title: `Remove option '${o}'?`,
-        message: `${n} card${n === 1 ? ' uses' : 's use'} it and will show an error until you pick another option.`,
-        confirm: 'Remove',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    onchange(options.filter((_, j) => j !== i));
-  }
+async function remove(i: number) {
+	const o = options[i];
+	const n = usage.get(o) ?? 0;
+	if (n) {
+		const ok = await confirmAction({
+			title: `Remove option '${o}'?`,
+			message: `${n} card${n === 1 ? " uses" : "s use"} it and will show an error until you pick another option.`,
+			confirm: "Remove",
+			danger: true,
+		});
+		if (!ok) return;
+	}
+	onchange(options.filter((_, j) => j !== i));
+}
 
-  function move(from: number, to: number) {
-    if (from === to || from + 1 === to) return;
-    const next = [...options];
-    const [o] = next.splice(from, 1);
-    next.splice(to > from ? to - 1 : to, 0, o);
-    onchange(next);
-  }
+function move(from: number, to: number) {
+	if (from === to || from + 1 === to) return;
+	const next = [...options];
+	const [o] = next.splice(from, 1);
+	next.splice(to > from ? to - 1 : to, 0, o);
+	onchange(next);
+}
 
-  function sortAz() {
-    onchange([...options].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
-  }
+function sortAz() {
+	onchange(
+		[...options].sort((a, b) =>
+			a.localeCompare(b, undefined, { numeric: true }),
+		),
+	);
+}
 </script>
 
 <div class="opts">

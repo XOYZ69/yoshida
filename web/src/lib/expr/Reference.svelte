@@ -1,90 +1,104 @@
 <script lang="ts">
-  // Reference popover of an expression input: everything that can be used
-  // in this field, grouped, with types and docs. Clicking an entry inserts it
-  // at the caret. Lives in document.body with fixed position so the
-  // inspector's scroll container does not clip it. Closes on Escape and on
-  // a click outside.
-  import { onMount } from 'svelte';
-  import type { CompletionContext } from '../builder/complete';
-  import { BUILTINS, CHEATSHEET, FUNCTIONS, TEMPLATE_HELP, fit, fnSignature, typeLabel, valueType, type Expect } from './catalog';
+// Reference popover of an expression input: everything that can be used
+// in this field, grouped, with types and docs. Clicking an entry inserts it
+// at the caret. Lives in document.body with fixed position so the
+// inspector's scroll container does not clip it. Closes on Escape and on
+// a click outside.
+import { onMount } from "svelte";
+import type { CompletionContext } from "../builder/complete";
+import {
+	BUILTINS,
+	CHEATSHEET,
+	type Expect,
+	FUNCTIONS,
+	fit,
+	fnSignature,
+	TEMPLATE_HELP,
+	typeLabel,
+	valueType,
+} from "./catalog";
 
-  let {
-    ctx,
-    expect = 'any',
-    template = false,
-    anchor,
-    ignore,
-    oninsert,
-    onclose,
-  }: {
-    ctx: CompletionContext;
-    expect?: Expect;
-    template?: boolean;
-    /** The rect to place the popover next to (re-read on scroll and resize). */
-    anchor: () => DOMRect | null;
-    /** Clicks on this element do not count as outside (the toggle button). */
-    ignore?: HTMLElement;
-    oninsert: (text: string, reopen: boolean) => void;
-    onclose: () => void;
-  } = $props();
+let {
+	ctx,
+	expect = "any",
+	template = false,
+	anchor,
+	ignore,
+	oninsert,
+	onclose,
+}: {
+	ctx: CompletionContext;
+	expect?: Expect;
+	template?: boolean;
+	/** The rect to place the popover next to (re-read on scroll and resize). */
+	anchor: () => DOMRect | null;
+	/** Clicks on this element do not count as outside (the toggle button). */
+	ignore?: HTMLElement;
+	oninsert: (text: string, reopen: boolean) => void;
+	onclose: () => void;
+} = $props();
 
-  let pop: HTMLDivElement | undefined = $state();
-  let pos = $state({ left: 0, top: 0, maxHeight: 400, above: false });
-  const width = 360;
+let pop: HTMLDivElement | undefined = $state();
+let pos = $state({ left: 0, top: 0, maxHeight: 400, above: false });
+const width = 360;
 
-  function place() {
-    const r = anchor();
-    if (!r) return onclose();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const left = Math.max(8, Math.min(r.right - width, vw - width - 8));
-    const below = vh - r.bottom - 12;
-    const aboveSpace = r.top - 12;
-    const above = below < 260 && aboveSpace > below;
-    const maxHeight = Math.max(160, Math.min(460, above ? aboveSpace : below));
-    pos = { left, top: above ? r.top - 4 : r.bottom + 4, maxHeight, above };
-  }
+function place() {
+	const r = anchor();
+	if (!r) return onclose();
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	const left = Math.max(8, Math.min(r.right - width, vw - width - 8));
+	const below = vh - r.bottom - 12;
+	const aboveSpace = r.top - 12;
+	const above = below < 260 && aboveSpace > below;
+	const maxHeight = Math.max(160, Math.min(460, above ? aboveSpace : below));
+	pos = { left, top: above ? r.top - 4 : r.bottom + 4, maxHeight, above };
+}
 
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return { destroy: () => node.remove() };
-  }
+function portal(node: HTMLElement) {
+	document.body.appendChild(node);
+	return { destroy: () => node.remove() };
+}
 
-  onMount(() => {
-    place();
-    const down = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (pop?.contains(t) || ignore?.contains(t)) return;
-      onclose();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      e.stopPropagation();
-      onclose();
-    };
-    const move = () => place();
-    window.addEventListener('pointerdown', down, true);
-    window.addEventListener('keydown', key, true);
-    window.addEventListener('resize', move);
-    window.addEventListener('scroll', move, true);
-    return () => {
-      window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key, true);
-      window.removeEventListener('resize', move);
-      window.removeEventListener('scroll', move, true);
-    };
-  });
+onMount(() => {
+	place();
+	const down = (e: PointerEvent) => {
+		const t = e.target as Node;
+		if (pop?.contains(t) || ignore?.contains(t)) return;
+		onclose();
+	};
+	const key = (e: KeyboardEvent) => {
+		if (e.key !== "Escape") return;
+		e.preventDefault();
+		e.stopPropagation();
+		onclose();
+	};
+	const move = () => place();
+	window.addEventListener("pointerdown", down, true);
+	window.addEventListener("keydown", key, true);
+	window.addEventListener("resize", move);
+	window.addEventListener("scroll", move, true);
+	return () => {
+		window.removeEventListener("pointerdown", down, true);
+		window.removeEventListener("keydown", key, true);
+		window.removeEventListener("resize", move);
+		window.removeEventListener("scroll", move, true);
+	};
+});
 
-  const dim = (type: string) => fit(type, expect) === 0;
-  const needs = $derived(expect && expect !== 'any' ? expect : '');
-  const params = $derived([...ctx.params].sort((a, b) => fit(b.type, expect) - fit(a.type, expect)));
-  const fns = $derived([...FUNCTIONS].sort((a, b) => fit(b.ret, expect) - fit(a.ret, expect)));
+const dim = (type: string) => fit(type, expect) === 0;
+const needs = $derived(expect && expect !== "any" ? expect : "");
+const params = $derived(
+	[...ctx.params].sort((a, b) => fit(b.type, expect) - fit(a.type, expect)),
+);
+const fns = $derived(
+	[...FUNCTIONS].sort((a, b) => fit(b.ret, expect) - fit(a.ret, expect)),
+);
 
-  /** Keeps the focus (and caret) in the editor when an entry is clicked. */
-  function keep(e: MouseEvent) {
-    e.preventDefault();
-  }
+/** Keeps the focus (and caret) in the editor when an entry is clicked. */
+function keep(e: MouseEvent) {
+	e.preventDefault();
+}
 </script>
 
 <div

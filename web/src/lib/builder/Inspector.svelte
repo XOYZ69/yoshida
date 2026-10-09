@@ -1,233 +1,299 @@
 <script lang="ts">
-  // Properties of the selected layer, or of the design itself when nothing
-  // is selected. Every field accepts a literal or an expression; fields a
-  // layer inherits through `extends` are marked and editing them adds an
-  // override to this layer.
-  import { setContext } from 'svelte';
-  import Field from './Field.svelte';
-  import Select from '../ui/Select.svelte';
-  import ImagePicker from '../ui/ImagePicker.svelte';
-  import type { CompletionContext } from './complete';
-  import {
-    anchors,
-    effectiveLayer,
-    getPath,
-    identRe,
-    isObj,
-    childrenOf,
-    layerPointer,
-    layersOf,
-    setPath,
-    textAnchors,
-    type AlignMode,
-    type Json,
-    type Obj,
-    newParam,
-    findLayer as findIn,
-  } from '../design';
-  import type { Diagnostic } from '../engine';
+// Properties of the selected layer, or of the design itself when nothing
+// is selected. Every field accepts a literal or an expression; fields a
+// layer inherits through `extends` are marked and editing them adds an
+// override to this layer.
+import { setContext } from "svelte";
+import {
+	type AlignMode,
+	anchors,
+	childrenOf,
+	effectiveLayer,
+	findLayer as findIn,
+	getPath,
+	identRe,
+	isObj,
+	type Json,
+	layerPointer,
+	layersOf,
+	newParam,
+	type Obj,
+	setPath,
+	textAnchors,
+} from "../design";
+import type { Diagnostic } from "../engine";
+import ImagePicker from "../ui/ImagePicker.svelte";
+import Select from "../ui/Select.svelte";
+import type { CompletionContext } from "./complete";
+import Field from "./Field.svelte";
 
-  let {
-    doc,
-    ids,
-    imageFiles,
-    upload,
-    fontFiles,
-    diagnostics,
-    designFile,
-    editLayer,
-    editDoc,
-    rename,
-    onalign,
-    ondistribute,
-    onduplicate,
-    ondelete,
-    ongroup,
-    onungroup,
-    onproblems,
-    listKeys = {},
-  }: {
-    doc: Obj;
-    ids: string[];
-    imageFiles: string[];
-    /** Adds an image from the user's computer; returns its project path. */
-    upload: () => Promise<string | null>;
-    fontFiles: string[];
-    diagnostics: Diagnostic[];
-    designFile: string;
-    editLayer: (fn: (own: Obj) => void, key?: string) => void;
-    editDoc: (fn: (doc: Obj) => void, key?: string) => void;
-    rename: (from: string, to: string) => string;
-    /** Key values of each list param, from the cards, for `list.Key` suggestions. */
-    listKeys?: Record<string, string[]>;
-    onalign: (mode: AlignMode) => void;
-    ondistribute: (axis: 'x' | 'y') => void;
-    onduplicate: () => void;
-    ondelete: () => void;
-    ongroup: () => void;
-    onungroup: () => void;
-    /** Shows the problems of a layer (or of the design, for null) in the problems panel. */
-    onproblems: (id: string | null) => void;
-  } = $props();
+let {
+	doc,
+	ids,
+	imageFiles,
+	upload,
+	fontFiles,
+	diagnostics,
+	designFile,
+	editLayer,
+	editDoc,
+	rename,
+	onalign,
+	ondistribute,
+	onduplicate,
+	ondelete,
+	ongroup,
+	onungroup,
+	onproblems,
+	listKeys = {},
+}: {
+	doc: Obj;
+	ids: string[];
+	imageFiles: string[];
+	/** Adds an image from the user's computer; returns its project path. */
+	upload: () => Promise<string | null>;
+	fontFiles: string[];
+	diagnostics: Diagnostic[];
+	designFile: string;
+	editLayer: (fn: (own: Obj) => void, key?: string) => void;
+	editDoc: (fn: (doc: Obj) => void, key?: string) => void;
+	rename: (from: string, to: string) => string;
+	/** Key values of each list param, from the cards, for `list.Key` suggestions. */
+	listKeys?: Record<string, string[]>;
+	onalign: (mode: AlignMode) => void;
+	ondistribute: (axis: "x" | "y") => void;
+	onduplicate: () => void;
+	ondelete: () => void;
+	ongroup: () => void;
+	onungroup: () => void;
+	/** Shows the problems of a layer (or of the design, for null) in the problems panel. */
+	onproblems: (id: string | null) => void;
+} = $props();
 
-  const id = $derived(ids.length === 1 ? ids[0] : null);
+const id = $derived(ids.length === 1 ? ids[0] : null);
 
-  const own = $derived(id ? (layersOf(doc).find((l) => l.id === id) ?? null) : null);
-  const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
-  const ptr = $derived(id ? layerPointer(doc, id) : null);
-  const type = $derived(String(eff?.type ?? ''));
-  const params = $derived(isObj(doc.params) ? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [string, Obj][]) : []);
-  const fonts = $derived(isObj(doc.fonts) ? Object.keys(doc.fonts) : []);
+const own = $derived(
+	id ? (layersOf(doc).find((l) => l.id === id) ?? null) : null,
+);
+const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
+const ptr = $derived(id ? layerPointer(doc, id) : null);
+const type = $derived(String(eff?.type ?? ""));
+const params = $derived(
+	isObj(doc.params)
+		? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [
+				string,
+				Obj,
+			][])
+		: [],
+);
+const fonts = $derived(isObj(doc.fonts) ? Object.keys(doc.fonts) : []);
 
-  function paramsOfType(...types: string[]) {
-    return params.filter(([, p]) => types.includes(String(p.type))).map(([n]) => n);
-  }
-  const numberParams = $derived(paramsOfType('number', 'integer'));
-  const colorParams = $derived(paramsOfType('color'));
-  const boolParams = $derived(paramsOfType('bool'));
-  const textParams = $derived(paramsOfType('text', 'enum', 'number', 'integer', 'color', 'bool', 'image'));
-  const imageParams = $derived(paramsOfType('image'));
-  const listParams = $derived(paramsOfType('list'));
+function paramsOfType(...types: string[]) {
+	return params
+		.filter(([, p]) => types.includes(String(p.type)))
+		.map(([n]) => n);
+}
+const numberParams = $derived(paramsOfType("number", "integer"));
+const colorParams = $derived(paramsOfType("color"));
+const boolParams = $derived(paramsOfType("bool"));
+const textParams = $derived(
+	paramsOfType("text", "enum", "number", "integer", "color", "bool", "image"),
+);
+const imageParams = $derived(paramsOfType("image"));
+const listParams = $derived(paramsOfType("list"));
 
-  // Suggestions for expression fields (see ExprInput).
-  const completion = $derived.by((): CompletionContext => {
-    const locals: CompletionContext['locals'] = [];
-    const rep = isObj(eff?.repeat) ? (eff!.repeat as Obj) : null;
-    if (rep) {
-      locals.push({ name: String(rep.index ?? 'i'), detail: 'repeat index' });
-      if (typeof rep.item === 'string') {
-        const each = String(rep.each ?? '');
-        const p = params.find(([n]) => n === each.trim())?.[1];
-        locals.push({ name: rep.item, detail: `item of ${each}`, fields: isObj(p?.item) ? (p!.item as Record<string, string>) : {} });
-      }
-    }
-    return {
-      params: params.map(([name, p]) => ({ name, type: String(p.type), item: p.item && typeof p.item === 'object' && !Array.isArray(p.item) ? (Object.fromEntries(Object.entries(p.item).map(([k, v]) => [k, String(v)])) as Record<string, string>) : undefined, keys: listKeys[name], label: typeof p.label === 'string' ? p.label : undefined, note: typeof p.note === 'string' ? p.note : undefined })),
-      layers: layersOf(doc)
-        .filter((l) => l.id !== id && !l.repeat)
-        .map((l) => ({ id: String(l.id), type: String(l.type) })),
-      locals,
-    };
-  });
-  setContext('yoshida-complete', () => completion);
+// Suggestions for expression fields (see ExprInput).
+const completion = $derived.by((): CompletionContext => {
+	const locals: CompletionContext["locals"] = [];
+	const rep = isObj(eff?.repeat) ? (eff!.repeat as Obj) : null;
+	if (rep) {
+		locals.push({ name: String(rep.index ?? "i"), detail: "repeat index" });
+		if (typeof rep.item === "string") {
+			const each = String(rep.each ?? "");
+			const p = params.find(([n]) => n === each.trim())?.[1];
+			locals.push({
+				name: rep.item,
+				detail: `item of ${each}`,
+				fields: isObj(p?.item) ? (p!.item as Record<string, string>) : {},
+			});
+		}
+	}
+	return {
+		params: params.map(([name, p]) => ({
+			name,
+			type: String(p.type),
+			item:
+				p.item && typeof p.item === "object" && !Array.isArray(p.item)
+					? (Object.fromEntries(
+							Object.entries(p.item).map(([k, v]) => [k, String(v)]),
+						) as Record<string, string>)
+					: undefined,
+			keys: listKeys[name],
+			label: typeof p.label === "string" ? p.label : undefined,
+			note: typeof p.note === "string" ? p.note : undefined,
+		})),
+		layers: layersOf(doc)
+			.filter((l) => l.id !== id && !l.repeat)
+			.map((l) => ({ id: String(l.id), type: String(l.type) })),
+		locals,
+	};
+});
+setContext("yoshida-complete", () => completion);
 
-  // Problems are listed once, in the problems panel; fields only show a
-  // short note for their own errors.
-  const myDiags = $derived(
-    diagnostics.filter(
-      (d) =>
-        d.file === designFile &&
-        (ptr ? (d.path === ptr || d.path.startsWith(ptr + '/')) && !d.path.startsWith(ptr + '/layers/') : !d.path.startsWith('/layers/')),
-    ),
-  );
-  const errorCount = $derived(myDiags.filter((d) => d.severity === 'error').length);
-  const warnCount = $derived(myDiags.filter((d) => d.severity === 'warning').length);
+// Problems are listed once, in the problems panel; fields only show a
+// short note for their own errors.
+const myDiags = $derived(
+	diagnostics.filter(
+		(d) =>
+			d.file === designFile &&
+			(ptr
+				? (d.path === ptr || d.path.startsWith(ptr + "/")) &&
+					!d.path.startsWith(ptr + "/layers/")
+				: !d.path.startsWith("/layers/")),
+	),
+);
+const errorCount = $derived(
+	myDiags.filter((d) => d.severity === "error").length,
+);
+const warnCount = $derived(
+	myDiags.filter((d) => d.severity === "warning").length,
+);
 
-  function errorAt(path: string[]) {
-    const p = ptr ? `${ptr}/${path.join('/')}` : `/${path.join('/')}`;
-    const d = myDiags.find((x) => x.severity === 'error' && (x.path === p || x.path.startsWith(p + '/')));
-    return d ? d.message.replace(/^layer '[^']*': /, '') : '';
-  }
+function errorAt(path: string[]) {
+	const p = ptr ? `${ptr}/${path.join("/")}` : `/${path.join("/")}`;
+	const d = myDiags.find(
+		(x) =>
+			x.severity === "error" && (x.path === p || x.path.startsWith(p + "/")),
+	);
+	return d ? d.message.replace(/^layer '[^']*': /, "") : "";
+}
 
-  const ownVal = (path: string[]) => getPath(own ?? undefined, path);
-  const effVal = (path: string[]) => getPath(eff ?? undefined, path);
+const ownVal = (path: string[]) => getPath(own ?? undefined, path);
+const effVal = (path: string[]) => getPath(eff ?? undefined, path);
 
-  function set(path: string[], v: Json | undefined) {
-    editLayer((l) => setPath(l, path, v), path.join('.'));
-  }
+function set(path: string[], v: Json | undefined) {
+	editLayer((l) => setPath(l, path, v), path.join("."));
+}
 
-  function setDoc(path: string[], v: Json | undefined) {
-    editDoc((d) => setPath(d, path, v), 'doc.' + path.join('.'));
-  }
+function setDoc(path: string[], v: Json | undefined) {
+	editDoc((d) => setPath(d, path, v), "doc." + path.join("."));
+}
 
-  let idError = $state('');
-  function renameTo(next: string) {
-    if (!id || next === id) return;
-    idError = rename(id, next);
-  }
-  $effect(() => {
-    void id;
-    idError = '';
-  });
+let idError = $state("");
+function renameTo(next: string) {
+	if (!id || next === id) return;
+	idError = rename(id, next);
+}
+$effect(() => {
+	void id;
+	idError = "";
+});
 
-  const isGroupLayer = $derived(type === 'group');
-  const childCount = $derived(own && isGroupLayer ? childrenOf(own).length : 0);
-  const sameTypeIds = $derived(layersOf(doc).filter((l) => l.type === type && l.id !== id).map((l) => String(l.id)));
+const isGroupLayer = $derived(type === "group");
+const childCount = $derived(own && isGroupLayer ? childrenOf(own).length : 0);
+const sameTypeIds = $derived(
+	layersOf(doc)
+		.filter((l) => l.type === type && l.id !== id)
+		.map((l) => String(l.id)),
+);
 
-  // ------------------------------------------------------------ effects
+// ------------------------------------------------------------ effects
 
-  const effectTypes = ['fade', 'crop', 'sharpen', 'detail', 'edge_enhance', 'find_edges'];
-  const effectHelp: Record<string, string> = {
-    fade: 'soft edge on one side',
-    crop: 'cut one side off',
-    sharpen: 'crisper details',
-    detail: 'boost fine detail',
-    edge_enhance: 'stronger edges',
-    find_edges: 'outline only',
-  };
-  const effects = $derived(Array.isArray(eff?.effects) ? (eff!.effects as Obj[]) : []);
+const effectTypes = [
+	"fade",
+	"crop",
+	"sharpen",
+	"detail",
+	"edge_enhance",
+	"find_edges",
+];
+const effectHelp: Record<string, string> = {
+	fade: "soft edge on one side",
+	crop: "cut one side off",
+	sharpen: "crisper details",
+	detail: "boost fine detail",
+	edge_enhance: "stronger edges",
+	find_edges: "outline only",
+};
+const effects = $derived(
+	Array.isArray(eff?.effects) ? (eff!.effects as Obj[]) : [],
+);
 
-  function editEffects(fn: (list: Obj[]) => void, key?: string) {
-    editLayer((l) => {
-      const list = structuredClone(effects);
-      fn(list);
-      if (list.length) l.effects = list;
-      else delete l.effects;
-    }, key);
-  }
+function editEffects(fn: (list: Obj[]) => void, key?: string) {
+	editLayer((l) => {
+		const list = structuredClone(effects);
+		fn(list);
+		if (list.length) l.effects = list;
+		else delete l.effects;
+	}, key);
+}
 
-  function newEffect(t: string): Obj {
-    return t === 'fade' || t === 'crop' ? { type: t, side: 'bottom', length: 100 } : { type: t };
-  }
+function newEffect(t: string): Obj {
+	return t === "fade" || t === "crop"
+		? { type: t, side: "bottom", length: 100 }
+		: { type: t };
+}
 
-  // ------------------------------------------------------------ repeat
+// ------------------------------------------------------------ repeat
 
-  const repeatMode = $derived(isObj(eff?.repeat) ? ((eff!.repeat as Obj).each !== undefined ? 'each' : 'count') : 'none');
+const repeatMode = $derived(
+	isObj(eff?.repeat)
+		? (eff!.repeat as Obj).each !== undefined
+			? "each"
+			: "count"
+		: "none",
+);
 
-  function setRepeat(mode: string) {
-    editLayer((l) => {
-      if (mode === 'none') delete l.repeat;
-      else if (mode === 'count') l.repeat = { count: numberParams[0] ?? 3, index: 'i' };
-      else l.repeat = { each: listParams[0] ?? 'items', item: 'item', index: 'i' };
-    });
-  }
+function setRepeat(mode: string) {
+	editLayer((l) => {
+		if (mode === "none") delete l.repeat;
+		else if (mode === "count")
+			l.repeat = { count: numberParams[0] ?? 3, index: "i" };
+		else
+			l.repeat = { each: listParams[0] ?? "items", item: "item", index: "i" };
+	});
+}
 
-  /** `each` needs a list: without one, add an `items` list param in the same step. */
-  function setRepeatMode(mode: string) {
-    if (mode !== 'each' || listParams.length || !id) return setRepeat(mode);
-    const target = id;
-    editDoc((d) => {
-      if (!isObj(d.params)) d.params = {};
-      const ps = d.params as Obj;
-      let name = 'items';
-      for (let n = 2; ps[name] !== undefined; n++) name = `items${n}`;
-      ps[name] = newParam('list', imageFiles);
-      const l = findIn(d, target);
-      if (l) l.repeat = { each: name, item: 'item', index: 'i' };
-    });
-  }
+/** `each` needs a list: without one, add an `items` list param in the same step. */
+function setRepeatMode(mode: string) {
+	if (mode !== "each" || listParams.length || !id) return setRepeat(mode);
+	const target = id;
+	editDoc((d) => {
+		if (!isObj(d.params)) d.params = {};
+		const ps = d.params as Obj;
+		let name = "items";
+		for (let n = 2; ps[name] !== undefined; n++) name = `items${n}`;
+		ps[name] = newParam("list", imageFiles);
+		const l = findIn(d, target);
+		if (l) l.repeat = { each: name, item: "item", index: "i" };
+	});
+}
 
-  // ------------------------------------------------------------ polygon points
+// ------------------------------------------------------------ polygon points
 
-  const points = $derived(Array.isArray(eff?.points) ? (eff!.points as Json[][]) : []);
+const points = $derived(
+	Array.isArray(eff?.points) ? (eff!.points as Json[][]) : [],
+);
 
-  function editPoints(fn: (pts: Json[][]) => void, key?: string) {
-    editLayer((l) => {
-      const pts = structuredClone(points);
-      fn(pts);
-      l.points = pts;
-    }, key);
-  }
+function editPoints(fn: (pts: Json[][]) => void, key?: string) {
+	editLayer((l) => {
+		const pts = structuredClone(points);
+		fn(pts);
+		l.points = pts;
+	}, key);
+}
 
-  function parseCoord(raw: string): Json {
-    const s = raw.trim();
-    return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
-  }
+function parseCoord(raw: string): Json {
+	const s = raw.trim();
+	return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+}
 
-  // ------------------------------------------------------------ fonts
+// ------------------------------------------------------------ fonts
 
-  const fontEntries = $derived(isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : []);
-  let newFont = $state('');
+const fontEntries = $derived(
+	isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : [],
+);
+let newFont = $state("");
 </script>
 
 {#snippet effectsSection()}

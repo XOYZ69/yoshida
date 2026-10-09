@@ -1,101 +1,145 @@
 <script lang="ts">
-  // Layer list, topmost first (the design's arrays are bottom first). Groups
-  // are folders: click the arrow to fold them, drop a layer onto a group to
-  // move it inside. Ctrl/Cmd+click adds to the selection, Shift+click
-  // selects a range; right-click opens the layer menu. The eye sets the
-  // layer's `visible`; the lock only stops canvas selection in the editor.
-  // Dividers are titled rules that only organise the list. Right-click on
-  // empty space opens the menu for adding layers.
-  import { childrenOf, isDivider, isGroup, type Obj } from '../design';
+// Layer list, topmost first (the design's arrays are bottom first). Groups
+// are folders: click the arrow to fold them, drop a layer onto a group to
+// move it inside. Ctrl/Cmd+click adds to the selection, Shift+click
+// selects a range; right-click opens the layer menu. The eye sets the
+// layer's `visible`; the lock only stops canvas selection in the editor.
+// Dividers are titled rules that only organise the list. Right-click on
+// empty space opens the menu for adding layers.
+import { childrenOf, isDivider, isGroup, type Obj } from "../design";
 
-  let {
-    layers,
-    selected,
-    locked,
-    problems,
-    onselect,
-    onvisible,
-    onlock,
-    onmove,
-    oncontext,
-  }: {
-    layers: Obj[];
-    selected: string[];
-    locked: Set<string>;
-    problems: Map<string, 'error' | 'warning'>;
-    onselect: (ids: string[]) => void;
-    onvisible: (id: string) => void;
-    onlock: (id: string) => void;
-    /** Drag and drop: above/below a layer, into a group, or to the very bottom (target null). */
-    onmove: (ids: string[], target: string | null, where: 'above' | 'below' | 'into') => void;
-    /** Right-click on a layer, or on empty space (id null). */
-    oncontext: (e: MouseEvent, id: string | null) => void;
-  } = $props();
+let {
+	layers,
+	selected,
+	locked,
+	problems,
+	onselect,
+	onvisible,
+	onlock,
+	onmove,
+	oncontext,
+}: {
+	layers: Obj[];
+	selected: string[];
+	locked: Set<string>;
+	problems: Map<string, "error" | "warning">;
+	onselect: (ids: string[]) => void;
+	onvisible: (id: string) => void;
+	onlock: (id: string) => void;
+	/** Drag and drop: above/below a layer, into a group, or to the very bottom (target null). */
+	onmove: (
+		ids: string[],
+		target: string | null,
+		where: "above" | "below" | "into",
+	) => void;
+	/** Right-click on a layer, or on empty space (id null). */
+	oncontext: (e: MouseEvent, id: string | null) => void;
+} = $props();
 
-  const icons: Record<string, string> = { rect: '▭', ellipse: '◯', polygon: '△', text: 'T', image: '🖼', group: '▤' };
+const icons: Record<string, string> = {
+	rect: "▭",
+	ellipse: "◯",
+	polygon: "△",
+	text: "T",
+	image: "🖼",
+	group: "▤",
+};
 
-  let folded = $state(new Set<string>());
+let folded = $state(new Set<string>());
 
-  type Row = { l: Obj; id: string; depth: number; group: boolean; divider: boolean; count: number; hiddenBy: boolean };
-  const rows = $derived.by(() => {
-    const out: Row[] = [];
-    const walk = (list: Obj[], depth: number, hiddenBy: boolean) => {
-      for (let i = list.length - 1; i >= 0; i--) {
-        const l = list[i];
-        const id = String(l.id ?? `#${i}`);
-        const group = isGroup(l);
-        const kids = group ? childrenOf(l) : [];
-        out.push({ l, id, depth, group, divider: isDivider(l), count: kids.filter((k) => !isDivider(k)).length, hiddenBy });
-        if (group && !folded.has(id)) walk(kids, depth + 1, hiddenBy || l.visible === false);
-      }
-    };
-    walk(layers, 0, false);
-    return out;
-  });
+type Row = {
+	l: Obj;
+	id: string;
+	depth: number;
+	group: boolean;
+	divider: boolean;
+	count: number;
+	hiddenBy: boolean;
+};
+const rows = $derived.by(() => {
+	const out: Row[] = [];
+	const walk = (list: Obj[], depth: number, hiddenBy: boolean) => {
+		for (let i = list.length - 1; i >= 0; i--) {
+			const l = list[i];
+			const id = String(l.id ?? `#${i}`);
+			const group = isGroup(l);
+			const kids = group ? childrenOf(l) : [];
+			out.push({
+				l,
+				id,
+				depth,
+				group,
+				divider: isDivider(l),
+				count: kids.filter((k) => !isDivider(k)).length,
+				hiddenBy,
+			});
+			if (group && !folded.has(id))
+				walk(kids, depth + 1, hiddenBy || l.visible === false);
+		}
+	};
+	walk(layers, 0, false);
+	return out;
+});
 
-  let anchor: string | null = null;
+let anchor: string | null = null;
 
-  function pick(id: string, e: MouseEvent) {
-    if (e.shiftKey && anchor && selected.includes(anchor)) {
-      const order = rows.map((r) => r.id);
-      const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort((x, y) => x - y);
-      onselect(order.slice(a, b + 1));
-      return;
-    }
-    anchor = id;
-    if (e.ctrlKey || e.metaKey) onselect(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-    else onselect([id]);
-  }
+function pick(id: string, e: MouseEvent) {
+	if (e.shiftKey && anchor && selected.includes(anchor)) {
+		const order = rows.map((r) => r.id);
+		const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort(
+			(x, y) => x - y,
+		);
+		onselect(order.slice(a, b + 1));
+		return;
+	}
+	anchor = id;
+	if (e.ctrlKey || e.metaKey)
+		onselect(
+			selected.includes(id)
+				? selected.filter((x) => x !== id)
+				: [...selected, id],
+		);
+	else onselect([id]);
+}
 
-  function fold(id: string) {
-    const next = new Set(folded);
-    if (!next.delete(id)) next.add(id);
-    folded = next;
-  }
+function fold(id: string) {
+	const next = new Set(folded);
+	if (!next.delete(id)) next.add(id);
+	folded = next;
+}
 
-  // ---------------------------------------------------------------- drag and drop
+// ---------------------------------------------------------------- drag and drop
 
-  let dragIds: string[] = [];
-  let drop: { id: string | null; where: 'above' | 'below' | 'into' } | null = $state(null);
+let dragIds: string[] = [];
+let drop: { id: string | null; where: "above" | "below" | "into" } | null =
+	$state(null);
 
-  function zone(e: DragEvent, r: Row): 'above' | 'below' | 'into' {
-    const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const f = (e.clientY - b.top) / b.height;
-    if (r.group) return f < 0.25 ? 'above' : f > 0.75 && (folded.has(r.id) || !r.count) ? 'below' : 'into';
-    return f < 0.5 ? 'above' : 'below';
-  }
+function zone(e: DragEvent, r: Row): "above" | "below" | "into" {
+	const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+	const f = (e.clientY - b.top) / b.height;
+	if (r.group)
+		return f < 0.25
+			? "above"
+			: f > 0.75 && (folded.has(r.id) || !r.count)
+				? "below"
+				: "into";
+	return f < 0.5 ? "above" : "below";
+}
 
-  function dragstart(e: DragEvent, id: string) {
-    dragIds = selected.includes(id) ? rows.map((r) => r.id).filter((x) => selected.includes(x)) : [id];
-    e.dataTransfer?.setData('text/x-yoshida-layer', dragIds.join(','));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-  }
+function dragstart(e: DragEvent, id: string) {
+	dragIds = selected.includes(id)
+		? rows.map((r) => r.id).filter((x) => selected.includes(x))
+		: [id];
+	e.dataTransfer?.setData("text/x-yoshida-layer", dragIds.join(","));
+	if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+}
 
-  function finish() {
-    if (drop && dragIds.length && !(drop.id && dragIds.includes(drop.id))) onmove(dragIds, drop.id, drop.where);
-    dragIds = [];
-    drop = null;
-  }
+function finish() {
+	if (drop && dragIds.length && !(drop.id && dragIds.includes(drop.id)))
+		onmove(dragIds, drop.id, drop.where);
+	dragIds = [];
+	drop = null;
+}
 </script>
 
 <ul

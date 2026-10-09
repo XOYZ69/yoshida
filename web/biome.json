@@ -1,0 +1,27 @@
+{
+	"files": {
+		"includes": [
+			"src/**",
+			"scripts/**",
+			"tests/**",
+			"*.ts",
+			"*.js",
+			"*.json",
+			"!**/dist",
+			"!**/public"
+		]
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.svelte"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedImports": "off"
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,5 +1,10 @@
 <script lang="ts" module>
-  export type Option = { value: string; label?: string; detail?: string; muted?: boolean };
+export type Option = {
+	value: string;
+	label?: string;
+	detail?: string;
+	muted?: boolean;
+};
 </script>
 
 <script lang="ts">

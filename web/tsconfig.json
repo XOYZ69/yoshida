@@ -11,7 +11,7 @@
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true,
 		"allowJs": true,
-		"checkJs": true,
+		"checkJs": true
 	},
-	"include": ["src/**/*.ts", "src/**/*.svelte"],
+	"include": ["src/**/*.ts", "src/**/*.svelte"]
 }
