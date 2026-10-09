@@ -5,6 +5,8 @@
 //   drag: move (all selected layers); handles: resize; round handle above
 //   the box: rotate (Shift: 15 degree steps); polygon points: reshape.
 // Snaps to the canvas and other layers; hold Ctrl to place freely.
+// View: wheel pans, Ctrl+wheel (or a pinch) zooms toward the pointer, the
+// middle mouse button drags the view anywhere over the stage.
 // A click on a layer inside a group picks what `pick` maps it to (the
 // group); a double click passes `deep` to reach the layer itself.
 // Reports gestures; the parent edits the design.
@@ -46,7 +48,11 @@ let canvas: HTMLCanvasElement | undefined = $state();
 let svg: SVGSVGElement | undefined = $state();
 let fit = $state(true);
 let zoom = $state(1);
+/** Top-left of the card in the stage's own pixels, when not fitted. */
+let pan = $state({ x: 0, y: 0 });
 let avail = $state({ w: 0, h: 0 });
+/** Middle-button drag of the view. */
+let panning: { id: number; x: number; y: number } | null = $state(null);
 
 const W = $derived(image?.width ?? 0);
 const H = $derived(image?.height ?? 0);
@@ -56,6 +62,7 @@ const scale = $derived(
 		: zoom,
 );
 const px = $derived(1 / (scale || 1));
+const offset = $derived(fit ? centred(scale) : pan);
 
 $effect(() => {
 	if (!canvas || !image) return;
@@ -73,16 +80,113 @@ $effect(() => {
 	return () => ro.disconnect();
 });
 
-function setZoom(z: number) {
-	zoom = Math.max(0.05, Math.min(8, z));
+// ------------------------------------------------------------ view
+
+const MIN_ZOOM = 0.05;
+const MAX_ZOOM = 8;
+/** How much of the card always stays in view, in screen pixels. */
+const KEEP = 48;
+
+function centred(s: number) {
+	return { x: (avail.w - W * s) / 2, y: (avail.h - H * s) / 2 };
+}
+
+/** Keeps at least a strip of the card inside the stage. */
+function clampPan(x: number, y: number, s: number) {
+	const keepX = Math.min(KEEP, W * s);
+	const keepY = Math.min(KEEP, H * s);
+	return {
+		x: Math.min(Math.max(x, keepX - W * s), avail.w - keepX),
+		y: Math.min(Math.max(y, keepY - H * s), avail.h - keepY),
+	};
+}
+
+/** Zooms so the card point under (`cx`, `cy`), in stage pixels, stays there. */
+function zoomAt(z: number, cx: number, cy: number) {
+	const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+	const o = offset;
+	const k = next / scale;
+	pan = clampPan(cx - (cx - o.x) * k, cy - (cy - o.y) * k, next);
+	zoom = next;
 	fit = false;
 }
 
-function onwheel(e: WheelEvent) {
-	if (!e.ctrlKey && !e.metaKey) return;
-	e.preventDefault();
-	setZoom(scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+/** The buttons zoom around the middle of the stage. */
+function setZoom(z: number) {
+	zoomAt(z, avail.w / 2, avail.h / 2);
 }
+
+function stagePoint(e: MouseEvent) {
+	const r = wrap!.getBoundingClientRect();
+	return {
+		x: e.clientX - r.left - wrap!.clientLeft,
+		y: e.clientY - r.top - wrap!.clientTop,
+	};
+}
+
+function onwheel(e: WheelEvent) {
+	if (!image) return;
+	const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? avail.h : 1;
+	if (e.ctrlKey || e.metaKey) {
+		e.preventDefault();
+		// One wheel notch (about 100 px) is a 10 % step; a pinch sends
+		// many small deltas and zooms smoothly.
+		const steps = Math.max(-1, Math.min(1, (-e.deltaY * unit) / 100));
+		const c = stagePoint(e);
+		zoomAt(scale * 1.1 ** steps, c.x, c.y);
+		return;
+	}
+	if (fit) return;
+	e.preventDefault();
+	let dx = e.deltaX * unit;
+	let dy = e.deltaY * unit;
+	if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+	pan = clampPan(pan.x - dx, pan.y - dy, scale);
+}
+
+function viewDown(e: PointerEvent) {
+	if (e.button !== 1 || !image || !wrap) return;
+	e.preventDefault();
+	e.stopPropagation();
+	if (fit) {
+		pan = offset;
+		zoom = scale;
+		fit = false;
+	}
+	wrap.setPointerCapture(e.pointerId);
+	panning = { id: e.pointerId, x: e.clientX, y: e.clientY };
+}
+
+function viewMove(e: PointerEvent) {
+	if (!panning || e.pointerId !== panning.id) return;
+	e.stopPropagation();
+	pan = clampPan(
+		pan.x + e.clientX - panning.x,
+		pan.y + e.clientY - panning.y,
+		scale,
+	);
+	panning = { ...panning, x: e.clientX, y: e.clientY };
+}
+
+function viewUp(e: PointerEvent) {
+	if (!panning || e.pointerId !== panning.id) return;
+	e.stopPropagation();
+	panning = null;
+	if (wrap?.hasPointerCapture(e.pointerId))
+		wrap.releasePointerCapture(e.pointerId);
+}
+
+/** No autoscroll icon or middle-click paste while the view is dragged. */
+function blockMiddle(e: MouseEvent) {
+	if (e.button === 1) e.preventDefault();
+}
+
+// The panned view stays reachable when the stage gets smaller.
+$effect(() => {
+	if (fit || !avail.w) return;
+	const c = clampPan(pan.x, pan.y, scale);
+	if (c.x !== pan.x || c.y !== pan.y) pan = c;
+});
 
 // ------------------------------------------------------------ geometry
 
@@ -669,9 +773,25 @@ function cursorFor(h: string, rot: number) {
 }
 </script>
 
-<div class="stage-wrap" bind:this={wrap} {onwheel}>
+<div
+  class="stage-wrap"
+  class:panning
+  bind:this={wrap}
+  {onwheel}
+  onpointerdowncapture={viewDown}
+  onpointermovecapture={viewMove}
+  onpointerupcapture={viewUp}
+  onpointercancelcapture={viewUp}
+  onmousedown={blockMiddle}
+  onauxclick={blockMiddle}
+  role="presentation">
   {#if image}
-    <div class="stage" class:stale style:width="{W * scale}px" style:height="{H * scale}px">
+    <div
+      class="stage"
+      class:stale
+      style:width="{W * scale}px"
+      style:height="{H * scale}px"
+      style:transform="translate({offset.x}px, {offset.y}px)">
       <canvas bind:this={canvas} style:width="{W * scale}px" style:height="{H * scale}px"></canvas>
       <svg
         bind:this={svg}
@@ -750,17 +870,19 @@ function cursorFor(h: string, rot: number) {
   .stage-wrap {
     position: relative;
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
     min-height: 0;
-    display: grid;
-    place-items: center;
-    padding: 16px;
     background: repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 20px 20px;
   }
   .stage {
-    position: relative;
+    position: absolute;
+    left: 0;
+    top: 0;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-    grid-area: 1 / 1;
+  }
+  .stage-wrap.panning,
+  .stage-wrap.panning :global(*) {
+    cursor: grabbing !important;
   }
   .stage.stale canvas {
     opacity: 0.45;
@@ -854,18 +976,15 @@ function cursorFor(h: string, rot: number) {
     font-family: system-ui, sans-serif;
   }
   .zoom {
-    position: sticky;
-    bottom: 0;
-    justify-self: end;
-    align-self: end;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
     display: flex;
     gap: 2px;
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: 6px;
     padding: 2px;
-    grid-area: 1 / 1;
-    margin: -8px;
   }
   .zoom button {
     min-width: 28px;
