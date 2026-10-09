@@ -210,7 +210,7 @@ function finish() {
         {/if}
         <button class="row" onclick={(e) => pick(r.id, e)}>
           <span class="icon" class:grp={r.group}>{icons[String(r.l.type)] ?? '?'}</span>
-          <span class="name" class:off={vis === false}>{r.id}</span>
+          <span class="name" class:off={vis === false} title={r.id}>{r.id}</span>
           {#if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
           {#if r.l.repeat}<span class="badge" title="Repeated">⟳</span>{/if}
           {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}">↳{r.l.extends}</span>{/if}
@@ -264,7 +264,8 @@ function finish() {
     align-items: center;
     border-top: 2px solid transparent;
     border-bottom: 2px solid transparent;
-    padding-left: calc(var(--depth, 0) * 14px);
+    padding-left: calc(4px + var(--depth, 0) * 14px);
+    position: relative;
   }
   li.drop-above {
     border-top-color: var(--accent);
@@ -293,10 +294,17 @@ function finish() {
   }
   .fold {
     all: unset;
-    text-align: center;
+    width: 18px;
+    display: grid;
+    place-items: center;
+    height: 24px;
     cursor: pointer;
     color: var(--muted);
     font-size: 11px;
+    border-radius: 4px;
+  }
+  .fold:hover {
+    background: var(--line);
   }
   .row {
     all: unset;
@@ -345,23 +353,44 @@ function finish() {
   .dot.warning {
     background: var(--warn);
   }
+  /* The row tools float over the end of the name instead of reserving
+     width, so names are only cut while the tools are showing. */
   .tools {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
+    align-items: center;
     gap: 0;
-    padding-right: 4px;
-    opacity: 0;
+    padding: 0 4px;
+    visibility: hidden;
+    background: var(--hover);
   }
   li:hover .tools,
+  li:focus-within .tools,
   li.selected .tools {
-    opacity: 1;
+    visibility: visible;
+  }
+  li.selected .tools {
+    background: var(--sel);
   }
   .tool {
     all: unset;
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    height: 24px;
     cursor: pointer;
     font-size: 12px;
-    padding: 2px 4px;
     border-radius: 4px;
     color: var(--muted);
+  }
+  /* Rows sit flush in a scrolling list: draw their focus ring inside. */
+  .row:focus-visible,
+  .fold:focus-visible,
+  .tool:focus-visible {
+    outline-offset: -2px !important;
   }
   .tool:hover {
     background: var(--line);

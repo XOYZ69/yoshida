@@ -161,6 +161,8 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     align-items: center;
     gap: 5px;
     font-size: 12px;
+    min-height: 24px;
+    box-sizing: border-box;
     padding: 1px 8px 1px 3px;
     border-radius: 999px;
   }
@@ -175,7 +177,7 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     border-radius: 50%;
     font-size: 10px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-status);
   }
   .error .dot,
   .error .badge {
@@ -263,7 +265,7 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     border-radius: 50%;
     font-size: 11px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-status);
   }
   .main {
     flex: 1;

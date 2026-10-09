@@ -288,7 +288,8 @@ function insertRef(t: string, reopen: boolean) {
 }
 </script>
 
-<div class="expr" class:mono class:multiline class:hasfx={suggest && !!ctxFn} style:--rows={rows}>
+<!-- A long one-line value is cut at the edge: the tooltip shows all of it. -->
+<div class="expr" class:mono class:multiline class:hasfx={suggest && !!ctxFn} style:--rows={rows} title={!multiline && value.length > 18 ? value : undefined}>
   <div class="host" bind:this={host}></div>
   {#if suggest && ctxFn}
     <button

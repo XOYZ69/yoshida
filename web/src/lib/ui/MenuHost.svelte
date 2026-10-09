@@ -131,6 +131,7 @@ function onkeydown(e: KeyboardEvent) {
     color: var(--err);
   }
   .icon {
+    flex: none;
     width: 16px;
     text-align: center;
     color: var(--muted);

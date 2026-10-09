@@ -138,6 +138,7 @@ import {
 	openMenu,
 } from "./lib/ui/overlay.svelte";
 import Select from "./lib/ui/Select.svelte";
+import Icon from "./lib/ui/Icon.svelte";
 import Splitter from "./lib/ui/Splitter.svelte";
 import Window from "./lib/ui/Window.svelte";
 
@@ -191,6 +192,25 @@ const layoutDefaults = {
 };
 let sizes = $state(loadPref("yoshida.layout", layoutDefaults));
 const saveSizes = () => savePref("yoshida.layout", sizes);
+// Saved sizes are clamped to the window, so a panel dragged wide on a big
+// screen (or before the window shrank) never pushes the layout off-screen.
+let winW = $state(window.innerWidth);
+let winH = $state(window.innerHeight);
+const clamp = (v: number, lo: number, hi: number) =>
+	Math.max(lo, Math.min(Math.max(lo, hi), v));
+/** Space left for the side panels: the window minus the splitter tracks and the smallest middle column. */
+const sideRoom = $derived(winW - 10 - (mode === "build" ? 360 : 300));
+const rightW = $derived(clamp(sizes.right, 260, sideRoom - 200));
+const leftW = $derived(clamp(sizes.left, 200, sideRoom - rightW));
+const previewW = $derived(
+	sizes.preview === null ? null : clamp(sizes.preview, 260, sideRoom - 200),
+);
+const filesW = $derived(clamp(sizes.files, 200, sideRoom - (previewW ?? 320)));
+/** The problems panel leaves the stage (or editor) at least 240px plus the top bar. */
+const bottomMax = $derived(Math.max(60, winH - 320));
+const bottomH = $derived(
+	clamp(mode === "build" ? sizes.bottom : sizes.codeBottom, 60, bottomMax),
+);
 let appEl: HTMLDivElement | undefined = $state();
 /** Current size of a grid area, for a splitter that starts dragging. */
 function areaSize(sel: string, axis: "x" | "y") {
@@ -2004,6 +2024,8 @@ const typeLabels: Record<LayerType, string> = {
 
 <svelte:document onvisibilitychange={onHide} />
 <svelte:window
+	bind:innerWidth={winW}
+	bind:innerHeight={winH}
 	onkeydown={onKey}
 	oncopy={(e) => onCopy(e)}
 	oncut={(e) => onCopy(e, true)}
@@ -2011,6 +2033,7 @@ const typeLabels: Record<LayerType, string> = {
 />
 
 {#snippet previewBar()}
+	<span class="pick">
 	<span class="caption">Design</span>
 	<Select
 		value={setName}
@@ -2040,7 +2063,8 @@ const typeLabels: Record<LayerType, string> = {
 			renderPreview();
 		}}
 	/>
-	<span class="spacer"></span>
+	</span>
+	<span class="exports">
 	<button
 		onclick={exportPng}
 		title="Export this card as a PNG"
@@ -2059,6 +2083,7 @@ const typeLabels: Record<LayerType, string> = {
 			<input type="checkbox" bind:checked={useServer} /> on server
 		</label>
 	{/if}
+	</span>
 {/snippet}
 
 {#snippet filesPanel()}
@@ -2165,7 +2190,8 @@ const typeLabels: Record<LayerType, string> = {
 						disabled={!currentCard}
 						onclick={() =>
 							editCards({ op: "duplicate", index: cardIndex })}
-						title="Duplicate this card">⧉</button
+						title="Duplicate this card"
+						aria-label="Duplicate this card"><Icon name="copy" /></button
 					>
 					<button
 						disabled={!currentCard || cardIndex === 0}
@@ -2175,7 +2201,8 @@ const typeLabels: Record<LayerType, string> = {
 								index: cardIndex,
 								to: cardIndex - 1,
 							})}
-						title="Move up">↑</button
+						title="Move up"
+						aria-label="Move the card up"><Icon name="up" /></button
 					>
 					<button
 						disabled={!currentCard ||
@@ -2186,7 +2213,8 @@ const typeLabels: Record<LayerType, string> = {
 								index: cardIndex,
 								to: cardIndex + 1,
 							})}
-						title="Move down">↓</button
+						title="Move down"
+						aria-label="Move the card down"><Icon name="down" /></button
 					>
 					<button
 						disabled={!currentCard}
@@ -2199,7 +2227,8 @@ const typeLabels: Record<LayerType, string> = {
 								danger: true,
 							})) &&
 							editCards({ op: "delete", index: cardIndex })}
-						title="Delete this card">🗑</button
+						title="Delete this card"
+						aria-label="Delete this card"><Icon name="trash" /></button
 					>
 				</div>
 				{#if currentCard}
@@ -2226,14 +2255,12 @@ const typeLabels: Record<LayerType, string> = {
 	<div
 		bind:this={appEl}
 		class="app"
-		style:--left-w="{sizes.left}px"
-		style:--right-w="{sizes.right}px"
-		style:--bottom-h="{mode === 'build'
-			? sizes.bottom
-			: sizes.codeBottom}px"
-		style:--files-w="{sizes.files}px"
-		style:--preview-w={sizes.preview
-			? `${sizes.preview}px`
+		style:--left-w="{leftW}px"
+		style:--right-w="{rightW}px"
+		style:--bottom-h="{bottomH}px"
+		style:--files-w="{filesW}px"
+		style:--preview-w={previewW
+			? `${previewW}px`
 			: "minmax(320px, 1fr)"}
 		class:build={mode === "build"}
 		class:dropping
@@ -2424,7 +2451,7 @@ const typeLabels: Record<LayerType, string> = {
 					label="Left panel width"
 					size={() => areaSize(".left", "x")}
 					min={200}
-					max={900}
+					max={sideRoom - rightW}
 					onresize={(px) => (sizes.left = px)}
 					onreset={() => (sizes.left = layoutDefaults.left)}
 					ondone={saveSizes}
@@ -2438,7 +2465,13 @@ const typeLabels: Record<LayerType, string> = {
 							<button
 								disabled={!doc}
 								onclick={() => addLayer(t)}
-								title="Add a {t} layer">{typeLabels[t]}</button
+								aria-label="Add a {t} layer"
+								title="Add a {t} layer"
+								><span class="ico" aria-hidden="true"
+									>{typeLabels[t].split(" ")[0]}</span
+								><span class="lbl" aria-hidden="true"
+									>{typeLabels[t].replace(/^\S+\s/, "")}</span
+								></button
 							>
 						{/each}
 					</span>
@@ -2452,6 +2485,7 @@ const typeLabels: Record<LayerType, string> = {
 					handles={handlesFor}
 					{locked}
 					{stale}
+					staleNote={status}
 					interactive={!!doc}
 					onselect={(ids) => (selectedLayers = ids)}
 					ongesture={onGesture}
@@ -2468,7 +2502,7 @@ const typeLabels: Record<LayerType, string> = {
 					label="Right panel width"
 					size={() => areaSize(".right", "x")}
 					min={260}
-					max={900}
+					max={sideRoom - leftW}
 					onresize={(px) => (sizes.right = px)}
 					onreset={() => (sizes.right = layoutDefaults.right)}
 					ondone={saveSizes}
@@ -2536,7 +2570,7 @@ const typeLabels: Record<LayerType, string> = {
 					label="Files panel width"
 					size={() => areaSize(".files", "x")}
 					min={200}
-					max={900}
+					max={sideRoom - (previewW ?? 320)}
 					onresize={(px) => (sizes.files = px)}
 					onreset={() => (sizes.files = layoutDefaults.files)}
 					ondone={saveSizes}
@@ -2574,7 +2608,7 @@ const typeLabels: Record<LayerType, string> = {
 					label="Preview width"
 					size={() => areaSize(".preview-pane", "x")}
 					min={260}
-					max={2000}
+					max={sideRoom - filesW}
 					onresize={(px) => (sizes.preview = px)}
 					onreset={() => (sizes.preview = null)}
 					ondone={saveSizes}
@@ -2589,6 +2623,7 @@ const typeLabels: Record<LayerType, string> = {
 					handles={() => "none"}
 					{locked}
 					{stale}
+					staleNote={status}
 					interactive={false}
 					onselect={() => {}}
 					ongesture={() => {}}
@@ -2604,7 +2639,7 @@ const typeLabels: Record<LayerType, string> = {
 				label="Problems panel height"
 				size={() => areaSize(".problems-pane", "y")}
 				min={60}
-				max={1200}
+				max={bottomMax}
 				onresize={(px) =>
 					mode === "build"
 						? (sizes.bottom = px)
@@ -2762,14 +2797,23 @@ const typeLabels: Record<LayerType, string> = {
 		font-size: 12px;
 		padding: 2px 8px;
 	}
+	/* The top bar wraps onto a second row when it runs out of room, instead
+	   of squeezing its buttons into two-line labels. */
 	.top {
 		grid-area: top;
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 8px;
+		gap: 6px 8px;
 		padding: 6px 12px;
 		border-bottom: 1px solid var(--line);
 		background: var(--bg-bar);
+		min-width: 0;
+	}
+	.top > button,
+	.top > .segmented {
+		flex: none;
+		white-space: nowrap;
 	}
 	.brand {
 		font-size: 16px;
@@ -2806,6 +2850,9 @@ const typeLabels: Record<LayerType, string> = {
 		font-size: 12px;
 		color: var(--muted);
 		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 16em;
 	}
 	.saved.unsaved {
 		color: var(--warn);
@@ -2829,10 +2876,11 @@ const typeLabels: Record<LayerType, string> = {
 	.segmented button {
 		border: 0;
 		border-radius: 0;
+		white-space: nowrap;
 	}
 	.segmented button.active {
-		background: var(--accent);
-		color: #fff;
+		background: var(--accent-strong);
+		color: var(--on-accent);
 	}
 	.files,
 	.left {
@@ -2858,8 +2906,13 @@ const typeLabels: Record<LayerType, string> = {
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		overflow: hidden;
+		container-type: inline-size;
 	}
-	.toolbar {
+	/* Toolbars wrap whole groups, never single buttons; the export group
+	   stays on the right. */
+	.toolbar,
+	.pane-title.row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
@@ -2867,12 +2920,41 @@ const typeLabels: Record<LayerType, string> = {
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--line);
 	}
-	.toolbar .group {
+	.toolbar .group,
+	.pick,
+	.exports {
 		display: flex;
 		gap: 4px;
+		align-items: center;
+		flex: none;
+	}
+	.pick {
+		gap: 6px;
+		flex: 0 1 auto;
+		flex-wrap: wrap;
+		min-width: 0;
+	}
+	.exports {
+		margin-left: auto;
 	}
 	.toolbar .group button {
 		padding: 4px 8px;
+		white-space: nowrap;
+	}
+	.toolbar .group .ico {
+		display: inline-block;
+		min-width: 1em;
+		margin-right: 4px;
+		text-align: center;
+	}
+	/* A narrow stage keeps the layer buttons as icons (names in the tooltip). */
+	@container (max-width: 860px) {
+		.toolbar .group .lbl {
+			display: none;
+		}
+		.toolbar .group .ico {
+			margin-right: 0;
+		}
 	}
 	.sep {
 		width: 1px;
@@ -2921,10 +3003,9 @@ const typeLabels: Record<LayerType, string> = {
 		color: var(--muted);
 	}
 	.pane-title.row {
-		display: flex;
-		gap: 6px;
-		align-items: center;
 		font: inherit;
+		color: inherit;
+		padding: 6px 12px;
 	}
 	.image-view {
 		overflow: auto;
@@ -2941,6 +3022,7 @@ const typeLabels: Record<LayerType, string> = {
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
+		overflow: hidden;
 	}
 	.status {
 		padding: 4px 12px;
@@ -2991,7 +3073,8 @@ const typeLabels: Record<LayerType, string> = {
 		}
 		.app,
 		.app.build {
-			grid-template-columns: 1fr;
+			/* minmax(0, …): a wide code line must not widen the page. */
+			grid-template-columns: minmax(0, 1fr);
 			grid-template-rows: auto auto 60vh auto 240px;
 			grid-template-areas: "top" "files" "preview" "editor" "problems";
 			height: auto;
@@ -3035,11 +3118,16 @@ const typeLabels: Record<LayerType, string> = {
 		display: flex;
 		gap: 4px;
 	}
+	.card-tools button {
+		min-width: 30px;
+		min-height: 28px;
+	}
 	.card-id {
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		font-size: 12px;
+		color: var(--muted);
 	}
 	.card-id input {
 		flex: 1;

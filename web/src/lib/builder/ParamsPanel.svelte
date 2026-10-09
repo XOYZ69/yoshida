@@ -404,7 +404,7 @@ const itemTypes = ["text", "number", "integer", "bool", "color"];
             class="head"
             onclick={() => (open = open === name ? null : name)}>
             {#if canDrag}<span class="grip" aria-hidden="true">⋮⋮</span>{/if}
-            <span class="mono">{name}</span>
+            <span class="mono pname" title={name}>{name}</span>
             {#if p.label}<span class="label">{p.label}</span>{/if}
             <span class="type">{t}{p.required ? ', required' : ''}</span>
             {#if p.note}<span class="has-note" title={String(p.note)}>ⓘ</span>{/if}
@@ -529,7 +529,7 @@ const itemTypes = ["text", "number", "integer", "bool", "color"];
   {#if query && !matches.length}<p class="hint">No param matches '{query}'.</p>{/if}
 
   <div class="new">
-    <input class="mono" placeholder="new param name" bind:value={newName} onkeydown={(e) => e.key === 'Enter' && add()} />
+    <input class="mono" placeholder="param name" aria-label="New param name" bind:value={newName} onkeydown={(e) => e.key === 'Enter' && add()} />
     <Select value={newType} label="Type of the new param" options={paramTypes.map((pt) => ({ value: pt, label: pt, detail: typeHelp[pt] }))} onchange={(v) => (newType = v as ParamTypeName)} />
     <button onclick={add} disabled={!newName || !!nameError}>Add</button>
   </div>
@@ -626,6 +626,21 @@ const itemTypes = ["text", "number", "integer", "bool", "color"];
   .head .type {
     margin-left: auto;
     white-space: nowrap;
+    flex: none;
+  }
+  /* Long names are cut with an ellipsis; the type stays visible. */
+  .pname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .head .label {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .head:focus-visible {
+    outline-offset: -2px !important;
   }
   .head:hover {
     background: var(--hover);

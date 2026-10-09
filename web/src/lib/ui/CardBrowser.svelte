@@ -131,7 +131,7 @@ $effect(() => {
 
 const rowH = 30;
 /** The table scrolls sideways when the columns do not fit. */
-const tableW = $derived(20 + 48 + 120 + columns.length * 98 + 8);
+const tableW = $derived(20 + 48 + 120 + columns.length * 88 + 8);
 const tableFirst = $derived(Math.max(0, Math.floor(scrollTop / rowH) - 5));
 const tableLast = $derived(
 	Math.min(rows.length, Math.ceil((scrollTop + viewH) / rowH) + 5),
@@ -215,7 +215,7 @@ $effect(() => {
 
   <div class="scroll" bind:this={scroller} onscroll={() => (scrollTop = scroller!.scrollTop)}>
     {#if view === 'table'}
-      <div class="thead" style:min-width="{tableW}px" style:grid-template-columns="48px minmax(120px, 1.2fr) {columns.map(() => 'minmax(90px, 1fr)').join(' ')}">
+      <div class="thead" style:min-width="{tableW}px" style:grid-template-columns="48px minmax(120px, 1.2fr) {columns.map(() => 'minmax(80px, 1fr)').join(' ')}">
         <button onclick={() => sort('#')}>#{sortBy === '#' ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</button>
         <button onclick={() => sort('id')}>id{sortBy === 'id' ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</button>
         {#each columns as p (p.name)}
@@ -230,7 +230,7 @@ $effect(() => {
             class="tr"
             class:current={r.i === index}
             style:top="{(tableFirst + k) * rowH}px"
-            style:grid-template-columns="48px minmax(120px, 1.2fr) {columns.map(() => 'minmax(90px, 1fr)').join(' ')}"
+            style:grid-template-columns="48px minmax(120px, 1.2fr) {columns.map(() => 'minmax(80px, 1fr)').join(' ')}"
             ondblclick={() => onpick(r.i)}
             onclick={() => onpick(r.i)}>
             <span class="num">{r.i + 1}</span>
@@ -307,8 +307,8 @@ $effect(() => {
     border-radius: 0;
   }
   .seg button.active {
-    background: var(--accent);
-    color: #fff;
+    background: var(--accent-strong);
+    color: var(--on-accent);
   }
   .zoom {
     display: flex;

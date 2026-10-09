@@ -197,9 +197,9 @@ function onkeydown(e: KeyboardEvent) {
     background: transparent;
   }
   .primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--on-accent);
     font-weight: 600;
   }
   .primary.danger {

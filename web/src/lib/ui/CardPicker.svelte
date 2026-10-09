@@ -82,6 +82,8 @@ function pick(i: number) {
     margin-right: 4px;
   }
   .step {
+    min-width: 26px;
+    min-height: 26px;
     padding: 3px 8px;
   }
   .current {

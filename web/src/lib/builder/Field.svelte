@@ -166,19 +166,29 @@ function scrubEnd() {
     {:else}
       <ExprInput value={text} suggest={kind !== 'text'} mono={exprMode || kind === 'expr'} {placeholder} {label} expect={expects} oncommit={commitText} />
     {/if}
-    {#if kind === 'number' && allowAuto}
-      <button class="mini" class:on={shown === 'auto'} title="Keep the image's aspect ratio" onclick={() => onchange(shown === 'auto' ? 100 : 'auto')}>auto</button>
-    {/if}
-    {#if kind === 'color' || kind === 'bool'}
-      <button class="mini" class:on={exprMode} title="Switch between a plain value and an expression" onclick={() => (isExpr ? onchange(kind === 'bool' ? true : '#000000') : (forceExpr = !forceExpr))}>{exprMode ? 'expr' : 'value'}</button>
-    {:else if kind === 'number' && isExpr}
-      <span class="mini on" title="This value is an expression">expr</span>
-    {/if}
-    {#if bindings.length}
-      <span class="link"><Select compact value="" placeholder="param" label="Bind {label} to a param" title="Bind to a param" options={bindings} onchange={bind} /></span>
-    {/if}
-    {#if optional && !unset && kind !== 'enum'}
-      <button class="mini" title="Remove (use the default)" onclick={() => onchange(undefined)}>×</button>
+    {#if kind !== 'enum'}
+      <!-- Trailing buttons sit in one group pushed to the right edge, and the
+           reset button's slot is kept even when it is hidden, so the param
+           pickers line up from row to row. The group wraps below the value
+           when the panel is narrow instead of overflowing it. -->
+      <span class="trail">
+        {#if kind === 'number' && allowAuto}
+          <button class="mini" class:on={shown === 'auto'} title="Keep the image's aspect ratio" onclick={() => onchange(shown === 'auto' ? 100 : 'auto')}>auto</button>
+        {/if}
+        {#if kind === 'color' || kind === 'bool'}
+          <button class="mini" class:on={exprMode} title="Switch between a plain value and an expression" onclick={() => (isExpr ? onchange(kind === 'bool' ? true : '#000000') : (forceExpr = !forceExpr))}>{exprMode ? 'expr' : 'value'}</button>
+        {:else if kind === 'number' && isExpr}
+          <span class="mini on" title="This value is an expression">expr</span>
+        {/if}
+        {#if bindings.length}
+          <span class="link"><Select compact value="" placeholder="param" label="Bind {label} to a param" title="Bind to a param" options={bindings} onchange={bind} /></span>
+        {/if}
+        {#if optional && !unset}
+          <button class="mini x" title="Remove (use the default)" aria-label="Remove {label} (use the default)" onclick={() => onchange(undefined)}>×</button>
+        {:else}
+          <span class="x" aria-hidden="true"></span>
+        {/if}
+      </span>
     {/if}
   </div>
   {#if error}<div class="error">{error}</div>{/if}
@@ -207,9 +217,27 @@ function scrubEnd() {
   }
   .control {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     align-items: center;
     min-width: 0;
+  }
+  .control > :global(.expr) {
+    flex: 1 1 48px;
+  }
+  .trail {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-left: auto;
+    flex: none;
+  }
+  .x {
+    flex: none;
+    width: 20px;
+    min-height: 22px;
+    padding: 0;
   }
   .unset .control :global(input),
   .unset .control :global(textarea) {
@@ -224,6 +252,11 @@ function scrubEnd() {
     border-color: var(--err);
   }
   .mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-height: 22px;
     padding: 2px 5px;
     font-size: 11px;
     border-radius: 4px;
@@ -246,6 +279,8 @@ function scrubEnd() {
   }
   input[type='checkbox'] {
     margin: 4px 0;
+    width: 16px;
+    height: 16px;
   }
   .error {
     grid-column: 2;

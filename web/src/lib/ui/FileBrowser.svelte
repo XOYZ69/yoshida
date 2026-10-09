@@ -8,6 +8,7 @@
 import { buildTree, dirOf, join, nameError, type TreeNode } from "../paths";
 import { type Files, isImage } from "../project";
 import { formatSize } from "../store";
+import Icon from "./Icon.svelte";
 import { askText, type MenuItem, openMenu } from "./overlay.svelte";
 
 let {
@@ -257,8 +258,8 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
 <div class="browser">
   <div class="bar">
     <input type="search" placeholder="Find a file…" bind:value={query} aria-label="Find a file" />
-    <button title="Upload files to {folder ? `${folder}/` : 'the project root'}" onclick={() => onupload(folder)}>⤒</button>
-    <button title="New folder in {folder ? `${folder}/` : 'the project root'}" onclick={() => newFolder(folder)}>＋📁</button>
+    <button title="Upload files to {folder ? `${folder}/` : 'the project root'}" aria-label="Upload files" onclick={() => onupload(folder)}><Icon name="upload" /></button>
+    <button title="New folder in {folder ? `${folder}/` : 'the project root'}" aria-label="New folder" onclick={() => newFolder(folder)}><Icon name="folder-plus" /></button>
   </div>
   <div class="target" title="Uploads and new folders go here. Click a folder to change it.">
     Adding to <span class="mono">{folder ? `${folder}/` : 'project root'}</span>
@@ -332,6 +333,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     min-width: 0;
   }
   .bar button {
+    min-width: 30px;
     padding: 2px 8px;
   }
   .target {

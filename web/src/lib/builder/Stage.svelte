@@ -17,6 +17,7 @@ let {
 	handles,
 	locked,
 	stale = false,
+	staleNote = "",
 	interactive = true,
 	onselect,
 	ongesture,
@@ -29,6 +30,8 @@ let {
 	handles: (id: string) => HandleMode;
 	locked: Set<string>;
 	stale?: boolean;
+	/** Why the picture is dimmed, shown over it while `stale`. */
+	staleNote?: string;
 	interactive?: boolean;
 	onselect: (ids: string[]) => void;
 	ongesture: (g: Gesture, phase: "start" | "move" | "end") => void;
@@ -732,12 +735,13 @@ function cursorFor(h: string, rot: number) {
           {/if}
         {/if}
       </svg>
+      {#if stale && staleNote}<div class="stale-note" role="status">{staleNote}</div>{/if}
     </div>
   {/if}
   <div class="zoom">
-    <button onclick={() => setZoom(scale / 1.25)} title="Zoom out">−</button>
+    <button onclick={() => setZoom(scale / 1.25)} title="Zoom out" aria-label="Zoom out">−</button>
     <button class="pct" onclick={() => setZoom(1)} title="Actual size">{Math.round(scale * 100)}%</button>
-    <button onclick={() => setZoom(scale * 1.25)} title="Zoom in">+</button>
+    <button onclick={() => setZoom(scale * 1.25)} title="Zoom in" aria-label="Zoom in">+</button>
     <button class:on={fit} onclick={() => (fit = true)} title="Fit to the window">Fit</button>
   </div>
 </div>
@@ -761,6 +765,24 @@ function cursorFor(h: string, rot: number) {
   .stage.stale canvas {
     opacity: 0.45;
     filter: grayscale(0.6);
+  }
+  /* Says why the picture is dimmed, so it does not look like a broken canvas. */
+  .stale-note {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    translate: -50% 0;
+    max-width: calc(100% - 24px);
+    box-sizing: border-box;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    color: var(--fg);
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
   }
   canvas,
   svg {
@@ -846,6 +868,8 @@ function cursorFor(h: string, rot: number) {
     margin: -8px;
   }
   .zoom button {
+    min-width: 28px;
+    min-height: 26px;
     padding: 2px 8px;
     border: 0;
   }
