@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (wiki)
+    url: https://github.com/XOYZ69/yoshida/wiki
+    about: Guides, format reference and every diagnostic code explained.

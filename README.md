@@ -64,6 +64,19 @@ npm run wasm && npm run examples && npm run dev    # editor on http://localhost:
 
 More in [Building from Source](../../wiki/Building-from-Source).
 
+## Third-party code
+
+yoshida bundles a few small libraries so that it builds without any C dependencies installed:
+
+| Library                                                  | Used for                              | License                   |
+| -------------------------------------------------------- | ------------------------------------- | ------------------------- |
+| [stb_image](https://github.com/nothings/stb)             | Loading PNG, JPEG, GIF and BMP images | Public domain / MIT       |
+| [stb_truetype](https://github.com/nothings/stb)          | Reading fonts and drawing text        | Public domain / MIT       |
+| [simplewebp](https://github.com/MikuAuahDark/simplewebp) | Loading WebP images                   | BSD-3-Clause              |
+| [Lato](https://www.latofonts.com)                        | Default font                          | SIL Open Font License 1.1 |
+
+The C libraries are single-header files in [`src/c/`](src/c). Why they are large and how to update them is described in [`src/c/README.md`](src/c/README.md).
+
 ## Documentation
 
 The **[wiki](../../wiki)** has a page for every feature:
