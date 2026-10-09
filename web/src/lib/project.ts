@@ -62,10 +62,22 @@ export async function filesFromInput(
 }
 
 // File System Access API (Chromium): open a folder read/write.
-type DirHandle = any;
+type DirHandle = FileSystemDirectoryHandle;
+
+type PickerWindow = Window & {
+	showDirectoryPicker?: (options: {
+		mode: "readwrite";
+	}) => Promise<FileSystemDirectoryHandle>;
+};
 
 export function canOpenWritable() {
-	return typeof (window as any).showDirectoryPicker === "function";
+	return typeof (window as PickerWindow).showDirectoryPicker === "function";
+}
+
+function showDirectoryPicker(): Promise<DirHandle> {
+	const pick = (window as PickerWindow).showDirectoryPicker;
+	if (!pick) throw new Error("This browser cannot open folders for writing.");
+	return pick({ mode: "readwrite" });
 }
 
 export async function openWritable(): Promise<{
@@ -73,16 +85,15 @@ export async function openWritable(): Promise<{
 	files: Files;
 	handle: DirHandle;
 }> {
-	const handle: DirHandle = await (window as any).showDirectoryPicker({
-		mode: "readwrite",
-	});
+	const handle = await showDirectoryPicker();
 	const files: Files = new Map();
 	const walk = async (dir: DirHandle, prefix: string) => {
 		for await (const [name, entry] of dir.entries()) {
 			if (entry.kind === "directory") {
-				if (!skipDirs.has(name)) await walk(entry, `${prefix}${name}/`);
+				if (!skipDirs.has(name))
+					await walk(entry as DirHandle, `${prefix}${name}/`);
 			} else {
-				const file = await entry.getFile();
+				const file = await (entry as FileSystemFileHandle).getFile();
 				files.set(prefix + name, new Uint8Array(await file.arrayBuffer()));
 			}
 		}
@@ -102,7 +113,7 @@ export async function writeFile(
 		dir = await dir.getDirectoryHandle(p, { create: true });
 	const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
 	const w = await fh.createWritable();
-	await w.write(data);
+	await w.write(data as Uint8Array<ArrayBuffer>);
 	await w.close();
 }
 
@@ -140,7 +151,7 @@ export function download(
  * fit in 100 columns. Key order is kept as written.
  */
 export function formatJson(value: unknown): string {
-	return fmt(value, 0) + "\n";
+	return `${fmt(value, 0)}\n`;
 }
 
 function isScalar(v: unknown) {
@@ -220,7 +231,7 @@ export function parseCsv(text: string): string[][] {
 export function writeCsv(rows: string[][]): string {
 	const q = (s: string) =>
 		/[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-	return rows.map((r) => r.map(q).join(",")).join("\n") + "\n";
+	return `${rows.map((r) => r.map(q).join(",")).join("\n")}\n`;
 }
 
 // ---------------------------------------------------------------- card edits
@@ -445,7 +456,7 @@ export function importPath(name: string) {
 
 /** Asks for a folder to write to (File System Access API). */
 export async function pickDirectory(): Promise<DirHandle> {
-	return (window as any).showDirectoryPicker({ mode: "readwrite" });
+	return showDirectoryPicker();
 }
 
 // ---------------------------------------------------------------- project files

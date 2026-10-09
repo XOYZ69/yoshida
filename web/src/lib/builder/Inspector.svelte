@@ -147,8 +147,8 @@ const myDiags = $derived(
 		(d) =>
 			d.file === designFile &&
 			(ptr
-				? (d.path === ptr || d.path.startsWith(ptr + "/")) &&
-					!d.path.startsWith(ptr + "/layers/")
+				? (d.path === ptr || d.path.startsWith(`${ptr}/`)) &&
+					!d.path.startsWith(`${ptr}/layers/`)
 				: !d.path.startsWith("/layers/")),
 	),
 );
@@ -163,7 +163,7 @@ function errorAt(path: string[]) {
 	const p = ptr ? `${ptr}/${path.join("/")}` : `/${path.join("/")}`;
 	const d = myDiags.find(
 		(x) =>
-			x.severity === "error" && (x.path === p || x.path.startsWith(p + "/")),
+			x.severity === "error" && (x.path === p || x.path.startsWith(`${p}/`)),
 	);
 	return d ? d.message.replace(/^layer '[^']*': /, "") : "";
 }
@@ -176,7 +176,7 @@ function set(path: string[], v: Json | undefined) {
 }
 
 function setDoc(path: string[], v: Json | undefined) {
-	editDoc((d) => setPath(d, path, v), "doc." + path.join("."));
+	editDoc((d) => setPath(d, path, v), `doc.${path.join(".")}`);
 }
 
 let idError = $state("");

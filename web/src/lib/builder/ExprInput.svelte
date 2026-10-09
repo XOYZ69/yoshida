@@ -160,9 +160,19 @@ function extensions(): Extension[] {
 	const keys = keymap.of([
 		{
 			key: "Enter",
-			run: (v) => (multiline ? insertNewline(v) : (commit(), true)),
+			run: (v) => {
+				if (multiline) return insertNewline(v);
+				commit();
+				return true;
+			},
 		},
-		{ key: "Mod-Enter", run: () => (commit(), true) },
+		{
+			key: "Mod-Enter",
+			run: () => {
+				commit();
+				return true;
+			},
+		},
 		{ key: "Escape", run: revert },
 		...defaultKeymap.filter((k) => k.key !== "Enter" && k.key !== "Mod-Enter"),
 		...historyKeymap,

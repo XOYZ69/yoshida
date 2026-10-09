@@ -130,9 +130,9 @@ export type Refs = {
 
 function walkStrings(v: unknown, fn: (s: string) => void) {
 	if (typeof v === "string") fn(v);
-	else if (Array.isArray(v)) v.forEach((x) => walkStrings(x, fn));
+	else if (Array.isArray(v)) for (const x of v) walkStrings(x, fn);
 	else if (v && typeof v === "object")
-		Object.values(v).forEach((x) => walkStrings(x, fn));
+		for (const x of Object.values(v)) walkStrings(x, fn);
 }
 
 /** Where each of `paths` is referred to in the project's JSON and CSV files. */
@@ -147,8 +147,11 @@ export function findRefs(files: Files, paths: string[]): Map<string, Refs> {
 		try {
 			const text = textOf(d);
 			if (f.toLowerCase().endsWith(".csv"))
-				parseCsv(text).forEach((r) => strings.push(...r));
-			else walkStrings(JSON.parse(text), (s) => strings.push(s));
+				for (const r of parseCsv(text)) strings.push(...r);
+			else
+				walkStrings(JSON.parse(text), (s) => {
+					strings.push(s);
+				});
 		} catch {
 			continue;
 		}

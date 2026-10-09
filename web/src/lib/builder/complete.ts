@@ -82,8 +82,8 @@ export function complete(
 			for (const l of ctx.layers)
 				if (l.id.startsWith(prefix))
 					items.push({
-						label: "@" + l.id,
-						insert: "@" + l.id + ".",
+						label: `@${l.id}`,
+						insert: `@${l.id}.`,
 						detail: `${l.type} layer`,
 					});
 		} else {
@@ -118,10 +118,10 @@ export function complete(
 				});
 		for (const [f, d] of functions)
 			if (f.startsWith(word))
-				items.push({ label: f + "()", insert: f + "(", detail: d });
+				items.push({ label: `${f}()`, insert: `${f}(`, detail: d });
 		for (const b of Object.keys(builtins))
 			if (b.startsWith(word))
-				items.push({ label: b + ".", insert: b + ".", detail: "built-in" });
+				items.push({ label: `${b}.`, insert: `${b}.`, detail: "built-in" });
 	}
 	const exact = items.length === 1 && items[0].insert === word;
 	return items.length && !exact ? { from, items: items.slice(0, 40) } : null;

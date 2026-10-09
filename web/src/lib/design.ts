@@ -994,7 +994,7 @@ export function renameInTemplate(
 				out += src.slice(i);
 				break;
 			}
-			out += "{" + renameInExpr(src.slice(i + 1, end), from, to) + "}";
+			out += `{${renameInExpr(src.slice(i + 1, end), from, to)}}`;
 			i = end + 1;
 			continue;
 		}

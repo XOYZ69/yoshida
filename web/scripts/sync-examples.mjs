@@ -60,7 +60,7 @@ for (const name of fs.readdirSync(src).sort()) {
 }
 fs.writeFileSync(
 	path.join(dst, "index.json"),
-	JSON.stringify(index, null, 2) + "\n",
+	`${JSON.stringify(index, null, 2)}\n`,
 );
 console.log(
 	`synced ${index.length} example(s) into ${dst}` +

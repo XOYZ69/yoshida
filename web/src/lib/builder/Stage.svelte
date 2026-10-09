@@ -568,7 +568,7 @@ function sameInstance(a: Placed, b: Placed) {
 /** Box and rotation of `b` as the current gesture shows it. */
 function shown(b: Placed): Placed {
 	const d = active;
-	if (!d || !d.ids.includes(b.id)) return b;
+	if (!d?.ids.includes(b.id)) return b;
 	if (d.kind === "move")
 		return {
 			...b,
@@ -592,7 +592,7 @@ function shown(b: Placed): Placed {
 function shownPoints(b: Placed): [number, number][] {
 	const pts = b.points ?? [];
 	const d = active;
-	if (!d || !d.ids.includes(b.id)) return pts;
+	if (!d?.ids.includes(b.id)) return pts;
 	if (d.kind === "move") return pts.map(([x, y]) => [x + d.dx, y + d.dy]);
 	if (d.kind === "point")
 		return pts.map(([x, y], i) =>
@@ -662,7 +662,7 @@ const handleAngle: Record<string, number> = {
 };
 function cursorFor(h: string, rot: number) {
 	const a = (((handleAngle[h] + rot) % 360) + 360) % 360;
-	return cursorOrder[Math.round(a / 45) % 4] + "-resize";
+	return `${cursorOrder[Math.round(a / 45) % 4]}-resize`;
 }
 </script>
 

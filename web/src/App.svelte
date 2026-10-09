@@ -152,7 +152,7 @@ let projectId: string | null = $state(null);
 let myProjects = $state.raw<ProjectMeta[]>([]);
 let files = $state.raw<Files>(new Map());
 let dirty = $state.raw(new Set<string>());
-let dirHandle: any = $state(null);
+let dirHandle: FileSystemDirectoryHandle | null = $state(null);
 let selected: string | null = $state(null);
 let check = $state.raw<CheckResult | null>(null);
 let setName = $state("");
@@ -317,7 +317,7 @@ onMount(async () => {
 async function openProject(
 	name: string,
 	f: Files,
-	handle: any = null,
+	handle: FileSystemDirectoryHandle | null = null,
 	id: string | null = null,
 	saved = false,
 ) {
@@ -946,7 +946,7 @@ async function refresh() {
 }
 
 async function renderPreview() {
-	if (!currentSet || !currentSet.cards.length) {
+	if (!currentSet?.cards.length) {
 		lastRender = null;
 		stale = !!image;
 		status = sets.length ? "This set has no cards." : "No designs found.";
@@ -1131,12 +1131,18 @@ function editCards(op: CardListOp) {
 let cardIdError = $state("");
 
 function renameCard(id: string) {
-	if (!currentSet || !currentCard || id === currentCard.id)
-		return (cardIdError = "");
-	if (!cardIdRe.test(id))
-		return (cardIdError = "Use letters, digits, ., _ and - only.");
-	if (currentSet.cards.some((c) => c.id === id))
-		return (cardIdError = `There is already a card '${id}'.`);
+	if (!currentSet || !currentCard || id === currentCard.id) {
+		cardIdError = "";
+		return cardIdError;
+	}
+	if (!cardIdRe.test(id)) {
+		cardIdError = "Use letters, digits, ., _ and - only.";
+		return cardIdError;
+	}
+	if (currentSet.cards.some((c) => c.id === id)) {
+		cardIdError = `There is already a card '${id}'.`;
+		return cardIdError;
+	}
 	cardIdError = "";
 	editCards({ op: "rename", index: cardIndex, id });
 }
@@ -1296,11 +1302,10 @@ async function removeLayers(ids: string[]) {
 		});
 		if (!ok) return;
 	}
-	editDoc((d) =>
-		ids
-			.filter((id) => !ancestorsOf(d, id).some((a) => ids.includes(a)))
-			.forEach((id) => deleteLayer(d, id)),
-	);
+	editDoc((d) => {
+		for (const id of ids)
+			if (!ancestorsOf(d, id).some((a) => ids.includes(a))) deleteLayer(d, id);
+	});
 	selectedLayers = selectedLayers.filter((x) => !gone.has(x));
 }
 
@@ -1479,7 +1484,10 @@ function layerMenu(e: MouseEvent, id: string | null) {
 		{
 			label: "Cut",
 			shortcut: "Ctrl+X",
-			action: () => (copyToMemory(ids), removeLayers(ids)),
+			action: () => {
+				copyToMemory(ids);
+				removeLayers(ids);
+			},
 		},
 		{
 			label: "Paste above",

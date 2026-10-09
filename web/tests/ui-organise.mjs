@@ -20,7 +20,7 @@ const ctx = await b.newContext({
 const p = await ctx.newPage();
 const logs = [];
 let failed = 0;
-p.on("pageerror", (e) => logs.push("pageerror: " + e.message));
+p.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
 p.on(
 	"console",
 	(m) =>
@@ -28,7 +28,7 @@ p.on(
 		!/api\/capabilities|status of 404|status of 502/.test(
 			m.text() + m.location().url,
 		) &&
-		logs.push("console: " + m.text()),
+		logs.push(`console: ${m.text()}`),
 );
 const ok = (name, cond, extra = "") => {
 	if (!cond) failed++;

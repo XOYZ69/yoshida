@@ -159,7 +159,7 @@ export function fnSignature(
 	active = -1,
 ): { text: string; parts: { text: string; active: boolean }[] } {
 	const parts: { text: string; active: boolean }[] = [
-		{ text: f.name + "(", active: false },
+		{ text: `${f.name}(`, active: false },
 	];
 	const last = f.args.length - 1;
 	const act = active < 0 ? -1 : Math.min(active, last);
@@ -210,7 +210,7 @@ const bounds: FieldDoc[] = [
 	["h", "Final height in pixels."],
 	["cx", "Horizontal centre in pixels."],
 	["cy", "Vertical centre in pixels."],
-].map(([f, doc]) => ({ name: "bounds." + f, type: "number", doc }));
+].map(([f, doc]) => ({ name: `bounds.${f}`, type: "number", doc }));
 
 const common: FieldDoc[] = [
 	...bounds,

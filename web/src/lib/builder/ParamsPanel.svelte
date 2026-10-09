@@ -259,13 +259,16 @@ function add() {
 let renameError = $state("");
 
 function rename(from: string, to: string) {
-	if (to === from) return (renameError = "");
+	const fail = (msg: string) => {
+		renameError = msg;
+		return msg;
+	};
+	if (to === from) return fail("");
 	if (!identRe.test(to))
-		return (renameError =
-			"Letters, digits and _ only, not starting with a digit");
-	if (reserved.has(to)) return (renameError = "This name is reserved");
+		return fail("Letters, digits and _ only, not starting with a digit");
+	if (reserved.has(to)) return fail("This name is reserved");
 	if (params.some(([n]) => n === to))
-		return (renameError = `There is already a param '${to}'`);
+		return fail(`There is already a param '${to}'`);
 	renameError = "";
 	onrename(from, to);
 	open = to;

@@ -84,7 +84,7 @@ export class Engine {
 	private pending = new Map<
 		number,
 		{
-			resolve: (v: any) => void;
+			resolve: (v: unknown) => void;
 			reject: (e: Error) => void;
 			progress?: (p: number) => void;
 		}
@@ -116,7 +116,11 @@ export class Engine {
 	): Promise<T> {
 		const id = this.nextId++;
 		return new Promise<T>((resolve, reject) => {
-			this.pending.set(id, { resolve, reject, progress });
+			this.pending.set(id, {
+				resolve: resolve as (v: unknown) => void,
+				reject,
+				progress,
+			});
 			this.worker.postMessage({ id, ...msg }, transfer);
 		});
 	}

@@ -172,14 +172,14 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 	}
 	for (const l of ctx.layers) {
 		out.push({
-			label: "@" + l.id,
+			label: `@${l.id}`,
 			kind: "layer",
 			detail: `${l.type} layer`,
 			section: S.layers,
 			fitness: 1,
-			apply: insertThenComplete("@" + l.id + "."),
+			apply: insertThenComplete(`@${l.id}.`),
 			info: info(
-				"@" + l.id,
+				`@${l.id}`,
 				`Read a value of the ${l.type} layer '${l.id}', e.g. @${l.id}.bounds.bottom.`,
 			),
 			boost: 0,
@@ -189,10 +189,10 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 		out.push({
 			label: name,
 			kind: "builtin",
-			detail: b.fields.map((f) => "." + f.name).join(" "),
+			detail: b.fields.map((f) => `.${f.name}`).join(" "),
 			section: S.builtins,
 			fitness: 1,
-			apply: insertThenComplete(name + "."),
+			apply: insertThenComplete(`${name}.`),
 			info: info(
 				name,
 				b.doc,
@@ -209,14 +209,14 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 				{
 					label: f.name,
 					kind: "fn",
-					detail: "→ " + f.ret,
+					detail: `→ ${f.ret}`,
 					section: S.functions,
 					fitness: fit(f.ret, expect),
-					apply: insertThenComplete(f.name + "("),
+					apply: insertThenComplete(`${f.name}(`),
 					info: info(
 						signatureNode(f),
 						f.doc,
-						"e.g. " + f.example,
+						`e.g. ${f.example}`,
 						mismatch(f.ret, expect),
 					),
 				},
@@ -287,7 +287,7 @@ function keyOpts(
 	const look = lookupType(item);
 	const what = look.field ? `its ${look.field}` : "the whole item";
 	const esc = (k: string, q: string) =>
-		k.replace(/\\/g, "\\\\").replace(new RegExp(q, "g"), "\\" + q);
+		k.replace(/\\/g, "\\\\").replace(new RegExp(q, "g"), `\\${q}`);
 	return (p.keys ?? []).map((k) => {
 		const o: Opt = opt(
 			{
@@ -308,7 +308,7 @@ function keyOpts(
 			expect,
 			2,
 		);
-		if (quote) o.apply = esc(k, quote.q) + (quote.closed ? "" : quote.q + "]");
+		if (quote) o.apply = esc(k, quote.q) + (quote.closed ? "" : `${quote.q}]`);
 		else if (!identRe.test(k)) {
 			// Replace the dot as well: `list.` + key becomes `list["key"]`.
 			o.apply = (view: EditorView, c: Completion, from: number, to: number) => {
@@ -407,7 +407,7 @@ export function exprCompletion(
 				if (!options.length) return null;
 				return { from, options, validFor: /^\w*$/ };
 			} else if (
-				list &&
+				typeof list === "object" &&
 				list.item &&
 				rest.split(".").length === 2 &&
 				lookupType(list.item).type === "item"

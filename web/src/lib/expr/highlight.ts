@@ -31,7 +31,7 @@ class Swatch extends WidgetType {
 		// 16-bit colors: keep the high byte of each channel.
 		const hex = this.color.slice(1);
 		const c = hex.length >= 12 ? hex.replace(/(..)../g, "$1") : hex;
-		s.style.setProperty("--c", "#" + c);
+		s.style.setProperty("--c", `#${c}`);
 		return s;
 	}
 	ignoreEvent() {
@@ -41,11 +41,11 @@ class Swatch extends WidgetType {
 
 const marks = new Map<string, Decoration>();
 function mark(kind: string, note?: string) {
-	const key = kind + "\0" + (note ?? "");
+	const key = `${kind}\0${note ?? ""}`;
 	let d = marks.get(key);
 	if (!d) {
 		d = Decoration.mark({
-			class: "yx-" + kind,
+			class: `yx-${kind}`,
 			attributes: note ? { title: note } : undefined,
 		});
 		marks.set(key, d);

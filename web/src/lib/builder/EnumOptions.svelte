@@ -45,14 +45,19 @@ function add(raw: string) {
 async function rename(i: number, raw: string, input: HTMLInputElement) {
 	const to = raw.trim();
 	const from = options[i];
-	if (to === from) return (error = "");
+	if (to === from) {
+		error = "";
+		return error;
+	}
 	if (!to) {
 		input.value = from;
-		return (error = "An option cannot be empty; use × to remove it.");
+		error = "An option cannot be empty; use × to remove it.";
+		return error;
 	}
 	if (options.includes(to)) {
 		input.value = from;
-		return (error = `'${to}' is already an option.`);
+		error = `'${to}' is already an option.`;
+		return error;
 	}
 	error = "";
 	if (templates.length) {
