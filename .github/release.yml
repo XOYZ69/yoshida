@@ -1,0 +1,17 @@
+# Categories for generated release notes. Used by GitHub's "Generate release
+# notes" button and by .github/scripts/release-notes.mjs (PR preview and the
+# release workflow). Keep it to this simple shape: inline label lists only.
+changelog:
+  exclude:
+    labels: [skip-changelog, duplicate, wontfix]
+  categories:
+    - title: Breaking changes
+      labels: [breaking-change]
+    - title: New features
+      labels: [feature_wish, enhancement]
+    - title: Bug fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Other changes
+      labels: ['*']
