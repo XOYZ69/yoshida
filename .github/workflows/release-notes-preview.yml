@@ -1,0 +1,39 @@
+# Posts (and keeps updating) one comment on every PR to master showing what
+# the release notes will contain, including this PR.
+#
+# pull_request_target runs the workflow from master, so a PR cannot change the
+# script, and it gives fork PRs a token that can comment. Never check out or
+# run the PR's own code here; the title, body and labels are only read as data.
+name: Release notes preview
+
+on:
+  pull_request_target:
+    branches: [master]
+    types: [opened, reopened, edited, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: release-notes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No ref: pull_request_target checks out the base branch (master).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Update the preview comment
+        run: node .github/scripts/release-notes.mjs preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
