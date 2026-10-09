@@ -389,25 +389,25 @@ const designsAfter = await p.locator("[role=option]").count();
 await p.keyboard.press("Escape");
 ok("new design survives reload", designsAfter === 2, String(designsAfter));
 
-// Export the project as a zip with its images, then open that zip
+// Export the project as a .yoshida file with its images, then open it
 const dl = p.waitForEvent("download");
-await p.click('header button:has-text("Export zip")');
-const zipPath = `${shots}/export.zip`;
+await p.click('header button:has-text("Export .yoshida")');
+const zipPath = `${shots}/export.yoshida`;
 await (await dl).saveAs(zipPath);
 const zipped = unzipSync(new Uint8Array(await readFile(zipPath)));
 ok(
-  "export zip has images",
+  "export .yoshida has images",
   !!zipped["feature-tour/assets/images/logo.png"] &&
     !!zipped["feature-tour/designs/tour.design.json"],
   Object.keys(zipped).length + " files",
 );
 await p.click(".project-btn");
 chooser = p.waitForEvent("filechooser");
-await p.locator('.menu [role=menuitem]:has-text("Open project zip")').click();
+await p.locator('.menu [role=menuitem]:has-text("Open project file")').click();
 await (await chooser).setFiles(zipPath);
 await rendered();
 ok(
-  "open project zip",
+  "open project file",
   (await p.textContent(".pname")) === "feature-tour" &&
     /rendered in/.test(await status()),
   await status(),

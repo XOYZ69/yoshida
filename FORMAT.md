@@ -18,6 +18,10 @@ my-cards/
   .yoshida/                    caches, never committed
 ```
 
+### Project file (`.yoshida`)
+
+A project can be packed into a single `.yoshida` file for sharing and for the editor's Open and Export commands. It is a standard zip container, like `.docx`: every project file sits at its project path (see the layout above), images and fonts included, usually inside one top folder named after the project, which readers strip. Media type: `application/vnd.yoshida+zip`. Renaming the file to `.zip` lets any archive tool open it, and a plain `.zip` of a project folder is still accepted by the editor when opening. Readers skip the `.yoshida/` cache folder, `node_modules`, `.git` and `out`.
+
 All files are UTF-8 without BOM. JSON files follow RFC 8259: no comments, no trailing commas. Use the `note` field (any object) for comments.
 
 Every JSON file has `"format": 1` [1104 if missing, 1105 if unsupported]. A `"$schema"` key is allowed anywhere a file starts and is ignored by the core.

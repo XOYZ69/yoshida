@@ -381,12 +381,19 @@ export async function pickDirectory(): Promise<DirHandle> {
   return (window as any).showDirectoryPicker({ mode: 'readwrite' });
 }
 
-// ---------------------------------------------------------------- project zips
+// ---------------------------------------------------------------- project files
+
+/** Extension of a project file: a zip container, like .docx. */
+export const PROJECT_EXT = '.yoshida';
+/** Media type of a project file. */
+export const PROJECT_MIME = 'application/vnd.yoshida+zip';
+/** Matches the extension of a project file, or of a plain zip (older exports). */
+export const projectFileRe = /\.(yoshida|zip)$/i;
 
 /**
- * A whole project as a zip: every file at its project path inside one
- * folder, images and fonts included, so it unpacks into a folder the CLI
- * and the editor can open as is.
+ * A whole project as a `.yoshida` file (a zip container): every file at its
+ * project path inside one folder, images and fonts included, so renaming it
+ * to .zip and unpacking gives a folder the CLI and the editor can open as is.
  */
 export function projectZip(name: string, files: Files): Uint8Array {
   const out: Zippable = {};
@@ -397,8 +404,8 @@ export function projectZip(name: string, files: Files): Uint8Array {
 }
 
 /**
- * Files of a project zip. A single top folder (as projectZip writes) is
- * removed and becomes the name.
+ * Files of a project file (`.yoshida`, or a plain zip from older exports).
+ * A single top folder (as projectZip writes) is removed and becomes the name.
  */
 export function filesFromZip(data: Uint8Array): { name: string | null; files: Files } {
   const all = unzipSync(data);
