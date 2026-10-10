@@ -156,6 +156,42 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         return 0;
     }
 
+    if (std.mem.eql(u8, op, "pdf") or std.mem.eql(u8, op, "check_cards")) {
+        // pdf: every card of the set as one PDF (result_bin), optionally with
+        // crop marks. check_cards: evaluate every card without drawing.
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const marks = if (req.get("crop_marks")) |p| (p.data == .bool and p.data.bool) else false;
+        const dry = std.mem.eql(u8, op, "check_cards");
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        const a = getAssets();
+        var pages: usize = 0;
+        if (set.ok) {
+            var pdf = try y.pdf.Writer.init(gpa);
+            defer pdf.deinit();
+            for (0..set.cards.len) |i| {
+                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .preview = dry, .dry = dry }, &diags)) orelse continue;
+                defer bmp.deinit(gpa);
+                if (dry) continue;
+                if (marks) {
+                    const marked = try y.raster.withCropMarks(gpa, &bmp);
+                    bmp.deinit(gpa);
+                    bmp = marked;
+                }
+                try pdf.addPage(&bmp);
+                pages += 1;
+            }
+            if (!dry and pages > 0) result_bin = try pdf.finish();
+        }
+        try w.print("{{\"pages\":{d},\"diagnostics\":", .{pages});
+        try diags.writeJson(w);
+        try w.writeAll("}");
+        return 0;
+    }
+
     try w.writeAll("{\"error\":\"unknown op\"}");
     return 1;
 }

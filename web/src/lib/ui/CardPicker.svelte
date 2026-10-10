@@ -1,37 +1,44 @@
 <script lang="ts">
-  // "Card 3 of 120" with previous/next buttons and a searchable list.
-  import type { CardInfo, Param } from '../engine';
-  import CardList from './CardList.svelte';
-  import { placeNear } from './overlay.svelte';
+// "Card 3 of 120" with previous/next buttons and a searchable list.
+import type { CardInfo, Param } from "../engine";
+import CardList from "./CardList.svelte";
+import { placeNear } from "./overlay.svelte";
 
-  let {
-    cards,
-    index,
-    onpick,
-    disabled = false,
-    params = [],
-    onbrowse = undefined,
-  }: { cards: CardInfo[]; index: number; onpick: (i: number) => void; disabled?: boolean; params?: Param[]; onbrowse?: () => void } = $props();
+let {
+	cards,
+	index,
+	onpick,
+	disabled = false,
+	params = [],
+	onbrowse = undefined,
+}: {
+	cards: CardInfo[];
+	index: number;
+	onpick: (i: number) => void;
+	disabled?: boolean;
+	params?: Param[];
+	onbrowse?: () => void;
+} = $props();
 
-  let open = $state(false);
-  let button: HTMLButtonElement | undefined = $state();
-  let pop: HTMLDivElement | undefined = $state();
-  let pos = $state({ left: 0, top: 0 });
+let open = $state(false);
+let button: HTMLButtonElement | undefined = $state();
+let pop: HTMLDivElement | undefined = $state();
+let pos = $state({ left: 0, top: 0 });
 
-  const current = $derived(cards[index]);
+const current = $derived(cards[index]);
 
-  function show() {
-    if (!button) return;
-    const p = placeNear(button.getBoundingClientRect(), 360, 380);
-    pos = { left: p.left, top: p.top };
-    open = true;
-  }
+function show() {
+	if (!button) return;
+	const p = placeNear(button.getBoundingClientRect(), 360, 380);
+	pos = { left: p.left, top: p.top };
+	open = true;
+}
 
-  function pick(i: number) {
-    open = false;
-    if (i !== index) onpick(i);
-    button?.focus();
-  }
+function pick(i: number) {
+	open = false;
+	if (i !== index) onpick(i);
+	button?.focus();
+}
 </script>
 
 <svelte:window
@@ -75,6 +82,8 @@
     margin-right: 4px;
   }
   .step {
+    min-width: 26px;
+    min-height: 26px;
     padding: 3px 8px;
   }
   .current {

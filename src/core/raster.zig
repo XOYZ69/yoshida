@@ -27,6 +27,12 @@ pub const Bitmap = struct {
     h: u32,
     /// Premultiplied RGBA, row-major, 4 values per pixel.
     px: []u16,
+    /// Print resolution (`canvas.dpi`), 0 when unknown. Written to PNG and PDF.
+    dpi: f64 = 0,
+    /// Bleed in pixels on every side (`canvas.bleed`); the trim box is inside it.
+    bleed: f64 = 0,
+    /// White margin added around the card for crop marks, in pixels.
+    margin: f64 = 0,
 
     pub fn init(gpa: Allocator, x: i32, y: i32, w: u32, h: u32) Allocator.Error!Bitmap {
         const px = try gpa.alloc(u16, @as(usize, w) * h * 4);
@@ -170,7 +176,12 @@ pub fn compositeRotated(dst: *Bitmap, src: *const Bitmap, angle: f32, pivot_x: f
 
 // ------------------------------------------------------------------ shapes
 
-pub const StrokeStyle = struct { paint: Paint, width: f32 };
+pub const StrokeStyle = struct {
+    paint: Paint,
+    width: f32,
+    /// Dash pattern in pixels: on, off, on, off... Empty draws a solid line.
+    dash: []const f32 = &.{},
+};
 
 /// Rounded rectangle via a signed distance field. Covers rect and ellipse
 /// (ellipse uses an approximate distance).
@@ -296,7 +307,8 @@ fn addSpan(cov: []f32, a: f32, c: f32, weight: f32) void {
     if (ib < cov.len) cov[ib] += (hi - @as(f32, @floatFromInt(ib))) * weight;
 }
 
-/// Polyline stroke with round joins and caps.
+/// Polyline stroke with round joins and caps, solid or dashed (round dash
+/// ends). Each pixel takes its nearest point on the line.
 pub fn strokePolyline(b: *Bitmap, pts: []const [2]f32, closed: bool, s: StrokeStyle) void {
     if (pts.len < 2 or s.width <= 0) return;
     const hw = s.width / 2;
@@ -312,7 +324,23 @@ pub fn strokePolyline(b: *Bitmap, pts: []const [2]f32, closed: bool, s: StrokeSt
     }
     const m = hw + 1;
     const nseg = if (closed) pts.len else pts.len - 1;
-    // Walk each segment's bounding box; take the minimum distance over all segments per pixel.
+    var period: f32 = 0;
+    for (s.dash) |d| period += @max(0, d);
+    const dashed = s.dash.len > 0 and period > 0.01;
+    // Odd patterns repeat twice, as in SVG.
+    const reps: f32 = if (s.dash.len % 2 == 1) 2 else 1;
+    // Length along the line at the start of every segment.
+    var starts: [2048]f32 = undefined;
+    const long = nseg > starts.len;
+    if (dashed and !long) {
+        var acc: f32 = 0;
+        for (0..nseg) |i| {
+            starts[i] = acc;
+            const a = pts[i];
+            const c = pts[(i + 1) % pts.len];
+            acc += @sqrt((c[0] - a[0]) * (c[0] - a[0]) + (c[1] - a[1]) * (c[1] - a[1]));
+        }
+    }
     const r = b.clip(@intFromFloat(@floor(minx - m)), @intFromFloat(@floor(miny - m)), @intFromFloat(@ceil(maxx + m)), @intFromFloat(@ceil(maxy + m))) orelse return;
     var py = r[1];
     while (py < r[3]) : (py += 1) {
@@ -326,7 +354,13 @@ pub fn strokePolyline(b: *Bitmap, pts: []const [2]f32, closed: bool, s: StrokeSt
                 const c = pts[(i + 1) % pts.len];
                 // Quick reject by segment bounding box.
                 if (fx < @min(a[0], c[0]) - m or fx > @max(a[0], c[0]) + m or fy < @min(a[1], c[1]) - m or fy > @max(a[1], c[1]) + m) continue;
-                best = @min(best, segDist(fx, fy, a, c));
+                const sd = segDistT(fx, fy, a, c);
+                var d = sd.d;
+                if (dashed and !long) {
+                    const along = dashGap(starts[i] + sd.along, s.dash, period * reps);
+                    if (along > 0) d = @sqrt(d * d + along * along);
+                }
+                best = @min(best, d);
             }
             const cov = std.math.clamp(hw + 0.5 - best, 0, 1) * @min(1, s.width);
             if (cov > 0) b.blend(px, py, s.paint, cov);
@@ -334,15 +368,86 @@ pub fn strokePolyline(b: *Bitmap, pts: []const [2]f32, closed: bool, s: StrokeSt
     }
 }
 
-fn segDist(px: f32, py: f32, a: [2]f32, c: [2]f32) f32 {
+/// Distance along the line from position `pos` to the nearest dash ("on"
+/// part) of the pattern; 0 inside a dash.
+fn dashGap(pos: f32, dash: []const f32, period: f32) f32 {
+    const p = @mod(pos, period);
+    var at: f32 = 0;
+    var k: usize = 0;
+    var prev_end: f32 = -1e9;
+    while (at < period) : (k += 1) {
+        const len = @max(0, dash[k % dash.len]);
+        if (k % 2 == 0) {
+            if (p >= at and p <= at + len) return 0;
+            if (p < at) return @min(p - prev_end, at - p);
+            prev_end = at + len;
+        }
+        at += len;
+    }
+    // After the last dash: the next one starts the next period at 0.
+    return @min(p - prev_end, period - p);
+}
+
+/// Points along a rounded rectangle, clockwise from the top-left corner.
+pub fn roundRectPath(arena: Allocator, x: f32, y: f32, w: f32, h: f32, radius: f32) Allocator.Error![]const [2]f32 {
+    const r = std.math.clamp(radius, 0, @min(w, h) / 2);
+    var pts: std.ArrayList([2]f32) = .empty;
+    if (r < 0.5) {
+        try pts.appendSlice(arena, &.{ .{ x, y }, .{ x + w, y }, .{ x + w, y + h }, .{ x, y + h } });
+        return pts.items;
+    }
+    const steps: usize = @intFromFloat(std.math.clamp(@ceil(r / 2), 4, 32));
+    const corners = [_][3]f32{ .{ x + w - r, y + r, -90 }, .{ x + w - r, y + h - r, 0 }, .{ x + r, y + h - r, 90 }, .{ x + r, y + r, 180 } };
+    for (corners) |cn| {
+        for (0..steps + 1) |i| {
+            const a = (cn[2] + 90 * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps))) * std.math.pi / 180;
+            try pts.append(arena, .{ cn[0] + r * @cos(a), cn[1] + r * @sin(a) });
+        }
+    }
+    return pts.items;
+}
+
+/// Points along an ellipse from angle `start` to `end` in degrees, clockwise
+/// from the top (12 o'clock). A full turn when they are 0 and 360.
+pub fn ellipsePath(arena: Allocator, cx: f32, cy: f32, rx: f32, ry: f32, start: f32, end: f32) Allocator.Error![]const [2]f32 {
+    const sweep = end - start;
+    const steps: usize = @intFromFloat(std.math.clamp(@ceil(@abs(sweep) / 360 * @max(rx, ry) * 0.8), 8, 720));
+    const pts = try arena.alloc([2]f32, steps + 1);
+    for (pts, 0..) |*p, i| {
+        const deg = start + sweep * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps));
+        const a = (deg - 90) * std.math.pi / 180;
+        p.* = .{ cx + rx * @cos(a), cy + ry * @sin(a) };
+    }
+    return pts;
+}
+
+/// An arrowhead with its tip at `tip`, pointing away from `from`.
+pub fn arrowHead(tip: [2]f32, from: [2]f32, len: f32, half_w: f32) [3][2]f32 {
+    var dx = tip[0] - from[0];
+    var dy = tip[1] - from[1];
+    const l = @sqrt(dx * dx + dy * dy);
+    if (l < 1e-6) {
+        dx = 1;
+        dy = 0;
+    } else {
+        dx /= l;
+        dy /= l;
+    }
+    const bx = tip[0] - dx * len;
+    const by = tip[1] - dy * len;
+    return .{ tip, .{ bx - dy * half_w, by + dx * half_w }, .{ bx + dy * half_w, by - dx * half_w } };
+}
+
+fn segDistT(px: f32, py: f32, a: [2]f32, c: [2]f32) struct { d: f32, along: f32 } {
     const dx = c[0] - a[0];
     const dy = c[1] - a[1];
     const l2 = dx * dx + dy * dy;
     const t = if (l2 == 0) 0 else std.math.clamp(((px - a[0]) * dx + (py - a[1]) * dy) / l2, 0, 1);
     const ex = px - (a[0] + t * dx);
     const ey = py - (a[1] + t * dy);
-    return @sqrt(ex * ex + ey * ey);
+    return .{ .d = @sqrt(ex * ex + ey * ey), .along = t * @sqrt(l2) };
 }
+
 
 /// Blends an 8-bit coverage mask (a glyph) at canvas position (x, y).
 pub fn blitMask(b: *Bitmap, x: i32, y: i32, mask: []const u8, w: usize, h: usize, p: Paint) void {
@@ -672,6 +777,15 @@ pub fn encodePng(gpa: Allocator, b: *const Bitmap, sixteen: bool) ![]u8 {
     ihdr[11] = 0;
     ihdr[12] = 0;
     try chunk(w, "IHDR", &ihdr);
+    if (b.dpi > 0) {
+        // Pixels per metre, unit 1 (metre).
+        const ppm: u32 = @intFromFloat(@round(b.dpi / 0.0254));
+        var phys: [9]u8 = undefined;
+        std.mem.writeInt(u32, phys[0..4], ppm, .big);
+        std.mem.writeInt(u32, phys[4..8], ppm, .big);
+        phys[8] = 1;
+        try chunk(w, "pHYs", &phys);
+    }
 
     var z: std.Io.Writer.Allocating = try .initCapacity(gpa, raw.len / 2 + 64);
     defer z.deinit();
@@ -685,6 +799,60 @@ pub fn encodePng(gpa: Allocator, b: *const Bitmap, sixteen: bool) ![]u8 {
     try chunk(w, "IDAT", z.written());
     try chunk(w, "IEND", "");
     return out.toOwnedSlice();
+}
+
+/// zlib-compresses `data` (PNG IDAT and PDF FlateDecode streams).
+pub fn deflate(gpa: Allocator, data: []const u8) ![]u8 {
+    var z: std.Io.Writer.Allocating = try .initCapacity(gpa, data.len / 2 + 64);
+    errdefer z.deinit();
+    const window = try gpa.alloc(u8, std.compress.flate.max_window_len);
+    defer gpa.free(window);
+    var comp = try std.compress.flate.Compress.init(&z.writer, window, .zlib, .level_4);
+    try comp.writer.writeAll(data);
+    try comp.finish();
+    return z.toOwnedSlice();
+}
+
+/// A copy of `b` on a white sheet with crop marks at the trim lines (`bleed`
+/// inside the card's edge). The marks sit in a margin around the card.
+pub fn withCropMarks(gpa: Allocator, b: *const Bitmap) Allocator.Error!Bitmap {
+    const unit: f64 = if (b.dpi > 0) b.dpi / 25.4 else 300.0 / 25.4; // pixels per mm
+    const gap = @round(2 * unit);
+    const len = @round(5 * unit);
+    const m = gap + len;
+    const mi: u32 = @intFromFloat(m);
+    var out = try Bitmap.init(gpa, 0, 0, b.w + 2 * mi, b.h + 2 * mi);
+    out.dpi = b.dpi;
+    out.bleed = b.bleed;
+    out.margin = m;
+    out.fill(.{ 65535, 65535, 65535, 65535 });
+    // Card pixels over the white sheet.
+    for (0..b.h) |y| {
+        for (0..b.w) |x| {
+            const src = b.px[(y * b.w + x) * 4 ..][0..4];
+            const p: Paint = .{ @floatFromInt(src[0]), @floatFromInt(src[1]), @floatFromInt(src[2]), @floatFromInt(src[3]) };
+            out.blend(@intCast(x + mi), @intCast(y + mi), p, 1);
+        }
+    }
+    const lw: f32 = @floatCast(@max(1, @round(unit * 0.1)));
+    const black: Paint = .{ 0, 0, 0, 65535 };
+    const t0x: f32 = @floatCast(m + b.bleed);
+    const t0y: f32 = @floatCast(m + b.bleed);
+    const t1x: f32 = @floatCast(m + @as(f64, @floatFromInt(b.w)) - b.bleed);
+    const t1y: f32 = @floatCast(m + @as(f64, @floatFromInt(b.h)) - b.bleed);
+    const lf: f32 = @floatCast(len);
+    const W: f32 = @floatFromInt(out.w);
+    const H: f32 = @floatFromInt(out.h);
+    const style: StrokeStyle = .{ .paint = black, .width = lw };
+    for ([_]f32{ t0x, t1x }) |x| {
+        strokePolyline(&out, &.{ .{ x, 0 }, .{ x, lf } }, false, style);
+        strokePolyline(&out, &.{ .{ x, H - lf }, .{ x, H } }, false, style);
+    }
+    for ([_]f32{ t0y, t1y }) |y| {
+        strokePolyline(&out, &.{ .{ 0, y }, .{ lf, y } }, false, style);
+        strokePolyline(&out, &.{ .{ W - lf, y }, .{ W, y } }, false, style);
+    }
+    return out;
 }
 
 fn chunk(w: *std.Io.Writer, kind: *const [4]u8, data: []const u8) !void {

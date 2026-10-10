@@ -9,17 +9,21 @@ const usage =
     \\yoshida {s} (format {d})
     \\
     \\Usage:
-    \\  yoshida check  <project>  [--format text|json]
+    \\  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
     \\  yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
     \\                            [--date YYYY-MM-DD] [--16bit] [--preview]
-    \\                            [--offline] [--format text|json]
+    \\                            [--offline] [--pdf] [--crop-marks]
+    \\                            [--format text|json]
     \\  yoshida fmt    <project or file>  [--check]
     \\  yoshida version
     \\
-    \\check   loads every design and card file and reports problems.
+    \\check   loads every design and card file and evaluates every card
+    \\        (without drawing), then reports problems.
     \\render  writes <out>/<set>/<card id>.png (default out: <project>/out).
     \\        Images given as https:// URLs are downloaded (once per run);
-    \\        --offline turns that off.
+    \\        --offline turns that off. --pdf writes <out>/<set>.pdf instead,
+    \\        one page per card; --crop-marks adds a margin with crop marks
+    \\        at the trim line (canvas.bleed inside the edge).
     \\fmt     rewrites JSON files in the canonical layout; --check only lists
     \\        the files that are not formatted (exit status 1 if any).
     \\
@@ -39,6 +43,8 @@ const Args = struct {
     json: bool = false,
     offline: bool = false,
     check: bool = false,
+    pdf: bool = false,
+    crop_marks: bool = false,
 };
 
 pub fn main(init: std.process.Init) !u8 {
@@ -92,6 +98,25 @@ pub fn main(init: std.process.Init) !u8 {
 
     var rendered: usize = 0;
     var rendered_files: std.ArrayList([]const u8) = .empty;
+    var failed_files: std.ArrayList([]const u8) = .empty;
+    var checked_cards: usize = 0;
+    if (!is_render and diags.errorCount() == 0) {
+        // Errors that depend on card data (layer limit, missing images,
+        // indexes out of range) only show up while a card is evaluated.
+        const date = args.date orelse try today(io, arena);
+        var assets = y.render.Assets.init(gpa, disk.vfs());
+        defer assets.deinit();
+        for (proj.sets) |*set| {
+            if (args.set) |s| if (!std.mem.eql(u8, s, set.name)) continue;
+            if (!set.ok) continue;
+            for (set.cards, 0..) |card, i| {
+                if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
+                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .dry = true }, &diags)) orelse continue;
+                bmp.deinit(gpa);
+                checked_cards += 1;
+            }
+        }
+    }
     if (is_render and diags.errorCount() == 0) {
         const date = args.date orelse try today(io, arena);
         const out_root = args.out orelse try std.fs.path.join(arena, &.{ args.project.?, "out" });
@@ -102,15 +127,32 @@ pub fn main(init: std.process.Init) !u8 {
             if (args.set) |s| if (!std.mem.eql(u8, s, set.name)) continue;
             matched_set = true;
             if (!set.ok) continue;
-            const dir = try std.fs.path.join(arena, &.{ out_root, set.name });
+            const dir = if (args.pdf) out_root else try std.fs.path.join(arena, &.{ out_root, set.name });
             Io.Dir.cwd().createDirPath(io, dir) catch |e| {
                 try err.print("error: cannot create '{s}': {s}\n", .{ dir, @errorName(e) });
                 return 1;
             };
+            var pdf: ?y.pdf.Writer = if (args.pdf) try y.pdf.Writer.init(gpa) else null;
+            defer if (pdf) |*p| p.deinit();
+            var pdf_pages: usize = 0;
+            var pdf_errors = false;
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
+                const errors_before = diags.errorCount();
                 var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .preview = args.preview }, &diags)) orelse continue;
+                const card_errors = diags.errorCount() - errors_before;
                 defer bmp.deinit(gpa);
+                if (args.crop_marks) {
+                    const marked = try y.raster.withCropMarks(gpa, &bmp);
+                    bmp.deinit(gpa);
+                    bmp = marked;
+                }
+                if (pdf) |*p| {
+                    try p.addPage(&bmp);
+                    pdf_pages += 1;
+                    if (card_errors > 0) pdf_errors = true;
+                    continue;
+                }
                 const png = try y.raster.encodePng(gpa, &bmp, args.sixteen);
                 defer gpa.free(png);
                 const file = try std.fmt.allocPrint(arena, "{s}/{s}.png", .{ dir, card.id });
@@ -120,8 +162,24 @@ pub fn main(init: std.process.Init) !u8 {
                 };
                 rendered += 1;
                 try rendered_files.append(arena, file);
-                if (!args.json) try out.print("wrote {s} ({d} x {d})\n", .{ file, bmp.w, bmp.h });
+                if (card_errors > 0) try failed_files.append(arena, file);
+                if (args.json) {} else if (card_errors > 0) {
+                    try out.print("wrote {s} ({d} x {d}) with {d} error(s): parts of the card are missing\n", .{ file, bmp.w, bmp.h, card_errors });
+                } else try out.print("wrote {s} ({d} x {d})\n", .{ file, bmp.w, bmp.h });
             }
+            if (pdf) |*p| if (pdf_pages > 0) {
+                const bytes = try p.finish();
+                defer gpa.free(bytes);
+                const file = try std.fmt.allocPrint(arena, "{s}/{s}.pdf", .{ dir, set.name });
+                Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = bytes }) catch |e| {
+                    try err.print("error: cannot write '{s}': {s}\n", .{ file, @errorName(e) });
+                    return 1;
+                };
+                rendered += pdf_pages;
+                try rendered_files.append(arena, file);
+                if (pdf_errors) try failed_files.append(arena, file);
+                if (!args.json) try out.print("wrote {s} ({d} page(s)){s}\n", .{ file, pdf_pages, if (pdf_errors) " with errors: parts of some cards are missing" else "" });
+            };
         }
         if (!matched_set) {
             try err.print("error: no set named '{s}'. Sets:", .{args.set.?});
@@ -148,6 +206,11 @@ pub fn main(init: std.process.Init) !u8 {
             if (i > 0) try out.writeByte(',');
             try y.json.writeString(out, f);
         }
+        try out.writeAll("],\"with_errors\":[");
+        for (failed_files.items, 0..) |f, i| {
+            if (i > 0) try out.writeByte(',');
+            try y.json.writeString(out, f);
+        }
         try out.writeAll("]}\n");
     } else {
         try diags.writeText(out);
@@ -157,7 +220,8 @@ pub fn main(init: std.process.Init) !u8 {
             }
         }
         try out.print("{d} error(s), {d} warning(s), {d} hint(s)", .{ diags.count(.err), diags.count(.warning), diags.count(.hint) });
-        if (is_render) try out.print(", {d} card(s) rendered", .{rendered});
+        if (is_render) try out.print(", {d} card(s) rendered", .{rendered}) else if (checked_cards > 0) try out.print(", {d} card(s) checked", .{checked_cards});
+        if (failed_files.items.len > 0) try out.print(", {d} with errors", .{failed_files.items.len});
         try out.writeByte('\n');
         if (is_render and diags.errorCount() > 0 and rendered == 0) try out.writeAll("nothing was rendered because of the errors above\n");
     }
@@ -185,6 +249,14 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             }
             if (std.mem.eql(u8, name, "check")) {
                 a.check = true;
+                continue;
+            }
+            if (std.mem.eql(u8, name, "pdf")) {
+                a.pdf = true;
+                continue;
+            }
+            if (std.mem.eql(u8, name, "crop-marks")) {
+                a.crop_marks = true;
                 continue;
             }
             if (std.mem.eql(u8, name, "help")) {

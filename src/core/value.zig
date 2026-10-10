@@ -98,6 +98,21 @@ pub const Scalar = enum {
 pub const ItemDef = struct {
     names: []const []const u8,
     types: []const Scalar,
+    /// Per field: the allowed words of an enum field, empty otherwise.
+    options: []const []const []const u8 = &.{},
+    /// Per field: the value an item gets when it leaves the field out.
+    defaults: []const ?Value = &.{},
+
+    pub fn optionsOf(self: *const ItemDef, i: usize) []const []const u8 {
+        return if (i < self.options.len) self.options[i] else &.{};
+    }
+
+    pub fn defaultOf(self: *const ItemDef, i: usize) Value {
+        if (i < self.defaults.len) if (self.defaults[i]) |v| return v;
+        const opts = self.optionsOf(i);
+        if (opts.len > 0) return .{ .text = opts[0] };
+        return self.types[i].zero();
+    }
 
     pub fn find(self: *const ItemDef, name: []const u8) ?usize {
         for (self.names, 0..) |n, i| {

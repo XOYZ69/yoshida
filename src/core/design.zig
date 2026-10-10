@@ -115,7 +115,36 @@ pub const Box = struct {
 
 pub const Point = struct { x: Prop, y: Prop };
 
-pub const Stroke = struct { color: Prop, width: Prop };
+pub const Arrow = enum { none, start, end, both };
+
+pub const Stroke = struct {
+    color: Prop,
+    width: Prop,
+    /// Dash pattern: on, off, on, off... in pixels.
+    dash: []const Prop = &.{},
+    /// Arrowheads on open polygons.
+    arrow: Arrow = .none,
+};
+
+/// Part of an ellipse: degrees clockwise from the top.
+pub const Arc = struct {
+    start: Prop,
+    end: Prop,
+    /// true: a slice (closed through the centre); false: only the curve.
+    pie: bool = true,
+};
+
+pub const ShapeKind = enum { star, polygon, triangle, diamond, arrow, cross, chevron };
+
+/// A polygon drawn from a preset inside `box` instead of from `points`.
+pub const Shape = struct {
+    kind: ShapeKind,
+    /// polygon: number of sides; star: number of points.
+    count: ?Prop = null,
+    /// star: inner radius as a fraction of the outer one; arrow: shaft
+    /// thickness; chevron: thickness; cross: arm thickness.
+    inner: ?Prop = null,
+};
 
 pub const Layer = struct {
     id: []const u8,
@@ -127,6 +156,12 @@ pub const Layer = struct {
     /// Groups: index just past the group's last descendant. Descendants
     /// follow the group directly, in document order.
     end: usize = 0,
+    /// Groups: moves every layer inside by (x, y); coordinates inside the
+    /// group are relative to this origin.
+    translate: ?Point = null,
+    /// Text: layers with the same name use the smallest auto-shrunk size
+    /// of all of them (and of all their iterations).
+    shrink_group: ?[]const u8 = null,
     visible: ?Prop = null,
     opacity: ?Prop = null,
     /// Degrees clockwise around the anchor point (polygons: their centre).
@@ -141,9 +176,12 @@ pub const Layer = struct {
     stroke: ?Stroke = null,
     // rect
     radius: ?Prop = null,
+    // ellipse
+    arc: ?Arc = null,
     // polygon
     points: []const Point = &.{},
     closed: bool = true,
+    shape: ?Shape = null,
     // text
     text: ?Tmpl = null,
     at: ?Point = null,
@@ -165,6 +203,21 @@ pub const Layer = struct {
     smoothing: Smoothing = .bilinear,
 };
 
+/// A named value shared by every layer (`consts`), evaluated once per card.
+pub const Const = struct {
+    name: []const u8,
+    prop: Prop,
+};
+
+/// A named formula with arguments (`functions`).
+pub const Function = struct {
+    name: []const u8,
+    args: []const expr.Symbol,
+    body: *expr.Node,
+    ret: Type,
+    pos: u32,
+};
+
 pub const Font = struct {
     name: []const u8,
     path: []const u8,
@@ -179,10 +232,18 @@ pub const Design = struct {
     canvas_w: ?Prop = null,
     canvas_h: ?Prop = null,
     background: ?Prop = null,
+    /// Print resolution, written to PNG and PDF files.
+    dpi: ?Prop = null,
+    /// Bleed in pixels on every side; the trim line is this far inside.
+    bleed: ?Prop = null,
     fonts: []const Font = &.{},
     params: []const Param = &.{},
     layers: []const Layer = &.{},
     symbols: []const expr.Symbol = &.{},
+    consts: []const Const = &.{},
+    const_symbols: []const expr.Symbol = &.{},
+    functions: []const Function = &.{},
+    fn_sigs: []const expr.FnSig = &.{},
     /// False when loading found errors; such a design is never rendered.
     ok: bool = false,
 
@@ -384,16 +445,16 @@ const Loader = struct {
     }
 };
 
-const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "params", "layers" };
+const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
 const common_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
 
 fn kindFields(kind: LayerKind) []const []const u8 {
     return switch (kind) {
         .rect => &.{ "box", "fill", "radius", "stroke" },
-        .ellipse => &.{ "box", "fill", "stroke" },
-        .polygon => &.{ "points", "closed", "fill", "stroke" },
-        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size" },
+        .ellipse => &.{ "box", "fill", "stroke", "arc" },
+        .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box" },
+        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group" },
         .image => &.{ "src", "box", "fit", "smoothing" },
         .group => &.{"layers"},
     };
@@ -454,35 +515,71 @@ pub fn convertJson(arena: Allocator, p: *const Param, n: *const Node) Allocator.
             return convertText(arena, p, n.data.string);
         },
         .list => {
-            if (n.data != .array) return Ret{ .bad = try std.fmt.allocPrint(arena, "expected an array, found {s}", .{n.kindName()}) };
             const def = p.item.?;
+            if (n.data == .object) {
+                // Changes to single items of the default list: {"11": {"kind": "safe"}}.
+                const base = if (p.default) |dv| dv.list else return Ret{ .bad = "a list given as an object changes items of the default list, but this param has no default" };
+                const items = try arena.dupe([]const Value, base);
+                for (n.data.object) |f| {
+                    const i = std.fmt.parseInt(usize, f.key, 10) catch return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not an item position; use 0, 1, 2, ...", .{f.key}) };
+                    if (i >= items.len) return Ret{ .bad = try std.fmt.allocPrint(arena, "item {d} does not exist; the default list has {d} item(s)", .{ i, items.len }) };
+                    if (f.value.data != .object) return Ret{ .bad = try std.fmt.allocPrint(arena, "item {d} must be an object", .{i}) };
+                    const vals = try arena.dupe(Value, items[i]);
+                    if (try setItemFields(arena, def, vals, &f.value, i)) |msg| return Ret{ .bad = msg };
+                    items[i] = vals;
+                }
+                return Ret{ .ok = .{ .list = items } };
+            }
+            if (n.data != .array) return Ret{ .bad = try std.fmt.allocPrint(arena, "expected an array (or an object that changes items of the default), found {s}", .{n.kindName()}) };
             const items = try arena.alloc([]const Value, n.data.array.len);
             for (n.data.array, 0..) |*it, i| {
                 if (it.data != .object) return Ret{ .bad = try std.fmt.allocPrint(arena, "item {d} must be an object", .{i}) };
                 const vals = try arena.alloc(Value, def.names.len);
-                for (def.types, 0..) |t, j| vals[j] = t.zero();
-                for (it.data.object) |f| {
-                    const j = def.find(f.key) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "item {d} has unknown field '{s}'", .{ i, f.key }) };
-                    const ok = switch (def.types[j]) {
-                        .number => f.value.data == .number,
-                        .bool => f.value.data == .bool,
-                        .text, .image => f.value.data == .string,
-                        .color => f.value.data == .string and value.Color.parseHex(f.value.data.string) != null,
-                    };
-                    if (!ok) return Ret{ .bad = try std.fmt.allocPrint(arena, "item {d} field '{s}' must be a {s}", .{ i, f.key, @tagName(def.types[j]) }) };
-                    vals[j] = switch (def.types[j]) {
-                        .number => .{ .number = f.value.data.number },
-                        .bool => .{ .bool = f.value.data.bool },
-                        .text => .{ .text = f.value.data.string },
-                        .image => .{ .image = f.value.data.string },
-                        .color => .{ .color = value.Color.parseHex(f.value.data.string).? },
-                    };
-                }
+                for (vals, 0..) |*v, j| v.* = def.defaultOf(j);
+                if (try setItemFields(arena, def, vals, it, i)) |msg| return Ret{ .bad = msg };
                 items[i] = vals;
             }
             return Ret{ .ok = .{ .list = items } };
         },
     }
+}
+
+/// Sets the fields an item object gives. Returns a message when one does not fit.
+fn setItemFields(arena: Allocator, def: *const value.ItemDef, vals: []Value, it: *const Node, i: usize) Allocator.Error!?[]const u8 {
+    for (it.data.object) |f| {
+        const j = def.find(f.key) orelse return try std.fmt.allocPrint(arena, "item {d} has unknown field '{s}'", .{ i, f.key });
+        if (try itemFieldValue(arena, def, j, &f.value)) |v| {
+            vals[j] = v;
+        } else {
+            const opts = def.optionsOf(j);
+            if (opts.len > 0 and f.value.data == .string) {
+                const all = try std.mem.join(arena, ", ", opts);
+                return try std.fmt.allocPrint(arena, "item {d} field '{s}': '{s}' is not one of {s}", .{ i, f.key, f.value.data.string, all });
+            }
+            return try std.fmt.allocPrint(arena, "item {d} field '{s}' must be a{s} {s}", .{ i, f.key, if (opts.len > 0) "n" else "", if (opts.len > 0) "enum option" else @tagName(def.types[j]) });
+        }
+    }
+    return null;
+}
+
+/// The value of item field `j` from JSON, or null when it does not fit.
+fn itemFieldValue(arena: Allocator, def: *const value.ItemDef, j: usize, n: *const Node) Allocator.Error!?Value {
+    _ = arena;
+    const opts = def.optionsOf(j);
+    return switch (def.types[j]) {
+        .number => if (n.data == .number) .{ .number = n.data.number } else null,
+        .bool => if (n.data == .bool) .{ .bool = n.data.bool } else null,
+        .text => blk: {
+            if (n.data != .string) break :blk null;
+            if (opts.len > 0) {
+                for (opts) |o| if (std.mem.eql(u8, o, n.data.string)) break :blk Value{ .text = n.data.string };
+                break :blk null;
+            }
+            break :blk .{ .text = n.data.string };
+        },
+        .image => if (n.data == .string) .{ .image = n.data.string } else null,
+        .color => if (n.data == .string) (if (value.Color.parseHex(n.data.string)) |c| Value{ .color = c } else null) else null,
+    };
 }
 
 /// Converts a CSV cell or JSON string to a param value.
@@ -568,12 +665,17 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
     const canvas_scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .layers = null, .allow_units = false, .allow_builtins = false };
     if (root.get("canvas")) |cn| {
         if (try l.expectObject(cn, "canvas")) {
-            try l.checkFields(cn, &.{ "width", "height", "background" }, "canvas");
+            try l.checkFields(cn, &.{ "width", "height", "background", "dpi", "bleed" }, "canvas");
             if (cn.get("width")) |w| d.canvas_w = try l.prop(w, .number, &canvas_scope) else try l.err(1102, cn.pos, "canvas needs \"width\"", .{});
             if (cn.get("height")) |h| d.canvas_h = try l.prop(h, .number, &canvas_scope) else try l.err(1102, cn.pos, "canvas needs \"height\"", .{});
             if (cn.get("background")) |b| d.background = try l.prop(b, .color, &canvas_scope);
+            if (cn.get("dpi")) |v| d.dpi = try l.prop(v, .number, &canvas_scope);
+            if (cn.get("bleed")) |v| d.bleed = try l.prop(v, .number, &canvas_scope);
         }
     } else try l.err(1102, root.pos, "the design needs a \"canvas\" with width and height", .{});
+
+    try loadConsts(&l, d);
+    try loadFunctions(&l, d);
 
     // Fonts
     var fonts: std.ArrayList(Font) = .empty;
@@ -594,6 +696,129 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
 
     d.ok = l.errors == 0;
     return d;
+}
+
+/// True when `name` is taken by a param, constant or function [1106].
+fn nameTaken(d: *const Design, consts: []const expr.Symbol, fns: []const expr.FnSig, name: []const u8) bool {
+    if (expr.isReserved(name) or d.findParam(name) != null) return true;
+    for (consts) |k| if (std.mem.eql(u8, k.name, name)) return true;
+    for (fns) |f| if (std.mem.eql(u8, f.name, name)) return true;
+    return false;
+}
+
+/// `"consts": { "tile": 170, "gap": "tile / 10" }`: each sees params, the
+/// canvas size and the constants before it.
+fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
+    const cn = d.root.get("consts") orelse return;
+    if (!try l.expectObject(cn, "consts")) return;
+    var consts: std.ArrayList(Const) = .empty;
+    var syms: std.ArrayList(expr.Symbol) = .empty;
+    for (cn.data.object) |*f| {
+        if (!expr.isIdent(f.key) or nameTaken(d, syms.items, &.{}, f.key)) {
+            try l.err(1106, f.key_pos, "constant name '{s}' must be lowercase letters, digits and '_', and not a param, reserved word or function name", .{f.key});
+            continue;
+        }
+        const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = null };
+        const want: Type = switch (f.value.data) {
+            .number => .number,
+            .bool => .bool,
+            .string => |src| {
+                // The type is whatever the expression gives.
+                var problem: ?expr.Problem = null;
+                const node = expr.parse(l.arena, src, 0, &problem) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Invalid => {
+                        try l.exprProblem(f.value.pos, problem.?);
+                        continue;
+                    },
+                };
+                var c: expr.Checker = .{ .scope = &scope, .problem = &problem };
+                const t = c.check(node) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.Invalid => {
+                        try l.exprProblem(f.value.pos, problem.?);
+                        continue;
+                    },
+                };
+                if (t == .list or t == .item) {
+                    try l.err(3003, f.value.pos, "a constant cannot be a list or a list item", .{});
+                    continue;
+                }
+                try consts.append(l.arena, .{ .name = f.key, .prop = .{ .node = node, .pos = f.value.pos } });
+                try syms.append(l.arena, .{ .name = f.key, .ty = t });
+                continue;
+            },
+            else => {
+                try l.err(1103, f.value.pos, "a constant is a number, true/false or an expression string", .{});
+                continue;
+            },
+        };
+        const p = (try l.prop(&f.value, want, &scope)) orelse continue;
+        try consts.append(l.arena, .{ .name = f.key, .prop = p });
+        try syms.append(l.arena, .{ .name = f.key, .ty = want });
+    }
+    d.consts = consts.items;
+    d.const_symbols = syms.items;
+}
+
+/// `"functions": { "tile_x": { "args": { "i": "number" }, "expr": "65 + i * 170" } }`:
+/// each sees its arguments, params, constants and the functions before it.
+fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
+    const fnode = d.root.get("functions") orelse return;
+    if (!try l.expectObject(fnode, "functions")) return;
+    const arena = l.arena;
+    var fns: std.ArrayList(Function) = .empty;
+    var sigs: std.ArrayList(expr.FnSig) = .empty;
+    for (fnode.data.object) |*f| {
+        if (!expr.isIdent(f.key) or nameTaken(d, d.const_symbols, sigs.items, f.key)) {
+            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant, reserved word or built-in function", .{f.key});
+            continue;
+        }
+        if (!try l.expectObject(&f.value, "a function")) continue;
+        try l.checkFields(&f.value, &.{ "args", "expr", "note" }, "a function");
+        var args: std.ArrayList(expr.Symbol) = .empty;
+        if (f.value.get("args")) |an| {
+            switch (an.data) {
+                // ["i", "j"]: numbers.
+                .array => |items| for (items) |*it| {
+                    if (try l.literalString(it, "an argument name")) |name| try args.append(arena, .{ .name = name, .ty = .number });
+                },
+                .object => |fields| for (fields) |af| {
+                    const tn = (try l.literalString(&af.value, "an argument type")) orelse continue;
+                    const ty: ?Type = if (std.mem.eql(u8, tn, "number")) .number else if (std.mem.eql(u8, tn, "text")) .text else if (std.mem.eql(u8, tn, "bool")) .bool else if (std.mem.eql(u8, tn, "color")) .color else null;
+                    if (ty) |t| try args.append(arena, .{ .name = af.key, .ty = t }) else try l.err(1103, af.value.pos, "'{s}' is not an argument type; use number, text, bool or color", .{tn});
+                },
+                else => try l.err(1103, an.pos, "args must be an object of name to type, e.g. {{\"i\": \"number\"}}", .{}),
+            }
+        }
+        for (args.items) |a| if (!expr.isIdent(a.name) or expr.isReserved(a.name)) try l.err(1103, f.value.pos, "'{s}' is not a valid argument name", .{a.name});
+        const en = f.value.get("expr") orelse {
+            try l.err(1102, f.value.pos, "function '{s}' needs \"expr\"", .{f.key});
+            continue;
+        };
+        const src = (try l.literalString(en, "expr")) orelse continue;
+        const scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .locals = args.items, .consts = d.const_symbols, .functions = sigs.items, .layers = null };
+        var problem: ?expr.Problem = null;
+        const node = expr.parse(arena, src, 0, &problem) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(en.pos, problem.?);
+                continue;
+            },
+        };
+        var c: expr.Checker = .{ .scope = &scope, .problem = &problem };
+        const t = c.check(node) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(en.pos, problem.?);
+                continue;
+            },
+        };
+        try fns.append(arena, .{ .name = f.key, .args = args.items, .body = node, .ret = t, .pos = en.pos });
+        try sigs.append(arena, .{ .name = f.key, .args = args.items, .ret = t });
+    }
+    d.functions = fns.items;
+    d.fn_sigs = sigs.items;
 }
 
 fn loadParam(l: *Loader, f: *const Node.Field) Allocator.Error!?Param {
@@ -662,16 +887,50 @@ fn loadParam(l: *Loader, f: *const Node.Field) Allocator.Error!?Param {
         const def = try arena.create(value.ItemDef);
         var names: std.ArrayList([]const u8) = .empty;
         var types: std.ArrayList(value.Scalar) = .empty;
-        for (in.data.object) |itf| {
-            const s = (try l.literalString(&itf.value, "an item field type")) orelse continue;
-            const sc = value.Scalar.fromName(s) orelse {
-                try l.errHint(1103, itf.value.pos, try std.fmt.allocPrint(arena, "'{s}' is not an item field type", .{s}), "use number, integer, text, bool or color");
+        var options: std.ArrayList([]const []const u8) = .empty;
+        var defaults: std.ArrayList(?Value) = .empty;
+        var default_nodes: std.ArrayList(?*const Node) = .empty;
+        for (in.data.object) |*itf| {
+            // "kind": "text", or "kind": { "type": "enum", "options": [...], "default": "plain" }.
+            var type_node: *const Node = &itf.value;
+            var opts: std.ArrayList([]const u8) = .empty;
+            var default_node: ?*const Node = null;
+            if (itf.value.data == .object) {
+                try l.checkFields(&itf.value, &.{ "type", "options", "default" }, "an item field");
+                type_node = itf.value.get("type") orelse {
+                    try l.err(1102, itf.value.pos, "item field '{s}' needs a \"type\"", .{itf.key});
+                    continue;
+                };
+                default_node = itf.value.get("default");
+                if (itf.value.get("options")) |on| {
+                    if (on.data == .array and on.data.array.len > 0) {
+                        for (on.data.array) |*o| if (try l.literalString(o, "an option")) |os| try opts.append(arena, os);
+                    } else try l.err(1103, on.pos, "options must be a non-empty array of strings", .{});
+                }
+            }
+            const s = (try l.literalString(type_node, "an item field type")) orelse continue;
+            const is_enum = std.mem.eql(u8, s, "enum");
+            const sc = if (is_enum) value.Scalar.text else value.Scalar.fromName(s) orelse {
+                try l.errHint(1103, type_node.pos, try std.fmt.allocPrint(arena, "'{s}' is not an item field type", .{s}), "use number, integer, text, bool, color or enum");
                 continue;
             };
+            if (is_enum and opts.items.len == 0) {
+                try l.err(1102, itf.value.pos, "enum item field '{s}' needs \"options\"", .{itf.key});
+                continue;
+            }
+            if (!is_enum and opts.items.len > 0) try l.err(1101, itf.value.pos, "'options' only applies to enum item fields", .{});
             try names.append(arena, itf.key);
             try types.append(arena, sc);
+            try options.append(arena, if (is_enum) opts.items else &.{});
+            try defaults.append(arena, null);
+            try default_nodes.append(arena, default_node);
         }
-        def.* = .{ .names = names.items, .types = types.items };
+        def.* = .{ .names = names.items, .types = types.items, .options = options.items, .defaults = defaults.items };
+        for (default_nodes.items, 0..) |dn, j| if (dn) |n2| {
+            if (try itemFieldValue(arena, def, j, n2)) |v| {
+                defaults.items[j] = v;
+            } else try l.err(1103, n2.pos, "default of item field '{s}' does not fit its type", .{def.names[j]});
+        };
         p.item = def;
         p.ty = .{ .list = def };
     } else if (n.get("item")) |v| try l.err(1101, v.pos, "'item' only applies to list params", .{});
@@ -702,7 +961,7 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "effects", "layers" };
+const group_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "label" };
 
 fn isGroup(n: *const Node) bool {
@@ -776,24 +1035,37 @@ fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const
     // Pass 2: extends.
     for (raws) |*r| _ = try merge(l, raws, r);
 
-    // Pass 3: symbols for @ references.
+    // Pass 3: symbols for @ references, with the repeated groups around
+    // each layer (raw indices, outermost first).
+    const rgroups = try arena.alloc([]const usize, raws.len);
+    for (raws, 0..) |r, i| {
+        var chain: std.ArrayList(usize) = .empty;
+        var p = r.parent;
+        while (p) |pi| : (p = raws[pi].parent) {
+            if (raws[pi].merged) |pm| if (pm.get("repeat") != null) try chain.insert(arena, 0, pi);
+        }
+        rgroups[i] = chain.items;
+    }
     var lsyms: std.ArrayList(expr.LayerSymbol) = .empty;
-    for (raws) |r| {
+    for (raws, 0..) |r, i| {
         const k = r.kind orelse continue;
         if (r.id.len == 0) continue;
         const m = r.merged orelse continue;
-        try lsyms.append(arena, .{ .id = r.id, .kind = k, .repeated = m.get("repeat") != null });
+        try lsyms.append(arena, .{ .id = r.id, .kind = k, .repeated = m.get("repeat") != null, .rgroups = rgroups[i] });
     }
 
-    // Pass 4: compile.
+    // Pass 4: compile. Layers inside a repeated group see its loop names.
     var layers: std.ArrayList(Layer) = .empty;
     const at = try arena.alloc(?usize, raws.len);
+    const exposed = try arena.alloc([]const expr.Symbol, raws.len);
     for (raws, 0..) |r, i| {
         at[i] = null;
+        exposed[i] = &.{};
         const k = r.kind orelse continue;
         const m = r.merged orelse continue;
         if (r.id.len == 0) continue;
-        if (try compileLayer(l, d, lsyms.items, &m, r.id, k, i)) |layer| {
+        const outer: []const expr.Symbol = if (r.parent) |p| exposed[p] else &.{};
+        if (try compileLayer(l, d, lsyms.items, &m, r.id, k, i, outer, rgroups[i], &exposed[i])) |layer| {
             var x = layer;
             x.parent = if (r.parent) |p| at[p] else null;
             at[i] = layers.items.len;
@@ -893,13 +1165,15 @@ fn merge(l: *Loader, raws: []Raw, r: *Raw) Allocator.Error!?Node {
     return r.merged;
 }
 
-fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *const Node, id: []const u8, kind: LayerKind, index: usize) Allocator.Error!?Layer {
+fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *const Node, id: []const u8, kind: LayerKind, index: usize, outer: []const expr.Symbol, rgroups: []const usize, exposed: *[]const expr.Symbol) Allocator.Error!?Layer {
     const arena = l.arena;
     var layer: Layer = .{ .id = id, .kind = kind, .index = index, .pos = m.pos };
-    var base_scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .layers = lsyms };
+    var base_scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .locals = outer, .layers = lsyms, .consts = d.const_symbols, .functions = d.fn_sigs, .rgroups = rgroups };
 
-    // repeat: its own expressions see params only; the layer's fields also see loop names.
+    // repeat: its own expressions see params and the loop names of the
+    // groups around the layer; the layer's fields also see its own.
     var locals: std.ArrayList(expr.Symbol) = .empty;
+    try locals.appendSlice(arena, outer);
     if (m.get("repeat")) |rn| if (try l.expectObject(rn, "repeat")) {
         try l.checkFields(rn, &.{ "count", "each", "index", "item" }, "repeat");
         var rep: Repeat = .{};
@@ -947,10 +1221,17 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         layer.repeat = rep;
     };
     base_scope.locals = locals.items;
+    exposed.* = locals.items;
     const scope = &base_scope;
     var sx = Loader.withAxis(scope, .x);
     var sy = Loader.withAxis(scope, .y);
 
+    if (kind == .group) if (m.get("translate")) |tn| if (try l.expectObject(tn, "translate")) {
+        try l.checkFields(tn, &.{ "x", "y" }, "translate");
+        const px = if (tn.get("x")) |v| try l.prop(v, .number, &sx) else try constProp(arena, .{ .number = 0 }, tn.pos);
+        const py = if (tn.get("y")) |v| try l.prop(v, .number, &sy) else try constProp(arena, .{ .number = 0 }, tn.pos);
+        if (px != null and py != null) layer.translate = .{ .x = px.?, .y = py.? };
+    };
     if (m.get("visible")) |v| layer.visible = try l.prop(v, .bool, scope);
     if (m.get("opacity")) |v| layer.opacity = try l.prop(v, .number, scope);
     if (m.get("rotate")) |v| layer.rotate = try l.prop(v, .number, scope);
@@ -985,8 +1266,9 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         } else try l.err(1103, en.pos, "effects must be an array", .{});
     }
 
+    const shape_polygon = kind == .polygon and m.get("shape") != null;
     switch (kind) {
-        .rect, .ellipse, .image => {
+        .rect, .ellipse, .image, .polygon => if (kind != .polygon or shape_polygon) {
             if (m.get("box")) |bn| {
                 if (try l.expectObject(bn, "box")) {
                     try l.checkFields(bn, &.{ "x", "y", "w", "h" }, "box");
@@ -1017,17 +1299,41 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     if (ok) layer.box = .{ .x = props[0].?, .y = props[1].?, .w = props[2], .h = props[3] };
                 }
             } else try l.err(1102, m.pos, "{s} layer '{s}' needs a \"box\"", .{ @tagName(kind), id });
-        },
+        } else if (m.get("box")) |bn| try l.err(1101, bn.pos, "a polygon has \"box\" only with \"shape\"", .{}),
         else => {},
     }
     switch (kind) {
-        .rect, .ellipse, .polygon => {
-            if (m.get("fill")) |v| layer.fill = try l.prop(v, .color, scope);
+        .rect, .ellipse, .polygon, .text => {
+            if (kind != .text) if (m.get("fill")) |v| {
+                layer.fill = try l.prop(v, .color, scope);
+            };
             if (m.get("stroke")) |sn| if (try l.expectObject(sn, "stroke")) {
-                try l.checkFields(sn, &.{ "color", "width" }, "stroke");
+                try l.checkFields(sn, &.{ "color", "width", "dash", "arrow" }, "stroke");
                 const cp = if (sn.get("color")) |v| try l.prop(v, .color, scope) else try constProp(arena, .{ .color = value.Color.black }, sn.pos);
                 const wp = if (sn.get("width")) |v| try l.prop(v, .number, scope) else try constProp(arena, .{ .number = 1 }, sn.pos);
-                if (cp != null and wp != null) layer.stroke = .{ .color = cp.?, .width = wp.? };
+                var dash: std.ArrayList(Prop) = .empty;
+                if (sn.get("dash")) |dn| {
+                    if (kind == .text) {
+                        try l.err(1101, dn.pos, "text outlines cannot be dashed", .{});
+                    } else if (dn.data == .array and dn.data.array.len > 0) {
+                        for (dn.data.array) |*dv| if (try l.prop(dv, .number, scope)) |p| try dash.append(arena, p);
+                    } else try l.err(1103, dn.pos, "dash must be a non-empty array of lengths, e.g. [12, 6]", .{});
+                }
+                var arrow: Arrow = .none;
+                if (sn.get("arrow")) |an| {
+                    if (kind != .polygon) try l.err(1101, an.pos, "arrowheads only apply to polygons", .{}) else arrow = (try l.enumField(Arrow, an, "arrow")) orelse .none;
+                }
+                if (cp != null and wp != null) layer.stroke = .{ .color = cp.?, .width = wp.?, .dash = dash.items, .arrow = arrow };
+            };
+            if (kind == .ellipse) if (m.get("arc")) |an| if (try l.expectObject(an, "arc")) {
+                try l.checkFields(an, &.{ "start", "end", "pie" }, "arc");
+                const sp = if (an.get("start")) |v| try l.prop(v, .number, scope) else try constProp(arena, .{ .number = 0 }, an.pos);
+                const ep = if (an.get("end")) |v| try l.prop(v, .number, scope) else try constProp(arena, .{ .number = 360 }, an.pos);
+                var pie = true;
+                if (an.get("pie")) |v| {
+                    if (v.data == .bool) pie = v.data.bool else try l.err(1103, v.pos, "pie must be true or false", .{});
+                }
+                if (sp != null and ep != null) layer.arc = .{ .start = sp.?, .end = ep.?, .pie = pie };
             };
             if (kind == .rect) if (m.get("radius")) |v| {
                 layer.radius = try l.prop(v, .number, scope);
@@ -1040,9 +1346,23 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("closed")) |v| {
                 if (v.data == .bool) layer.closed = v.data.bool else try l.err(1103, v.pos, "closed must be true or false", .{});
             }
-            if (m.get("points")) |pn| {
+            if (m.get("shape")) |sn| {
+                if (m.get("points")) |pn| try l.err(1111, pn.pos, "a polygon needs exactly one of \"points\" and \"shape\"", .{});
+                if (try l.expectObject(sn, "shape")) {
+                    try l.checkFields(sn, &.{ "type", "count", "inner" }, "shape");
+                    if (sn.get("type")) |tn| {
+                        if (try l.enumField(ShapeKind, tn, "shape type")) |sk| {
+                            var shape: Shape = .{ .kind = sk };
+                            if (sn.get("count")) |v| shape.count = try l.prop(v, .number, scope);
+                            if (sn.get("inner")) |v| shape.inner = try l.prop(v, .number, scope);
+                            layer.shape = shape;
+                        }
+                    } else try l.err(1102, sn.pos, "shape needs a \"type\"", .{});
+                }
+            } else if (m.get("points")) |pn| {
                 if (pn.data == .array) {
-                    if (pn.data.array.len < 3) try l.err(1109, pn.pos, "a polygon needs at least 3 points, found {d}", .{pn.data.array.len});
+                    const min_points: usize = if (layer.closed) 3 else 2;
+                    if (pn.data.array.len < min_points) try l.err(1109, pn.pos, "a {s} polygon needs at least {d} points, found {d}", .{ if (layer.closed) "closed" else "open", min_points, pn.data.array.len });
                     var pts: std.ArrayList(Point) = .empty;
                     for (pn.data.array) |*pt| {
                         if (pt.data != .array or pt.data.array.len != 2) {
@@ -1055,7 +1375,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     }
                     layer.points = pts.items;
                 } else try l.err(1103, pn.pos, "points must be an array of [x, y] pairs", .{});
-            } else try l.err(1102, m.pos, "polygon layer '{s}' needs \"points\"", .{id});
+            } else try l.err(1102, m.pos, "polygon layer '{s}' needs \"points\" or \"shape\"", .{id});
         },
         .text => {
             if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "text layer '{s}' needs \"text\"", .{id});
@@ -1090,6 +1410,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("max_width")) |v| layer.max_width = try l.prop(v, .number, &sx);
             if (m.get("max_height")) |v| layer.max_height = try l.prop(v, .number, &sy);
             if (m.get("min_size")) |v| layer.min_size = try l.prop(v, .number, scope);
+            if (m.get("shrink_group")) |v| layer.shrink_group = try l.literalString(v, "shrink_group");
         },
         .image => {
             if (m.get("src")) |v| layer.src = try l.template(v, scope) else try l.err(1102, m.pos, "image layer '{s}' needs \"src\"", .{id});

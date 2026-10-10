@@ -1,109 +1,157 @@
 <script lang="ts">
-  // Form for the current card, built from the design's params. Changes are
-  // written back into the card data file by the parent.
-  import type { CardInfo, Param } from './engine';
-  import Select from './ui/Select.svelte';
-  import ColorPicker from './ui/ColorPicker.svelte';
-  import ImagePicker from './ui/ImagePicker.svelte';
-  import { paramSections } from './design';
+// Form for the current card, built from the design's params. Changes are
+// written back into the card data file by the parent.
 
-  let {
-    params,
-    card,
-    editable,
-    imageFiles,
-    upload,
-    onchange,
-  }: {
-    params: Param[];
-    card: CardInfo | undefined;
-    editable: boolean;
-    imageFiles: string[];
-    upload: () => Promise<string | null>;
-    onchange: (param: string, value: unknown) => void;
-  } = $props();
+import { paramSections } from "./design";
+import type { CardInfo, Param } from "./engine";
+import ColorPicker from "./ui/ColorPicker.svelte";
+import ImagePicker from "./ui/ImagePicker.svelte";
+import Select from "./ui/Select.svelte";
 
-  // Params with a `group` are shown in foldable sections, ungrouped first.
-  const sections = $derived(paramSections(params.map((p) => [p.name, p] as [string, Param]), (p) => (p.group ?? '').trim()));
-  let folded = $state(new Set<string>());
-  /** The field being edited shows its note below it. */
-  let focused: string | null = $state(null);
+let {
+	params,
+	card,
+	editable,
+	imageFiles,
+	upload,
+	onchange,
+}: {
+	params: Param[];
+	card: CardInfo | undefined;
+	editable: boolean;
+	imageFiles: string[];
+	upload: () => Promise<string | null>;
+	onchange: (param: string, value: unknown) => void;
+} = $props();
 
-  function fold(g: string) {
-    const next = new Set(folded);
-    if (!next.delete(g)) next.add(g);
-    folded = next;
-  }
+// Params with a `group` are shown in foldable sections, ungrouped first.
+const sections = $derived(
+	paramSections(
+		params.map((p) => [p.name, p] as [string, Param]),
+		(p) => (p.group ?? "").trim(),
+	),
+);
+let folded = $state(new Set<string>());
+/** The field being edited shows its note below it. */
+let focused: string | null = $state(null);
 
-  function current(p: Param): unknown {
-    return card?.values[p.name];
-  }
+function fold(g: string) {
+	const next = new Set(folded);
+	if (!next.delete(g)) next.add(g);
+	folded = next;
+}
 
-  function shown(p: Param): string {
-    const v = current(p) ?? p.default;
-    if (v === undefined || v === null) return '';
-    return typeof v === 'object' ? JSON.stringify(v, null, 1) : String(v);
-  }
+function current(p: Param): unknown {
+	return card?.values[p.name];
+}
 
-  function set(p: Param, raw: string | boolean) {
-    if (raw === '' || raw === undefined) return onchange(p.name, undefined);
-    switch (p.type) {
-      case 'number':
-      case 'integer': {
-        const n = Number(raw);
-        if (Number.isFinite(n)) onchange(p.name, n);
-        return;
-      }
-      case 'bool':
-        return onchange(p.name, raw === true);
-      case 'list':
-        try {
-          onchange(p.name, JSON.parse(String(raw)));
-        } catch {
-          /* keep typing */
-        }
-        return;
-      default:
-        return onchange(p.name, raw);
-    }
-  }
+function shown(p: Param): string {
+	const v = current(p) ?? p.default;
+	if (v === undefined || v === null) return "";
+	return typeof v === "object" ? JSON.stringify(v, null, 1) : String(v);
+}
 
-  // List params with item fields are edited as a small table.
-  type Item = Record<string, unknown>;
+function set(p: Param, raw: string | boolean) {
+	if (raw === "" || raw === undefined) return onchange(p.name, undefined);
+	switch (p.type) {
+		case "number":
+		case "integer": {
+			const n = Number(raw);
+			if (Number.isFinite(n)) onchange(p.name, n);
+			return;
+		}
+		case "bool":
+			return onchange(p.name, raw === true);
+		case "list":
+			try {
+				onchange(p.name, JSON.parse(String(raw)));
+			} catch {
+				/* keep typing */
+			}
+			return;
+		default:
+			return onchange(p.name, raw);
+	}
+}
 
-  function itemsOf(p: Param): Item[] {
-    const v = current(p) ?? p.default;
-    return Array.isArray(v) ? v.map((x) => (x && typeof x === 'object' ? (x as Item) : {})) : [];
-  }
+// List params with item fields are edited as a small table.
+type Item = Record<string, unknown>;
 
-  function blankItem(p: Param): Item {
-    const out: Item = {};
-    for (const [k, t] of Object.entries(p.item ?? {})) out[k] = t === 'number' || t === 'integer' ? 0 : t === 'bool' ? false : t === 'color' ? '#000000' : '';
-    return out;
-  }
+function itemsOf(p: Param): Item[] {
+	const v = current(p) ?? p.default;
+	return Array.isArray(v)
+		? v.map((x) => (x && typeof x === "object" ? (x as Item) : {}))
+		: [];
+}
 
-  function setItem(p: Param, index: number, field: string, raw: string | boolean) {
-    const t = p.item?.[field];
-    let v: unknown = raw;
-    if (t === 'number' || t === 'integer') {
-      v = Number(raw);
-      if (raw === '' || !Number.isFinite(v)) return;
-    }
-    const items = itemsOf(p).map((x) => ({ ...x }));
-    items[index][field] = v;
-    onchange(p.name, items);
-  }
+function blankItem(p: Param): Item {
+	const out: Item = {};
+	for (const [k, t] of Object.entries(p.item ?? {})) {
+		const def = p.item_defs?.[k];
+		out[k] =
+			def?.default !== undefined
+				? def.default
+				: t === "enum"
+					? (def?.options?.[0] ?? "")
+					: t === "number" || t === "integer"
+						? 0
+						: t === "bool"
+							? false
+							: t === "color"
+								? "#000000"
+								: "";
+	}
+	return out;
+}
 
-  function addItem(p: Param) {
-    onchange(p.name, [...itemsOf(p), blankItem(p)]);
-  }
+/**
+ * The value to save for a list. When the default has items and the list
+ * keeps their number, only the changed items are saved, as an object of
+ * position to fields ({"11": {"kind": "safe"}}).
+ */
+function listValue(p: Param, items: Item[]): unknown {
+	const base = Array.isArray(p.default) ? (p.default as Item[]) : [];
+	if (!base.length || items.length !== base.length) return items;
+	const out: Record<string, Item> = {};
+	items.forEach((it, i) => {
+		const changed: Item = {};
+		for (const [k, v] of Object.entries(it))
+			if (JSON.stringify(v) !== JSON.stringify(base[i]?.[k])) changed[k] = v;
+		if (Object.keys(changed).length) out[String(i)] = changed;
+	});
+	return Object.keys(out).length ? out : undefined;
+}
 
-  function removeItem(p: Param, index: number) {
-    onchange(
-      p.name,
-      itemsOf(p).filter((_, i) => i !== index),
-    );
-  }
+function setItem(
+	p: Param,
+	index: number,
+	field: string,
+	raw: string | boolean,
+) {
+	const t = p.item?.[field];
+	let v: unknown = raw;
+	if (t === "number" || t === "integer") {
+		v = Number(raw);
+		if (raw === "" || !Number.isFinite(v)) return;
+	}
+	const items = itemsOf(p).map((x) => ({ ...x }));
+	items[index][field] = v;
+	onchange(p.name, listValue(p, items));
+}
+
+function addItem(p: Param) {
+	onchange(p.name, listValue(p, [...itemsOf(p), blankItem(p)]));
+}
+
+function removeItem(p: Param, index: number) {
+	onchange(
+		p.name,
+		listValue(
+			p,
+			itemsOf(p).filter((_, i) => i !== index),
+		),
+	);
+}
 </script>
 
 <div class="form">
@@ -160,6 +208,8 @@
                     <td>
                       {#if t === 'bool'}
                         <input type="checkbox" checked={it[f] === true} disabled={!editable} onchange={(e) => setItem(p, i, f, e.currentTarget.checked)} />
+                      {:else if t === 'enum'}
+                        <Select value={String(it[f] ?? '')} label="{f} of row {i + 1}" disabled={!editable} options={p.item_defs?.[f]?.options ?? []} onchange={(v) => setItem(p, i, f, v)} />
                       {:else}
                         <input
                           type={t === 'number' || t === 'integer' ? 'number' : 'text'}

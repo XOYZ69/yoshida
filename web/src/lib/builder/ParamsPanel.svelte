@@ -1,232 +1,359 @@
 <script lang="ts">
-  // The design's params: the inputs every card fills in. Each one becomes a
-  // field in the card form and a name that layer fields can use.
-  // Sections come from each param's optional `group`; the list can also be
-  // shown A to Z or by type. Dragging a param reorders the file (that order
-  // is the card form's order) and can move it to another group.
-  import Field from './Field.svelte';
-  import EnumOptions from './EnumOptions.svelte';
-  import Select from '../ui/Select.svelte';
-  import ImagePicker from '../ui/ImagePicker.svelte';
-  import { askText, confirmAction, openMenu } from '../ui/overlay.svelte';
-  import {
-    groupOf,
-    identRe,
-    isObj,
-    moveParam,
-    paramSections,
-    paramTypes,
-    renameParamGroup,
-    retypeParam,
-    newParam,
-    setPath,
-    templatesUsing,
-    type Json,
-    type Obj,
-    type ParamTypeName,
-  } from '../design';
-  import type { CardInfo, Diagnostic } from '../engine';
+// The design's params: the inputs every card fills in. Each one becomes a
+// field in the card form and a name that layer fields can use.
+// Sections come from each param's optional `group`; the list can also be
+// shown A to Z or by type. Dragging a param reorders the file (that order
+// is the card form's order) and can move it to another group.
 
-  let {
-    doc,
-    imageFiles,
-    upload,
-    diagnostics,
-    designFile,
-    editDoc,
-    onrename,
-    cards,
-    onrenameoption,
-  }: {
-    doc: Obj;
-    imageFiles: string[];
-    upload: () => Promise<string | null>;
-    diagnostics: Diagnostic[];
-    designFile: string;
-    editDoc: (fn: (doc: Obj) => void, key?: string) => void;
-    /** Renames a param in the design and in the card data that uses it. */
-    onrename: (from: string, to: string) => void;
-    /** Every card of the sets that use this design. */
-    cards: CardInfo[];
-    /** Renames an enum option in the design and in card data. */
-    onrenameoption: (param: string, from: string, to: string) => void;
-  } = $props();
+import {
+	groupOf,
+	identRe,
+	isObj,
+	type Json,
+	moveParam,
+	newParam,
+	type Obj,
+	type ParamTypeName,
+	paramSections,
+	paramTypes,
+	renameParamGroup,
+	retypeParam,
+	setPath,
+	templatesUsing,
+} from "../design";
+import type { CardInfo, Diagnostic } from "../engine";
+import ImagePicker from "../ui/ImagePicker.svelte";
+import { askText, confirmAction, openMenu } from "../ui/overlay.svelte";
+import Select from "../ui/Select.svelte";
+import EnumOptions from "./EnumOptions.svelte";
+import Field from "./Field.svelte";
 
-  const params = $derived(isObj(doc.params) ? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [string, Obj][]) : []);
-  const reserved = new Set(['canvas', 'render', 'card', 'true', 'false', 'and', 'or', 'not']);
+let {
+	doc,
+	imageFiles,
+	upload,
+	diagnostics,
+	designFile,
+	editDoc,
+	onrename,
+	cards,
+	onrenameoption,
+}: {
+	doc: Obj;
+	imageFiles: string[];
+	upload: () => Promise<string | null>;
+	diagnostics: Diagnostic[];
+	designFile: string;
+	editDoc: (fn: (doc: Obj) => void, key?: string) => void;
+	/** Renames a param in the design and in the card data that uses it. */
+	onrename: (from: string, to: string) => void;
+	/** Every card of the sets that use this design. */
+	cards: CardInfo[];
+	/** Renames an enum option in the design and in card data. */
+	onrenameoption: (param: string, from: string, to: string) => void;
+} = $props();
 
-  let open: string | null = $state(null);
+const params = $derived(
+	isObj(doc.params)
+		? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [
+				string,
+				Obj,
+			][])
+		: [],
+);
+const reserved = new Set([
+	"canvas",
+	"render",
+	"card",
+	"true",
+	"false",
+	"and",
+	"or",
+	"not",
+]);
 
-  // ---------------------------------------------------------------- views
+let open: string | null = $state(null);
 
-  type View = 'groups' | 'az' | 'type';
-  const viewKey = 'yoshida.paramsView';
-  let view: View = $state(load());
-  let query = $state('');
-  let folded = $state(new Set<string>());
+// ---------------------------------------------------------------- views
 
-  function load(): View {
-    try {
-      const v = localStorage.getItem(viewKey);
-      return v === 'az' || v === 'type' ? v : 'groups';
-    } catch {
-      return 'groups';
-    }
-  }
+type View = "groups" | "az" | "type";
+const viewKey = "yoshida.paramsView";
+let view: View = $state(load());
+let query = $state("");
+let folded = $state(new Set<string>());
 
-  function setView(v: View) {
-    view = v;
-    try {
-      localStorage.setItem(viewKey, v);
-    } catch {
-      /* private mode */
-    }
-  }
+function load(): View {
+	try {
+		const v = localStorage.getItem(viewKey);
+		return v === "az" || v === "type" ? v : "groups";
+	} catch {
+		return "groups";
+	}
+}
 
-  const groups = $derived([...new Set(params.map(([, p]) => groupOf(p)).filter(Boolean))]);
-  const matches = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return params;
-    return params.filter(([n, p]) => `${n} ${p.label ?? ''} ${p.note ?? ''} ${p.type} ${groupOf(p)}`.toLowerCase().includes(q));
-  });
-  const sections = $derived.by((): { key: string; title: string; params: [string, Obj][] }[] => {
-    if (view === 'az') return [{ key: '', title: '', params: [...matches].sort(([a], [b]) => a.localeCompare(b)) }];
-    if (view === 'type') {
-      const out = paramTypes.map((t) => ({ key: `type:${t}`, title: t, params: matches.filter(([, p]) => p.type === t) }));
-      return out.filter((x) => x.params.length);
-    }
-    const out = paramSections(matches, groupOf).map((x) => ({ key: x.group, title: x.group, params: x.params }));
-    // Keep empty-by-search groups out; the ungrouped section only has a title when groups exist.
-    return out.filter((x) => x.params.length);
-  });
-  const canDrag = $derived(view === 'groups' && !query.trim());
+function setView(v: View) {
+	view = v;
+	try {
+		localStorage.setItem(viewKey, v);
+	} catch {
+		/* private mode */
+	}
+}
 
-  function fold(key: string) {
-    const next = new Set(folded);
-    if (!next.delete(key)) next.add(key);
-    folded = next;
-  }
+const groups = $derived([
+	...new Set(params.map(([, p]) => groupOf(p)).filter(Boolean)),
+]);
+const matches = $derived.by(() => {
+	const q = query.trim().toLowerCase();
+	if (!q) return params;
+	return params.filter(([n, p]) =>
+		`${n} ${p.label ?? ""} ${p.note ?? ""} ${p.type} ${groupOf(p)}`
+			.toLowerCase()
+			.includes(q),
+	);
+});
+const sections = $derived.by(
+	(): { key: string; title: string; params: [string, Obj][] }[] => {
+		if (view === "az")
+			return [
+				{
+					key: "",
+					title: "",
+					params: [...matches].sort(([a], [b]) => a.localeCompare(b)),
+				},
+			];
+		if (view === "type") {
+			const out = paramTypes.map((t) => ({
+				key: `type:${t}`,
+				title: t,
+				params: matches.filter(([, p]) => p.type === t),
+			}));
+			return out.filter((x) => x.params.length);
+		}
+		const out = paramSections(matches, groupOf).map((x) => ({
+			key: x.group,
+			title: x.group,
+			params: x.params,
+		}));
+		// Keep empty-by-search groups out; the ungrouped section only has a title when groups exist.
+		return out.filter((x) => x.params.length);
+	},
+);
+const canDrag = $derived(view === "groups" && !query.trim());
 
-  function groupMenu(e: MouseEvent, g: string) {
-    e.preventDefault();
-    openMenu(e.clientX, e.clientY, [
-      { label: 'Rename group…', icon: '✎', action: () => renameGroup(g) },
-      { label: 'Ungroup', detail: 'params stay, without a group', action: () => editDoc((d) => renameParamGroup(d, g, '')) },
-      { separator: true },
-      { label: folded.size ? 'Expand all' : 'Collapse all', action: () => (folded = folded.size ? new Set() : new Set(sections.map((s) => s.key))) },
-    ]);
-  }
+function fold(key: string) {
+	const next = new Set(folded);
+	if (!next.delete(key)) next.add(key);
+	folded = next;
+}
 
-  async function renameGroup(g: string) {
-    const to = (await askText({ title: `Rename group '${g}'`, value: g, confirm: 'Rename', validate: (v) => (v.trim() ? '' : 'Enter a name.') }))?.trim();
-    if (to && to !== g) editDoc((d) => renameParamGroup(d, g, to));
-  }
+function groupMenu(e: MouseEvent, g: string) {
+	e.preventDefault();
+	openMenu(e.clientX, e.clientY, [
+		{ label: "Rename group…", icon: "✎", action: () => renameGroup(g) },
+		{
+			label: "Ungroup",
+			detail: "params stay, without a group",
+			action: () => editDoc((d) => renameParamGroup(d, g, "")),
+		},
+		{ separator: true },
+		{
+			label: folded.size ? "Expand all" : "Collapse all",
+			action: () =>
+				(folded = folded.size
+					? new Set()
+					: new Set(sections.map((s) => s.key))),
+		},
+	]);
+}
 
-  async function setGroup(name: string, v: string) {
-    let g = v;
-    if (v === '\u0001new') {
-      g = (await askText({ title: 'New group', message: `Puts '${name}' in a new section of the params list and the card form.`, placeholder: 'Monster stats', confirm: 'Create', validate: (x) => (x.trim() ? '' : 'Enter a name.') }))?.trim() ?? '';
-      if (!g) return;
-    }
-    editDoc((d) => moveParam(d, name, null, g));
-  }
+async function renameGroup(g: string) {
+	const to = (
+		await askText({
+			title: `Rename group '${g}'`,
+			value: g,
+			confirm: "Rename",
+			validate: (v) => (v.trim() ? "" : "Enter a name."),
+		})
+	)?.trim();
+	if (to && to !== g) editDoc((d) => renameParamGroup(d, g, to));
+}
 
-  // ---------------------------------------------------------------- drag to reorder
+async function setGroup(name: string, v: string) {
+	let g = v;
+	if (v === "\u0001new") {
+		g =
+			(
+				await askText({
+					title: "New group",
+					message: `Puts '${name}' in a new section of the params list and the card form.`,
+					placeholder: "Monster stats",
+					confirm: "Create",
+					validate: (x) => (x.trim() ? "" : "Enter a name."),
+				})
+			)?.trim() ?? "";
+		if (!g) return;
+	}
+	editDoc((d) => moveParam(d, name, null, g));
+}
 
-  let dragName: string | null = $state(null);
-  let dropTarget: { before: string | null; group: string } | null = $state(null);
+// ---------------------------------------------------------------- drag to reorder
 
-  function finishDrop() {
-    const name = dragName;
-    const t = dropTarget;
-    dragName = null;
-    dropTarget = null;
-    if (!name || !t || t.before === name) return;
-    editDoc((d) => moveParam(d, name, t.before, t.group));
-  }
+let dragName: string | null = $state(null);
+let dropTarget: { before: string | null; group: string } | null = $state(null);
 
-  // ---------------------------------------------------------------- enum helpers
+function finishDrop() {
+	const name = dragName;
+	const t = dropTarget;
+	dragName = null;
+	dropTarget = null;
+	if (!name || !t || t.before === name) return;
+	editDoc((d) => moveParam(d, name, t.before, t.group));
+}
 
-  function usageOf(name: string): Map<string, number> {
-    const m = new Map<string, number>();
-    for (const c of cards) {
-      const v = c.values[name];
-      if (typeof v === 'string') m.set(v, (m.get(v) ?? 0) + 1);
-    }
-    return m;
-  }
-  let newName = $state('');
-  let newType: ParamTypeName = $state('text');
-  const nameError = $derived(
-    !newName ? '' : !identRe.test(newName) ? 'Letters, digits and _ only, not starting with a digit' : reserved.has(newName) ? 'This name is reserved' : params.some(([n]) => n === newName) ? 'Already exists' : '',
-  );
+// ---------------------------------------------------------------- enum helpers
 
-  function edit(name: string, path: string[], v: Json | undefined) {
-    editDoc((d) => {
-      if (!isObj(d.params)) d.params = {};
-      setPath(d.params[name] as Obj, path, v);
-    }, `param.${name}.${path.join('.')}`);
-  }
+function usageOf(name: string): Map<string, number> {
+	const m = new Map<string, number>();
+	for (const c of cards) {
+		const v = c.values[name];
+		if (typeof v === "string") m.set(v, (m.get(v) ?? 0) + 1);
+	}
+	return m;
+}
+let newName = $state("");
+let newType: ParamTypeName = $state("text");
+const nameError = $derived(
+	!newName
+		? ""
+		: !identRe.test(newName)
+			? "Letters, digits and _ only, not starting with a digit"
+			: reserved.has(newName)
+				? "This name is reserved"
+				: params.some(([n]) => n === newName)
+					? "Already exists"
+					: "",
+);
 
-  function add() {
-    if (!newName || nameError) return;
-    const name = newName;
-    editDoc((d) => {
-      if (!isObj(d.params)) d.params = {};
-      (d.params as Obj)[name] = newParam(newType, imageFiles);
-    });
-    open = name;
-    newName = '';
-  }
+function edit(name: string, path: string[], v: Json | undefined) {
+	editDoc(
+		(d) => {
+			if (!isObj(d.params)) d.params = {};
+			setPath(d.params[name] as Obj, path, v);
+		},
+		`param.${name}.${path.join(".")}`,
+	);
+}
 
-  let renameError = $state('');
+function add() {
+	if (!newName || nameError) return;
+	const name = newName;
+	editDoc((d) => {
+		if (!isObj(d.params)) d.params = {};
+		(d.params as Obj)[name] = newParam(newType, imageFiles);
+	});
+	open = name;
+	newName = "";
+}
 
-  function rename(from: string, to: string) {
-    if (to === from) return (renameError = '');
-    if (!identRe.test(to)) return (renameError = 'Letters, digits and _ only, not starting with a digit');
-    if (reserved.has(to)) return (renameError = 'This name is reserved');
-    if (params.some(([n]) => n === to)) return (renameError = `There is already a param '${to}'`);
-    renameError = '';
-    onrename(from, to);
-    open = to;
-  }
+let renameError = $state("");
 
-  async function remove(name: string) {
-    const ok = await confirmAction({ title: `Delete param '${name}'?`, message: 'Layers and cards that use it will show errors until you fix them.', confirm: 'Delete', danger: true });
-    if (!ok) return;
-    editDoc((d) => {
-      if (isObj(d.params)) delete d.params[name];
-    });
-  }
+function rename(from: string, to: string) {
+	const fail = (msg: string) => {
+		renameError = msg;
+		return msg;
+	};
+	if (to === from) return fail("");
+	if (!identRe.test(to))
+		return fail("Letters, digits and _ only, not starting with a digit");
+	if (reserved.has(to)) return fail("This name is reserved");
+	if (params.some(([n]) => n === to))
+		return fail(`There is already a param '${to}'`);
+	renameError = "";
+	onrename(from, to);
+	open = to;
+}
 
-  function retype(name: string, t: ParamTypeName) {
-    editDoc((d) => {
-      const ps = d.params as Obj;
-      ps[name] = retypeParam(ps[name] as Obj, t, imageFiles);
-    });
-  }
+async function remove(name: string) {
+	const ok = await confirmAction({
+		title: `Delete param '${name}'?`,
+		message:
+			"Layers and cards that use it will show errors until you fix them.",
+		confirm: "Delete",
+		danger: true,
+	});
+	if (!ok) return;
+	editDoc((d) => {
+		if (isObj(d.params)) delete d.params[name];
+	});
+}
 
-  function problems(name: string) {
-    return diagnostics.filter((d) => d.file === designFile && d.path.startsWith(`/params/${name}`));
-  }
+function retype(name: string, t: ParamTypeName) {
+	editDoc((d) => {
+		const ps = d.params as Obj;
+		ps[name] = retypeParam(ps[name] as Obj, t, imageFiles);
+	});
+}
 
-  function defaultKind(t: string) {
-    return t === 'number' || t === 'integer' ? 'number' : t === 'bool' ? 'bool' : t === 'color' ? 'color' : t === 'enum' ? 'enum' : 'text';
-  }
+function problems(name: string) {
+	return diagnostics.filter(
+		(d) => d.file === designFile && d.path.startsWith(`/params/${name}`),
+	);
+}
 
-  const typeHelp: Record<string, string> = {
-    text: 'words',
-    number: 'any number',
-    integer: 'whole number',
-    bool: 'yes / no',
-    color: '#RRGGBB',
-    enum: 'one of a list',
-    image: 'file or URL',
-    list: 'rows with fields',
-  };
+function defaultKind(t: string) {
+	return t === "number" || t === "integer"
+		? "number"
+		: t === "bool"
+			? "bool"
+			: t === "color"
+				? "color"
+				: t === "enum"
+					? "enum"
+					: "text";
+}
 
-  // List item fields: name -> scalar type.
-  const itemTypes = ['text', 'number', 'integer', 'bool', 'color'];
+const typeHelp: Record<string, string> = {
+	text: "words",
+	number: "any number",
+	integer: "whole number",
+	bool: "yes / no",
+	color: "#RRGGBB",
+	enum: "one of a list",
+	image: "file or URL",
+	list: "rows with fields",
+};
+
+// List item fields: name -> type name, or { type, options?, default? }.
+const itemTypes = ["text", "number", "integer", "bool", "color", "enum"];
+
+function fieldType(ft: Json): string {
+	return isObj(ft) ? String(ft.type ?? "text") : String(ft);
+}
+
+/** The item field's definition with `type` changed; enum fields get options. */
+function retypeField(ft: Json, t: string): Json {
+	if (t === "enum") {
+		const opts =
+			isObj(ft) && Array.isArray(ft.options) ? ft.options : ["a", "b"];
+		return { type: "enum", options: opts };
+	}
+	return isObj(ft) && ft.default !== undefined && fieldType(ft) === t
+		? { type: t, default: ft.default }
+		: t;
+}
+
+/** Sets or clears an item field's default (a string field becomes an object). */
+function withDefault(ft: Json, raw: string): Json {
+	const t = fieldType(ft);
+	const base: Obj = isObj(ft) ? { ...ft } : { type: t };
+	const v = raw.trim();
+	if (v === "") delete base.default;
+	else if (t === "number" || t === "integer") base.default = Number(v) || 0;
+	else if (t === "bool") base.default = v === "true";
+	else base.default = v;
+	return Object.keys(base).length === 1 ? t : base;
+}
 </script>
 
 <div class="params">
@@ -305,7 +432,7 @@
             class="head"
             onclick={() => (open = open === name ? null : name)}>
             {#if canDrag}<span class="grip" aria-hidden="true">⋮⋮</span>{/if}
-            <span class="mono">{name}</span>
+            <span class="mono pname" title={name}>{name}</span>
             {#if p.label}<span class="label">{p.label}</span>{/if}
             <span class="type">{t}{p.required ? ', required' : ''}</span>
             {#if p.note}<span class="has-note" title={String(p.note)}>ⓘ</span>{/if}
@@ -403,8 +530,14 @@
                   {#each Object.entries(isObj(p.item) ? p.item : {}) as [field, ft]}
                     <div class="row">
                       <span class="mono grow">{field}</span>
-                      <Select value={String(ft)} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], v)} />
+                      <Select value={fieldType(ft)} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], retypeField(ft, v))} />
                       <button class="mini" disabled={Object.keys(p.item as Obj).length <= 1} onclick={() => edit(name, ['item', field], undefined)}>×</button>
+                    </div>
+                    <div class="row sub-row">
+                      {#if fieldType(ft) === 'enum'}
+                        <input class="mono grow" title="Options of {field}, separated by commas" placeholder="options: a, b, c" value={isObj(ft) && Array.isArray(ft.options) ? ft.options.join(', ') : ''} onchange={(e) => edit(name, ['item', field], { ...(isObj(ft) ? ft : {}), type: 'enum', options: e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
+                      {/if}
+                      <input class="mono grow" title="Value an item gets when it leaves {field} out" placeholder="default" value={isObj(ft) && ft.default !== undefined ? String(ft.default) : ''} onchange={(e) => edit(name, ['item', field], withDefault(ft, e.currentTarget.value))} />
                     </div>
                   {/each}
                   <input
@@ -430,7 +563,7 @@
   {#if query && !matches.length}<p class="hint">No param matches '{query}'.</p>{/if}
 
   <div class="new">
-    <input class="mono" placeholder="new param name" bind:value={newName} onkeydown={(e) => e.key === 'Enter' && add()} />
+    <input class="mono" placeholder="param name" aria-label="New param name" bind:value={newName} onkeydown={(e) => e.key === 'Enter' && add()} />
     <Select value={newType} label="Type of the new param" options={paramTypes.map((pt) => ({ value: pt, label: pt, detail: typeHelp[pt] }))} onchange={(v) => (newType = v as ParamTypeName)} />
     <button onclick={add} disabled={!newName || !!nameError}>Add</button>
   </div>
@@ -527,6 +660,21 @@
   .head .type {
     margin-left: auto;
     white-space: nowrap;
+    flex: none;
+  }
+  /* Long names are cut with an ellipsis; the type stays visible. */
+  .pname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .head .label {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .head:focus-visible {
+    outline-offset: -2px !important;
   }
   .head:hover {
     background: var(--hover);
@@ -584,6 +732,10 @@
   }
   .grow {
     flex: 1;
+    min-width: 0;
+  }
+  .sub-row {
+    padding-left: 12px;
   }
   .mini {
     padding: 1px 6px;

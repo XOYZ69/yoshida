@@ -1,55 +1,55 @@
 <script lang="ts">
-  // Draws the context menu opened with openMenu().
-  import { closeMenu, overlay, type MenuItem } from './overlay.svelte';
+// Draws the context menu opened with openMenu().
+import { closeMenu, type MenuItem, overlay } from "./overlay.svelte";
 
-  let el: HTMLDivElement | undefined = $state();
-  let pos = $state({ left: 0, top: 0 });
-  let active = $state(-1);
+let el: HTMLDivElement | undefined = $state();
+let pos = $state({ left: 0, top: 0 });
+let active = $state(-1);
 
-  const m = $derived(overlay.menu);
-  const actionable = (it: MenuItem) => 'action' in it && !it.disabled;
+const m = $derived(overlay.menu);
+const actionable = (it: MenuItem) => "action" in it && !it.disabled;
 
-  $effect(() => {
-    const cur = m;
-    if (!cur || !el) return;
-    active = -1;
-    const r = el.getBoundingClientRect();
-    pos = {
-      left: Math.max(4, Math.min(cur.x, window.innerWidth - r.width - 4)),
-      top: Math.max(4, Math.min(cur.y, window.innerHeight - r.height - 4)),
-    };
-    el.focus();
-  });
+$effect(() => {
+	const cur = m;
+	if (!cur || !el) return;
+	active = -1;
+	const r = el.getBoundingClientRect();
+	pos = {
+		left: Math.max(4, Math.min(cur.x, window.innerWidth - r.width - 4)),
+		top: Math.max(4, Math.min(cur.y, window.innerHeight - r.height - 4)),
+	};
+	el.focus();
+});
 
-  function run(it: MenuItem) {
-    if (!('action' in it) || it.disabled) return;
-    closeMenu();
-    it.action();
-  }
+function run(it: MenuItem) {
+	if (!("action" in it) || it.disabled) return;
+	closeMenu();
+	it.action();
+}
 
-  function onkeydown(e: KeyboardEvent) {
-    const cur = overlay.menu;
-    if (!cur) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeMenu();
-      return;
-    }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      const n = cur.items.length;
-      let i = active;
-      for (let k = 0; k < n; k++) {
-        i = (i + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n;
-        if (actionable(cur.items[i])) break;
-      }
-      active = i;
-    } else if (e.key === 'Enter' && active >= 0) {
-      e.preventDefault();
-      run(cur.items[active]);
-    }
-  }
+function onkeydown(e: KeyboardEvent) {
+	const cur = overlay.menu;
+	if (!cur) return;
+	if (e.key === "Escape") {
+		e.preventDefault();
+		e.stopPropagation();
+		closeMenu();
+		return;
+	}
+	if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+		e.preventDefault();
+		const n = cur.items.length;
+		let i = active;
+		for (let k = 0; k < n; k++) {
+			i = (i + (e.key === "ArrowDown" ? 1 : n - 1) + n) % n;
+			if (actionable(cur.items[i])) break;
+		}
+		active = i;
+	} else if (e.key === "Enter" && active >= 0) {
+		e.preventDefault();
+		run(cur.items[active]);
+	}
+}
 </script>
 
 <svelte:window
@@ -131,6 +131,7 @@
     color: var(--err);
   }
   .icon {
+    flex: none;
     width: 16px;
     text-align: center;
     color: var(--muted);

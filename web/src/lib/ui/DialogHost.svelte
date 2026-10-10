@@ -1,85 +1,90 @@
 <script lang="ts">
-  // Draws the dialog requested through askText / confirmAction.
-  import { overlay } from './overlay.svelte';
-  import { dragFrom } from './drag';
+// Draws the dialog requested through askText / confirmAction.
 
-  let input: HTMLInputElement | undefined = $state();
-  let okButton: HTMLButtonElement | undefined = $state();
-  let text = $state('');
-  let error = $state('');
+import { dragFrom } from "./drag";
+import { overlay } from "./overlay.svelte";
 
-  const d = $derived(overlay.dialog);
-  // Offset from the centred place and the size, both reset for each dialog.
-  let dx = $state(0);
-  let dy = $state(0);
-  let size: { w: number; h: number } | null = $state(null);
-  let box: HTMLDivElement | undefined = $state();
+let input: HTMLInputElement | undefined = $state();
+let okButton: HTMLButtonElement | undefined = $state();
+let text = $state("");
+let error = $state("");
 
-  function moveBy(e: PointerEvent) {
-    const x0 = dx;
-    const y0 = dy;
-    dragFrom(e, (mx, my) => {
-      dx = x0 + mx;
-      dy = y0 + my;
-    });
-  }
+const d = $derived(overlay.dialog);
+// Offset from the centred place and the size, both reset for each dialog.
+let dx = $state(0);
+let dy = $state(0);
+let size: { w: number; h: number } | null = $state(null);
+let box: HTMLDivElement | undefined = $state();
 
-  function resizeBy(e: PointerEvent) {
-    if (!box) return;
-    const r = box.getBoundingClientRect();
-    const [x0, y0] = [dx, dy];
-    dragFrom(e, (mx, my) => {
-      size = { w: Math.max(300, r.width + mx), h: Math.max(140, r.height + my) };
-      // Centred layout: keep the top-left corner where it was.
-      dx = x0 + (size.w - r.width) / 2;
-      dy = y0 + (size.h - r.height) / 2;
-    });
-  }
+function moveBy(e: PointerEvent) {
+	const x0 = dx;
+	const y0 = dy;
+	dragFrom(e, (mx, my) => {
+		dx = x0 + mx;
+		dy = y0 + my;
+	});
+}
 
-  $effect(() => {
-    const cur = d;
-    if (!cur) return;
-    text = cur.kind === 'text' ? cur.value : '';
-    error = '';
-    dx = dy = 0;
-    size = null;
-    requestAnimationFrame(() => {
-      if (input) {
-        input.focus();
-        input.select();
-      } else okButton?.focus();
-    });
-  });
+function resizeBy(e: PointerEvent) {
+	if (!box) return;
+	const r = box.getBoundingClientRect();
+	const [x0, y0] = [dx, dy];
+	dragFrom(e, (mx, my) => {
+		size = { w: Math.max(300, r.width + mx), h: Math.max(140, r.height + my) };
+		// Centred layout: keep the top-left corner where it was.
+		dx = x0 + (size.w - r.width) / 2;
+		dy = y0 + (size.h - r.height) / 2;
+	});
+}
 
-  function close(result: string | boolean | null) {
-    const cur = overlay.dialog;
-    overlay.dialog = null;
-    if (!cur) return;
-    if (cur.kind === 'text') cur.resolve(typeof result === 'string' ? result : null);
-    else cur.resolve(result === true);
-  }
+$effect(() => {
+	const cur = d;
+	if (!cur) return;
+	text = cur.kind === "text" ? cur.value : "";
+	error = "";
+	dx = dy = 0;
+	size = null;
+	requestAnimationFrame(() => {
+		if (input) {
+			input.focus();
+			input.select();
+		} else okButton?.focus();
+	});
+});
 
-  function submit() {
-    const cur = overlay.dialog;
-    if (!cur) return;
-    if (cur.kind === 'confirm') return close(true);
-    const v = text.trim();
-    error = cur.validate?.(v) ?? '';
-    if (!v && !error) error = 'Please enter a value.';
-    if (!error) close(v);
-  }
+function close(result: string | boolean | null) {
+	const cur = overlay.dialog;
+	overlay.dialog = null;
+	if (!cur) return;
+	if (cur.kind === "text")
+		cur.resolve(typeof result === "string" ? result : null);
+	else cur.resolve(result === true);
+}
 
-  function onkeydown(e: KeyboardEvent) {
-    if (!overlay.dialog) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      close(null);
-    } else if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') {
-      e.preventDefault();
-      submit();
-    }
-  }
+function submit() {
+	const cur = overlay.dialog;
+	if (!cur) return;
+	if (cur.kind === "confirm") return close(true);
+	const v = text.trim();
+	error = cur.validate?.(v) ?? "";
+	if (!v && !error) error = "Please enter a value.";
+	if (!error) close(v);
+}
+
+function onkeydown(e: KeyboardEvent) {
+	if (!overlay.dialog) return;
+	if (e.key === "Escape") {
+		e.preventDefault();
+		e.stopPropagation();
+		close(null);
+	} else if (
+		e.key === "Enter" &&
+		(e.target as HTMLElement).tagName !== "BUTTON"
+	) {
+		e.preventDefault();
+		submit();
+	}
+}
 </script>
 
 <svelte:window onkeydowncapture={onkeydown} />
@@ -192,9 +197,9 @@
     background: transparent;
   }
   .primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--on-accent);
     font-weight: 600;
   }
   .primary.danger {

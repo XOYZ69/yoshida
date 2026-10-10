@@ -1,233 +1,426 @@
 <script lang="ts">
-  // Properties of the selected layer, or of the design itself when nothing
-  // is selected. Every field accepts a literal or an expression; fields a
-  // layer inherits through `extends` are marked and editing them adds an
-  // override to this layer.
-  import { setContext } from 'svelte';
-  import Field from './Field.svelte';
-  import Select from '../ui/Select.svelte';
-  import ImagePicker from '../ui/ImagePicker.svelte';
-  import type { CompletionContext } from './complete';
-  import {
-    anchors,
-    effectiveLayer,
-    getPath,
-    identRe,
-    isObj,
-    childrenOf,
-    layerPointer,
-    layersOf,
-    setPath,
-    textAnchors,
-    type AlignMode,
-    type Json,
-    type Obj,
-    newParam,
-    findLayer as findIn,
-  } from '../design';
-  import type { Diagnostic } from '../engine';
+// Properties of the selected layer, or of the design itself when nothing
+// is selected. Every field accepts a literal or an expression; fields a
+// layer inherits through `extends` are marked and editing them adds an
+// override to this layer.
+import { setContext } from "svelte";
+import {
+	type AlignMode,
+	ancestorsOf,
+	anchors,
+	childrenOf,
+	effectiveLayer,
+	findLayer as findIn,
+	getPath,
+	identRe,
+	isObj,
+	type Json,
+	layerPointer,
+	layersOf,
+	newParam,
+	type Obj,
+	setPath,
+	textAnchors,
+} from "../design";
+import type { Diagnostic } from "../engine";
+import ImagePicker from "../ui/ImagePicker.svelte";
+import Select from "../ui/Select.svelte";
+import type { CompletionContext } from "./complete";
+import Field from "./Field.svelte";
 
-  let {
-    doc,
-    ids,
-    imageFiles,
-    upload,
-    fontFiles,
-    diagnostics,
-    designFile,
-    editLayer,
-    editDoc,
-    rename,
-    onalign,
-    ondistribute,
-    onduplicate,
-    ondelete,
-    ongroup,
-    onungroup,
-    onproblems,
-    listKeys = {},
-  }: {
-    doc: Obj;
-    ids: string[];
-    imageFiles: string[];
-    /** Adds an image from the user's computer; returns its project path. */
-    upload: () => Promise<string | null>;
-    fontFiles: string[];
-    diagnostics: Diagnostic[];
-    designFile: string;
-    editLayer: (fn: (own: Obj) => void, key?: string) => void;
-    editDoc: (fn: (doc: Obj) => void, key?: string) => void;
-    rename: (from: string, to: string) => string;
-    /** Key values of each list param, from the cards, for `list.Key` suggestions. */
-    listKeys?: Record<string, string[]>;
-    onalign: (mode: AlignMode) => void;
-    ondistribute: (axis: 'x' | 'y') => void;
-    onduplicate: () => void;
-    ondelete: () => void;
-    ongroup: () => void;
-    onungroup: () => void;
-    /** Shows the problems of a layer (or of the design, for null) in the problems panel. */
-    onproblems: (id: string | null) => void;
-  } = $props();
+let {
+	doc,
+	ids,
+	imageFiles,
+	upload,
+	fontFiles,
+	diagnostics,
+	designFile,
+	editLayer,
+	editDoc,
+	rename,
+	onalign,
+	ondistribute,
+	onduplicate,
+	ondelete,
+	ongroup,
+	onungroup,
+	onproblems,
+	listKeys = {},
+}: {
+	doc: Obj;
+	ids: string[];
+	imageFiles: string[];
+	/** Adds an image from the user's computer; returns its project path. */
+	upload: () => Promise<string | null>;
+	fontFiles: string[];
+	diagnostics: Diagnostic[];
+	designFile: string;
+	editLayer: (fn: (own: Obj) => void, key?: string) => void;
+	editDoc: (fn: (doc: Obj) => void, key?: string) => void;
+	rename: (from: string, to: string) => string;
+	/** Key values of each list param, from the cards, for `list.Key` suggestions. */
+	listKeys?: Record<string, string[]>;
+	onalign: (mode: AlignMode) => void;
+	ondistribute: (axis: "x" | "y") => void;
+	onduplicate: () => void;
+	ondelete: () => void;
+	ongroup: () => void;
+	onungroup: () => void;
+	/** Shows the problems of a layer (or of the design, for null) in the problems panel. */
+	onproblems: (id: string | null) => void;
+} = $props();
 
-  const id = $derived(ids.length === 1 ? ids[0] : null);
+const id = $derived(ids.length === 1 ? ids[0] : null);
 
-  const own = $derived(id ? (layersOf(doc).find((l) => l.id === id) ?? null) : null);
-  const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
-  const ptr = $derived(id ? layerPointer(doc, id) : null);
-  const type = $derived(String(eff?.type ?? ''));
-  const params = $derived(isObj(doc.params) ? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [string, Obj][]) : []);
-  const fonts = $derived(isObj(doc.fonts) ? Object.keys(doc.fonts) : []);
+const own = $derived(
+	id ? (layersOf(doc).find((l) => l.id === id) ?? null) : null,
+);
+const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
+const ptr = $derived(id ? layerPointer(doc, id) : null);
+const type = $derived(String(eff?.type ?? ""));
+const params = $derived(
+	isObj(doc.params)
+		? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [
+				string,
+				Obj,
+			][])
+		: [],
+);
+const fonts = $derived(isObj(doc.fonts) ? Object.keys(doc.fonts) : []);
 
-  function paramsOfType(...types: string[]) {
-    return params.filter(([, p]) => types.includes(String(p.type))).map(([n]) => n);
-  }
-  const numberParams = $derived(paramsOfType('number', 'integer'));
-  const colorParams = $derived(paramsOfType('color'));
-  const boolParams = $derived(paramsOfType('bool'));
-  const textParams = $derived(paramsOfType('text', 'enum', 'number', 'integer', 'color', 'bool', 'image'));
-  const imageParams = $derived(paramsOfType('image'));
-  const listParams = $derived(paramsOfType('list'));
+function paramsOfType(...types: string[]) {
+	return params
+		.filter(([, p]) => types.includes(String(p.type)))
+		.map(([n]) => n);
+}
+const numberParams = $derived(paramsOfType("number", "integer"));
+const colorParams = $derived(paramsOfType("color"));
+const boolParams = $derived(paramsOfType("bool"));
+const textParams = $derived(
+	paramsOfType("text", "enum", "number", "integer", "color", "bool", "image"),
+);
+const imageParams = $derived(paramsOfType("image"));
+const listParams = $derived(paramsOfType("list"));
 
-  // Suggestions for expression fields (see ExprInput).
-  const completion = $derived.by((): CompletionContext => {
-    const locals: CompletionContext['locals'] = [];
-    const rep = isObj(eff?.repeat) ? (eff!.repeat as Obj) : null;
-    if (rep) {
-      locals.push({ name: String(rep.index ?? 'i'), detail: 'repeat index' });
-      if (typeof rep.item === 'string') {
-        const each = String(rep.each ?? '');
-        const p = params.find(([n]) => n === each.trim())?.[1];
-        locals.push({ name: rep.item, detail: `item of ${each}`, fields: isObj(p?.item) ? (p!.item as Record<string, string>) : {} });
-      }
-    }
-    return {
-      params: params.map(([name, p]) => ({ name, type: String(p.type), item: p.item && typeof p.item === 'object' && !Array.isArray(p.item) ? (Object.fromEntries(Object.entries(p.item).map(([k, v]) => [k, String(v)])) as Record<string, string>) : undefined, keys: listKeys[name], label: typeof p.label === 'string' ? p.label : undefined, note: typeof p.note === 'string' ? p.note : undefined })),
-      layers: layersOf(doc)
-        .filter((l) => l.id !== id && !l.repeat)
-        .map((l) => ({ id: String(l.id), type: String(l.type) })),
-      locals,
-    };
-  });
-  setContext('yoshida-complete', () => completion);
+/** Item field name → type name (enum fields are objects in the file). */
+function itemTypes(item: Json | undefined): Record<string, string> {
+	if (!isObj(item)) return {};
+	return Object.fromEntries(
+		Object.entries(item).map(([k, v]) => [
+			k,
+			isObj(v) ? String(v.type ?? "text") : String(v),
+		]),
+	);
+}
 
-  // Problems are listed once, in the problems panel; fields only show a
-  // short note for their own errors.
-  const myDiags = $derived(
-    diagnostics.filter(
-      (d) =>
-        d.file === designFile &&
-        (ptr ? (d.path === ptr || d.path.startsWith(ptr + '/')) && !d.path.startsWith(ptr + '/layers/') : !d.path.startsWith('/layers/')),
-    ),
-  );
-  const errorCount = $derived(myDiags.filter((d) => d.severity === 'error').length);
-  const warnCount = $derived(myDiags.filter((d) => d.severity === 'warning').length);
+const consts = $derived(
+	isObj(doc.consts) ? Object.entries(doc.consts as Obj) : [],
+);
+const functions = $derived(
+	isObj(doc.functions)
+		? (Object.entries(doc.functions as Obj).filter(([, v]) => isObj(v)) as [
+				string,
+				Obj,
+			][])
+		: [],
+);
 
-  function errorAt(path: string[]) {
-    const p = ptr ? `${ptr}/${path.join('/')}` : `/${path.join('/')}`;
-    const d = myDiags.find((x) => x.severity === 'error' && (x.path === p || x.path.startsWith(p + '/')));
-    return d ? d.message.replace(/^layer '[^']*': /, '') : '';
-  }
+function argsText(args: Json | undefined): string {
+	if (Array.isArray(args)) return args.map(String).join(", ");
+	if (isObj(args))
+		return Object.entries(args)
+			.map(([k, t]) => `${k}: ${t}`)
+			.join(", ");
+	return "";
+}
 
-  const ownVal = (path: string[]) => getPath(own ?? undefined, path);
-  const effVal = (path: string[]) => getPath(eff ?? undefined, path);
+function parseArgs(text: string): Obj {
+	const out: Obj = {};
+	for (const part of text.split(",")) {
+		const [n, t] = part.split(":").map((x) => x.trim());
+		if (n) out[n] = t || "number";
+	}
+	return out;
+}
 
-  function set(path: string[], v: Json | undefined) {
-    editLayer((l) => setPath(l, path, v), path.join('.'));
-  }
+// Suggestions for expression fields (see ExprInput).
+const completion = $derived.by((): CompletionContext => {
+	const locals: CompletionContext["locals"] = [];
+	// Loop names of the repeated groups around the layer, then its own.
+	const owners = id
+		? [
+				...ancestorsOf(doc, id)
+					.reverse()
+					.map((a) => effectiveLayer(doc, a)),
+				eff,
+			]
+		: [];
+	for (const o of owners) {
+		const rep = isObj(o?.repeat) ? (o!.repeat as Obj) : null;
+		if (!rep) continue;
+		const whose = o === eff ? "repeat" : `group ${o?.id}`;
+		locals.push({ name: String(rep.index ?? "i"), detail: `${whose} index` });
+		if (typeof rep.item === "string") {
+			const each = String(rep.each ?? "");
+			const p = params.find(([n]) => n === each.trim())?.[1];
+			locals.push({
+				name: rep.item,
+				detail: `item of ${each}`,
+				fields: itemTypes(p?.item),
+			});
+		}
+	}
+	return {
+		consts: consts.map(([name]) => ({ name })),
+		functions: functions.map(([name, f]) => ({
+			name,
+			args: argsText(f.args),
+		})),
+		params: params.map(([name, p]) => ({
+			name,
+			type: String(p.type),
+			item: isObj(p.item) ? itemTypes(p.item) : undefined,
+			keys: listKeys[name],
+			label: typeof p.label === "string" ? p.label : undefined,
+			note: typeof p.note === "string" ? p.note : undefined,
+		})),
+		layers: layersOf(doc)
+			.filter((l) => l.id !== id && !l.repeat)
+			.map((l) => ({ id: String(l.id), type: String(l.type) })),
+		locals,
+	};
+});
+setContext("yoshida-complete", () => completion);
 
-  function setDoc(path: string[], v: Json | undefined) {
-    editDoc((d) => setPath(d, path, v), 'doc.' + path.join('.'));
-  }
+// Problems are listed once, in the problems panel; fields only show a
+// short note for their own errors.
+const myDiags = $derived(
+	diagnostics.filter(
+		(d) =>
+			d.file === designFile &&
+			(ptr
+				? (d.path === ptr || d.path.startsWith(`${ptr}/`)) &&
+					!d.path.startsWith(`${ptr}/layers/`)
+				: !d.path.startsWith("/layers/")),
+	),
+);
+const errorCount = $derived(
+	myDiags.filter((d) => d.severity === "error").length,
+);
+const warnCount = $derived(
+	myDiags.filter((d) => d.severity === "warning").length,
+);
 
-  let idError = $state('');
-  function renameTo(next: string) {
-    if (!id || next === id) return;
-    idError = rename(id, next);
-  }
-  $effect(() => {
-    void id;
-    idError = '';
-  });
+function errorAt(path: string[]) {
+	const p = ptr ? `${ptr}/${path.join("/")}` : `/${path.join("/")}`;
+	const d = myDiags.find(
+		(x) =>
+			x.severity === "error" && (x.path === p || x.path.startsWith(`${p}/`)),
+	);
+	return d ? d.message.replace(/^layer '[^']*': /, "") : "";
+}
 
-  const isGroupLayer = $derived(type === 'group');
-  const childCount = $derived(own && isGroupLayer ? childrenOf(own).length : 0);
-  const sameTypeIds = $derived(layersOf(doc).filter((l) => l.type === type && l.id !== id).map((l) => String(l.id)));
+const ownVal = (path: string[]) => getPath(own ?? undefined, path);
+const effVal = (path: string[]) => getPath(eff ?? undefined, path);
 
-  // ------------------------------------------------------------ effects
+function set(path: string[], v: Json | undefined) {
+	editLayer((l) => setPath(l, path, v), path.join("."));
+}
 
-  const effectTypes = ['fade', 'crop', 'sharpen', 'detail', 'edge_enhance', 'find_edges'];
-  const effectHelp: Record<string, string> = {
-    fade: 'soft edge on one side',
-    crop: 'cut one side off',
-    sharpen: 'crisper details',
-    detail: 'boost fine detail',
-    edge_enhance: 'stronger edges',
-    find_edges: 'outline only',
-  };
-  const effects = $derived(Array.isArray(eff?.effects) ? (eff!.effects as Obj[]) : []);
+function setDoc(path: string[], v: Json | undefined) {
+	editDoc((d) => setPath(d, path, v), `doc.${path.join(".")}`);
+}
 
-  function editEffects(fn: (list: Obj[]) => void, key?: string) {
-    editLayer((l) => {
-      const list = structuredClone(effects);
-      fn(list);
-      if (list.length) l.effects = list;
-      else delete l.effects;
-    }, key);
-  }
+let idError = $state("");
+function renameTo(next: string) {
+	if (!id || next === id) return;
+	idError = rename(id, next);
+}
+$effect(() => {
+	void id;
+	idError = "";
+});
 
-  function newEffect(t: string): Obj {
-    return t === 'fade' || t === 'crop' ? { type: t, side: 'bottom', length: 100 } : { type: t };
-  }
+const isGroupLayer = $derived(type === "group");
+const childCount = $derived(own && isGroupLayer ? childrenOf(own).length : 0);
+const sameTypeIds = $derived(
+	layersOf(doc)
+		.filter((l) => l.type === type && l.id !== id)
+		.map((l) => String(l.id)),
+);
 
-  // ------------------------------------------------------------ repeat
+// ------------------------------------------------------------ effects
 
-  const repeatMode = $derived(isObj(eff?.repeat) ? ((eff!.repeat as Obj).each !== undefined ? 'each' : 'count') : 'none');
+const effectTypes = [
+	"fade",
+	"crop",
+	"sharpen",
+	"detail",
+	"edge_enhance",
+	"find_edges",
+];
+const effectHelp: Record<string, string> = {
+	fade: "soft edge on one side",
+	crop: "cut one side off",
+	sharpen: "crisper details",
+	detail: "boost fine detail",
+	edge_enhance: "stronger edges",
+	find_edges: "outline only",
+};
+const effects = $derived(
+	Array.isArray(eff?.effects) ? (eff!.effects as Obj[]) : [],
+);
 
-  function setRepeat(mode: string) {
-    editLayer((l) => {
-      if (mode === 'none') delete l.repeat;
-      else if (mode === 'count') l.repeat = { count: numberParams[0] ?? 3, index: 'i' };
-      else l.repeat = { each: listParams[0] ?? 'items', item: 'item', index: 'i' };
-    });
-  }
+function editEffects(fn: (list: Obj[]) => void, key?: string) {
+	editLayer((l) => {
+		const list = structuredClone(effects);
+		fn(list);
+		if (list.length) l.effects = list;
+		else delete l.effects;
+	}, key);
+}
 
-  /** `each` needs a list: without one, add an `items` list param in the same step. */
-  function setRepeatMode(mode: string) {
-    if (mode !== 'each' || listParams.length || !id) return setRepeat(mode);
-    const target = id;
-    editDoc((d) => {
-      if (!isObj(d.params)) d.params = {};
-      const ps = d.params as Obj;
-      let name = 'items';
-      for (let n = 2; ps[name] !== undefined; n++) name = `items${n}`;
-      ps[name] = newParam('list', imageFiles);
-      const l = findIn(d, target);
-      if (l) l.repeat = { each: name, item: 'item', index: 'i' };
-    });
-  }
+function newEffect(t: string): Obj {
+	return t === "fade" || t === "crop"
+		? { type: t, side: "bottom", length: 100 }
+		: { type: t };
+}
 
-  // ------------------------------------------------------------ polygon points
+// ------------------------------------------------------------ repeat
 
-  const points = $derived(Array.isArray(eff?.points) ? (eff!.points as Json[][]) : []);
+const repeatMode = $derived(
+	isObj(eff?.repeat)
+		? (eff!.repeat as Obj).each !== undefined
+			? "each"
+			: "count"
+		: "none",
+);
 
-  function editPoints(fn: (pts: Json[][]) => void, key?: string) {
-    editLayer((l) => {
-      const pts = structuredClone(points);
-      fn(pts);
-      l.points = pts;
-    }, key);
-  }
+function setRepeat(mode: string) {
+	editLayer((l) => {
+		if (mode === "none") delete l.repeat;
+		else if (mode === "count")
+			l.repeat = { count: numberParams[0] ?? 3, index: "i" };
+		else
+			l.repeat = { each: listParams[0] ?? "items", item: "item", index: "i" };
+	});
+}
 
-  function parseCoord(raw: string): Json {
-    const s = raw.trim();
-    return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
-  }
+/** `each` needs a list: without one, add an `items` list param in the same step. */
+function setRepeatMode(mode: string) {
+	if (mode !== "each" || listParams.length || !id) return setRepeat(mode);
+	const target = id;
+	editDoc((d) => {
+		if (!isObj(d.params)) d.params = {};
+		const ps = d.params as Obj;
+		let name = "items";
+		for (let n = 2; ps[name] !== undefined; n++) name = `items${n}`;
+		ps[name] = newParam("list", imageFiles);
+		const l = findIn(d, target);
+		if (l) l.repeat = { each: name, item: "item", index: "i" };
+	});
+}
 
-  // ------------------------------------------------------------ fonts
+// ------------------------------------------------------------ polygon points
 
-  const fontEntries = $derived(isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : []);
-  let newFont = $state('');
+const points = $derived(
+	Array.isArray(eff?.points) ? (eff!.points as Json[][]) : [],
+);
+
+function editPoints(fn: (pts: Json[][]) => void, key?: string) {
+	editLayer((l) => {
+		const pts = structuredClone(points);
+		fn(pts);
+		l.points = pts;
+	}, key);
+}
+
+const isShape = $derived(type === "polygon" && isObj(eff?.shape));
+const shapeTypes = [
+	"star",
+	"polygon",
+	"triangle",
+	"diamond",
+	"arrow",
+	"cross",
+	"chevron",
+];
+
+/** Switches a polygon between its own points and a preset shape in a box. */
+function setShapeMode(mode: string) {
+	editLayer((l) => {
+		if (mode === "shape") {
+			const b = shapeBox();
+			delete l.points;
+			delete l.closed;
+			l.shape = { type: "star" };
+			l.box = b;
+		} else {
+			const box = isObj(l.box) ? (l.box as Obj) : {};
+			const n = (v: Json | undefined, d: number) =>
+				typeof v === "number" ? v : d;
+			const x = n(box.x, 0);
+			const y = n(box.y, 0);
+			const w = n(box.w, 100);
+			const h = n(box.h, 100);
+			delete l.shape;
+			delete l.box;
+			l.points = [
+				[x + w / 2, y],
+				[x + w, y + h],
+				[x, y + h],
+			];
+		}
+	});
+}
+
+/** A box around a polygon's literal points (or a default). */
+function shapeBox(): Obj {
+	const xs: number[] = [];
+	const ys: number[] = [];
+	for (const p of points) {
+		if (typeof p[0] === "number") xs.push(p[0]);
+		if (typeof p[1] === "number") ys.push(p[1]);
+	}
+	if (!xs.length || !ys.length) return { x: 0, y: 0, w: 100, h: 100 };
+	const x = Math.min(...xs);
+	const y = Math.min(...ys);
+	return {
+		x,
+		y,
+		w: Math.max(1, Math.max(...xs) - x),
+		h: Math.max(1, Math.max(...ys) - y),
+	};
+}
+
+/** `[12, 6]` ⇄ "12, 6". */
+function dashText(v: Json | undefined): string {
+	return Array.isArray(v) ? v.map(String).join(", ") : "";
+}
+
+function parseDash(text: string): Json | undefined {
+	const parts = text
+		.split(",")
+		.map((x) => x.trim())
+		.filter(Boolean)
+		.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x));
+	return parts.length ? parts : undefined;
+}
+
+function parseCoord(raw: string): Json {
+	const s = raw.trim();
+	return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+}
+
+// ------------------------------------------------------------ fonts
+
+const fontEntries = $derived(
+	isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : [],
+);
+let newFont = $state("");
+let newConst = $state("");
+let newFunction = $state("");
 </script>
 
 {#snippet effectsSection()}
@@ -252,6 +445,35 @@
     {/each}
     <Select value="" placeholder="+ Add effect…" label="Add effect" options={effectTypes.map((t) => ({ value: t, label: t, detail: effectHelp[t] }))} onchange={(t) => editEffects((l) => l.push(newEffect(t)))} />
   </section>
+{/snippet}
+
+{#snippet repeatSection()}
+    <section>
+      <h3>Repeat</h3>
+      <div class="field-like">
+        <span class="lbl">mode</span>
+        <Select
+          value={repeatMode}
+          label="Repeat mode"
+          options={[
+            { value: 'none', label: 'none' },
+            { value: 'count', label: 'count', detail: 'n times' },
+            { value: 'each', label: 'each', detail: listParams.length ? 'once per list item' : 'adds a list param “items”' },
+          ]}
+          onchange={setRepeatMode} />
+      </div>
+      {#if repeatMode === 'count'}
+        <Field label="count" kind="number" value={effVal(['repeat', 'count'])} bindings={numberParams} error={errorAt(['repeat', 'count'])} onchange={(v) => set(['repeat', 'count'], v)} />
+      {:else if repeatMode === 'each'}
+        <Field label="each" kind="expr" expect="list" value={effVal(['repeat', 'each'])} bindings={listParams} error={errorAt(['repeat', 'each'])} onchange={(v) => set(['repeat', 'each'], v)} />
+        <Field label="item" kind="text" value={effVal(['repeat', 'item'])} placeholder="item" error={errorAt(['repeat', 'item'])} onchange={(v) => set(['repeat', 'item'], v)} />
+      {/if}
+      {#if repeatMode !== 'none'}
+        <Field label="index" kind="text" optional value={effVal(['repeat', 'index'])} fallback="i" error={errorAt(['repeat', 'index'])} onchange={(v) => set(['repeat', 'index'], v)} />
+        <p class="hint">{isGroupLayer ? 'The layers inside are drawn once per iteration and can use the index (and item) names, for example translate.x: 100 + i * 60. Read one iteration from elsewhere with @layer[i].' : "Use the index (and item) names in this layer's fields, for example x: 100 + i * 60. Read one iteration from elsewhere with @layer[i]."}</p>
+      {/if}
+    </section>
+
 {/snippet}
 
 {#snippet problemChip()}
@@ -325,6 +547,13 @@
         <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
       </div>
     </section>
+    <section>
+      <h3>Origin</h3>
+      <Field label="translate.x" kind="number" optional value={ownVal(['translate', 'x'])} fallback={0} title="Moves everything inside; coordinates inside the group are relative to this point" bindings={numberParams} error={errorAt(['translate', 'x'])} onchange={(v) => set(['translate', 'x'], v)} />
+      <Field label="translate.y" kind="number" optional value={ownVal(['translate', 'y'])} fallback={0} bindings={numberParams} error={errorAt(['translate', 'y'])} onchange={(v) => set(['translate', 'y'], v)} />
+      <p class="hint">With a translate, the layers inside use coordinates relative to it, and moving the group on the canvas changes only the translate.</p>
+    </section>
+    {@render repeatSection()}
     {@render effectsSection()}
   {:else if ids.length === 1 && id && own && eff}
 
@@ -332,13 +561,26 @@
       <h3>Position and size</h3>
       {@render alignBar(true)}
       {#if type === 'polygon'}
+        <div class="field-like">
+          <span class="lbl">drawn from</span>
+          <Select
+            value={isShape ? 'shape' : 'points'}
+            label="Polygon drawn from"
+            options={[
+              { value: 'points', label: 'points', detail: 'your own corners' },
+              { value: 'shape', label: 'shape', detail: 'a preset in a box' },
+            ]}
+            onchange={setShapeMode} />
+        </div>
+      {/if}
+      {#if type === 'polygon' && !isShape}
         <div class="points">
           {#each points as p, i}
             <div class="pt">
               <span class="lbl">{i + 1}</span>
               <input class="mono" value={String(p[0])} onchange={(e) => editPoints((pts) => (pts[i][0] = parseCoord(e.currentTarget.value)))} />
               <input class="mono" value={String(p[1])} onchange={(e) => editPoints((pts) => (pts[i][1] = parseCoord(e.currentTarget.value)))} />
-              <button class="mini" title="Remove point" disabled={points.length <= 3} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
+              <button class="mini" title="Remove point" disabled={points.length <= (effVal(['closed']) === false ? 2 : 3)} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
             </div>
           {/each}
           <button
@@ -355,6 +597,15 @@
         <Field label="closed" kind="enum" optional value={ownVal(['closed']) === undefined ? undefined : String(ownVal(['closed']))} fallback="true" options={['true', 'false']} onchange={(v) => set(['closed'], v === undefined ? undefined : v === 'true')} />
       {:else}
         <Field label="anchor" kind="enum" optional value={ownVal(['anchor'])} fallback="top-left" options={type === 'text' ? textAnchors : anchors} inherited={ownVal(['anchor']) === undefined && effVal(['anchor']) !== undefined} onchange={(v) => set(['anchor'], v)} />
+        {#if isShape}
+          <Field label="shape" kind="enum" value={effVal(['shape', 'type'])} options={shapeTypes} error={errorAt(['shape', 'type'])} onchange={(v) => set(['shape', 'type'], v ?? 'star')} />
+          {#if effVal(['shape', 'type']) === 'star' || effVal(['shape', 'type']) === 'polygon'}
+            <Field label="count" kind="number" optional value={ownVal(['shape', 'count'])} fallback={effVal(['shape', 'type']) === 'star' ? 5 : 6} title="Points of a star, sides of a polygon" bindings={numberParams} error={errorAt(['shape', 'count'])} onchange={(v) => set(['shape', 'count'], v)} />
+          {/if}
+          {#if ['star', 'arrow', 'cross', 'chevron'].includes(String(effVal(['shape', 'type'])))}
+            <Field label="inner" kind="number" optional value={ownVal(['shape', 'inner'])} title="Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)" bindings={numberParams} error={errorAt(['shape', 'inner'])} onchange={(v) => set(['shape', 'inner'], v)} />
+          {/if}
+        {/if}
         {#each type === 'text' ? [['at', 'x'], ['at', 'y']] : [['box', 'x'], ['box', 'y'], ['box', 'w'], ['box', 'h']] as path}
           <Field
             label={path.join('.')}
@@ -387,6 +638,7 @@
         <Field label="max_height" kind="number" optional value={ownVal(['max_height'])} fallback={effVal(['max_height'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_height'])} onchange={(v) => set(['max_height'], v)} />
         <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} onchange={(v) => set(['min_size'], v)} />
         <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
+        <Field label="shrink_group" kind="text" optional value={ownVal(['shrink_group'])} fallback={effVal(['shrink_group'])} placeholder="none" title="Texts with the same name (and all their iterations) use the smallest size any of them shrank to" onchange={(v) => set(['shrink_group'], v === '' ? undefined : v)} />
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
@@ -400,46 +652,43 @@
         {#if type === 'rect'}
           <Field label="radius" kind="number" optional value={ownVal(['radius'])} fallback={effVal(['radius']) ?? 0} bindings={numberParams} error={errorAt(['radius'])} onchange={(v) => set(['radius'], v)} />
         {/if}
+        {#if type === 'ellipse'}
+          <div class="field-like">
+            <span class="lbl">arc</span>
+            <input type="checkbox" checked={isObj(eff.arc)} title="Draw part of the ellipse" onchange={(e) => set(['arc'], e.currentTarget.checked ? { start: 0, end: 270 } : undefined)} />
+          </div>
+          {#if isObj(eff.arc)}
+            <Field label="arc.start" kind="number" optional value={ownVal(['arc', 'start'])} fallback={effVal(['arc', 'start']) ?? 0} title="Degrees clockwise from the top" bindings={numberParams} error={errorAt(['arc', 'start'])} onchange={(v) => set(['arc', 'start'], v)} />
+            <Field label="arc.end" kind="number" optional value={ownVal(['arc', 'end'])} fallback={effVal(['arc', 'end']) ?? 360} bindings={numberParams} error={errorAt(['arc', 'end'])} onchange={(v) => set(['arc', 'end'], v)} />
+            <Field label="arc.pie" kind="enum" optional value={ownVal(['arc', 'pie']) === undefined ? undefined : String(ownVal(['arc', 'pie']))} fallback="true" options={['true', 'false']} title="true: a slice through the centre; false: only the curve (stroke)" onchange={(v) => set(['arc', 'pie'], v === undefined ? undefined : v === 'true')} />
+          {/if}
+        {/if}
       {/if}
-      {#if type !== 'text' && type !== 'image'}
+      {#if type !== 'image'}
         <div class="field-like">
-          <span class="lbl">stroke</span>
-          <input type="checkbox" checked={isObj(eff.stroke)} onchange={(e) => set(['stroke'], e.currentTarget.checked ? { color: '#000000', width: 4 } : undefined)} />
+          <span class="lbl">{type === 'text' ? 'outline' : 'stroke'}</span>
+          <input type="checkbox" checked={isObj(eff.stroke)} onchange={(e) => set(['stroke'], e.currentTarget.checked ? { color: '#000000', width: type === 'text' ? 2 : 4 } : undefined)} />
         </div>
         {#if isObj(eff.stroke)}
           <Field label="stroke.color" kind="color" value={ownVal(['stroke', 'color']) ?? effVal(['stroke', 'color'])} bindings={colorParams} error={errorAt(['stroke', 'color'])} onchange={(v) => set(['stroke', 'color'], v)} />
           <Field label="stroke.width" kind="number" value={ownVal(['stroke', 'width']) ?? effVal(['stroke', 'width'])} bindings={numberParams} error={errorAt(['stroke', 'width'])} onchange={(v) => set(['stroke', 'width'], v)} />
+          {#if type !== 'text'}
+            <div class="field-like">
+              <span class="lbl">stroke.dash</span>
+              <input class="mono" placeholder="solid, or e.g. 12, 6" title="Dash pattern in pixels: on, off, on, off…" value={dashText(effVal(['stroke', 'dash']))} onchange={(e) => set(['stroke', 'dash'], parseDash(e.currentTarget.value))} />
+            </div>
+            {#if errorAt(['stroke', 'dash'])}<div class="err">{errorAt(['stroke', 'dash'])}</div>{/if}
+          {/if}
+          {#if type === 'polygon' && !isShape && effVal(['closed']) === false}
+            <Field label="stroke.arrow" kind="enum" optional value={ownVal(['stroke', 'arrow'])} fallback={String(effVal(['stroke', 'arrow']) ?? 'none')} options={['none', 'start', 'end', 'both']} title="Arrowheads at the ends of an open line" onchange={(v) => set(['stroke', 'arrow'], v === 'none' ? undefined : v)} />
+          {/if}
         {/if}
       {/if}
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} onchange={(v) => set(['opacity'], v)} />
     </section>
 
-    <section>
-      <h3>Repeat</h3>
-      <div class="field-like">
-        <span class="lbl">mode</span>
-        <Select
-          value={repeatMode}
-          label="Repeat mode"
-          options={[
-            { value: 'none', label: 'none' },
-            { value: 'count', label: 'count', detail: 'n times' },
-            { value: 'each', label: 'each', detail: listParams.length ? 'once per list item' : 'adds a list param “items”' },
-          ]}
-          onchange={setRepeatMode} />
-      </div>
-      {#if repeatMode === 'count'}
-        <Field label="count" kind="number" value={effVal(['repeat', 'count'])} bindings={numberParams} error={errorAt(['repeat', 'count'])} onchange={(v) => set(['repeat', 'count'], v)} />
-      {:else if repeatMode === 'each'}
-        <Field label="each" kind="expr" expect="list" value={effVal(['repeat', 'each'])} bindings={listParams} error={errorAt(['repeat', 'each'])} onchange={(v) => set(['repeat', 'each'], v)} />
-        <Field label="item" kind="text" value={effVal(['repeat', 'item'])} placeholder="item" error={errorAt(['repeat', 'item'])} onchange={(v) => set(['repeat', 'item'], v)} />
-      {/if}
-      {#if repeatMode !== 'none'}
-        <Field label="index" kind="text" optional value={effVal(['repeat', 'index'])} fallback="i" error={errorAt(['repeat', 'index'])} onchange={(v) => set(['repeat', 'index'], v)} />
-        <p class="hint">Use the index (and item) names in this layer's fields, for example <code>x: 100 + i * 60</code>.</p>
-      {/if}
-    </section>
+    {@render repeatSection()}
 
     {@render effectsSection()}
   {:else if !ids.length}
@@ -449,8 +698,52 @@
       <Field label="width" kind="number" value={getPath(doc, ['canvas', 'width'])} bindings={numberParams} error={errorAt(['canvas', 'width'])} onchange={(v) => setDoc(['canvas', 'width'], v)} />
       <Field label="height" kind="number" value={getPath(doc, ['canvas', 'height'])} bindings={numberParams} error={errorAt(['canvas', 'height'])} onchange={(v) => setDoc(['canvas', 'height'], v)} />
       <Field label="background" kind="color" optional value={getPath(doc, ['canvas', 'background'])} fallback="#00000000" bindings={colorParams} error={errorAt(['canvas', 'background'])} onchange={(v) => setDoc(['canvas', 'background'], v)} />
+      <Field label="dpi" kind="number" optional value={getPath(doc, ['canvas', 'dpi'])} placeholder="not set" title="Print resolution, stored in PNG and PDF files" bindings={numberParams} error={errorAt(['canvas', 'dpi'])} onchange={(v) => setDoc(['canvas', 'dpi'], v)} />
+      <Field label="bleed" kind="number" optional value={getPath(doc, ['canvas', 'bleed'])} placeholder="none" title="Pixels on every side that are cut off; the trim line (and crop marks) sit this far inside the edge" bindings={numberParams} error={errorAt(['canvas', 'bleed'])} onchange={(v) => setDoc(['canvas', 'bleed'], v)} />
       <Field label="note" kind="text" optional value={doc.note} onchange={(v) => setDoc(['note'], v)} />
       {@render problemChip()}
+    </section>
+    <section>
+      <h3>Constants</h3>
+      {#each consts as [name, v]}
+        <div class="const">
+          <Field label={name} kind="expr" value={v} error={errorAt(['consts', name])} onchange={(x) => setDoc(['consts', name], x ?? 0)} />
+          <button class="mini" title="Remove" onclick={() => editDoc((d) => {
+            if (isObj(d.consts)) delete (d.consts as Obj)[name];
+            if (isObj(d.consts) && !Object.keys(d.consts).length) delete d.consts;
+          })}>×</button>
+        </div>
+      {/each}
+      <div class="row">
+        <input class="mono" placeholder="name" bind:value={newConst} />
+        <button disabled={!identRe.test(newConst) || consts.some(([n]) => n === newConst)} onclick={() => { setDoc(['consts', newConst], 0); newConst = ''; }}>Add</button>
+      </div>
+      <p class="hint">A value every layer can use by name, such as a tile size. It can use params and the constants above it.</p>
+    </section>
+    <section>
+      <h3>Functions</h3>
+      {#each functions as [name, fn]}
+        <div class="effect">
+          <div class="effect-head">
+            <strong class="mono">{name}({argsText(fn.args)})</strong>
+            <span class="spacer"></span>
+            <button class="mini" title="Remove" onclick={() => editDoc((d) => {
+              if (isObj(d.functions)) delete (d.functions as Obj)[name];
+              if (isObj(d.functions) && !Object.keys(d.functions).length) delete d.functions;
+            })}>×</button>
+          </div>
+          <div class="field-like">
+            <span class="lbl">args</span>
+            <input class="mono" value={argsText(fn.args)} placeholder="i: number, kind: text" onchange={(e) => setDoc(['functions', name, 'args'], parseArgs(e.currentTarget.value))} />
+          </div>
+          <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
+        </div>
+      {/each}
+      <div class="row">
+        <input class="mono" placeholder="name" bind:value={newFunction} />
+        <button disabled={!identRe.test(newFunction) || functions.some(([n]) => n === newFunction)} onclick={() => { setDoc(['functions', newFunction], { args: { i: 'number' }, expr: 'i * 10' }); newFunction = ''; }}>Add</button>
+      </div>
+      <p class="hint">A formula with arguments, such as <code>tile_x(i)</code>, that layers call instead of repeating it. Argument types: number, text, bool, color.</p>
     </section>
     <section>
       <h3>Fonts</h3>
@@ -571,6 +864,12 @@
     color: #000;
     font-weight: 700;
     font-size: 12px;
+  }
+  .const {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px;
+    align-items: center;
   }
   .points {
     display: flex;

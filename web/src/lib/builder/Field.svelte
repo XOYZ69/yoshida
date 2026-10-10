@@ -1,112 +1,143 @@
 <script lang="ts">
-  // One property in the inspector. Shows a widget for literal values (number,
-  // color picker, checkbox, dropdown) and a text box for expressions. The
-  // link menu binds the field to a param of a matching type.
-  import { hexOf, literalNumber, round, type Json } from '../design';
-  import ExprInput from './ExprInput.svelte';
-  import Select from '../ui/Select.svelte';
-  import ColorPicker from '../ui/ColorPicker.svelte';
+// One property in the inspector. Shows a widget for literal values (number,
+// color picker, checkbox, dropdown) and a text box for expressions. The
+// link menu binds the field to a param of a matching type.
+import { hexOf, type Json, literalNumber, round } from "../design";
+import ColorPicker from "../ui/ColorPicker.svelte";
+import Select from "../ui/Select.svelte";
+import ExprInput from "./ExprInput.svelte";
 
-  type FieldKind = 'number' | 'color' | 'bool' | 'enum' | 'template' | 'text' | 'expr';
+type FieldKind =
+	| "number"
+	| "color"
+	| "bool"
+	| "enum"
+	| "template"
+	| "text"
+	| "expr";
 
-  let {
-    label,
-    kind,
-    value,
-    fallback = undefined,
-    options = [],
-    bindings = [],
-    optional = false,
-    inherited = false,
-    error = '',
-    placeholder = '',
-    title = '',
-    allowAuto = false,
-    expect = undefined,
-    onchange,
-  }: {
-    label: string;
-    kind: FieldKind;
-    value: Json | undefined;
-    /** Shown (greyed) when the field is not set. */
-    fallback?: Json | undefined;
-    options?: string[];
-    /** Param names this field can be bound to. */
-    bindings?: string[];
-    optional?: boolean;
-    inherited?: boolean;
-    error?: string;
-    placeholder?: string;
-    title?: string;
-    allowAuto?: boolean;
-    /** The value type an expression must give (for suggestions). */
-    expect?: 'number' | 'color' | 'bool' | 'text' | 'list' | 'image' | 'any';
-    onchange: (v: Json | undefined) => void;
-  } = $props();
+let {
+	label,
+	kind,
+	value,
+	fallback = undefined,
+	options = [],
+	bindings = [],
+	optional = false,
+	inherited = false,
+	error = "",
+	placeholder = "",
+	title = "",
+	allowAuto = false,
+	expect = undefined,
+	onchange,
+}: {
+	label: string;
+	kind: FieldKind;
+	value: Json | undefined;
+	/** Shown (greyed) when the field is not set. */
+	fallback?: Json | undefined;
+	options?: string[];
+	/** Param names this field can be bound to. */
+	bindings?: string[];
+	optional?: boolean;
+	inherited?: boolean;
+	error?: string;
+	placeholder?: string;
+	title?: string;
+	allowAuto?: boolean;
+	/** The value type an expression must give (for suggestions). */
+	expect?: "number" | "color" | "bool" | "text" | "list" | "image" | "any";
+	onchange: (v: Json | undefined) => void;
+} = $props();
 
-  const unset = $derived(value === undefined);
-  const shown = $derived(value ?? fallback);
-  const text = $derived(shown === undefined || shown === null ? '' : typeof shown === 'string' ? shown : JSON.stringify(shown));
-  const hex = $derived(hexOf(shown));
-  const isExpr = $derived.by(() => {
-    if (shown === undefined) return false;
-    switch (kind) {
-      case 'number':
-        return literalNumber(shown) === undefined && !/^-?\d+(\.\d+)?%$/.test(String(shown)) && shown !== 'auto';
-      case 'color':
-        return hex === null;
-      case 'bool':
-        return typeof shown !== 'boolean';
-      default:
-        return false;
-    }
-  });
-  let forceExpr = $state(false);
-  const exprMode = $derived(isExpr || forceExpr);
+const unset = $derived(value === undefined);
+const shown = $derived(value ?? fallback);
+const text = $derived(
+	shown === undefined || shown === null
+		? ""
+		: typeof shown === "string"
+			? shown
+			: JSON.stringify(shown),
+);
+const hex = $derived(hexOf(shown));
+const isExpr = $derived.by(() => {
+	if (shown === undefined) return false;
+	switch (kind) {
+		case "number":
+			return (
+				literalNumber(shown) === undefined &&
+				!/^-?\d+(\.\d+)?%$/.test(String(shown)) &&
+				shown !== "auto"
+			);
+		case "color":
+			return hex === null;
+		case "bool":
+			return typeof shown !== "boolean";
+		default:
+			return false;
+	}
+});
+let forceExpr = $state(false);
+const exprMode = $derived(isExpr || forceExpr);
 
-  function parseNumber(raw: string): Json | undefined {
-    const s = raw.trim();
-    if (s === '') return optional ? undefined : value;
-    const n = literalNumber(s);
-    return n !== undefined ? n : s;
-  }
+function parseNumber(raw: string): Json | undefined {
+	const s = raw.trim();
+	if (s === "") return optional ? undefined : value;
+	const n = literalNumber(s);
+	return n !== undefined ? n : s;
+}
 
-  function commitText(raw: string) {
-    if (kind === 'number') return onchange(parseNumber(raw));
-    if (kind === 'bool' && (raw.trim() === 'true' || raw.trim() === 'false')) {
-      forceExpr = false;
-      return onchange(raw.trim() === 'true');
-    }
-    if (raw === '' && optional) return onchange(undefined);
-    onchange(raw);
-  }
+function commitText(raw: string) {
+	if (kind === "number") return onchange(parseNumber(raw));
+	if (kind === "bool" && (raw.trim() === "true" || raw.trim() === "false")) {
+		forceExpr = false;
+		return onchange(raw.trim() === "true");
+	}
+	if (raw === "" && optional) return onchange(undefined);
+	onchange(raw);
+}
 
-  const expects = $derived(expect ?? (kind === 'number' ? 'number' : kind === 'color' ? 'color' : kind === 'bool' ? 'bool' : kind === 'template' ? 'text' : 'any'));
+const expects = $derived(
+	expect ??
+		(kind === "number"
+			? "number"
+			: kind === "color"
+				? "color"
+				: kind === "bool"
+					? "bool"
+					: kind === "template"
+						? "text"
+						: "any"),
+);
 
-  function bind(name: string) {
-    if (!name) return;
-    if (kind === 'template') onchange(`${value ?? ''}{${name}}`);
-    else onchange(name);
-  }
+function bind(name: string) {
+	if (!name) return;
+	if (kind === "template") onchange(`${value ?? ""}{${name}}`);
+	else onchange(name);
+}
 
-  // Drag the label sideways to change a literal number.
-  let scrub: { x: number; start: number } | null = null;
-  function scrubStart(e: PointerEvent) {
-    if (kind !== 'number') return;
-    const n = literalNumber(shown);
-    if (n === undefined) return;
-    scrub = { x: e.clientX, start: n };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-  function scrubMove(e: PointerEvent) {
-    if (!scrub) return;
-    const step = e.shiftKey ? 10 : Math.abs(scrub.start) < 2 ? 0.01 : 1;
-    const next = round(scrub.start + Math.round((e.clientX - scrub.x) / 2) * step, 2);
-    if (next !== literalNumber(value)) onchange(next);
-  }
-  function scrubEnd() {
-    scrub = null;
-  }
+// Drag the label sideways to change a literal number.
+let scrub: { x: number; start: number } | null = null;
+function scrubStart(e: PointerEvent) {
+	if (kind !== "number") return;
+	const n = literalNumber(shown);
+	if (n === undefined) return;
+	scrub = { x: e.clientX, start: n };
+	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+}
+function scrubMove(e: PointerEvent) {
+	if (!scrub) return;
+	const step = e.shiftKey ? 10 : Math.abs(scrub.start) < 2 ? 0.01 : 1;
+	const next = round(
+		scrub.start + Math.round((e.clientX - scrub.x) / 2) * step,
+		2,
+	);
+	if (next !== literalNumber(value)) onchange(next);
+}
+function scrubEnd() {
+	scrub = null;
+}
 </script>
 
 <div class="field" class:unset class:inherited class:bad={!!error} {title}>
@@ -135,19 +166,29 @@
     {:else}
       <ExprInput value={text} suggest={kind !== 'text'} mono={exprMode || kind === 'expr'} {placeholder} {label} expect={expects} oncommit={commitText} />
     {/if}
-    {#if kind === 'number' && allowAuto}
-      <button class="mini" class:on={shown === 'auto'} title="Keep the image's aspect ratio" onclick={() => onchange(shown === 'auto' ? 100 : 'auto')}>auto</button>
-    {/if}
-    {#if kind === 'color' || kind === 'bool'}
-      <button class="mini" class:on={exprMode} title="Switch between a plain value and an expression" onclick={() => (isExpr ? onchange(kind === 'bool' ? true : '#000000') : (forceExpr = !forceExpr))}>{exprMode ? 'expr' : 'value'}</button>
-    {:else if kind === 'number' && isExpr}
-      <span class="mini on" title="This value is an expression">expr</span>
-    {/if}
-    {#if bindings.length}
-      <span class="link"><Select compact value="" placeholder="param" label="Bind {label} to a param" title="Bind to a param" options={bindings} onchange={bind} /></span>
-    {/if}
-    {#if optional && !unset && kind !== 'enum'}
-      <button class="mini" title="Remove (use the default)" onclick={() => onchange(undefined)}>×</button>
+    {#if kind !== 'enum'}
+      <!-- Trailing buttons sit in one group pushed to the right edge, and the
+           reset button's slot is kept even when it is hidden, so the param
+           pickers line up from row to row. The group wraps below the value
+           when the panel is narrow instead of overflowing it. -->
+      <span class="trail">
+        {#if kind === 'number' && allowAuto}
+          <button class="mini" class:on={shown === 'auto'} title="Keep the image's aspect ratio" onclick={() => onchange(shown === 'auto' ? 100 : 'auto')}>auto</button>
+        {/if}
+        {#if kind === 'color' || kind === 'bool'}
+          <button class="mini" class:on={exprMode} title="Switch between a plain value and an expression" onclick={() => (isExpr ? onchange(kind === 'bool' ? true : '#000000') : (forceExpr = !forceExpr))}>{exprMode ? 'expr' : 'value'}</button>
+        {:else if kind === 'number' && isExpr}
+          <span class="mini on" title="This value is an expression">expr</span>
+        {/if}
+        {#if bindings.length}
+          <span class="link"><Select compact value="" placeholder="param" label="Bind {label} to a param" title="Bind to a param" options={bindings} onchange={bind} /></span>
+        {/if}
+        {#if optional && !unset}
+          <button class="mini x" title="Remove (use the default)" aria-label="Remove {label} (use the default)" onclick={() => onchange(undefined)}>×</button>
+        {:else}
+          <span class="x" aria-hidden="true"></span>
+        {/if}
+      </span>
     {/if}
   </div>
   {#if error}<div class="error">{error}</div>{/if}
@@ -176,9 +217,27 @@
   }
   .control {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     align-items: center;
     min-width: 0;
+  }
+  .control > :global(.expr) {
+    flex: 1 1 48px;
+  }
+  .trail {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-left: auto;
+    flex: none;
+  }
+  .x {
+    flex: none;
+    width: 20px;
+    min-height: 22px;
+    padding: 0;
   }
   .unset .control :global(input),
   .unset .control :global(textarea) {
@@ -193,6 +252,11 @@
     border-color: var(--err);
   }
   .mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-height: 22px;
     padding: 2px 5px;
     font-size: 11px;
     border-radius: 4px;
@@ -215,6 +279,8 @@
   }
   input[type='checkbox'] {
     margin: 4px 0;
+    width: 16px;
+    height: 16px;
   }
   .error {
     grid-column: 2;

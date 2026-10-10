@@ -27,6 +27,7 @@ Designs are simple json files that are easy to share, modify and abuse as much a
 - **Layers** to create any shape, text or effect you need (if something is missing open an issue)
 - Use **Formulas** to manipulate every value possible
 - **Clear error messages** - Probably the best feature
+- **Print ready**: PNG with dpi, or one PDF per set with bleed and crop marks
 - Easy **Docker** Deployment with `docker compose up --build`
 
 ## Quick start
@@ -48,6 +49,10 @@ unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `
 yoshida check  examples/feature-tour
 yoshida render examples/feature-tour --out out
 ```
+
+## Project files
+
+The editor exports a whole project (designs, card files, images and fonts) as a single `.yoshida` file. It is a zip container, like `.docx`, so you can share it, open it again with **Open project file…** or by dropping it on the editor, and unpack it with any archive tool after renaming it to `.zip`. Plain `.zip` projects from older exports still open. See [FORMAT.md](FORMAT.md#project-file-yoshida).
 
 ## Build from source
 
@@ -74,6 +79,7 @@ yoshida bundles a few small libraries so that it builds without any C dependenci
 | [stb_truetype](https://github.com/nothings/stb)          | Reading fonts and drawing text        | Public domain / MIT       |
 | [simplewebp](https://github.com/MikuAuahDark/simplewebp) | Loading WebP images                   | BSD-3-Clause              |
 | [Lato](https://www.latofonts.com)                        | Default font                          | SIL Open Font License 1.1 |
+| [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (subset) | Fallback for arrows, shapes, stars and other symbols | SIL Open Font License 1.1 |
 
 The C libraries are single-header files in [`src/c/`](src/c). Why they are large and how to update them is described in [`src/c/README.md`](src/c/README.md).
 

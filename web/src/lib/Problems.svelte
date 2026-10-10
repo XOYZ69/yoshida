@@ -1,74 +1,94 @@
 <script lang="ts">
-  // The one list of problems. Each entry is a block: severity, code, the
-  // message with names set as code, where it is (file:line and a readable
-  // path) and the hint. The same problem on several cards is shown once.
-  import type { Diagnostic, Severity } from './engine';
+// The one list of problems. Each entry is a block: severity, code, the
+// message with names set as code, where it is (file:line and a readable
+// path) and the hint. The same problem on several cards is shown once.
+import type { Diagnostic, Severity } from "./engine";
 
-  let {
-    diagnostics,
-    onselect,
-    crumbs = () => [],
-    focus = null,
-    onclearfocus = () => {},
-  }: {
-    diagnostics: Diagnostic[];
-    onselect: (d: Diagnostic) => void;
-    /** Readable location steps, e.g. ['layer title', 'size']. */
-    crumbs?: (d: Diagnostic) => string[];
-    /** Only show the problems of one layer (or the design). */
-    focus?: { label: string; match: (d: Diagnostic) => boolean } | null;
-    onclearfocus?: () => void;
-  } = $props();
+let {
+	diagnostics,
+	onselect,
+	crumbs = () => [],
+	focus = null,
+	onclearfocus = () => {},
+}: {
+	diagnostics: Diagnostic[];
+	onselect: (d: Diagnostic) => void;
+	/** Readable location steps, e.g. ['layer title', 'size']. */
+	crumbs?: (d: Diagnostic) => string[];
+	/** Only show the problems of one layer (or the design). */
+	focus?: { label: string; match: (d: Diagnostic) => boolean } | null;
+	onclearfocus?: () => void;
+} = $props();
 
-  const order: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
-  let show = $state<Record<Severity, boolean>>({ error: true, warning: true, hint: true });
+const order: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
+let show = $state<Record<Severity, boolean>>({
+	error: true,
+	warning: true,
+	hint: true,
+});
 
-  type Entry = { d: Diagnostic; cards: string[] };
-  const entries = $derived.by(() => {
-    const map = new Map<string, Entry>();
-    for (const d of diagnostics) {
-      const key = [d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join('\u0000');
-      const e = map.get(key);
-      if (e) {
-        if (d.card && !e.cards.includes(d.card)) e.cards.push(d.card);
-      } else map.set(key, { d, cards: d.card ? [d.card] : [] });
-    }
-    return [...map.values()].sort((a, b) => order[a.d.severity] - order[b.d.severity] || a.d.file.localeCompare(b.d.file) || a.d.line - b.d.line);
-  });
-  const scoped = $derived(focus ? entries.filter((e) => focus!.match(e.d)) : entries);
-  const visible = $derived(scoped.filter((e) => show[e.d.severity]));
-  const counts = $derived({
-    error: scoped.filter((e) => e.d.severity === 'error').length,
-    warning: scoped.filter((e) => e.d.severity === 'warning').length,
-    hint: scoped.filter((e) => e.d.severity === 'hint').length,
-  });
+type Entry = { d: Diagnostic; cards: string[] };
+const entries = $derived.by(() => {
+	const map = new Map<string, Entry>();
+	for (const d of diagnostics) {
+		const key = [
+			d.severity,
+			d.code,
+			d.file,
+			d.path,
+			d.line,
+			d.col,
+			d.message,
+		].join("\u0000");
+		const e = map.get(key);
+		if (e) {
+			if (d.card && !e.cards.includes(d.card)) e.cards.push(d.card);
+		} else map.set(key, { d, cards: d.card ? [d.card] : [] });
+	}
+	return [...map.values()].sort(
+		(a, b) =>
+			order[a.d.severity] - order[b.d.severity] ||
+			a.d.file.localeCompare(b.d.file) ||
+			a.d.line - b.d.line,
+	);
+});
+const scoped = $derived(
+	focus ? entries.filter((e) => focus!.match(e.d)) : entries,
+);
+const visible = $derived(scoped.filter((e) => show[e.d.severity]));
+const counts = $derived({
+	error: scoped.filter((e) => e.d.severity === "error").length,
+	warning: scoped.filter((e) => e.d.severity === "warning").length,
+	hint: scoped.filter((e) => e.d.severity === "hint").length,
+});
 
-  /** Splits a message into text and 'quoted' names (shown as code). */
-  function parts(msg: string): { code: boolean; text: string }[] {
-    const out: { code: boolean; text: string }[] = [];
-    const re = /'([^']+)'|"([^"]+)"/g;
-    let last = 0;
-    for (let m = re.exec(msg); m; m = re.exec(msg)) {
-      if (m.index > last) out.push({ code: false, text: msg.slice(last, m.index) });
-      out.push({ code: true, text: m[1] ?? m[2] });
-      last = m.index + m[0].length;
-    }
-    if (last < msg.length) out.push({ code: false, text: msg.slice(last) });
-    return out;
-  }
+/** Splits a message into text and 'quoted' names (shown as code). */
+function parts(msg: string): { code: boolean; text: string }[] {
+	const out: { code: boolean; text: string }[] = [];
+	const re = /'([^']+)'|"([^"]+)"/g;
+	let last = 0;
+	for (let m = re.exec(msg); m; m = re.exec(msg)) {
+		if (m.index > last)
+			out.push({ code: false, text: msg.slice(last, m.index) });
+		out.push({ code: true, text: m[1] ?? m[2] });
+		last = m.index + m[0].length;
+	}
+	if (last < msg.length) out.push({ code: false, text: msg.slice(last) });
+	return out;
+}
 
-  const area: Record<string, string> = {
-    '1': 'file structure',
-    '2': 'card data',
-    '3': 'expressions and layout',
-    '4': 'images and fonts',
-    '5': 'limits',
-  };
+const area: Record<string, string> = {
+	1: "file structure",
+	2: "card data",
+	3: "expressions and layout",
+	4: "images and fonts",
+	5: "limits",
+};
 
-  const short = (f: string) => f.split('/').pop() ?? f;
-  /** Messages start with "layer 'x': "; the location already says that. */
-  const body = (m: string) => m.replace(/^layer '[^']*': /, '');
-  const icon: Record<Severity, string> = { error: '✕', warning: '!', hint: 'i' };
+const short = (f: string) => f.split("/").pop() ?? f;
+/** Messages start with "layer 'x': "; the location already says that. */
+const body = (m: string) => m.replace(/^layer '[^']*': /, "");
+const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" };
 </script>
 
 <div class="problems">
@@ -141,6 +161,8 @@
     align-items: center;
     gap: 5px;
     font-size: 12px;
+    min-height: 24px;
+    box-sizing: border-box;
     padding: 1px 8px 1px 3px;
     border-radius: 999px;
   }
@@ -155,7 +177,7 @@
     border-radius: 50%;
     font-size: 10px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-status);
   }
   .error .dot,
   .error .badge {
@@ -243,7 +265,7 @@
     border-radius: 50%;
     font-size: 11px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-status);
   }
   .main {
     flex: 1;
