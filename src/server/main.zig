@@ -2,7 +2,7 @@
 //! sets on the server ("hybrid" mode for home labs).
 //!
 //!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
-//!   POST /api/render         {"files": {path: base64}, "set", "date", "format": "png"|"png16"}
+//!   POST /api/render         {"files": {path: base64}, "set", "date", "format": "png"|"png16"|"pdf"}
 //!                            -> application/zip with <set>/<card id>.png, or 422 with diagnostics
 //!   GET  /*                  static files from --web (the built editor)
 
@@ -168,10 +168,12 @@ const Job = struct {
     set: *const y.project.Set,
     date: []const u8,
     sixteen: bool,
+    pdf: bool = false,
     /// Cards with index % stride == offset belong to this job.
     offset: usize,
     stride: usize,
     pngs: [][]u8,
+    pages: []?y.pdf.Page = &.{},
     diags: y.diag.List,
     failed: bool = false,
 
@@ -185,6 +187,13 @@ const Job = struct {
                 return;
             }) orelse continue;
             defer bmp.deinit(job.gpa);
+            if (job.pdf) {
+                job.pages[i] = y.pdf.Page.init(job.gpa, &bmp) catch {
+                    job.failed = true;
+                    return;
+                };
+                continue;
+            }
             job.pngs[i] = y.raster.encodePng(job.gpa, &bmp, job.sixteen) catch {
                 job.failed = true;
                 return;
@@ -209,6 +218,7 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     const set_name = if (doc.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
     const date = if (doc.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
     const sixteen = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "png16")) else false;
+    const want_pdf = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "pdf")) else false;
 
     var fs = y.project.MemFs.init(gpa);
     defer fs.deinit();
@@ -234,6 +244,12 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         gpa.free(pngs);
     }
     @memset(pngs, &.{});
+    const pages = try gpa.alloc(?y.pdf.Page, set.cards.len);
+    defer {
+        for (pages) |*p| if (p.*) |*pg| pg.deinit(gpa);
+        gpa.free(pages);
+    }
+    @memset(pages, null);
     const n_jobs = @min(cfg.threads, @max(1, set.cards.len));
     const jobs = try arena.alloc(Job, n_jobs);
     const threads = try arena.alloc(?std.Thread, n_jobs);
@@ -241,7 +257,7 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     const job_arenas = try arena.alloc(std.heap.ArenaAllocator, n_jobs);
     for (jobs, 0..) |*job, j| {
         job_arenas[j] = std.heap.ArenaAllocator.init(gpa);
-        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .sixteen = sixteen, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()) };
+        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()) };
     }
     defer for (job_arenas) |*a| a.deinit();
     for (jobs, 0..) |*job, j| {
@@ -256,6 +272,19 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     }
     if (failed) return jsonError(req, .internal_server_error, "out of memory while rendering");
     if (diags.errorCount() > 0) return diagnosticsResponse(arena, req, &diags);
+
+    if (want_pdf) {
+        var w = try y.pdf.Writer.init(gpa);
+        defer w.deinit();
+        for (pages) |*p| if (p.*) |*pg| try w.addPrepared(pg);
+        const bytes = try w.finish();
+        defer gpa.free(bytes);
+        const pdf_disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.pdf\"", .{set.name});
+        return req.respond(bytes, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "application/pdf" },
+            .{ .name = "content-disposition", .value = pdf_disposition },
+        } });
+    }
 
     var entries: std.ArrayList(zip.Entry) = .empty;
     for (set.cards, 0..) |card, ci| {

@@ -117,7 +117,26 @@ pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void 
                 for (def.names, 0..) |n, j| {
                     if (j > 0) try w.writeByte(',');
                     try json.writeString(w, n);
-                    try w.print(":\"{s}\"", .{@tagName(def.types[j])});
+                    const opts = def.optionsOf(j);
+                    const dflt = if (j < def.defaults.len) def.defaults[j] else null;
+                    if (opts.len == 0 and dflt == null) {
+                        try w.print(":\"{s}\"", .{@tagName(def.types[j])});
+                        continue;
+                    }
+                    try w.print(":{{\"type\":\"{s}\"", .{if (opts.len > 0) "enum" else @tagName(def.types[j])});
+                    if (opts.len > 0) {
+                        try w.writeAll(",\"options\":[");
+                        for (opts, 0..) |o, oi| {
+                            if (oi > 0) try w.writeByte(',');
+                            try json.writeString(w, o);
+                        }
+                        try w.writeByte(']');
+                    }
+                    if (dflt) |v| {
+                        try w.writeAll(",\"default\":");
+                        try writeValue(w, v);
+                    }
+                    try w.writeByte('}');
                 }
                 try w.writeByte('}');
             }

@@ -33,6 +33,9 @@ export type Names = {
 	params: Map<string, string>;
 	locals: Set<string>;
 	layers: Map<string, string>;
+	/** Design constants and functions. */
+	consts?: Set<string>;
+	functions?: Set<string>;
 };
 
 const identStart = /[A-Za-z_]/;
@@ -140,14 +143,15 @@ export function scanExpr(
 			const call = text[k] === "(";
 			if (w === "and" || w === "or" || w === "not") push(i, e, "keyword");
 			else if (w === "true" || w === "false") push(i, e, "bool");
-			else if (call)
+			else if (call) {
+				const known = FN_BY_NAME.has(w) || !names || !!names.functions?.has(w);
 				push(
 					i,
 					e,
-					FN_BY_NAME.has(w) ? "fn" : "unknown",
-					FN_BY_NAME.has(w) ? undefined : `Unknown function '${w}'`,
+					known ? "fn" : "unknown",
+					known ? undefined : `Unknown function '${w}'`,
 				);
-			else if (builtins.has(w)) {
+			} else if (builtins.has(w)) {
 				push(i, e, "builtin");
 				i = chain(e, "prop");
 				continue;
@@ -156,6 +160,7 @@ export function scanExpr(
 				i = chain(e, "prop");
 				continue;
 			} else if (names.params.has(w)) push(i, e, "param");
+			else if (names.consts?.has(w)) push(i, e, "param", "Constant");
 			else if (FN_BY_NAME.has(w)) push(i, e, "fn");
 			else push(i, e, "unknown", `Unknown name '${w}'`);
 			i = chain(e, "prop");

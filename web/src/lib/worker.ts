@@ -42,6 +42,8 @@ type Msg = { id: number } & (
 	| { op: "check" }
 	| { op: "render"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
+	| { op: "checkCards"; set: string; date: string }
+	| { op: "pdf"; set: string; date: string; crop_marks: boolean }
 );
 
 function withBytes<T>(bytes: Uint8Array, fn: (ptr: number) => T): T {
@@ -157,6 +159,20 @@ async function handle(
 				result: { files: out, diagnostics },
 				transfer: out.map((f) => f.png.buffer),
 			};
+		}
+		case "checkCards":
+			return {
+				result: request({ op: "check_cards", set: msg.set, date: msg.date })
+					.json,
+			};
+		case "pdf": {
+			const r = request({
+				op: "pdf",
+				set: msg.set,
+				date: msg.date,
+				crop_marks: msg.crop_marks,
+			});
+			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
 		}
 		default:
 			throw new Error(`unknown op ${(msg as { op: string }).op}`);

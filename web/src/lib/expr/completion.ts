@@ -170,6 +170,39 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 			),
 		);
 	}
+	for (const k of ctx.consts ?? []) {
+		out.push(
+			opt(
+				{
+					label: k.name,
+					kind: "param",
+					detail: "constant",
+					section: S.params,
+					fitness: 1,
+					info: info(k.name, "A design constant (consts)."),
+				},
+				expect,
+				1,
+			),
+		);
+	}
+	for (const f of ctx.functions ?? []) {
+		out.push(
+			opt(
+				{
+					label: f.name,
+					kind: "fn",
+					detail: `(${f.args})`,
+					section: S.functions,
+					fitness: 1,
+					apply: insertThenComplete(`${f.name}(`),
+					info: info(`${f.name}(${f.args})`, "A design function (functions)."),
+				},
+				expect,
+				1,
+			),
+		);
+	}
 	for (const l of ctx.layers) {
 		out.push({
 			label: `@${l.id}`,

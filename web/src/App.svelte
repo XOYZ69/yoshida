@@ -1,6 +1,11 @@
 <script lang="ts">
 import { zipSync } from "fflate";
 import { onMount } from "svelte";
+import Inspector from "./lib/builder/Inspector.svelte";
+import LayerTree from "./lib/builder/LayerTree.svelte";
+import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
+import Stage from "./lib/builder/Stage.svelte";
+import CardForm from "./lib/CardForm.svelte";
 import {
 	type AlignMode,
 	alignLayers,
@@ -55,6 +60,20 @@ import {
 	Engine,
 	type RenderResult,
 } from "./lib/engine";
+import { listKeys as listKeysOf } from "./lib/expr/catalog";
+import Problems from "./lib/Problems.svelte";
+import {
+	baseOf,
+	dirOf,
+	findRefs,
+	freePath,
+	isKeep,
+	join,
+	keepName,
+	pathsUnder,
+	rewriteRefs,
+	useCounts,
+} from "./lib/paths";
 import {
 	blankCards,
 	blankDesign,
@@ -101,35 +120,13 @@ import {
 	saveProject,
 	setLastProject,
 } from "./lib/store";
-
-// CodeMirror is only needed in the Advanced view; load it on demand.
-const loadEditor = () => import("./lib/Editor.svelte");
-
-import Inspector from "./lib/builder/Inspector.svelte";
-import LayerTree from "./lib/builder/LayerTree.svelte";
-import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
-import Stage from "./lib/builder/Stage.svelte";
-import CardForm from "./lib/CardForm.svelte";
-import { listKeys as listKeysOf } from "./lib/expr/catalog";
-import Problems from "./lib/Problems.svelte";
-import {
-	baseOf,
-	dirOf,
-	findRefs,
-	freePath,
-	isKeep,
-	join,
-	keepName,
-	pathsUnder,
-	rewriteRefs,
-	useCounts,
-} from "./lib/paths";
 import CardBrowser from "./lib/ui/CardBrowser.svelte";
 import CardList from "./lib/ui/CardList.svelte";
 import CardPicker from "./lib/ui/CardPicker.svelte";
 import DialogHost from "./lib/ui/DialogHost.svelte";
 import { loadPref, savePref } from "./lib/ui/drag";
 import FileBrowser from "./lib/ui/FileBrowser.svelte";
+import Icon from "./lib/ui/Icon.svelte";
 import MenuHost from "./lib/ui/MenuHost.svelte";
 import {
 	askText,
@@ -138,9 +135,11 @@ import {
 	openMenu,
 } from "./lib/ui/overlay.svelte";
 import Select from "./lib/ui/Select.svelte";
-import Icon from "./lib/ui/Icon.svelte";
 import Splitter from "./lib/ui/Splitter.svelte";
 import Window from "./lib/ui/Window.svelte";
+
+// CodeMirror is only needed in the Advanced view; load it on demand.
+const loadEditor = () => import("./lib/Editor.svelte");
 
 const engine = new Engine();
 
@@ -1715,7 +1714,7 @@ function handlesFor(id: string): HandleMode {
 		case "text":
 			return "text";
 		case "polygon":
-			return "polygon";
+			return isObj(l.shape) ? "box" : "polygon";
 		case "image": {
 			const box = isObj(l.box) ? l.box : {};
 			return box.w === "auto" || box.h === "auto" ? "aspect" : "box";
@@ -1968,6 +1967,52 @@ async function exportZip() {
 	}
 }
 
+/** Shows diagnostics found outside the preview render in the problems panel. */
+function showDiagnostics(diagnostics: Diagnostic[]) {
+	lastRender = {
+		width: 0,
+		height: 0,
+		missing_urls: [],
+		bin: new Uint8Array(),
+		diagnostics,
+	};
+}
+
+/** Every card in one PDF; with `canvas.bleed`, with crop marks. */
+async function exportPdf() {
+	if (!currentSet) return;
+	busy = "Rendering PDF…";
+	try {
+		const bleed = isObj(doc?.canvas) && doc.canvas.bleed !== undefined;
+		const r = await engine.pdf(setName, today, bleed);
+		if (r.bin.length)
+			download(`${projectName}-${setName}.pdf`, r.bin, "application/pdf");
+		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
+		status =
+			`Exported ${r.pages} page(s)` +
+			(bleed ? " with crop marks" : "") +
+			(errs ? ` with ${errs} error(s)` : "");
+		if (errs) showDiagnostics(r.diagnostics);
+	} finally {
+		busy = "";
+	}
+}
+
+/** Evaluates every card (without drawing) to find errors that depend on card data. */
+async function checkAllCards() {
+	if (!currentSet) return;
+	busy = "Checking every card…";
+	try {
+		const r = await engine.checkCards(setName, today);
+		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
+		const warns = r.diagnostics.filter((d) => d.severity === "warning").length;
+		status = `Checked ${currentSet.cards.length} card(s): ${errs} error(s), ${warns} warning(s)`;
+		showDiagnostics(r.diagnostics);
+	} finally {
+		busy = "";
+	}
+}
+
 function b64(data: Uint8Array) {
 	let s = "";
 	for (let i = 0; i < data.length; i += 0x8000)
@@ -2074,6 +2119,16 @@ const typeLabels: Record<LayerType, string> = {
 		onclick={exportZip}
 		disabled={!!busy || !currentSet?.ok}
 		title="Render every card of this design into a zip">ZIP</button
+	>
+	<button
+		onclick={exportPdf}
+		disabled={!!busy || !currentSet?.ok}
+		title="Every card of this design in one PDF, one page per card (with crop marks when the design has a bleed)">PDF</button
+	>
+	<button
+		onclick={checkAllCards}
+		disabled={!!busy || !currentSet?.ok}
+		title="Evaluate every card without drawing it: finds errors that only some cards have, such as too many layers">Check all</button
 	>
 	{#if server?.render}
 		<label

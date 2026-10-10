@@ -98,6 +98,8 @@ function names(): Names | null {
 		params: new Map(c.params.map((p) => [p.name, p.type])),
 		locals: new Set(c.locals.map((l) => l.name)),
 		layers: new Map(c.layers.map((l) => [l.id, l.type])),
+		consts: new Set((c.consts ?? []).map((k) => k.name)),
+		functions: new Set((c.functions ?? []).map((f) => f.name)),
 	};
 }
 

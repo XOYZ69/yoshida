@@ -34,6 +34,9 @@ export type CompletionContext = {
 	layers: { id: string; type: string }[];
 	/** Repeat names in scope: index name, and item name with its list param. */
 	locals: { name: string; detail: string; fields?: Record<string, string> }[];
+	/** Design constants and functions (`consts`, `functions`). */
+	consts?: { name: string }[];
+	functions?: { name: string; args: string }[];
 };
 
 const functions: [string, string][] = FUNCTIONS.map((f) => [
@@ -115,6 +118,16 @@ export function complete(
 					label: p.name,
 					insert: p.name,
 					detail: `param, ${p.type}`,
+				});
+		for (const k of ctx.consts ?? [])
+			if (k.name.startsWith(word))
+				items.push({ label: k.name, insert: k.name, detail: "constant" });
+		for (const f of ctx.functions ?? [])
+			if (f.name.startsWith(word))
+				items.push({
+					label: `${f.name}()`,
+					insert: `${f.name}(`,
+					detail: `(${f.args})`,
 				});
 		for (const [f, d] of functions)
 			if (f.startsWith(word))

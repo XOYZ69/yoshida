@@ -324,8 +324,36 @@ const typeHelp: Record<string, string> = {
 	list: "rows with fields",
 };
 
-// List item fields: name -> scalar type.
-const itemTypes = ["text", "number", "integer", "bool", "color"];
+// List item fields: name -> type name, or { type, options?, default? }.
+const itemTypes = ["text", "number", "integer", "bool", "color", "enum"];
+
+function fieldType(ft: Json): string {
+	return isObj(ft) ? String(ft.type ?? "text") : String(ft);
+}
+
+/** The item field's definition with `type` changed; enum fields get options. */
+function retypeField(ft: Json, t: string): Json {
+	if (t === "enum") {
+		const opts =
+			isObj(ft) && Array.isArray(ft.options) ? ft.options : ["a", "b"];
+		return { type: "enum", options: opts };
+	}
+	return isObj(ft) && ft.default !== undefined && fieldType(ft) === t
+		? { type: t, default: ft.default }
+		: t;
+}
+
+/** Sets or clears an item field's default (a string field becomes an object). */
+function withDefault(ft: Json, raw: string): Json {
+	const t = fieldType(ft);
+	const base: Obj = isObj(ft) ? { ...ft } : { type: t };
+	const v = raw.trim();
+	if (v === "") delete base.default;
+	else if (t === "number" || t === "integer") base.default = Number(v) || 0;
+	else if (t === "bool") base.default = v === "true";
+	else base.default = v;
+	return Object.keys(base).length === 1 ? t : base;
+}
 </script>
 
 <div class="params">
@@ -502,8 +530,14 @@ const itemTypes = ["text", "number", "integer", "bool", "color"];
                   {#each Object.entries(isObj(p.item) ? p.item : {}) as [field, ft]}
                     <div class="row">
                       <span class="mono grow">{field}</span>
-                      <Select value={String(ft)} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], v)} />
+                      <Select value={fieldType(ft)} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], retypeField(ft, v))} />
                       <button class="mini" disabled={Object.keys(p.item as Obj).length <= 1} onclick={() => edit(name, ['item', field], undefined)}>×</button>
+                    </div>
+                    <div class="row sub-row">
+                      {#if fieldType(ft) === 'enum'}
+                        <input class="mono grow" title="Options of {field}, separated by commas" placeholder="options: a, b, c" value={isObj(ft) && Array.isArray(ft.options) ? ft.options.join(', ') : ''} onchange={(e) => edit(name, ['item', field], { ...(isObj(ft) ? ft : {}), type: 'enum', options: e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
+                      {/if}
+                      <input class="mono grow" title="Value an item gets when it leaves {field} out" placeholder="default" value={isObj(ft) && ft.default !== undefined ? String(ft.default) : ''} onchange={(e) => edit(name, ['item', field], withDefault(ft, e.currentTarget.value))} />
                     </div>
                   {/each}
                   <input
@@ -698,6 +732,10 @@ const itemTypes = ["text", "number", "integer", "bool", "color"];
   }
   .grow {
     flex: 1;
+    min-width: 0;
+  }
+  .sub-row {
+    padding-left: 12px;
   }
   .mini {
     padding: 1px 6px;

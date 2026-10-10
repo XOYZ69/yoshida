@@ -10,7 +10,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs"
+		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",

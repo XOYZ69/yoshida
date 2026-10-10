@@ -1,8 +1,8 @@
 {
   "format": 1,
   "name": "Party board game",
-  "note": "Canvas is A4 landscape at 200 dpi (2339 x 1654 px). The ring is 13 x 9 tiles = 40 tiles.",
-  "canvas": { "width": 2340, "height": 1654 },
+  "note": "Canvas is A4 landscape at 200 dpi (2340 x 1654 px, print at 100 %). The ring is 13 x 9 tiles = 40 tiles.",
+  "canvas": { "width": 2340, "height": 1654, "dpi": 200 },
   "fonts": { "bebas": "assets/fonts/Bebas-Regular.ttf" },
   "params": {
     "title": { "type": "text", "default": "Party Board", "group": "Texts" },
@@ -34,7 +34,24 @@
     "c_dare": { "type": "color", "default": "#FF9EC4", "group": "Theme colors" },
     "legend": {
       "type": "list",
-      "item": { "kind": "text", "label": "text", "desc": "text" },
+      "item": {
+        "kind": {
+          "type": "enum",
+          "options": [
+            "start",
+            "finish",
+            "plain",
+            "safe",
+            "skip",
+            "back",
+            "forward",
+            "shortcut",
+            "dare"
+          ]
+        },
+        "label": "text",
+        "desc": "text"
+      },
       "default": [
         { "kind": "start", "label": "Start", "desc": "Everyone begins here" },
         { "kind": "plain", "label": "Plain", "desc": "Do what the tile says" },
@@ -50,10 +67,44 @@
     },
     "tiles": {
       "type": "list",
-      "item": { "kind": "text", "text": "text", "n": "integer" },
+      "item": {
+        "kind": {
+          "type": "enum",
+          "options": [
+            "start",
+            "finish",
+            "plain",
+            "safe",
+            "skip",
+            "back",
+            "forward",
+            "shortcut",
+            "dare"
+          ],
+          "default": "plain"
+        },
+        "text": "text",
+        "n": "integer"
+      },
       "default": [],
       "group": "Board",
       "note": "40 tiles clockwise from the top-left corner. kind: start, finish, plain, safe, skip, back, forward, shortcut, dare. n is the step count (back, forward) or the target tile number (shortcut)."
+    }
+  },
+  "functions": {
+    "tile_x": {
+      "args": { "i": "number" },
+      "expr": "65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170",
+      "note": "Left edge of tile i: 13 tiles along the top, 9 down the right, back along the bottom and up the left."
+    },
+    "tile_y": {
+      "args": { "i": "number" },
+      "expr": "62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170"
+    },
+    "has_n": {
+      "args": { "k": "text" },
+      "expr": "k == 'back' or k == 'forward' or k == 'shortcut'",
+      "note": "Tiles that show a number: steps for back and forward, the target for a shortcut."
     }
   },
   "layers": [
@@ -73,361 +124,159 @@
     },
     { "id": "tracks_divider", "type": "divider", "label": "Board tiles (one per list item)" },
     {
-      "id": "tile_base",
-      "type": "rect",
-      "visible": false,
-      "box": {
-        "x": "65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 6",
-        "y": "62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 6",
-        "w": 158,
-        "h": 158
-      },
-      "radius": 18,
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "tile_shadow",
-      "type": "rect",
-      "extends": "tile_base",
-      "visible": true,
-      "box": {
-        "x": "65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 11",
-        "y": "62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 13"
-      },
-      "fill": "with_alpha(c_ink, 0.28)"
-    },
-    {
-      "id": "tile_bg",
-      "type": "rect",
-      "extends": "tile_base",
-      "visible": true,
-      "fill": "(t.kind == 'start' ? c_start : (t.kind == 'finish' ? c_finish : (t.kind == 'safe' ? c_safe : (t.kind == 'skip' ? c_skip : (t.kind == 'back' ? c_back : (t.kind == 'forward' ? c_forward : (t.kind == 'shortcut' ? c_shortcut : (t.kind == 'dare' ? c_dare : c_plain))))))))",
-      "stroke": { "color": "c_ink", "width": 5 }
-    },
-    {
-      "id": "tile_num",
-      "type": "text",
-      "font": "bebas",
-      "size": 30,
-      "color": "with_alpha(c_ink, 0.6)",
-      "anchor": "top-left",
-      "at": {
-        "x": "65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 20",
-        "y": "62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 12"
-      },
-      "text": "{i + 1}",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_fwd",
-      "type": "polygon",
-      "visible": "t.kind == 'forward'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -20 : 2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -20 : 2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? 2 : 24)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 0"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -20 : 2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -20 : 2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 8"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_back",
-      "type": "polygon",
-      "visible": "t.kind == 'back'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -2 : 20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -24 : -2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -24 : -2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -46 : -24)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 0"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -24 : -2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -24 : -2)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 8"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -2 : 20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 8"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_shortcut",
-      "type": "polygon",
-      "visible": "t.kind == 'shortcut'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -44 : -22)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 18"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -44 : -22)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -28 : -6)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -28 : -6)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -18"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? 2 : 24)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 0"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -28 : -6)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 18"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -28 : -6)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -34 : -12)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -34 : -12)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 18"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_safe",
-      "type": "polygon",
-      "visible": "t.kind == 'safe'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -18"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -2 : 20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -18"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -2 : 20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -22 : 0)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 22"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_skip",
-      "type": "polygon",
-      "visible": "t.kind == 'skip'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -38 : -16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -6 : 16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -38 : -16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -6 : 16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 20"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_finish",
-      "type": "polygon",
-      "visible": "t.kind == 'finish'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -36 : -14)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -24"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? 2 : 24)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -12"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -36 : -14)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 0"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -36 : -14)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 24"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 24"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -42 : -20)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -24"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_start",
-      "type": "polygon",
-      "visible": "t.kind == 'start'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -40 : -18)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -20"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? 0 : 22)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 0"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -40 : -18)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 20"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "icon_dare",
-      "type": "polygon",
-      "visible": "t.kind == 'dare'",
-      "points": [
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -22 : 0)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -24"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -15 : 7)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -7"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? 3 : 25)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -7"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -11 : 11)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -6 : 16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 22"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -22 : 0)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 11"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -38 : -16)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 22"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -33 : -11)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 4"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -47 : -25)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -7"
-        ],
-        [
-          "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + ((t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut') ? -29 : -7)",
-          "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + -7"
-        ]
-      ],
-      "fill": "c_ink",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "tile_n",
-      "type": "text",
-      "font": "bebas",
-      "size": 58,
-      "color": "c_ink",
-      "anchor": "left",
-      "visible": "(t.kind == 'back' or t.kind == 'forward' or t.kind == 'shortcut')",
-      "at": {
-        "x": "(65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0) + 14",
-        "y": "(62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 60) + 2"
-      },
-      "text": "{t.kind == 'back' ? '-' : (t.kind == 'forward' ? '+' : '')}{t.n}",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
-    },
-    {
-      "id": "tile_text",
-      "type": "text",
-      "font": "bebas",
-      "size": 38,
-      "color": "c_ink",
-      "anchor": "center",
-      "align": "center",
-      "wrap": 140,
-      "max_width": 144,
-      "max_height": 66,
-      "min_size": 18,
-      "line_spacing": 0,
-      "at": {
-        "x": "65 + (i <= 12 ? i : (i <= 20 ? 12 : (i <= 32 ? 32 - i : 0))) * 170 + 85.0",
-        "y": "62 + (i <= 12 ? 0 : (i <= 20 ? i - 12 : (i <= 32 ? 8 : 40 - i))) * 170 + 118"
-      },
-      "text": "{t.text}",
-      "repeat": { "each": "tiles", "item": "t", "index": "i" }
+      "id": "tile",
+      "type": "group",
+      "note": "One tile per item of tiles, clockwise from the top-left corner. Coordinates inside are relative to the tile's corner.",
+      "repeat": { "each": "tiles", "item": "t", "index": "i" },
+      "translate": { "x": "tile_x(i)", "y": "tile_y(i)" },
+      "layers": [
+        {
+          "id": "tile_base",
+          "type": "rect",
+          "visible": false,
+          "box": { "x": 6, "y": 6, "w": 158, "h": 158 },
+          "radius": 18
+        },
+        {
+          "id": "tile_shadow",
+          "type": "rect",
+          "extends": "tile_base",
+          "visible": true,
+          "box": { "x": 11, "y": 13 },
+          "fill": "with_alpha(c_ink, 0.28)"
+        },
+        {
+          "id": "tile_bg",
+          "type": "rect",
+          "extends": "tile_base",
+          "visible": true,
+          "fill": "(t.kind == 'start' ? c_start : (t.kind == 'finish' ? c_finish : (t.kind == 'safe' ? c_safe : (t.kind == 'skip' ? c_skip : (t.kind == 'back' ? c_back : (t.kind == 'forward' ? c_forward : (t.kind == 'shortcut' ? c_shortcut : (t.kind == 'dare' ? c_dare : c_plain))))))))",
+          "stroke": { "color": "c_ink", "width": 5 }
+        },
+        {
+          "id": "tile_num",
+          "type": "text",
+          "font": "bebas",
+          "size": 30,
+          "color": "with_alpha(c_ink, 0.6)",
+          "anchor": "top-left",
+          "at": { "x": 20, "y": 12 },
+          "text": "{i + 1}"
+        },
+        {
+          "id": "tile_icon",
+          "type": "group",
+          "note": "The icon of the tile's kind, centred, moved left when the tile shows a number.",
+          "translate": { "x": "has_n(t.kind) ? 63 : 85", "y": 60 },
+          "layers": [
+            {
+              "id": "icon_fwd",
+              "type": "polygon",
+              "visible": "t.kind == 'forward'",
+              "points": [[-20, -8], [2, -8], [2, -20], [24, 0], [2, 20], [2, 8], [-20, 8]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_back",
+              "type": "polygon",
+              "visible": "t.kind == 'back'",
+              "points": [[20, -8], [-2, -8], [-2, -20], [-24, 0], [-2, 20], [-2, 8], [20, 8]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_shortcut",
+              "type": "polygon",
+              "visible": "t.kind == 'shortcut'",
+              "points": [
+                [-22, 18],
+                [-22, -4],
+                [-6, -4],
+                [-6, -18],
+                [24, 0],
+                [-6, 18],
+                [-6, 4],
+                [-12, 4],
+                [-12, 18]
+              ],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_safe",
+              "type": "polygon",
+              "visible": "t.kind == 'safe'",
+              "points": [[-20, -18], [20, -18], [20, 4], [0, 22], [-20, 4]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_skip",
+              "type": "polygon",
+              "visible": "t.kind == 'skip'",
+              "points": [[-16, -20], [16, -20], [-16, 20], [16, 20]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_finish",
+              "type": "polygon",
+              "visible": "t.kind == 'finish'",
+              "points": [[-14, -24], [24, -12], [-14, 0], [-14, 24], [-20, 24], [-20, -24]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_start",
+              "type": "polygon",
+              "visible": "t.kind == 'start'",
+              "points": [[-18, -20], [22, 0], [-18, 20]],
+              "fill": "c_ink"
+            },
+            {
+              "id": "icon_dare",
+              "type": "polygon",
+              "visible": "t.kind == 'dare'",
+              "points": [
+                [0, -24],
+                [7, -7],
+                [25, -7],
+                [11, 4],
+                [16, 22],
+                [0, 11],
+                [-16, 22],
+                [-11, 4],
+                [-25, -7],
+                [-7, -7]
+              ],
+              "fill": "c_ink"
+            }
+          ]
+        },
+        {
+          "id": "tile_n",
+          "type": "text",
+          "font": "bebas",
+          "size": 58,
+          "color": "c_ink",
+          "anchor": "left",
+          "visible": "has_n(t.kind)",
+          "at": { "x": 99, "y": 62 },
+          "text": "{t.kind == 'back' ? '-' : (t.kind == 'forward' ? '+' : '')}{t.n}"
+        },
+        {
+          "id": "tile_text",
+          "type": "text",
+          "font": "bebas",
+          "size": 38,
+          "color": "c_ink",
+          "anchor": "center",
+          "align": "center",
+          "wrap": 140,
+          "max_width": 144,
+          "max_height": 66,
+          "min_size": 18,
+          "line_spacing": 0,
+          "at": { "x": 85, "y": 118 },
+          "text": "{t.text}",
+          "shrink_group": "tile_text"
+        }
+      ]
     },
     { "id": "panel_divider", "type": "divider", "label": "Title and rules panel" },
     {

@@ -40,8 +40,13 @@ export type Param = {
 	/** Editor section (FORMAT.md section 4). */
 	group?: string;
 	options?: string[];
+	/** List item fields: name → type (`enum` for enum fields). */
 	item?: Record<string, string>;
+	/** List item fields with their options and defaults. */
+	item_defs?: Record<string, ItemField>;
 };
+
+export type ItemField = { type: string; options?: string[]; default?: unknown };
 
 export type CardInfo = { id: string; values: Record<string, unknown> };
 
@@ -149,8 +154,47 @@ export class Engine {
 		return this.call<null>({ op: "remove", path });
 	}
 
-	check() {
-		return this.call<CheckResult>({ op: "check" });
+	async check() {
+		const r = await this.call<CheckResult>({ op: "check" });
+		// Item fields come as "text" or { type, options, default }.
+		for (const s of r.project?.sets ?? [])
+			for (const p of s.params) {
+				if (!p.item) continue;
+				const raw = p.item as Record<string, unknown>;
+				const defs: Record<string, ItemField> = {};
+				const types: Record<string, string> = {};
+				for (const [k, v] of Object.entries(raw)) {
+					defs[k] =
+						v && typeof v === "object" ? (v as ItemField) : { type: String(v) };
+					types[k] = defs[k].type;
+				}
+				p.item = types;
+				p.item_defs = defs;
+			}
+		return r;
+	}
+
+	/** Every card of a set evaluated without drawing: errors that depend on card data. */
+	checkCards(set: string, date: string) {
+		return this.call<{ diagnostics: Diagnostic[] }>({
+			op: "checkCards",
+			set,
+			date,
+		});
+	}
+
+	/** Every card of a set as one PDF, one page per card. */
+	pdf(set: string, date: string, cropMarks: boolean) {
+		return this.call<{
+			pages: number;
+			diagnostics: Diagnostic[];
+			bin: Uint8Array;
+		}>({
+			op: "pdf",
+			set,
+			date,
+			crop_marks: cropMarks,
+		});
 	}
 
 	render(args: RenderArgs) {

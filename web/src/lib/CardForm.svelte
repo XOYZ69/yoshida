@@ -86,16 +86,40 @@ function itemsOf(p: Param): Item[] {
 
 function blankItem(p: Param): Item {
 	const out: Item = {};
-	for (const [k, t] of Object.entries(p.item ?? {}))
+	for (const [k, t] of Object.entries(p.item ?? {})) {
+		const def = p.item_defs?.[k];
 		out[k] =
-			t === "number" || t === "integer"
-				? 0
-				: t === "bool"
-					? false
-					: t === "color"
-						? "#000000"
-						: "";
+			def?.default !== undefined
+				? def.default
+				: t === "enum"
+					? (def?.options?.[0] ?? "")
+					: t === "number" || t === "integer"
+						? 0
+						: t === "bool"
+							? false
+							: t === "color"
+								? "#000000"
+								: "";
+	}
 	return out;
+}
+
+/**
+ * The value to save for a list. When the default has items and the list
+ * keeps their number, only the changed items are saved, as an object of
+ * position to fields ({"11": {"kind": "safe"}}).
+ */
+function listValue(p: Param, items: Item[]): unknown {
+	const base = Array.isArray(p.default) ? (p.default as Item[]) : [];
+	if (!base.length || items.length !== base.length) return items;
+	const out: Record<string, Item> = {};
+	items.forEach((it, i) => {
+		const changed: Item = {};
+		for (const [k, v] of Object.entries(it))
+			if (JSON.stringify(v) !== JSON.stringify(base[i]?.[k])) changed[k] = v;
+		if (Object.keys(changed).length) out[String(i)] = changed;
+	});
+	return Object.keys(out).length ? out : undefined;
 }
 
 function setItem(
@@ -112,17 +136,20 @@ function setItem(
 	}
 	const items = itemsOf(p).map((x) => ({ ...x }));
 	items[index][field] = v;
-	onchange(p.name, items);
+	onchange(p.name, listValue(p, items));
 }
 
 function addItem(p: Param) {
-	onchange(p.name, [...itemsOf(p), blankItem(p)]);
+	onchange(p.name, listValue(p, [...itemsOf(p), blankItem(p)]));
 }
 
 function removeItem(p: Param, index: number) {
 	onchange(
 		p.name,
-		itemsOf(p).filter((_, i) => i !== index),
+		listValue(
+			p,
+			itemsOf(p).filter((_, i) => i !== index),
+		),
 	);
 }
 </script>
@@ -181,6 +208,8 @@ function removeItem(p: Param, index: number) {
                     <td>
                       {#if t === 'bool'}
                         <input type="checkbox" checked={it[f] === true} disabled={!editable} onchange={(e) => setItem(p, i, f, e.currentTarget.checked)} />
+                      {:else if t === 'enum'}
+                        <Select value={String(it[f] ?? '')} label="{f} of row {i + 1}" disabled={!editable} options={p.item_defs?.[f]?.options ?? []} onchange={(v) => setItem(p, i, f, v)} />
                       {:else}
                         <input
                           type={t === 'number' || t === 'integer' ? 'number' : 'text'}

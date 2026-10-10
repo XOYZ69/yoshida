@@ -220,7 +220,7 @@ export function descendantIds(layer: Obj): string[] {
 	return out;
 }
 
-const mergedKeys = new Set(["box", "at", "stroke", "repeat"]);
+const mergedKeys = new Set(["box", "at", "stroke", "repeat", "arc", "shape"]);
 const ownKeys = new Set(["id", "extends", "note"]);
 
 /**
@@ -358,6 +358,13 @@ export function moveLayer(
 	if (!own || !eff) return;
 	switch (eff.type) {
 		case "group": {
+			// With a translate, the layers inside are relative to it.
+			if (isObj(eff.translate)) {
+				const t = eff.translate as Obj;
+				setPath(own, ["translate", "x"], shiftValue(t.x ?? 0, dx, canvas.w));
+				setPath(own, ["translate", "y"], shiftValue(t.y ?? 0, dy, canvas.h));
+				return;
+			}
 			for (const c of childrenOf(own))
 				moveLayer(doc, String(c.id), dx, dy, canvas);
 			return;
@@ -370,6 +377,13 @@ export function moveLayer(
 			return;
 		}
 		case "polygon": {
+			if (isObj(eff.shape)) {
+				const box = eff.box as Obj | undefined;
+				if (!box) return;
+				setPath(own, ["box", "x"], shiftValue(box.x, dx, canvas.w));
+				setPath(own, ["box", "y"], shiftValue(box.y, dy, canvas.h));
+				return;
+			}
 			if (!Array.isArray(eff.points)) return;
 			own.points = eff.points.map((p) =>
 				Array.isArray(p)
@@ -1016,6 +1030,8 @@ const plainFields = new Set([
 	"smoothing",
 	"closed",
 	"side",
+	"shrink_group",
+	"arrow",
 ]);
 
 function renameInLayerValue(
@@ -1056,11 +1072,25 @@ export function renameParam(doc: Obj, from: string, to: string) {
 		);
 	}
 	if (isObj(doc.canvas)) {
-		for (const k of ["width", "height", "background"]) {
+		for (const k of ["width", "height", "background", "dpi", "bleed"]) {
 			const v = doc.canvas[k];
 			if (typeof v === "string") doc.canvas[k] = renameInExpr(v, from, to);
 		}
 	}
+	if (isObj(doc.consts))
+		for (const [k, v] of Object.entries(doc.consts))
+			if (typeof v === "string") doc.consts[k] = renameInExpr(v, from, to);
+	if (isObj(doc.functions))
+		for (const f of Object.values(doc.functions)) {
+			if (!isObj(f) || typeof f.expr !== "string") continue;
+			// An argument of the same name hides the param.
+			const args = isObj(f.args)
+				? Object.keys(f.args)
+				: Array.isArray(f.args)
+					? f.args.map(String)
+					: [];
+			if (!args.includes(from)) f.expr = renameInExpr(f.expr, from, to);
+		}
 	if (!Array.isArray(doc.layers)) return;
 	const walk = (list: Json[]): Json[] =>
 		list.map((l) => {

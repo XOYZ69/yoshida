@@ -98,6 +98,8 @@ pub extern fn stbtt_GetCodepointKernAdvance(info: *const anyopaque, ch1: c_int, 
 pub extern fn stbtt_FindGlyphIndex(info: *const anyopaque, codepoint: c_int) c_int;
 pub extern fn stbtt_GetCodepointBitmapBoxSubpixel(info: *const anyopaque, codepoint: c_int, scale_x: f32, scale_y: f32, shift_x: f32, shift_y: f32, ix0: *c_int, iy0: *c_int, ix1: *c_int, iy1: *c_int) void;
 pub extern fn stbtt_MakeCodepointBitmapSubpixel(info: *const anyopaque, output: [*]u8, out_w: c_int, out_h: c_int, out_stride: c_int, scale_x: f32, scale_y: f32, shift_x: f32, shift_y: f32, codepoint: c_int) void;
+pub extern fn stbtt_GetCodepointSDF(info: *const anyopaque, scale: f32, codepoint: c_int, padding: c_int, onedge_value: u8, pixel_dist_scale: f32, width: *c_int, height: *c_int, xoff: *c_int, yoff: *c_int) ?[*]u8;
+pub extern fn stbtt_FreeSDF(bitmap: [*]u8, userdata: ?*anyopaque) void;
 
 // ---------------------------------------------------------------- simplewebp
 

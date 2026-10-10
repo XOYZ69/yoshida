@@ -83,8 +83,12 @@ A wrong JSON type is [1103]. Expressions are parsed and type-checked at load tim
 | `name` | text literal | yes | | Display name |
 | `canvas.width`, `canvas.height` | number | yes | | Pixels, may use params (not `%`, not layer references) |
 | `canvas.background` | color | no | `#00000000` | Transparent by default |
+| `canvas.dpi` | number | no | none | Print resolution. Written to PNG files (`pHYs`) and used for the PDF page size. No effect on drawing |
+| `canvas.bleed` | number | no | `0` | Pixels on every side that are cut off after printing; the trim line is this far inside the edge. Used for the PDF TrimBox and for crop marks |
 | `fonts` | object of name → path | no | `{}` | Font families available to text layers. Names follow `ident`. `default` is built in (a bundled permissive font) and may be overridden |
 | `params` | object of name → param | no | `{}` | Section 4 |
+| `consts` | object of name → value | no | `{}` | Section 6.8 |
+| `functions` | object of name → function | no | `{}` | Section 6.8 |
 | `layers` | array of layers | yes | | Drawn in array order, first is bottom |
 
 Unknown top-level fields are [1101].
@@ -116,9 +120,9 @@ Params are the inputs a card can set. Names follow `ident` and must not equal a 
 | `min`, `max` | number, integer | Inclusive range [2002] |
 | `max_length` | text | Characters [2002] |
 | `options` | enum | Non-empty array of strings |
-| `item` | list | Object of field name → scalar type (`number`, `integer`, `text`, `bool`, `color`). Fields not given in an item take the type's zero value (`0`, `""`, `false`, `#00000000`) |
+| `item` | list | Object of field name → field type: `number`, `integer`, `text`, `bool`, `color`, or an object `{ "type", "options", "default" }`. `"type": "enum"` with `options` (non-empty array of strings) makes a field whose card values must be one of the options [2006]; it reads as text in expressions. `default` is the value an item gets when it leaves the field out; without one a field takes its type's zero value (`0`, `""`, `false`, `#00000000`), an enum field its first option. Other types (`image`, `list`) are [1103] |
 
-A param with neither `default` nor `required: true` is [1107]. An `image` param's value is a path or `https://` URL; it can be used in `path` fields via templates (`"src": "{art}"`) and in image functions (`avg_color(art)`).
+A param with neither `default` nor `required: true` is [1107]. Param names, constant names, function names and loop names share the identifier rule: `c_start` and `tile_num` are valid, `tile_Num` and `2nd` are not. An `image` param's value is a path or `https://` URL; it can be used in `path` fields via templates (`"src": "{art}"`) and in image functions (`avg_color(art)`).
 
 The editor builds its card form and card table from `params`: a color picker for `color`, a dropdown for `enum`, a file picker for `image`, a sub-table for `list`. The order of `params` in the file is the order of the card form, within each `group`.
 
@@ -150,24 +154,30 @@ Rotation is applied when the layer is composited, after effects. `@layer.bounds.
 | `box` | `{ x, y, w, h }` all number | required |
 | `fill` | color | `#FFFFFFFF` |
 | `radius` | number | `0` |
-| `stroke` | `{ color: color, width: number }` | none |
+| `stroke` | `{ color: color, width: number, dash: [number, ...] }` | none |
 
-The stroke is drawn centred on the edge. Width and height must be at least 0 [3101].
+The stroke is drawn centred on the edge. `dash` is a pattern in pixels (on, off, on, off...; an odd-length pattern repeats twice); dash ends are round. Width and height must be at least 0 [3101].
 
 ### 5.3 `ellipse`
 
 Same fields as `rect` except `radius`. The ellipse fills `box`.
 
+| Field | Kind | Default | Meaning |
+| --- | --- | --- | --- |
+| `arc` | `{ start: number, end: number, pie: bool literal }` | none | Draw only part of the ellipse, from `start` to `end` degrees, clockwise from the top (12 o'clock); defaults 0 and 360. `pie: true` (default) fills a slice through the centre and strokes its outline; `pie: false` draws only the curve with the stroke (no fill) |
+
 ### 5.4 `polygon`
 
 | Field | Kind | Default |
 | --- | --- | --- |
-| `points` | array of `[number, number]` | required, at least 3 points [1109] |
+| `points` | array of `[number, number]` | required unless `shape` is given; at least 3 points, 2 when `closed` is `false` [1109] |
 | `closed` | bool literal | `true` |
 | `fill` | color | `#FFFFFFFF` (ignored when not closed) |
-| `stroke` | `{ color, width }` | none |
+| `stroke` | `{ color, width, dash, arrow }` | none. `dash` as for `rect`. `arrow`: `none`, `start`, `end` or `both`, arrowheads at the ends of an open polygon (4 x the stroke width long), only for polygons [1101] |
+| `shape` | `{ type, count, inner }` | none. A preset shape that fills `box` instead of `points` (exactly one of the two [1111]): `star` (`count` points, default 5; `inner` radius as a fraction, default 0.5), `polygon` (`count` sides, default 6), `triangle`, `diamond`, `arrow` (pointing right; `inner` is the shaft thickness), `cross` (`inner`: arm thickness), `chevron` (pointing right; `inner`: thickness) |
+| `box` | `{ x, y, w, h }` | only with `shape`; `anchor` applies to it like on a `rect` |
 
-Points are absolute canvas coordinates; `anchor` does not apply. Every coordinate is an expression, so polygons scale with params.
+Points are absolute canvas coordinates (inside a translated group, relative to its origin, see 5.10); `anchor` does not apply. Every coordinate is an expression, so polygons scale with params. Joins and caps of polygon strokes are round. A `shape` polygon rotates around its anchor point like a box layer; a `points` polygon around the centre of its bounds.
 
 ### 5.5 `text`
 
@@ -185,8 +195,12 @@ Points are absolute canvas coordinates; `anchor` does not apply. Every coordinat
 | `max_width` | number (x axis) | none | Auto-shrink: the text block may be at most this wide |
 | `max_height` | number (y axis) | none | Auto-shrink: the text block may be at most this tall |
 | `min_size` | number | `8` (or `size` if smaller) | Auto-shrink never goes below this size |
+| `stroke` | `{ color, width }` | none | An outline `width` pixels wide around the glyphs (outside them); no `dash` |
+| `shrink_group` | text literal | none | Every text layer with the same `shrink_group`, and every repeat iteration of them, uses the smallest size any of them needed after auto-shrink, so neighbouring texts match |
 
-With `max_width` or `max_height`, the size shrinks from `size` in steps of 0.5 px (binary search) until the block fits, but not below `min_size`. Wrapping is redone at every size. If the text still does not fit at `min_size`, it is drawn at `min_size` and a warning [3203] is reported. `@layer.size` gives the size actually used.
+With `max_width` or `max_height`, the size shrinks from `size` in steps of 0.5 px (binary search) until the block fits, but not below `min_size`. Wrapping is redone at every size. Each text (and each iteration of a repeated text) shrinks on its own unless it has a `shrink_group`. If the text still does not fit at `min_size`, it is drawn at `min_size` and a warning [3203] is reported. `@layer.size` gives the size actually used.
+
+A newline in the text (a JSON `\n` in the template or in a param value) breaks the line; a double-escaped `\\n` is drawn as the two characters. Characters the font has no glyph for are drawn with the bundled default font, then the bundled symbol font (arrows, geometric shapes, stars, check marks, dice, dingbats); only characters none of them has are drawn as boxes [4003].
 
 The anchor refers to the bounding box of the whole text block (all lines). `baseline-*` anchors use the first line's baseline. With `wrap`, the block is `wrap` pixels wide (alignment happens inside it); without, it is as wide as the longest line. A line is as tall as the font's ascent minus its descent, and `line_spacing` is added between lines.
 
@@ -219,11 +233,13 @@ Draws the layer once per iteration. Inside the layer's fields the loop names are
 | `index` | ident | Name for the 0-based index (default `i`) |
 | `item` | ident | Name for the current list item (only with `each`) |
 
-Exactly one of `count` and `each` [1111]. Iterations above 1000 are [5001]. A repeated layer cannot be referenced from other layers [3005].
+Exactly one of `count` and `each` [1111]. Iterations above 1000 are [5001]. The `repeat` expressions see params, constants and the loop names of the repeated groups around the layer; the layer's fields also see its own loop names.
+
+A repeated layer has no single position, so `@layer.field` is [3005]. `@layer[n].field` reads iteration `n` (0-based; an iteration that does not exist is [3102] at render time). An iteration may read earlier iterations of its own layer (`@row[i - 1].bounds.bottom`); reading a later one is [3004]. See 6.3 for layers inside repeated groups.
 
 ### 5.8 `extends`
 
-`"extends": "other_id"` starts from the other layer's fields and applies this layer's fields on top. Objects (`box`, `at`, `stroke`, `repeat`) merge key by key; everything else is replaced. `id`, `extends` and `note` are never inherited. Both layers must have the same `type` [1112]; chains are allowed, cycles are [3004].
+`"extends": "other_id"` starts from the other layer's fields and applies this layer's fields on top. Objects (`box`, `at`, `stroke`, `repeat`, `arc`, `shape`) merge key by key; everything else is replaced. `id`, `extends` and `note` are never inherited. Both layers must have the same `type` [1112]; chains are allowed, cycles are [3004]. The base may be hidden (`"visible": false`): it is not drawn, but it can be extended and referenced.
 
 ### 5.9 `effects`
 
@@ -249,12 +265,16 @@ A group holds other layers and draws them as one picture, so they can be organis
 | Field | Kind | Default | Meaning |
 | --- | --- | --- | --- |
 | `layers` | array of layers | required [1102] | Drawn in array order inside the group, first is bottom; groups may contain groups |
-| `id`, `note`, `visible`, `opacity`, `rotate`, `effects` | | | As in 5.1, applied to the group's picture |
+| `translate` | `{ x: number, y: number }` | `{ 0, 0 }` | The group's origin: everything inside is moved by it, and coordinates inside the group are relative to it |
+| `repeat` | object | | As in 5.7: the layers inside are drawn once per iteration, as one unit, and see the group's loop names |
+| `id`, `note`, `visible`, `opacity`, `rotate`, `effects` | | | As in 5.1, applied to the group's picture (per iteration for a repeated group) |
 
 - A group has no position or size of its own. `@group.bounds.*` is the union of the bounds of its visible layers (all repeat iterations included); an empty or fully hidden group has zero bounds at the origin. `@group.opacity`, `.visible` and `.rotate` can be referenced as well.
 - The layers inside are drawn into a separate picture; then the group's `effects` (relative to the group bounds, so `fade` and `crop` work on the group's edges), `opacity` and `rotate` (around the centre of the bounds) are applied, and the picture is composited at the group's place in the stack.
 - Layers inside a group are ordinary layers: their ids are unique across the whole design [1108], they can be referenced from anywhere, and they can use `repeat` and `extends`.
-- A group itself cannot have `anchor`, `repeat` or `extends` [1101]. Nesting deeper than 16 levels is [5001].
+- A group itself cannot have `anchor` or `extends` [1101]. Nesting deeper than 16 levels is [5001].
+- **Translate.** A layer's positions are in the frame of the groups around it: `box.x`, `at`, points and so on are relative to the sum of their `translate`s. `@layer` positions (`bounds.*`, `box.x`, `box.y`, `at.*`) are given in the frame of the layer that reads them, so `"x": "@bg.bounds.left + 10"` works the same inside and outside a group. `%`, `vw` and `vh` stay relative to the canvas size. `translate` sees params, constants, its own loop names and layers outside the group; a layer inside is [3004].
+- **Repeat.** In a repeated group, references between layers inside it mean the same iteration (`@tile_bg.bounds.cx` in the tile's text is that tile's background). From outside, a layer inside is reached with an index, `@tile_bg[3].bounds.cx`; `@group[n].bounds` is one iteration of the group. A layer inside two nested repeats that the reader is not inside cannot be referenced [3005].
 - Diagnostics inside a group use nested pointers, such as `/layers/2/layers/0/box/x`.
 
 ### 5.11 `divider`
@@ -297,13 +317,15 @@ A divider organises the layer list in the editor. It draws nothing and takes no 
 | Name | Type | Meaning |
 | --- | --- | --- |
 | a param name | param's type | Card value or default |
-| loop names | number / item | From `repeat` |
+| loop names | number / item | From `repeat`, the layer's own and those of the repeated groups around it |
+| a constant | constant's type | From `consts` (6.8) |
 | `canvas.w`, `canvas.h` | number | Canvas size |
 | `card.id` | text | The card's id |
 | `render.index` | number | 0-based position of the card in its set |
 | `render.date` | text | ISO date `YYYY-MM-DD`, chosen once by whoever starts the render |
 | `@<layer_id>.<field path>` | field's type | The other layer's evaluated field, e.g. `@title.at.y`, `@bg.box.w`, `@bg.fill` |
 | `@<layer_id>.bounds.<f>` | number | Final pixel bounds after anchor and layout: `left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy` |
+| `@<layer_id>[n].<field path>` | field's type | Iteration `n` of a repeated layer, or of the repeated group around it (5.7, 5.10) |
 | `list[n]`, `item.field` | | Indexing (0-based, out of range is [3102]) and field access |
 | `list.Key`, `list["Key"]` | value field's type, or item | Lookup by key (6.3.1) |
 
@@ -358,7 +380,7 @@ Highest precedence first:
 | `with_alpha` | `(color, a) -> color`, `a` 0 to 1 |
 | `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 |
 
-Calling an unknown function is [3002]; wrong argument count or types is [3003].
+Calling an unknown function is [3002]; wrong argument count or types is [3003]. Design functions (6.8) are called the same way.
 
 ### 6.6 Templates (`text` and `path` fields)
 
@@ -367,6 +389,23 @@ Literal text with `{expression}` holes. `{{` and `}}` produce literal braces. Va
 ### 6.7 Determinism
 
 The same project, card data and `render.date` always produce the same pixels in every build (WASM, CLI, server). There is no clock, randomness, network or file access inside expressions.
+
+### 6.8 Constants and functions
+
+A design can name values and formulas that several layers use:
+
+```json
+"consts": { "tile": 170, "gap": "tile / 10", "pale": "mix(accent, #FFFFFF, 0.6)" },
+"functions": {
+  "tile_x": { "args": { "i": "number" }, "expr": "65 + (i <= 12 ? i : 12) * tile" },
+  "kind_color": { "args": { "k": "text" }, "expr": "k == 'safe' ? c_safe : c_plain", "note": "..." }
+}
+```
+
+- A constant is a number, `true`/`false`, or an expression string; its type is the expression's (not a list). It sees params, built-in names and the constants before it, and is evaluated once per card.
+- A function has `args` (an object of name → `number`, `text`, `bool` or `color`, or an array of names, all numbers) and an `expr`. The body sees its arguments, params, constants and the functions before it (so there is no recursion); not layers and not loop names (pass them as arguments). The return type is the body's type. Call it like a built-in: `tile_x(i)`.
+- Names follow `ident` and must not be a param, a reserved word, a built-in function or another constant or function [1106]. A loop name may hide a constant inside its layer.
+- An error inside a function body is reported at the body (`/functions/<name>/expr`).
 
 ## 7. Card data
 
@@ -386,24 +425,26 @@ The same project, card data and `render.date` always produce the same pixels in 
 - `id` is optional text; default is the 1-based index padded to 3 digits (`001`). Ids must be unique [2004] and must be safe as file names (`[A-Za-z0-9._-]`) [2005]. Output files are `<id>.png`.
 - Every other key must be a declared param; unknown keys are warnings [2001] with a "did you mean" hint, and are ignored.
 - Values must match the param type [2006]. Values are literals; expressions are not evaluated in card data.
+- A list value may be an object instead of an array: it changes single items of the param's default list, by 0-based position, field by field: `"tiles": { "11": { "kind": "safe" } }` is the default list with item 11's `kind` changed. A position the default does not have is [2006]; a list param without a default cannot be changed this way.
 
 ### 7.2 CSV (`*.cards.csv`)
 
 - RFC 4180: comma separated, `"` quoting, header row required. Header names are `id` and param names.
 - The design comes from the manifest's `sets` entry for this file, or is passed explicitly (`yoshida render --design ...`).
 - An empty cell means "use the default".
-- `number`/`integer` cells use `.` as decimal separator; `bool` cells are `true`/`false`; `list` cells hold a JSON array.
+- `number`/`integer` cells use `.` as decimal separator; `bool` cells are `true`/`false`; `list` cells hold a JSON array (or an object of changes, as in 7.1). A line break inside a quoted cell is a newline in the value.
 
 ## 8. Rendering model
 
 - Coordinates are floating-point pixels, origin top-left, y down. Shapes and text are anti-aliased.
 - Each layer is rendered to its own pixels, effects are applied, opacity is multiplied in, then it is composited onto the canvas with source-over on premultiplied 16-bit sRGB values (no linearization in v1).
 - Anything outside the canvas is clipped silently. A layer entirely outside the canvas is a hint [3202].
-- Output: PNG, 8-bit or 16-bit per channel, RGBA.
+- Output: PNG, 8-bit or 16-bit per channel, RGBA, with no metadata other than the resolution when `canvas.dpi` is set. Or a PDF with one page per card: the page size is the canvas at `canvas.dpi` (72 when not set, one pixel per point), the BleedBox is the card and the TrimBox is `canvas.bleed` inside it. Crop marks (CLI `--crop-marks`, the editor's PDF export when the design has a bleed) add a white margin with marks at the trim lines.
+- Some errors depend on card data (a missing image, an index out of range, the layer limit) and are found while a card is evaluated: `yoshida check` evaluates every card without drawing; when rendering, a layer that fails is skipped, the rest of the card is still drawn, and the card is reported as written with errors.
 
 ## 9. Diagnostics
 
-Every problem is reported as `{ severity, code, file, path, span, message, hint }`. `path` is a JSON Pointer (`/layers/3/box/x`); `span` gives line and column in the file and, for expressions, the byte range inside the expression. Loading and checking report all problems; rendering starts only with zero errors. Codes are stable and never reused.
+Every problem is reported as `{ severity, code, file, path, span, message, hint, card }`. `path` is a JSON Pointer (`/layers/3/box/x`); `span` gives line and column in the file and, for expressions, the byte range inside the expression; `card` names the card for problems found while evaluating one. Loading and checking report all problems; rendering starts only with zero load errors. Codes are stable and never reused.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
@@ -413,12 +454,12 @@ Every problem is reported as `{ severity, code, file, path, span, message, hint 
 | 1103 | err | Wrong JSON type for the field's kind |
 | 1104 | err | `format` missing |
 | 1105 | err | Unsupported `format` version |
-| 1106 | err | Param name collides with a reserved word or function |
+| 1106 | err | Param, constant or function name is invalid or collides with a reserved word, function or another name |
 | 1107 | err | Param has neither `default` nor `required` |
 | 1108 | err | Duplicate or invalid layer id |
-| 1109 | err | Polygon has fewer than 3 points |
+| 1109 | err | Polygon has fewer than 3 points (2 for an open one) |
 | 1110 | err | Image `w` and `h` both `auto` |
-| 1111 | err | `repeat` needs exactly one of `count` / `each` |
+| 1111 | err | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape` |
 | 1112 | err | `extends` across different layer types (including a group), or of a divider |
 | 1201 | err | File not found |
 | 1202 | err | CSV syntax error |
@@ -432,11 +473,11 @@ Every problem is reported as `{ severity, code, file, path, span, message, hint 
 | 3001 | err | Expression syntax error |
 | 3002 | err | Unknown name or function |
 | 3003 | err | Type mismatch or wrong function arguments |
-| 3004 | err | Reference or `extends` cycle |
-| 3005 | err | Reference to a repeated layer |
+| 3004 | err | Reference or `extends` cycle (also: an iteration reading a later one, a group's `translate` reading a layer inside it) |
+| 3005 | err | Reference to a repeated layer without an iteration index, or into nested repeats |
 | 3006 | err | Unit not valid in this field |
 | 3101 | err | Negative width or height (at render time) |
-| 3102 | err | List index out of range (at render time) |
+| 3102 | err | List index or iteration index out of range (at render time) |
 | 3103 | err | Division by zero (at render time) |
 | 3104 | err | List lookup by a key no item has (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
@@ -444,12 +485,12 @@ Every problem is reported as `{ severity, code, file, path, span, message, hint 
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |
 | 4001 | err | Image not found or unreachable (placeholder in preview) |
 | 4002 | err | Image could not be decoded |
-| 4003 | warning | Font lacks glyphs for some characters (drawn as boxes) |
+| 4003 | warning | Neither the font nor the bundled fallback fonts have glyphs for some characters (drawn as boxes) |
 | 4004 | err | Font name not declared in `fonts` |
 | 4005 | warning | Font file missing or not a TrueType/OpenType font; the default font is used |
-| 5001 | err | A limit was exceeded |
+| 5001 | err | A limit was exceeded. For the layer limit the message names the layers that use most of it |
 
-Default limits (the server may lower them): canvas 10000 x 10000 px, 500 layers after repeat expansion, 1000 iterations per repeat, images 50 megapixels, 10000 cards per set.
+Default limits (the server may lower them): canvas 10000 x 10000 px, 500 visible layers per card after repeat expansion (hidden layers and hidden iterations do not count; a visible group counts as one plus its visible layers; checked while each card is rendered, not at load), 1000 iterations per repeat, images 50 megapixels, 10000 cards per set.
 
 ## 10. Versioning
 

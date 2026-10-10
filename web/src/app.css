@@ -79,6 +79,7 @@ summary:focus-visible,
 input[type="checkbox"]:focus-visible,
 input[type="radio"]:focus-visible,
 [role="tab"]:focus-visible {
+	/* biome-ignore lint/complexity/noImportantStyles: must win over `all: unset` (see above) */
 	outline: 2px solid var(--accent) !important;
 	outline-offset: 1px;
 }
