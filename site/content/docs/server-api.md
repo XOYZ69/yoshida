@@ -83,10 +83,10 @@ An unknown id answers `{ "found": false }`. The server keeps the last 32 renders
 ```sh
 python3 - <<'EOF' > request.json
 import base64, json, pathlib
-root = pathlib.Path("examples/gamecard-simple")
+root = pathlib.Path("examples/poker")
 files = {str(p.relative_to(root)): base64.b64encode(p.read_bytes()).decode()
          for p in root.rglob("*") if p.is_file()}
-print(json.dumps({"files": files, "set": "drinking-game", "date": "2026-10-08"}))
+print(json.dumps({"files": files, "set": "courts", "date": "2026-10-08"}))
 EOF
 
 curl -sS -X POST --data-binary @request.json http://localhost:8080/api/render -o cards.zip

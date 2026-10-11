@@ -17,6 +17,9 @@ path = "docs/server-and-docker.md"
 title = "Examples"
 path = "docs/examples.md"
 [[group.item.child]]
+title = "Poker deck"
+path = "docs/example-poker.md"
+[[group.item.child]]
 title = "Board game"
 path = "docs/example-board-game.md"
 

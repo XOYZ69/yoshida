@@ -1,10 +1,14 @@
 // End-to-end checks for organising a project: param groups and views, the
 // enum options editor, notes in the card form, dividers and the empty-space
 // layer menu, the Files tab (upload folder, rename with reference rewrite),
-// the card browser, splitters and movable dialogs.
+// the card browser, splitters and movable dialogs, list rows and list keys.
+// Uses the fixture project in tests/fixtures/editor-test, opened as a
+// project file.
 //
 //   node tests/ui-organise.mjs [http://localhost:4173/]
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { zipSync } from "fflate";
 import { chromium } from "playwright";
 
 const base =
@@ -58,12 +62,38 @@ async function fileText(path) {
 	return t;
 }
 
+// Packs the fixture folder into a .yoshida file (a zip with one top folder).
+async function packFixture(name) {
+	const root = path.join(import.meta.dirname, "fixtures", name);
+	const files = {};
+	const walk = async (dir, rel) => {
+		for (const e of await readdir(dir, { withFileTypes: true })) {
+			const r = `${rel}/${e.name}`;
+			if (e.isDirectory()) await walk(path.join(dir, e.name), r);
+			else files[r] = new Uint8Array(await readFile(path.join(dir, e.name)));
+		}
+	};
+	await walk(root, name);
+	return Buffer.from(zipSync(files));
+}
+
 await p.goto(base);
 await rendered();
 await p.click(".project-btn");
-await p.locator('.menu [role=menuitem]:has-text("yugioh")').click();
+const fixture = p.waitForEvent("filechooser");
+await p.locator('.menu [role=menuitem]:has-text("Open project file")').click();
+await (await fixture).setFiles({
+	name: "editor-test.yoshida",
+	mimeType: "application/zip",
+	buffer: await packFixture("editor-test"),
+});
 await rendered();
-ok("opens yugioh", /rendered in/.test(await status()), await status());
+ok(
+	"opens the test project",
+	(await p.textContent(".pname")) === "editor-test" &&
+		/rendered in/.test(await status()),
+	await status(),
+);
 const design = "designs/monster.design.json";
 const cards = "cards/test.cards.json";
 
@@ -121,7 +151,7 @@ await p.locator('[role=option]:has-text("A to Z")').click();
 const az = await p.locator(".param .head .mono").allTextContents();
 ok(
 	"A to Z view",
-	az.join(",") === [...az].sort().join(",") && az.length === 15,
+	az.join(",") === [...az].sort().join(",") && az.length === 13,
 	az.slice(0, 4).join(","),
 );
 await p.locator('.params .bar [aria-label="Show params"]').click();
@@ -209,6 +239,15 @@ ok(
 );
 await p.screenshot({ path: `${shots}/v04-card-form.png` });
 
+// List param table (stats)
+const listRows = () => p.locator(".items tbody tr").count();
+ok("stats table shows rows", (await listRows()) === 3, String(await listRows()));
+await p.click(".items .add");
+await settle();
+ok("add list row", (await listRows()) === 4, String(await listRows()));
+await p.keyboard.press("Control+z");
+await settle();
+
 // Files tab: choose a folder, upload into it, rename a referenced file
 await p.click('.left .tabs button:has-text("Files")');
 await p.click('.ftree li[data-path="assets/images/lvl"] .row');
@@ -233,28 +272,28 @@ ok(
 		.locator('.ftree li[data-path="assets/images/lvl/star.png"]')
 		.count()) === 1,
 );
-await p.click('.ftree li[data-path="assets/images/shiro_square.jpg"] .row', {
+await p.click('.ftree li[data-path="assets/images/portrait_square.jpg"] .row', {
 	button: "right",
 });
 await p.locator('.menu [role=menuitem]:has-text("Rename")').click();
-await p.locator(".dialog input").fill("shiro.jpg");
+await p.locator(".dialog input").fill("portrait.jpg");
 await p.click(".dialog .primary");
 await settle();
 c = JSON.parse(await fileText(cards));
 ok(
 	"rename rewrites card references",
-	c.cards[0].art === "assets/images/shiro.jpg",
+	c.cards[0].art === "assets/images/portrait.jpg",
 	c.cards[0].art,
 );
 const probs = (await p.textContent(".problems-pane")) ?? "";
 ok(
 	"no problems after the rename",
-	!probs.includes("shiro"),
+	!probs.includes("portrait"),
 	probs.slice(0, 120),
 );
 await p.click('.left .tabs button:has-text("Files")');
 await p
-	.locator('.ftree li[data-path="assets/images/cards/monster-effect.png"]')
+	.locator('.ftree li[data-path="assets/images/cards/effect.png"]')
 	.dragTo(p.locator('.ftree li[data-path="assets/images"]'));
 ok(
 	"moving a templated file warns",
@@ -347,43 +386,41 @@ await p.click(".dialog .ghost");
 
 // List items by key: suggestions after `list.` and `list["`, bracket form for
 // keys that are not plain names.
-await p.click(".project-btn");
-await p.locator('.menu [role=menuitem]:has-text("cocktail")').click();
-await rendered();
-await p.locator('.tree .row:has-text("total_volume_text")').first().click();
+await p.click('.left .tabs button:has-text("Layers")');
+await p.locator('.tree .row:has-text("stats_text")').first().click();
 const tmpl = p.locator('aside.right .cm-content[aria-label="text"]').first();
 const keyOptions = () =>
 	p.locator(".cm-tooltip-autocomplete li").allTextContents();
 await tmpl.click();
 await p.keyboard.press("Control+a");
-await p.keyboard.type("{ingredients.");
+await p.keyboard.type("{stats.");
 await p.waitForSelector(".cm-tooltip-autocomplete li");
 const opts = await keyOptions();
 ok(
 	"dot suggests the keys seen in the cards",
-	opts.some((t) => t.startsWith("kGin")) &&
-		opts.some((t) => t.startsWith("kBlue Curacao")),
+	opts.some((t) => t.startsWith("kSpeed")) &&
+		opts.some((t) => t.startsWith("kAttack power")),
 	opts.slice(0, 3).join("|"),
 );
 await p
-	.locator('.cm-tooltip-autocomplete li:has-text("Blue Curacao")')
+	.locator('.cm-tooltip-autocomplete li:has-text("Attack power")')
 	.first()
 	.click();
 ok(
 	"a key with a space becomes the bracket form",
-	(await tmpl.innerText()).includes('{ingredients["Blue Curacao"]'),
+	(await tmpl.innerText()).includes('{stats["Attack power"]'),
 	await tmpl.innerText(),
 );
 await p.keyboard.press("Control+a");
-await p.keyboard.type('{ingredients["');
+await p.keyboard.type('{stats["');
 await p.waitForSelector(".cm-tooltip-autocomplete li");
 ok(
 	"a quote suggests the keys too",
-	(await keyOptions()).some((t) => t.startsWith("kGin")),
+	(await keyOptions()).some((t) => t.startsWith("kSpeed")),
 );
 await p.keyboard.press("Escape");
 await p.keyboard.press("Control+a");
-await p.keyboard.type("{ingredients.Gin}");
+await p.keyboard.type("{stats.Speed}");
 ok(
 	"a key after the dot is not flagged",
 	(await p.locator("aside.right .cm-content [class*=unknown]").count()) === 0,

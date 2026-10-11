@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "design": "designs/joker.design.json",
+  "name": "Jokers",
+  "cards": [
+    { "id": "joker-red", "tone": "red" },
+    { "id": "joker-black", "tone": "black" }
+  ]
+}

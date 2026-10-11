@@ -6,7 +6,7 @@ template = "index.html"
 kicker = "Card generator · free and open source"
 headline = "One design. Every card."
 lead = "Describe a card once with layers and formulas, fill it from a spreadsheet, and get a PNG for every row. Identical pixels in the browser, on the command line and on a server."
-hand = ["teal", "amber", "blue", "violet", "gold"]
+hand = ["10H", "JC", "QD", "KS", "AH"]
 
 [[extra.steps]]
 title = "Design"

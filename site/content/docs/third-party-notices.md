@@ -21,18 +21,17 @@ The JavaScript packages are bundled into `web/assets/*.js` by Vite. Their full l
 
 ## Example fonts
 
-Copied from the old Python version of yoshida (`data/fonts/`) so the examples render as designed. They are not part of yoshida itself.
+Used by the projects in `examples/`. They are not part of yoshida itself, and all of them may be redistributed with the examples.
 
 | Font | Example | License |
 | --- | --- | --- |
-| Bebas Regular (Dharma Type) | gamecard-simple | Free font EULA, `examples/gamecard-simple/assets/fonts/Bebas-Regular-license.txt` |
-| Secret Code (Matthew Welch) | gamecard-simple | MIT-style, `examples/gamecard-simple/assets/fonts/secrcode-license.txt` |
-| Yu-Gi-Oh! Matrix Book, Matrix Regular Small Caps 2, ITC Stone Serif Small Caps Bold, Stone Serif Semibold | yugioh, cocktail | Commercial fonts; no license to redistribute |
-| yumin (Yu Mincho) | yugioh | Commercial font bundled with Windows; no license to redistribute |
+| DM Serif Display (Colophon Foundry, based on Source Serif by Adobe) | poker | SIL Open Font License 1.1, `examples/poker/assets/fonts/DMSerifDisplay-Regular-license.txt` |
+| Cinzel Decorative Bold (Natanael Gama) | poker | SIL Open Font License 1.1, `examples/poker/assets/fonts/CinzelDecorative-Bold-license.txt` |
+| Bebas Regular (Dharma Type) | board-game | Free font EULA (commercial and non-commercial use, no sale), `examples/board-game/assets/fonts/Bebas-Regular-license.txt` |
 
-**Because of the commercial fonts, a bundle that contains them is for private use only.** Remove `examples/*/assets/fonts/` (except gamecard-simple) before sharing it; the designs then fall back to Lato with warning 4005.
+The suit symbols on the poker cards come from the bundled Noto Sans Symbols 2 subset listed above.
 
-The GitHub Pages build does this automatically: `npm run examples -- --public` skips the files listed in `examples/.public-exclude`. See [CI and Deployment](@/docs/ci-and-deployment.md).
+The GitHub Pages build copies the examples with `npm run examples -- --public`, which skips the files listed in `examples/.public-exclude` (empty for now). See [CI and Deployment](@/docs/ci-and-deployment.md).
 
 ## Your own fonts and images
 

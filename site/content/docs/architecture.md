@@ -46,7 +46,7 @@ src/wasm/        WebAssembly exports
 schema/          JSON Schemas for the three file kinds
 scripts/         release.sh (cross-compiled bundle) and the start scripts it ships
 web/             Svelte 5 + Vite + TypeScript editor
-examples/        converted designs plus feature-tour
+examples/        poker deck and party board game
 ```
 
 ### Pipeline

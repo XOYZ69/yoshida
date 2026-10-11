@@ -40,7 +40,7 @@ If the repository publishes to GitHub Pages, the editor is available at `https:/
 
 ## Your first card in the editor
 
-1. Open the editor and choose the project menu (the project's name in the top bar). Pick **feature-tour** from the examples.
+1. Open the editor and choose the project menu (the project's name in the top bar). Pick **Poker deck** from the examples.
 2. Click layers on the canvas or in the **Layers** tab and change values in the inspector on the right.
 3. Switch to **Card data** to edit the cards, or use the **Card** picker in the toolbar to switch cards.
 4. Use **PNG** to export the card you see, or **ZIP** for every card.
@@ -52,10 +52,10 @@ More in [Builder](@/docs/builder.md).
 
 ```sh
 # check a project for problems
-bin/x86_64-linux/yoshida check examples/feature-tour
+bin/x86_64-linux/yoshida check examples/poker
 
 # render every card to PNG
-bin/x86_64-linux/yoshida render examples/feature-tour --out out
+bin/x86_64-linux/yoshida render examples/poker --out out
 ```
 
 Use the binary folder that matches your system: `x86_64-linux`, `aarch64-linux`, `x86_64-macos`, `aarch64-macos` or `x86_64-windows` (`yoshida.exe`). The output goes to `out/<set>/<card id>.png`. All options: [Command Line](@/docs/command-line.md).

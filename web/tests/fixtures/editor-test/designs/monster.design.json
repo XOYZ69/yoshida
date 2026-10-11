@@ -1,0 +1,115 @@
+{
+  "format": 1,
+  "name": "Editor test card",
+  "note": "Covers what ui-organise.mjs checks: param groups, an enum used in a path template, a templated frame, a note, a list with text keys and dividers.",
+  "canvas": { "width": "300 * scale", "height": "420 * scale" },
+  "params": {
+    "art": { "type": "image", "default": "assets/images/portrait_square.jpg" },
+    "card_type": {
+      "type": "enum",
+      "options": ["effect", "spell"],
+      "default": "effect"
+    },
+    "scale": { "type": "number", "default": 1, "min": 0.5, "max": 4 },
+    "title": { "type": "text", "default": "Untitled", "group": "Card text" },
+    "description": { "type": "text", "default": "", "group": "Card text" },
+    "level": { "type": "integer", "default": 3, "min": 0, "max": 8, "group": "Monster stats" },
+    "star_type": {
+      "type": "enum",
+      "options": ["blue", "red"],
+      "default": "blue",
+      "group": "Monster stats"
+    },
+    "atk": { "type": "integer", "default": 1000, "group": "Monster stats" },
+    "def": { "type": "integer", "default": 1000, "group": "Monster stats" },
+    "stats": {
+      "type": "list",
+      "item": { "name": "text", "value": "number" },
+      "default": [],
+      "group": "Monster stats"
+    },
+    "set_code": { "type": "text", "default": "TEST-001", "group": "Print" },
+    "edition": { "type": "text", "default": "1st edition", "group": "Print" },
+    "author": {
+      "type": "text",
+      "default": "",
+      "note": "Printed in the bottom right corner.",
+      "group": "Print"
+    }
+  },
+  "layers": [
+    { "id": "artwork_divider", "type": "divider", "label": "Artwork and frame" },
+    {
+      "id": "frame",
+      "type": "image",
+      "src": "assets/images/cards/{card_type}.png",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" }
+    },
+    {
+      "id": "art",
+      "type": "image",
+      "src": "{art}",
+      "box": { "x": "10%", "y": "14%", "w": "80%", "h": "50%" },
+      "fit": "cover"
+    },
+    { "id": "text_divider", "type": "divider", "label": "Text and stats" },
+    {
+      "id": "title_text",
+      "type": "text",
+      "text": "{title}",
+      "at": { "x": "5%", "y": "4%" },
+      "size": "20 * scale",
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "stars",
+      "type": "image",
+      "repeat": { "count": "level", "index": "i" },
+      "src": "assets/images/lvl/level-star-{star_type}.png",
+      "box": { "x": "90% - i * 18 * scale", "y": "4%", "w": "16 * scale", "h": "16 * scale" }
+    },
+    {
+      "id": "description_text",
+      "type": "text",
+      "text": "{description}",
+      "at": { "x": "8%", "y": "67%" },
+      "size": "11 * scale",
+      "wrap": "84%",
+      "max_lines": 4
+    },
+    {
+      "id": "stats_text",
+      "type": "text",
+      "text": "{len(stats)} stats",
+      "at": { "x": "8%", "y": "86%" },
+      "size": "11 * scale"
+    },
+    {
+      "id": "atk_text",
+      "type": "text",
+      "text": "ATK/{atk} DEF/{def}",
+      "at": { "x": "92%", "y": "86%" },
+      "anchor": "top-right",
+      "size": "11 * scale"
+    },
+    { "id": "print_divider", "type": "divider", "label": "Print info" },
+    {
+      "id": "set_code_text",
+      "type": "text",
+      "text": "{set_code} {edition}",
+      "at": { "x": "8%", "y": "95%" },
+      "anchor": "left",
+      "size": "8 * scale",
+      "color": "#FFFFFF"
+    },
+    {
+      "id": "author_text",
+      "type": "text",
+      "text": "{author}",
+      "at": { "x": "92%", "y": "95%" },
+      "anchor": "right",
+      "size": "8 * scale",
+      "color": "#FFFFFF"
+    }
+  ]
+}

@@ -14,4 +14,4 @@ zola build          # fails on any broken internal link or anchor
 - Release pages are generated in CI from GitHub Releases (`scripts/releases-to-zola.py`); only `content/releases/_index.md` is committed. Locally the list is empty unless you run the script yourself.
 - Colours: `sass/site.scss` holds the Paper palette as `light-dark()` pairs. The editor uses the same palette in `web/src/app.css`; keep the two in sync. Both store the visitor's theme choice in `localStorage["yoshida.theme"]`, so it carries over between site and editor.
 - Fonts in `static/fonts/` are self-hosted Google Fonts (Inter, JetBrains Mono, Fraunces; SIL Open Font License, latin subset).
-- Hero cards in `static/img/cards/` are renders of `examples/feature-tour` with extra data rows; the editor screenshots in `static/img/` are taken from the built editor.
+- Hero cards in `static/img/cards/` are renders of `examples/poker` (500 x 700 WebP, named by card id); the editor screenshots in `static/img/` are taken from the built editor with the poker example open.

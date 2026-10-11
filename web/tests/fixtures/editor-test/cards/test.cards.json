@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "design": "designs/monster.design.json",
+  "cards": [
+    {
+      "id": "sample",
+      "art": "assets/images/portrait_square.jpg",
+      "title": "Sample Card",
+      "description": "A short description that wraps over a couple of lines on the card.",
+      "author": "Test Author",
+      "stats": [
+        { "name": "Speed", "value": 3 },
+        { "name": "Attack power", "value": 5 },
+        { "name": "Charm", "value": 2 }
+      ]
+    }
+  ]
+}

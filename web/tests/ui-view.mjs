@@ -131,7 +131,7 @@ await wheelZoomKeepsPoint(
 }
 
 // Middle-button drag over a layer pans and leaves the selection alone.
-await p.click('.tree .row:has(.name:text-is("art"))');
+await p.click('.tree .row:has(.name:text-is("ace_ring"))');
 const before = await selected();
 const art = await p.locator(".stage rect.sel").first().boundingBox();
 {
@@ -192,7 +192,7 @@ await p.keyboard.press("Escape");
 	const sel = await p.locator(".tree li.selected").count();
 	ok("escape still clears", sel === 0, `selected=${sel}`);
 }
-await p.click('.tree .row:has(.name:text-is("art"))');
+await p.click('.tree .row:has(.name:text-is("ace_ring"))');
 const artNow = await p.locator(".stage rect.sel").first().boundingBox();
 await p.keyboard.press("Escape");
 await p.mouse.click(artNow.x + artNow.width / 2, artNow.y + artNow.height / 2);

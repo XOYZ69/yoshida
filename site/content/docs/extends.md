@@ -25,7 +25,9 @@ The base does not have to be drawn. A layer with `"visible": false` is not drawn
 { "id": "tile_bg", "type": "rect", "extends": "tile_base", "visible": true, "fill": "c_plain" }
 ```
 
-Both tiles inherit `box` and `repeat` from `tile_base` and set `visible` back to `true`. Hidden layers do not count toward the [500-layer limit](@/docs/repeat.md#the-layer-limit). The [board game example](@/docs/example-board-game.md) is built this way.
+Both tiles inherit `box` and `repeat` from `tile_base` and set `visible` back to `true`. Hidden layers do not count toward the [500-layer limit](@/docs/repeat.md#the-layer-limit). The [board game example](@/docs/example-board-game.md) is built this way, and so are the pips of the [poker example](@/docs/example-poker.md): one hidden `pip` layer, extended by the side pips, the middle pips and the ace.
+
+A turned copy is a common use: the [poker example](@/docs/example-poker.md)'s bottom-right index extends the top-left one and only sets a mirrored `at` and `"rotate": 180`.
 
 ## Merging rules
 

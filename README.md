@@ -46,8 +46,8 @@ unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `
 **Or render from the command line**
 
 ```sh
-yoshida check  examples/feature-tour
-yoshida render examples/feature-tour --out out
+yoshida check  examples/poker
+yoshida render examples/poker --out out
 ```
 
 ## Project files
@@ -97,4 +97,4 @@ The **[documentation](https://xoyz69.github.io/yoshida/docs/)** has a page for e
 | [Diagnostics](https://xoyz69.github.io/yoshida/docs/diagnostics/)                                                       | Every error code and how to fix it                |
 | [Architecture](https://xoyz69.github.io/yoshida/docs/architecture/)                                                     | Core, WebAssembly, server                         |
 
-Working projects are in [`examples/`](examples).
+Working projects are in [`examples/`](examples): a full poker deck (`poker`) and a printable party board (`board-game`).

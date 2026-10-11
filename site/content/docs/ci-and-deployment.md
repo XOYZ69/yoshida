@@ -50,7 +50,7 @@ The site works from the Pages sub-path (`https://<user>.github.io/<repo>/`) beca
 
 The site is static: rendering runs in the visitor's browser (WebAssembly) and projects are stored in the visitor's browser only. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md).
 
-The public build copies the examples with `npm run examples -- --public`, which leaves out the files listed in `examples/.public-exclude`: the commercial fonts that were copied from the old Python version for private testing. Those example designs then use the bundled Lato font and show warning 4005. See [Third-Party Notices](@/docs/third-party-notices.md).
+The public build copies the examples with `npm run examples -- --public`, which leaves out the files listed in `examples/.public-exclude`. The current examples only use fonts that may be shared, so the list is empty; add private fonts or images there if a local example needs them. A design whose font is left out falls back to the bundled Lato font and shows warning 4005. See [Third-Party Notices](@/docs/third-party-notices.md).
 
 ## Run the end-to-end test locally
 

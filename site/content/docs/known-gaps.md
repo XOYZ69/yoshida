@@ -8,7 +8,7 @@ What does not work yet, so you do not have to find out the hard way.
 ## Format
 
 - **Rich text** (mixed fonts, sizes or colors inside one text layer) is not in the format.
-- **Shared design parts** (`include`) are not in the format.
+- **Shared design parts** (`include`) are not in the format, and `extends` only reaches layers of the same design. Designs that share a look repeat those layers, as the four designs of the [poker example](@/docs/example-poker.md) do.
 - **Per-card layer overrides** are not in the format; cards change params only. (Single items of a default list can be changed, see [Params](@/docs/params.md#changing-single-items-of-the-default).)
 - The **layer limit** is fixed at 500 visible layers per card; it cannot be raised. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
 - A layer inside **two nested repeats** cannot be referenced from outside both (error 3005); an index picks one level only. See [Repeat](@/docs/repeat.md#reading-one-iteration).
@@ -56,7 +56,6 @@ See [Builder: Canvas](@/docs/builder-canvas.md).
 
 - The **macOS binaries are unsigned**. `start.sh` clears the quarantine flag; if that is not possible, Gatekeeper may ask once (right-click, Open).
 - On **Windows**, only x86_64 is prebuilt. `zig build -Dtarget=aarch64-windows` works from source.
-- The example fonts copied from the old Python version include **commercial fonts** (Matrix, ITC Stone Serif, yumin). A bundle that contains them is for private testing only. See [Third-Party Notices](@/docs/third-party-notices.md).
 
 ## CLI
 

@@ -18,11 +18,11 @@ zig build test                        # core unit tests
 zig build -Doptimize=ReleaseFast      # zig-out/bin/yoshida and zig-out/bin/yoshida-server
 zig build wasm                        # zig-out/web/yoshida.wasm
 
-./zig-out/bin/yoshida check examples/cocktail
-./zig-out/bin/yoshida render examples/feature-tour --out out --date 2026-10-07
+./zig-out/bin/yoshida check examples/poker
+./zig-out/bin/yoshida render examples/poker --out out --date 2026-10-11
 ```
 
-`zig build run -- check examples/cocktail` runs the CLI from the build.
+`zig build run -- check examples/poker` runs the CLI from the build.
 
 ### Cross-compiling
 
