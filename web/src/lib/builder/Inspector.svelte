@@ -27,6 +27,7 @@ import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
 import type { CompletionContext } from "./complete";
 import Field from "./Field.svelte";
+import Scope from "./Scope.svelte";
 
 let {
 	doc,
@@ -195,6 +196,29 @@ const completion = $derived.by((): CompletionContext => {
 	};
 });
 setContext("yoshida-complete", () => completion);
+
+/** A function's arguments as `name -> type` (an array of names is all numbers). */
+function argTypes(args: Json | undefined): [string, string][] {
+	if (Array.isArray(args)) return args.map((n) => [String(n), "number"]);
+	if (isObj(args)) return Object.entries(args).map(([n, t]) => [n, String(t)]);
+	return [];
+}
+
+// A function body sees its arguments, params, constants and the functions
+// before it; not layers or repeat names (FORMAT.md 6.8).
+function functionScope(name: string, fn: Obj): CompletionContext {
+	const at = functions.findIndex(([n]) => n === name);
+	return {
+		...completion,
+		functions: completion.functions?.slice(0, Math.max(0, at)),
+		layers: [],
+		locals: argTypes(fn.args).map(([n, t]) => ({
+			name: n,
+			detail: `argument of ${name}`,
+			type: t,
+		})),
+	};
+}
 
 // Problems are listed once, in the problems panel; fields only show a
 // short note for their own errors.
@@ -746,7 +770,9 @@ let newFunction = $state("");
             <span class="lbl">args</span>
             <input class="mono" value={argsText(fn.args)} placeholder="i: number, kind: text" onchange={(e) => setDoc(['functions', name, 'args'], parseArgs(e.currentTarget.value))} />
           </div>
-          <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
+          <Scope context={() => functionScope(name, fn)}>
+            <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
+          </Scope>
         </div>
       {/each}
       <div class="row">

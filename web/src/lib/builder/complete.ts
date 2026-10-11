@@ -32,8 +32,16 @@ export type CompletionContext = {
 	}[];
 	/** `type` is the layer kind (`rect`, `text`, ..., `group`). */
 	layers: { id: string; type: string }[];
-	/** Repeat names in scope: index name, and item name with its list param. */
-	locals: { name: string; detail: string; fields?: Record<string, string> }[];
+	/**
+	 * Local names in scope: repeat index and item names (item with its list
+	 * fields), or a function's arguments (`type` set to the argument type).
+	 */
+	locals: {
+		name: string;
+		detail: string;
+		fields?: Record<string, string>;
+		type?: string;
+	}[];
 	/** Design constants and functions (`consts`, `functions`). */
 	consts?: { name: string }[];
 	functions?: { name: string; args: string }[];

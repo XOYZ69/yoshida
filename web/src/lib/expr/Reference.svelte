@@ -121,10 +121,10 @@ function keep(e: MouseEvent) {
 
   {#if ctx.locals.length}
     <section>
-      <h4>Repeat</h4>
+      <h4>{ctx.locals.some((l) => l.type) ? 'Arguments' : 'Repeat'}</h4>
       {#each ctx.locals as l}
         <button class="row" onmousedown={keep} onclick={() => oninsert(l.name, false)}>
-          <code class="n local">{l.name}</code><span class="t">{l.fields ? 'item' : 'number'}</span>
+          <code class="n local">{l.name}</code><span class="t">{l.type ?? (l.fields ? 'item' : 'number')}</span>
           <span class="d">{l.detail}</span>
         </button>
         {#each Object.entries(l.fields ?? {}) as [f, t]}

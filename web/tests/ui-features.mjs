@@ -99,6 +99,19 @@ ok(
 	fnHeads.some((t) => t.startsWith("tile_x(i: number)")),
 	fnHeads.join(" | "),
 );
+// A function body knows its own arguments: no "Unknown name" marks.
+const tileX = p
+	.locator(
+		"aside.right section:has(h3:text-is('Functions')) .effect:has(strong:has-text('tile_x(')) .cm-content",
+	)
+	.first();
+const unknownInFn = await tileX.locator(".yx-unknown").allTextContents();
+const argMarks = await tileX.locator(".yx-local").allTextContents();
+ok(
+	"function arguments are known names in its body",
+	unknownInFn.length === 0 && argMarks.includes("i"),
+	`unknown: ${unknownInFn.join(", ")}; locals: ${argMarks.join(", ")}`,
+);
 
 // Enum item fields: a dropdown in the card form; one changed tile is saved
 // as a change to the default list.

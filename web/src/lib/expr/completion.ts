@@ -35,6 +35,7 @@ type Opt = Completion & { kind: string; fitness: number };
 const sec = (name: string, rank: number): CompletionSection => ({ name, rank });
 const S = {
 	repeat: sec("Repeat", 0),
+	args: sec("Arguments", 0),
 	keys: sec("Keys", 0),
 	params: sec("Params", 1),
 	fields: sec("Fields", 1),
@@ -120,15 +121,17 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 				{
 					label: l.name,
 					kind: "local",
-					detail: l.fields ? "item" : "number",
-					section: S.repeat,
-					fitness: l.fields ? 1 : fit("number", expect),
+					detail: l.type ?? (l.fields ? "item" : "number"),
+					section: l.type ? S.args : S.repeat,
+					fitness: l.fields ? 1 : fit(l.type ?? "number", expect),
 					info: info(
 						l.name,
 						l.detail,
 						fields
 							? `fields: ${fields} — write ${l.name}.<field>`
-							: "Counts from 0.",
+							: l.type
+								? undefined
+								: "Counts from 0.",
 					),
 				},
 				expect,
