@@ -4,7 +4,11 @@
 //!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
 //!   POST /api/render         {"files": {path: base64}, "set", "date", "format": "png"|"png16"|"pdf"}
 //!                            -> application/zip with <set>/<card id>.png, or 422 with diagnostics
-//!   GET  /*                  static files from --web (the built editor)
+//!   GET  /*                  static files from --web (the built editor, or the
+//!                            site with the editor in editor/)
+//!
+//! The API also answers under /editor/api/, where the editor's relative
+//! "api/..." calls land when it is served from /editor/.
 
 const std = @import("std");
 const y = @import("yoshida");
@@ -107,7 +111,8 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const target = req.head.target;
-    const path = if (std.mem.indexOfScalar(u8, target, '?')) |q| target[0..q] else target;
+    const full_path = if (std.mem.indexOfScalar(u8, target, '?')) |q| target[0..q] else target;
+    const path = if (std.mem.startsWith(u8, full_path, "/editor/api/")) full_path["/editor".len..] else full_path;
 
     if (std.mem.eql(u8, path, "/api/capabilities")) {
         const body = try std.fmt.allocPrint(arena, "{{\"version\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d}}}", .{ y.version, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
@@ -141,6 +146,8 @@ fn contentType(path: []const u8) []const u8 {
         .{ ".jpg", "image/jpeg" },                .{ ".jpeg", "image/jpeg" },
         .{ ".svg", "image/svg+xml" },             .{ ".csv", "text/csv" },
         .{ ".ttf", "font/ttf" },                  .{ ".otf", "font/otf" },
+        .{ ".woff2", "font/woff2" },              .{ ".webp", "image/webp" },
+        .{ ".xml", "application/xml" },           .{ ".ico", "image/x-icon" },
     };
     inline for (map) |m| if (std.ascii.eqlIgnoreCase(ext, m[0])) return m[1];
     return "application/octet-stream";
@@ -154,6 +161,15 @@ fn serveStatic(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Serv
     const clean = (try y.project.normalize(arena, decoded)) orelse return jsonError(req, .not_found, "not found");
     const full = try std.fs.path.join(arena, &.{ cfg.web, clean });
     const data = Io.Dir.cwd().readFileAlloc(io, full, arena, .limited(64 * 1024 * 1024)) catch {
+        // A folder without its trailing slash ("/editor"): redirect, so the
+        // relative URLs in its index.html resolve inside the folder.
+        if (url_path[url_path.len - 1] != '/') {
+            const index = try std.fs.path.join(arena, &.{ full, "index.html" });
+            if (Io.Dir.cwd().readFileAlloc(io, index, arena, .limited(64 * 1024 * 1024))) |_| {
+                const location = try std.mem.concat(arena, u8, &.{ url_path, "/" });
+                return req.respond("", .{ .status = .moved_permanently, .extra_headers = &.{.{ .name = "location", .value = location }} });
+            } else |_| {}
+        }
         return jsonError(req, .not_found, "not found");
     };
     return req.respond(data, .{ .extra_headers = &.{
