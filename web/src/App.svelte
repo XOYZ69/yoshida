@@ -6,6 +6,7 @@ import LayerTree from "./lib/builder/LayerTree.svelte";
 import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 import Stage from "./lib/builder/Stage.svelte";
 import CardForm from "./lib/CardForm.svelte";
+import ThemeToggle from "./lib/ui/ThemeToggle.svelte";
 import {
 	type AlignMode,
 	alignLayers,
@@ -2430,6 +2431,7 @@ const typeLabels: Record<LayerType, string> = {
 				title="Download the whole project, images and fonts included, as a .yoshida file"
 				>Export .yoshida</button
 			>
+			<ThemeToggle />
 		</header>
 
 		{#if mode === "build"}

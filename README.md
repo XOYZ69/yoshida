@@ -19,7 +19,7 @@ Designs are simple json files that are easy to share, modify and abuse as much a
   <img src="samples/builder-v04-dark-params.png" alt="The yoshida editor" width="100%">
 </p>
 
-> Some links to wiki entries or content might be broken atm please. Just visit the wiki directly [here](https://github.com/XOYZ69/yoshida/wiki).
+> The full documentation lives on the [docs site](https://xoyz69.github.io/yoshida/docs/).
 
 ## Features
 
@@ -67,7 +67,7 @@ cd web && npm install
 npm run wasm && npm run examples && npm run dev    # editor on http://localhost:5173
 ```
 
-More in [Building from Source](../../wiki/Building-from-Source).
+More in [Building from Source](https://xoyz69.github.io/yoshida/docs/building-from-source/).
 
 ## Third-party code
 
@@ -85,16 +85,16 @@ The C libraries are single-header files in [`src/c/`](src/c). Why they are large
 
 ## Documentation
 
-The **[wiki](../../wiki)** has a page for every feature:
+The **[documentation](https://xoyz69.github.io/yoshida/docs/)** has a page for every feature:
 
 |                                                                                             |                                                   |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [Getting Started](../../wiki/Getting-Started)                                               | First card, in the editor and on the command line |
-| [Command Line](../../wiki/Command-Line) · [Server and Docker](../../wiki/Server-and-Docker) | Options, exit codes, the HTTP API                 |
-| [Designs](../../wiki/Designs) · [Params](../../wiki/Params) · [Layers](../../wiki/Layers)   | The file format                                   |
-| [Expressions](../../wiki/Expressions) · [Card Data](../../wiki/Card-Data)                   | Formulas, templates, JSON and CSV                 |
-| [Builder](../../wiki/Builder)                                                               | The visual editor, panel by panel, with shortcuts |
-| [Diagnostics](../../wiki/Diagnostics)                                                       | Every error code and how to fix it                |
-| [Architecture](../../wiki/Architecture)                                                     | Core, WebAssembly, server                         |
+| [Getting Started](https://xoyz69.github.io/yoshida/docs/getting-started/)                                               | First card, in the editor and on the command line |
+| [Command Line](https://xoyz69.github.io/yoshida/docs/command-line/) · [Server and Docker](https://xoyz69.github.io/yoshida/docs/server-and-docker/) | Options, exit codes, the HTTP API                 |
+| [Designs](https://xoyz69.github.io/yoshida/docs/designs/) · [Params](https://xoyz69.github.io/yoshida/docs/params/) · [Layers](https://xoyz69.github.io/yoshida/docs/layers/)   | The file format                                   |
+| [Expressions](https://xoyz69.github.io/yoshida/docs/expressions/) · [Card Data](https://xoyz69.github.io/yoshida/docs/card-data/)                   | Formulas, templates, JSON and CSV                 |
+| [Builder](https://xoyz69.github.io/yoshida/docs/builder/)                                                               | The visual editor, panel by panel, with shortcuts |
+| [Diagnostics](https://xoyz69.github.io/yoshida/docs/diagnostics/)                                                       | Every error code and how to fix it                |
+| [Architecture](https://xoyz69.github.io/yoshida/docs/architecture/)                                                     | Core, WebAssembly, server                         |
 
 Working projects are in [`examples/`](examples).

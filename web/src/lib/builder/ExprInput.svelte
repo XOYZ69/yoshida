@@ -311,18 +311,12 @@ function insertRef(t: string, reopen: boolean) {
 {/if}
 
 <style>
-  /* Extra syntax colors (app.css has the base --syn-* ones). */
+  /* Extra syntax colors; app.css defines --syn-ref/param/hole for both
+     themes, the fallbacks only apply if it does not. */
   :global(:root) {
     --yx-ref: var(--syn-ref, #b0347f);
     --yx-param: var(--syn-param, #0b7a87);
     --yx-hole: var(--syn-hole, rgba(59, 108, 246, 0.09));
-  }
-  @media (prefers-color-scheme: dark) {
-    :global(:root) {
-      --yx-ref: var(--syn-ref, #f08cc8);
-      --yx-param: var(--syn-param, #5fd0dc);
-      --yx-hole: var(--syn-hole, rgba(110, 147, 255, 0.14));
-    }
   }
 
   .expr {

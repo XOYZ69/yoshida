@@ -112,3 +112,20 @@ jobs:
           name: ui-test-results
           path: web/test-results/
           retention-days: 7
+
+  site:
+    name: Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zola
+        run: |
+          mkdir -p "$RUNNER_TEMP/zola"
+          curl -sSL "https://github.com/getzola/zola/releases/download/v0.23.6/zola-v0.23.6-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
+          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+
+      # Fails on any broken internal link or anchor in the docs.
+      - name: Build
+        working-directory: site
+        run: zola build --output-dir ../public
