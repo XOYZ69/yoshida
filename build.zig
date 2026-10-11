@@ -1,4 +1,5 @@
 const std = @import("std");
+const manifest = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -68,6 +69,11 @@ fn createCore(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
         .target = target,
         .optimize = optimize,
     });
+    // The version lives in build.zig.zon only; scripts/version.mjs bumps it
+    // and keeps the other copies (web/package.json, docs) in sync.
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", manifest.version);
+    core.addOptions("build_options", options);
     core.addIncludePath(b.path("src/c/include"));
     core.addIncludePath(b.path("src/c"));
     core.addCSourceFile(.{

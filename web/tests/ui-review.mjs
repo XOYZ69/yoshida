@@ -378,7 +378,7 @@ await p.route("**/api/capabilities", (r) =>
 	r.fulfill({
 		contentType: "application/json",
 		body: JSON.stringify({
-			version: "0.4.0",
+			version: "0.0.0-test",
 			format: 1,
 			render: true,
 			max_cards: 1000,

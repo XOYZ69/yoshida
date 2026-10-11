@@ -15,12 +15,13 @@ Three jobs:
 
 **Core and CLI**
 
-1. `zig fmt --check build.zig src`
-2. `zig build test` (the core's unit tests)
-3. `zig build`
-4. `yoshida fmt --check examples` (the examples are in canonical format)
-5. `yoshida check` on every example
-6. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build)
+1. `node scripts/version.mjs check` (every copy of the version matches `build.zig.zon`, see [Releases](#releases))
+2. `zig fmt --check build.zig src`
+3. `zig build test` (the core's unit tests)
+4. `zig build`
+5. `yoshida fmt --check examples` (the examples are in canonical format)
+6. `yoshida check` on every example
+7. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build)
 
 **Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`.
 
@@ -62,6 +63,22 @@ npm run test:ui
 `npm run test:ui` runs `tests/ui.mjs` and `tests/ui-organise.mjs` with Playwright in Chromium. Pass the preview URL as an argument if it is not the default.
 
 ## Releases
+
+### Version number
+
+The version is set in one place, `.version` in `build.zig.zon`. The Zig build passes it to the core, so `yoshida version`, the server's `/api/capabilities`, the WASM `info` call and the editor header all follow it. A few files cannot read it and keep a copy: `web/package.json`, `web/package-lock.json` and four docs pages. `scripts/version.mjs` updates them all:
+
+```sh
+node scripts/version.mjs              # print the version
+node scripts/version.mjs minor        # 0.4.0 -> 0.5.0 (also: major, patch, or an exact 0.5.0-rc.1)
+node scripts/version.mjs check        # fail if a copy differs from build.zig.zon
+```
+
+After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag is `v` plus the version.
+
+To release: bump on a branch, merge the pull request to `master`, then publish a GitHub release tagged `v<version>` (for example `v0.5.0`). Publishing it redeploys the site with the new release page.
+
+### Release bundle
 
 `scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
 

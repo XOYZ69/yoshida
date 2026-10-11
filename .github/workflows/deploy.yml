@@ -32,6 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A release tag must name the version in build.zig.zon (v0.5.0 for 0.5.0).
+      - name: Release tag matches the version
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/version.mjs check --tag "$TAG"
+
       # Editor: same steps as before, output in web/dist.
       - uses: ./.github/actions/setup-zig
       - uses: actions/setup-node@v4

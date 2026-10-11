@@ -23,6 +23,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-zig
 
+      # build.zig.zon holds the version; the copies in web/ and the docs
+      # must match it.
+      - name: Version copies in sync
+        run: node scripts/version.mjs check
+
       - name: Zig formatting
         run: zig fmt --check build.zig src
 
