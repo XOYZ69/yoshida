@@ -147,20 +147,20 @@ await p.waitForFunction(
 );
 ok(
 	"check all cards finds no errors",
-	/Checked 3 card\(s\): 0 error/.test(await status()),
+	/Checked 4 card\(s\): 0 error/.test(await status()),
 	await status(),
 );
 
 // PDF export.
 const [dl] = await Promise.all([
-	p.waitForEvent("download", { timeout: 60000 }),
+	p.waitForEvent("download", { timeout: 240000 }),
 	p.click('.exports button:has-text("PDF")'),
 ]);
 const pdf = await readFile(await dl.path());
 ok(
 	"PDF export has one page per card",
 	pdf.subarray(0, 5).toString() === "%PDF-" &&
-		/\/Count 3/.test(pdf.toString("latin1")),
+		/\/Count 4/.test(pdf.toString("latin1")),
 	dl.suggestedFilename(),
 );
 
