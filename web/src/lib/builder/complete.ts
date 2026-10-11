@@ -17,6 +17,15 @@ export type { Expect } from "../expr/catalog";
 
 export type Completion = { label: string; insert: string; detail: string };
 
+/** Where a name is defined, for go to definition (see ../expr/hover.ts). */
+export type GotoTarget =
+	| { kind: "param"; name: string }
+	| { kind: "const"; name: string }
+	| { kind: "function"; name: string }
+	| { kind: "layer"; id: string }
+	/** The repeat settings of a layer (a repeat's index or item name). */
+	| { kind: "repeat"; layer: string };
+
 export type CompletionContext = {
 	/**
 	 * `item`: field name → type, for list params. `keys`: the key values seen
@@ -29,6 +38,8 @@ export type CompletionContext = {
 		keys?: string[];
 		label?: string;
 		note?: string;
+		/** The current card's value, shown on hover. */
+		value?: unknown;
 	}[];
 	/** `type` is the layer kind (`rect`, `text`, ..., `group`). */
 	layers: { id: string; type: string }[];
@@ -41,10 +52,12 @@ export type CompletionContext = {
 		detail: string;
 		fields?: Record<string, string>;
 		type?: string;
+		/** Where the name comes from: the repeat, or the function. */
+		source?: GotoTarget;
 	}[];
-	/** Design constants and functions (`consts`, `functions`). */
-	consts?: { name: string }[];
-	functions?: { name: string; args: string }[];
+	/** Design constants and functions (`consts`, `functions`); `expr` is shown on hover. */
+	consts?: { name: string; expr?: string }[];
+	functions?: { name: string; args: string; expr?: string; note?: string }[];
 };
 
 const functions: [string, string][] = FUNCTIONS.map((f) => [

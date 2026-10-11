@@ -120,3 +120,18 @@ textarea {
 body.dragging-ui {
 	user-select: none;
 }
+
+/* Go to definition (Ctrl+click in an expression): the target flashes once. */
+.goto-flash {
+	animation: goto-flash 1.4s ease-out;
+}
+@keyframes goto-flash {
+	0%,
+	30% {
+		box-shadow: 0 0 0 2px var(--accent);
+		background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+	}
+	100% {
+		box-shadow: 0 0 0 2px transparent;
+	}
+}

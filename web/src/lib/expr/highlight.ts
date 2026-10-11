@@ -46,7 +46,8 @@ function mark(kind: string, note?: string) {
 	if (!d) {
 		d = Decoration.mark({
 			class: `yx-${kind}`,
-			attributes: note ? { title: note } : undefined,
+			// Unknown names explain themselves in the hover (hover.ts).
+			attributes: note && kind !== "unknown" ? { title: note } : undefined,
 		});
 		marks.set(key, d);
 	}

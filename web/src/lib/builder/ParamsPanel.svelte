@@ -1,3 +1,8 @@
+<script module lang="ts">
+/** The last go to definition request handled (see `focus`). */
+let handled = 0;
+</script>
+
 <script lang="ts">
 // The design's params: the inputs every card fills in. Each one becomes a
 // field in the card form and a name that layer fields can use.
@@ -5,6 +10,7 @@
 // shown A to Z or by type. Dragging a param reorders the file (that order
 // is the card form's order) and can move it to another group.
 
+import { tick, untrack } from "svelte";
 import {
 	groupOf,
 	identRe,
@@ -38,6 +44,7 @@ let {
 	onrename,
 	cards,
 	onrenameoption,
+	focus = null,
 }: {
 	doc: Obj;
 	imageFiles: string[];
@@ -51,6 +58,8 @@ let {
 	cards: CardInfo[];
 	/** Renames an enum option in the design and in card data. */
 	onrenameoption: (param: string, from: string, to: string) => void;
+	/** Opens, scrolls to and highlights a param (go to definition). */
+	focus?: { name: string; n: number } | null;
 } = $props();
 
 const params = $derived(
@@ -140,6 +149,37 @@ const sections = $derived.by(
 	},
 );
 const canDrag = $derived(view === "groups" && !query.trim());
+
+let list: HTMLDivElement | undefined = $state();
+$effect(() => {
+	const f = focus;
+	// Once per request: not again when the tab is opened later.
+	if (!f || f.n === handled) return;
+	handled = f.n;
+	untrack(() => reveal(f));
+});
+
+function reveal(f: { name: string; n: number }) {
+	// Make sure it is shown: no filter hiding it, its section unfolded.
+	if (!matches.some(([n]) => n === f.name)) query = "";
+	const sec = sections.find((x) => x.params.some(([n]) => n === f.name));
+	if (sec && folded.has(sec.key)) {
+		const next = new Set(folded);
+		next.delete(sec.key);
+		folded = next;
+	}
+	open = f.name;
+	tick().then(() => {
+		const el = list?.querySelector<HTMLElement>(
+			`.param[data-param="${CSS.escape(f.name)}"]`,
+		);
+		if (!el) return;
+		el.scrollIntoView({ block: "nearest" });
+		el.classList.remove("goto-flash");
+		void el.offsetWidth;
+		el.classList.add("goto-flash");
+	});
+}
 
 function fold(key: string) {
 	const next = new Set(folded);
@@ -356,7 +396,7 @@ function withDefault(ft: Json, raw: string): Json {
 }
 </script>
 
-<div class="params">
+<div class="params" bind:this={list}>
   {#if params.length > 3}
     <div class="bar">
       <input class="search" type="search" placeholder="Filter params…" bind:value={query} aria-label="Filter params" />
@@ -406,6 +446,7 @@ function withDefault(ft: Json, raw: string): Json {
           class="param"
           role="group"
           aria-label={name}
+          data-param={name}
           draggable={canDrag && open !== name}
           ondragstart={(e) => {
             dragName = name;

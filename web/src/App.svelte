@@ -1,6 +1,7 @@
 <script lang="ts">
 import { zipSync } from "fflate";
-import { onMount } from "svelte";
+import { onMount, setContext } from "svelte";
+import type { GotoTarget } from "./lib/builder/complete";
 import Inspector from "./lib/builder/Inspector.svelte";
 import LayerTree from "./lib/builder/LayerTree.svelte";
 import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
@@ -170,6 +171,32 @@ let busy = $state("");
 let mode: "build" | "code" = $state("build");
 let leftTab: "layers" | "params" | "card" | "files" = $state("layers");
 let selectedLayers: string[] = $state([]);
+// Go to definition from an expression field (Ctrl/Cmd+click, F12): which
+// param, inspector part or layer to bring into view; `n` makes each request new.
+let paramFocus: { name: string; n: number } | null = $state(null);
+let inspectorFocus: { key: string; n: number } | null = $state(null);
+let layerReveal: { id: string; n: number } | null = $state(null);
+let gotoCount = 0;
+
+function goto(t: GotoTarget) {
+	const n = ++gotoCount;
+	if (t.kind === "param") {
+		leftTab = "params";
+		paramFocus = { name: t.name, n };
+	} else if (t.kind === "layer") {
+		selectedLayers = [t.id];
+		leftTab = "layers";
+		layerReveal = { id: t.id, n };
+	} else if (t.kind === "repeat") {
+		selectedLayers = [t.layer];
+		inspectorFocus = { key: "repeat", n };
+		if (leftTab === "layers") layerReveal = { id: t.layer, n };
+	} else {
+		selectedLayers = [];
+		inspectorFocus = { key: `${t.kind}:${t.name}`, n };
+	}
+}
+setContext("yoshida-goto", goto);
 const selectedLayer = $derived(
 	selectedLayers.length === 1 ? selectedLayers[0] : null,
 );
@@ -2476,6 +2503,7 @@ const typeLabels: Record<LayerType, string> = {
 							onlock={toggleLock}
 							onmove={moveInTree}
 							oncontext={layerMenu}
+							reveal={layerReveal}
 						/>
 					</div>
 				{:else if leftTab === "params"}
@@ -2489,6 +2517,7 @@ const typeLabels: Record<LayerType, string> = {
 						onrename={renameParamEverywhere}
 						cards={designCards}
 						onrenameoption={renameOptionEverywhere}
+						focus={paramFocus}
 					/>
 				{:else if currentSet}
 					{@render cardList()}
@@ -2587,6 +2616,8 @@ const typeLabels: Record<LayerType, string> = {
 						onproblems={(id) => (problemFocus = id ?? "")}
 						onback={() => (selectedLayers = [])}
 						{listKeys}
+						cardValues={currentCard?.values}
+						focus={inspectorFocus}
 					/>
 					<p class="advanced">
 						Need something the builder does not cover? <button

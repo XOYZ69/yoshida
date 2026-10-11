@@ -3,6 +3,8 @@
 // suggestions with types and docs (params, repeat names, @layer fields,
 // built-ins, functions), signature help inside a function call, and a ƒ
 // button that opens a reference of everything usable in this field.
+// Hovering a name shows what it is; Ctrl/Cmd+click (or F12) shows where it
+// is defined, through the `yoshida-goto` context.
 // Single line: Enter or leaving the field commits, newlines are dropped.
 // Multiline (templates): newlines allowed, leaving the field (or Ctrl+Enter)
 // commits. Escape reverts the draft. One EditorView per instance.
@@ -39,12 +41,13 @@ import { getContext, onMount } from "svelte";
 import type { Expect } from "../expr/catalog";
 import { exprCompletion, kindBadge, optionClass } from "../expr/completion";
 import { exprHighlight, refreshNames } from "../expr/highlight";
+import { exprHover } from "../expr/hover";
 import Reference from "../expr/Reference.svelte";
 import type { Names } from "../expr/scan";
 import { exprAt } from "../expr/scan";
 import { signatureHelp } from "../expr/signature";
 import { exprTheme } from "../expr/theme";
-import type { CompletionContext } from "./complete";
+import type { CompletionContext, GotoTarget } from "./complete";
 
 let {
 	value,
@@ -74,6 +77,10 @@ let {
 
 const ctxFn = getContext<(() => CompletionContext) | undefined>(
 	"yoshida-complete",
+);
+
+const gotoFn = getContext<((t: GotoTarget) => void) | undefined>(
+	"yoshida-goto",
 );
 
 let host: HTMLDivElement | undefined = $state();
@@ -222,6 +229,16 @@ function extensions(): Extension[] {
 			}),
 			Prec.high(keymap.of([{ key: "Tab", run: acceptCompletion }])),
 			signatureHelp(template),
+			exprHover(
+				getCtx,
+				template,
+				gotoFn &&
+					((t) => {
+						// Keep what was typed: going there can unmount this field.
+						commit();
+						gotoFn(t);
+					}),
+			),
 		);
 	}
 	return ext;

@@ -52,8 +52,8 @@ function el(tag: string, cls: string, text?: string) {
 	return e;
 }
 
-/** The docs panel next to the selected option. */
-function info(
+/** The docs panel next to the selected option (also the hover, see hover.ts). */
+export function info(
 	head: string | Node,
 	body: string,
 	extra?: string,

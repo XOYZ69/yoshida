@@ -1,3 +1,8 @@
+<script module lang="ts">
+/** The last reveal request handled (see `reveal`). */
+let revealed = 0;
+</script>
+
 <script lang="ts">
 // Layer list, topmost first (the design's arrays are bottom first). Groups
 // are folders: click the arrow to fold them, drop a layer onto a group to
@@ -6,6 +11,7 @@
 // layer's `visible`; the lock only stops canvas selection in the editor.
 // Dividers are titled rules that only organise the list. Right-click on
 // empty space opens the menu for adding layers.
+import { tick, untrack } from "svelte";
 import { childrenOf, isDivider, isGroup, type Obj } from "../design";
 
 let {
@@ -18,6 +24,7 @@ let {
 	onlock,
 	onmove,
 	oncontext,
+	reveal = null,
 }: {
 	layers: Obj[];
 	selected: string[];
@@ -34,6 +41,8 @@ let {
 	) => void;
 	/** Right-click on a layer, or on empty space (id null). */
 	oncontext: (e: MouseEvent, id: string | null) => void;
+	/** Unfolds the groups around a layer, scrolls to it and highlights it (go to definition). */
+	reveal?: { id: string; n: number } | null;
 } = $props();
 
 const icons: Record<string, string> = {
@@ -82,6 +91,44 @@ const rows = $derived.by(() => {
 });
 
 let anchor: string | null = null;
+
+let tree: HTMLUListElement | undefined = $state();
+$effect(() => {
+	const r = reveal;
+	if (!r || r.n === revealed) return;
+	revealed = r.n;
+	untrack(() => show(r.id));
+});
+
+/** The ids of the groups around a layer, outermost first; null when absent. */
+function groupsAround(list: Obj[], id: string): string[] | null {
+	for (const l of list) {
+		if (String(l.id) === id) return [];
+		if (!isGroup(l)) continue;
+		const inner = groupsAround(childrenOf(l), id);
+		if (inner) return [String(l.id), ...inner];
+	}
+	return null;
+}
+
+function show(id: string) {
+	const outer = groupsAround(layers, id) ?? [];
+	if (outer.some((g) => folded.has(g))) {
+		const next = new Set(folded);
+		for (const g of outer) next.delete(g);
+		folded = next;
+	}
+	tick().then(() => {
+		const el = tree?.querySelector<HTMLElement>(
+			`li[data-id="${CSS.escape(id)}"] .row`,
+		);
+		if (!el) return;
+		el.scrollIntoView({ block: "nearest" });
+		el.classList.remove("goto-flash");
+		void el.offsetWidth;
+		el.classList.add("goto-flash");
+	});
+}
 
 function pick(id: string, e: MouseEvent) {
 	if (e.shiftKey && anchor && selected.includes(anchor)) {
@@ -143,6 +190,7 @@ function finish() {
 </script>
 
 <ul
+  bind:this={tree}
   class="tree"
   role="tree"
   aria-label="Layers"
@@ -156,6 +204,7 @@ function finish() {
   {#each rows as r (r.id)}
     {@const vis = r.l.visible}
     <li
+      data-id={r.id}
       role="treeitem"
       aria-selected={selected.includes(r.id)}
       aria-expanded={r.group ? !folded.has(r.id) : undefined}

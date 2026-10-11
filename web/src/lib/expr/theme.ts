@@ -194,6 +194,21 @@ export const exprTheme = EditorView.theme({
 		color: "var(--warn-text)",
 		backgroundColor: "color-mix(in srgb, var(--warn) 14%, transparent)",
 	},
+	".yx-hover": {
+		padding: "7px 10px",
+		maxWidth: "340px",
+		lineHeight: "1.45",
+	},
+	".yx-hover-hint": {
+		marginTop: "6px",
+		color: "var(--muted)",
+		fontSize: "11px",
+	},
+	".yx-link": {
+		cursor: "pointer",
+		textDecoration: "underline",
+		textUnderlineOffset: "2px",
+	},
 	".yx-sig": { fontFamily: "var(--mono)" },
 	".yx-sig-arg": { color: "var(--fg)" },
 	".yx-sig-active": {

@@ -1,9 +1,14 @@
+<script module lang="ts">
+/** The last go to definition request handled (see `focus`). */
+let handled = 0;
+</script>
+
 <script lang="ts">
 // Properties of the selected layer, or of the design itself when nothing
 // is selected. Every field accepts a literal or an expression; fields a
 // layer inherits through `extends` are marked and editing them adds an
 // override to this layer.
-import { setContext } from "svelte";
+import { setContext, tick } from "svelte";
 import {
 	type AlignMode,
 	ancestorsOf,
@@ -49,6 +54,8 @@ let {
 	onproblems,
 	onback,
 	listKeys = {},
+	cardValues = {},
+	focus = null,
 }: {
 	doc: Obj;
 	ids: string[];
@@ -63,6 +70,10 @@ let {
 	rename: (from: string, to: string) => string;
 	/** Key values of each list param, from the cards, for `list.Key` suggestions. */
 	listKeys?: Record<string, string[]>;
+	/** The current card's values, shown when hovering a param. */
+	cardValues?: Record<string, unknown>;
+	/** Scrolls to and highlights a part of the inspector (go to definition). */
+	focus?: { key: string; n: number } | null;
 	onalign: (mode: AlignMode) => void;
 	ondistribute: (axis: "x" | "y") => void;
 	onduplicate: () => void;
@@ -164,7 +175,12 @@ const completion = $derived.by((): CompletionContext => {
 		const rep = isObj(o?.repeat) ? (o!.repeat as Obj) : null;
 		if (!rep) continue;
 		const whose = o === eff ? "repeat" : `group ${o?.id}`;
-		locals.push({ name: String(rep.index ?? "i"), detail: `${whose} index` });
+		const source = { kind: "repeat" as const, layer: String(o?.id) };
+		locals.push({
+			name: String(rep.index ?? "i"),
+			detail: `${whose} index`,
+			source,
+		});
 		if (typeof rep.item === "string") {
 			const each = String(rep.each ?? "");
 			const p = params.find(([n]) => n === each.trim())?.[1];
@@ -172,14 +188,17 @@ const completion = $derived.by((): CompletionContext => {
 				name: rep.item,
 				detail: `item of ${each}`,
 				fields: itemTypes(p?.item),
+				source,
 			});
 		}
 	}
 	return {
-		consts: consts.map(([name]) => ({ name })),
+		consts: consts.map(([name, v]) => ({ name, expr: String(v) })),
 		functions: functions.map(([name, f]) => ({
 			name,
 			args: argsText(f.args),
+			expr: typeof f.expr === "string" ? f.expr : String(f.expr ?? ""),
+			note: typeof f.note === "string" ? f.note : undefined,
 		})),
 		params: params.map(([name, p]) => ({
 			name,
@@ -188,6 +207,7 @@ const completion = $derived.by((): CompletionContext => {
 			keys: listKeys[name],
 			label: typeof p.label === "string" ? p.label : undefined,
 			note: typeof p.note === "string" ? p.note : undefined,
+			value: cardValues[name],
 		})),
 		layers: layersOf(doc)
 			.filter((l) => l.id !== id && !l.repeat)
@@ -216,9 +236,29 @@ function functionScope(name: string, fn: Obj): CompletionContext {
 			name: n,
 			detail: `argument of ${name}`,
 			type: t,
+			source: { kind: "function" as const, name },
 		})),
 	};
 }
+
+// Go to definition: scroll to the marked part (`data-goto`) and flash it.
+let root: HTMLDivElement | undefined = $state();
+$effect(() => {
+	const f = focus;
+	// Once per request: not again when the inspector is shown later.
+	if (!f || !root || f.n === handled) return;
+	handled = f.n;
+	tick().then(() => {
+		const el = root?.querySelector<HTMLElement>(
+			`[data-goto="${CSS.escape(f.key)}"]`,
+		);
+		if (!el) return;
+		el.scrollIntoView({ block: "center" });
+		el.classList.remove("goto-flash");
+		void el.offsetWidth;
+		el.classList.add("goto-flash");
+	});
+});
 
 // Problems are listed once, in the problems panel; fields only show a
 // short note for their own errors.
@@ -475,7 +515,7 @@ let newFunction = $state("");
 {/snippet}
 
 {#snippet repeatSection()}
-    <section>
+    <section data-goto="repeat">
       <h3>Repeat</h3>
       <div class="field-like">
         <span class="lbl">mode</span>
@@ -528,7 +568,7 @@ let newFunction = $state("");
   </div>
 {/snippet}
 
-<div class="inspector">
+<div class="inspector" bind:this={root}>
   {#if ids.length}
     <nav class="crumb" aria-label="Inspector">
       <button class="back" onclick={onback} title="Back to the design settings (Esc)">‹ Design settings</button>
@@ -740,7 +780,7 @@ let newFunction = $state("");
     <section>
       <h3>Constants</h3>
       {#each consts as [name, v]}
-        <div class="const">
+        <div class="const" data-goto="const:{name}">
           <Field label={name} kind="expr" value={v} error={errorAt(['consts', name])} onchange={(x) => setDoc(['consts', name], x ?? 0)} />
           <button class="mini" title="Remove" onclick={() => editDoc((d) => {
             if (isObj(d.consts)) delete (d.consts as Obj)[name];
@@ -757,7 +797,7 @@ let newFunction = $state("");
     <section>
       <h3>Functions</h3>
       {#each functions as [name, fn]}
-        <div class="effect">
+        <div class="effect" data-goto="function:{name}">
           <div class="effect-head">
             <strong class="mono">{name}({argsText(fn.args)})</strong>
             <span class="spacer"></span>
