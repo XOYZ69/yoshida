@@ -82,4 +82,5 @@ In the editor, moving a group with a `translate` changes the translate; moving a
 
 In the editor, layers inside a *rotated* group show unrotated selection boxes on the canvas, and groups have no resize handles (their size comes from their layers). Layers inside a repeated group are outlined once per iteration. See [Known Gaps](@/docs/known-gaps.md).
 
-![Layers in a group in the editor](../images/builder-v03-light-group.png)
+<img class="only-light" src="../images/editor-layers-group-light.png" alt="Layers in a group in the editor" width="1500" height="950">
+<img class="only-dark" src="../images/editor-layers-group-dark.png" alt="Layers in a group in the editor" width="1500" height="950">

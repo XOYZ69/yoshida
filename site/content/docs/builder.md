@@ -5,7 +5,8 @@ description = "The visual editor that runs in your browser, and how its panels f
 
 The editor opens in **Builder** mode: a visual editor for designs and card data. Everything it does is written back to ordinary project files, so the JSON is always one click away under **Advanced (JSON)**, for anything the builder does not cover (a code editor with JSON highlighting, folding, search, bracket matching and problem markers).
 
-![The editor with the Params tab open](../images/builder-v04-dark-params.png)
+<img class="only-light" src="../images/editor-params-light.png" alt="The editor with the Params tab open" width="1500" height="950">
+<img class="only-dark" src="../images/editor-params-dark.png" alt="The editor with the Params tab open" width="1500" height="950">
 
 ## Screen layout
 
@@ -55,4 +56,5 @@ Hovering a button or a field shows what it does in a tooltip drawn like the expr
 - [Expression editor](@/docs/builder-expression-editor.md): highlighting, completion, reference
 - [Shortcuts](@/docs/builder-shortcuts.md)
 
-![The project menu](../images/v03-project-menu.png)
+<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="539">
+<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="539">

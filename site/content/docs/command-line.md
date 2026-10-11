@@ -30,18 +30,18 @@ set tour: designs/tour.design.json, 2 card(s)
 
 Renders cards to PNG files at `<out>/<set>/<card id>.png`. A project with several sets (one per card file, see [Project Layout and Manifest](@/docs/project-layout-and-manifest.md)) renders all of them unless you pick one.
 
-| Option | Meaning |
-| --- | --- |
-| `--set NAME` | Render only this set. An unknown name lists the available sets and exits with status 2 |
-| `--card ID` | Render only the card with this id (the card's `id` in the card data, such as `road-trip`, not its title or index). Combine it with `--set` when several sets have a card with that id |
-| `--out DIR` | Output folder. Default: `<project>/out` |
-| `--date YYYY-MM-DD` | Value of `render.date` in expressions. Default: today. Pass it to make a render reproducible |
-| `--16bit` | Write 16-bit-per-channel PNGs (default is 8-bit) |
-| `--preview` | A missing or undecodable image becomes a placeholder and a warning instead of an error |
-| `--offline` | Do not download `https://` and `http://` images |
-| `--pdf` | Write one PDF per set, `<out>/<set>.pdf`, one page per card, instead of PNG files. See [PDF](#pdf) |
-| `--crop-marks` | Put each card on a white sheet with crop marks at the trim line (`canvas.bleed` inside the edge). Works for PNG and PDF |
-| `--format json` | Print one JSON document (diagnostics, sets, written files, files with errors) instead of text |
+| Option              | Meaning                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--set NAME`        | Render only this set. An unknown name lists the available sets and exits with status 2                                                                                                |
+| `--card ID`         | Render only the card with this id (the card's `id` in the card data, such as `road-trip`, not its title or index). Combine it with `--set` when several sets have a card with that id |
+| `--out DIR`         | Output folder. Default: `<project>/out`                                                                                                                                               |
+| `--date YYYY-MM-DD` | Value of `render.date` in expressions. Default: today. Pass it to make a render reproducible                                                                                          |
+| `--16bit`           | Write 16-bit-per-channel PNGs (default is 8-bit)                                                                                                                                      |
+| `--preview`         | A missing or undecodable image becomes a placeholder and a warning instead of an error                                                                                                |
+| `--offline`         | Do not download `https://` and `http://` images                                                                                                                                       |
+| `--pdf`             | Write one PDF per set, `<out>/<set>.pdf`, one page per card, instead of PNG files. See [PDF](#pdf)                                                                                    |
+| `--crop-marks`      | Put each card on a white sheet with crop marks at the trim line (`canvas.bleed` inside the edge). Works for PNG and PDF                                                               |
+| `--format json`     | Print one JSON document (diagnostics, sets, written files, files with errors) instead of text                                                                                         |
 
 ### Where the files go
 
@@ -49,7 +49,7 @@ The output folder is named after the **set**. For a JSON card file that is not l
 
 ```sh
 yoshida render examples/board-game --card road-trip --out out
-# wrote out/boards/road-trip.png (2340 x 1654)
+# wrote out/boards/road-trip.png (4961 x 3508)
 ```
 
 ### Errors while rendering
@@ -93,10 +93,17 @@ yoshida render my-cards --format json
 
 ```json
 {
-  "diagnostics": [],
-  "sets": [{ "name": "core", "design": "designs/monster.design.json", "cards": 12, "ok": true }],
-  "written": ["my-cards/out/core/001.png"],
-  "with_errors": []
+	"diagnostics": [],
+	"sets": [
+		{
+			"name": "core",
+			"design": "designs/monster.design.json",
+			"cards": 12,
+			"ok": true
+		}
+	],
+	"written": ["my-cards/out/core/001.png"],
+	"with_errors": []
 }
 ```
 
@@ -115,11 +122,11 @@ With `--check` the exit status is 1 if any file is not formatted, which is what 
 
 ## Exit status
 
-| Status | Meaning |
-| --- | --- |
-| 0 | No errors (warnings and hints do not count) |
-| 1 | Errors were reported, or `fmt --check` found unformatted files, or the project folder could not be opened |
-| 2 | Usage error (bad option, unknown command, unknown set) |
+| Status | Meaning                                                                                                   |
+| ------ | --------------------------------------------------------------------------------------------------------- |
+| 0      | No errors (warnings and hints do not count)                                                               |
+| 1      | Errors were reported, or `fmt --check` found unformatted files, or the project folder could not be opened |
+| 2      | Usage error (bad option, unknown command, unknown set)                                                    |
 
 ## Examples
 

@@ -42,4 +42,5 @@ Expression fields of layers inside a repeated group suggest the group's loop nam
 - fonts: add a font name and choose a font file from the project; a missing font file is marked
 - a link to the JSON editor for anything the builder does not cover
 
-![The design settings](../images/builder-v04-dark-params.png)
+<img class="only-light" src="../images/editor-design-settings-light.png" alt="The design settings" width="1500" height="950">
+<img class="only-dark" src="../images/editor-design-settings-dark.png" alt="The design settings" width="1500" height="950">

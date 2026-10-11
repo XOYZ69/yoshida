@@ -5,7 +5,8 @@ description = "The project's files as a folder tree: add, rename, move and delet
 
 The **Files** tab shows the project's files as a folder tree.
 
-![The Files tab](../images/builder-v04-files.png)
+<img class="only-light" src="../images/editor-files-light.png" alt="The Files tab" width="1500" height="950">
+<img class="only-dark" src="../images/editor-files-dark.png" alt="The Files tab" width="1500" height="950">
 
 ## What it shows
 

@@ -5,7 +5,8 @@ description = "Edit the cards of a set as a form or a table, in JSON or CSV."
 
 The **Card data** tab edits the cards of the design's set, in JSON or CSV files. See [Card Data](@/docs/card-data.md) for the formats.
 
-![The card form](../images/builder-v04-card-form.png)
+<img class="only-light" src="../images/editor-card-form-light.png" alt="The card form" width="1500" height="950">
+<img class="only-dark" src="../images/editor-card-form-dark.png" alt="The card form" width="1500" height="950">
 
 ## The list
 
@@ -31,10 +32,12 @@ Below the list is the form for the selected card, built from the params and show
 - a sortable **table**, with a choice of columns, or
 - a **grid of rendered thumbnails**, drawn only for the cards in view.
 
-![The card browser](../images/builder-v04-card-browser.png)
+<img class="only-light" src="../images/editor-card-browser-light.png" alt="The card browser" width="1500" height="950">
+<img class="only-dark" src="../images/editor-card-browser-dark.png" alt="The card browser" width="1500" height="950">
 
 ## Picking the preview card
 
 The **Card** picker in the toolbar steps through cards with the arrows; the middle opens a searchable list that stays fast with thousands of cards.
 
-![The card picker](../images/builder-v03-light-cardpicker.png)
+<img class="only-light" src="../images/editor-card-picker-light.png" alt="The card picker" width="422" height="279">
+<img class="only-dark" src="../images/editor-card-picker-dark.png" alt="The card picker" width="422" height="279">

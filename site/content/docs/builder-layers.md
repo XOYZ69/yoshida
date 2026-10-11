@@ -47,4 +47,5 @@ Right-click a layer or use the ⋯ button:
 
 <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd> and <kbd>Ctrl</kbd>+<kbd>V</kbd> work on the selected layers through the **system clipboard**, so layers move between designs, projects and even browser tabs. Pasted ids get `_copy` added, and `@` references among the pasted layers follow the new ids.
 
-![Layers in a group](../images/builder-v03-light-group.png)
+<img class="only-light" src="../images/editor-layers-group-light.png" alt="Layers in a group" width="1500" height="950">
+<img class="only-dark" src="../images/editor-layers-group-dark.png" alt="Layers in a group" width="1500" height="950">

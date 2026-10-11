@@ -11,7 +11,8 @@ Every change is saved automatically in the browser's storage (IndexedDB), with *
 - An example is only saved once you change it, and opening an example from the menu always gives a fresh copy.
 - The editor asks the browser to keep this storage (`navigator.storage.persist()`), but **clearing site data still deletes it**. Export a zip to keep a copy.
 
-![The project menu](../images/v03-project-menu.png)
+<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="539">
+<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="539">
 
 ## The project menu
 

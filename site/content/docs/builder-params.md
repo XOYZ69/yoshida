@@ -5,7 +5,8 @@ description = "Add and edit the params a card can set, in groups."
 
 The **Params** tab edits the design's [params](@/docs/params.md).
 
-![The Params tab in sections](../images/builder-v04-dark-params.png)
+<img class="only-light" src="../images/editor-params-light.png" alt="The Params tab in sections" width="1500" height="950">
+<img class="only-dark" src="../images/editor-params-dark.png" alt="The Params tab in sections" width="1500" height="950">
 
 ## Views
 

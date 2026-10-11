@@ -104,4 +104,5 @@ The `text` value is a [template](@/docs/expressions-templates.md): literal text 
 
 `@title.at.x`, `@title.at.y`, `@title.text`, `@title.size`, `@title.color`, `@title.line_spacing`, `@title.wrap`, `@title.max_lines` and the bounds (`@title.bounds.*`, which include the effect of wrapping and auto-shrink). See [Names and references](@/docs/expressions-names-and-references.md).
 
-![A text layer selected in the editor](../images/builder-v03-light-text.png)
+<img class="only-light" src="../images/editor-text-layer-light.png" alt="A text layer selected in the editor" width="1500" height="950">
+<img class="only-dark" src="../images/editor-text-layer-dark.png" alt="A text layer selected in the editor" width="1500" height="950">

@@ -8,9 +8,9 @@ description = "A walk through the printable board game example."
 ```sh
 yoshida check examples/board-game
 yoshida render examples/board-game --out out --date 2026-10-09
-# wrote out/boards/road-trip.png (2340 x 1654)
-# wrote out/boards/moon-base.png (2340 x 1654)
-# wrote out/boards/beach-party.png (2340 x 1654)
+# wrote out/boards/road-trip.png (4961 x 3508)
+# wrote out/boards/moon-base.png (4961 x 3508)
+# wrote out/boards/beach-party.png (4961 x 3508)
 ```
 
 ![The road-trip board](../images/board-game-road-trip.png)
@@ -28,7 +28,7 @@ There is no `yoshida.json`: the JSON card file names its design, and the set is 
 
 ## How it is built
 
-- **Canvas**: 2340 x 1654 px with `"dpi": 200`, which is A4 landscape. PNG and PDF files carry the size, so the board prints at 100 % without guessing. `yoshida render examples/board-game --pdf` gives one PDF with a page per board.
+- **Canvas**: 4961 x 3508 px with `"dpi": 300`, which is A4 landscape. PNG and PDF files carry the size, so the board prints at 100 % without guessing. `yoshida render examples/board-game --pdf` gives one PDF with a page per board.
 - **Tiles** come from a [list param](@/docs/params.md#lists) `tiles` with the item fields `kind`, `text` and `n`. `kind` is an [enum item field](@/docs/params.md#item-fields) (`start`, `finish`, `plain`, `safe`, `skip`, `back`, `forward`, `shortcut`, `dare`, default `plain`), so a typo in card data is error 2006. The list runs clockwise from the top-left corner; the first item is START, the last FINISH. `n` is the number of steps for `back` and `forward` and the target tile for `shortcut`.
 - **One tile is one repeated group.** The group `tile` [repeats](@/docs/layer-group.md#repeat) over `tiles`, and its `translate` puts each iteration at its place in the ring with two [functions](@/docs/expressions-constants-and-functions.md), `tile_x(i)` and `tile_y(i)` (13 x 9 tiles of 170 px). The layers inside use tile coordinates, 0 to 170, and read their own tile's values (`t.kind`, `t.text`).
 - **A hidden base layer**: inside the tile, `tile_base` has `"visible": false` and holds the box and radius. `tile_shadow` and `tile_bg` [extend](@/docs/extends.md#a-hidden-base-layer) it and set `visible` back to `true`.

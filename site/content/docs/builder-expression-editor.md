@@ -5,7 +5,8 @@ description = "Suggestions, signatures, hover info and go-to-definition in formu
 
 Expression and template fields in the inspector are small code editors for [expressions](@/docs/expressions.md) and [templates](@/docs/expressions-templates.md).
 
-![Suggestions while typing](../images/v03-expr-suggest.png)
+<img class="only-light" src="../images/editor-expr-suggest-light.png" alt="Suggestions while typing" width="1500" height="950">
+<img class="only-dark" src="../images/editor-expr-suggest-dark.png" alt="Suggestions while typing" width="1500" height="950">
 
 ## Highlighting
 
@@ -33,13 +34,15 @@ Suggestions that do not fit the field (a color in a number field) are ranked low
 
 Inside a function call a tooltip shows the signature with the current argument highlighted.
 
-![Signature help](../images/v03-expr-signature.png)
+<img class="only-light" src="../images/editor-expr-signature-light.png" alt="Signature help" width="1500" height="950">
+<img class="only-dark" src="../images/editor-expr-signature-dark.png" alt="Signature help" width="1500" height="950">
 
 ## The ƒ reference
 
 The **ƒ** button in a field opens a reference of everything available there: repeat names, params, layers, built-ins, functions, units, operators and template syntax. Clicking an entry inserts it.
 
-![The ƒ reference](../images/v03-expr-reference.png)
+<img class="only-light" src="../images/editor-expr-reference-light.png" alt="The ƒ reference" width="1500" height="950">
+<img class="only-dark" src="../images/editor-expr-reference-dark.png" alt="The ƒ reference" width="1500" height="950">
 
 ## Committing
 
