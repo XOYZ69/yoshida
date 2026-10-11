@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} · {{ config.title }} docs{% endblock %}
+{% block description %}{{ page.description | default(value=config.description) }}{% endblock %}
+{% block body_class %}docs-body{% endblock %}
+{% block body %}
+{# Where this page sits in data/docs-nav.toml: its group, its parent, its
+   children, and the pages before and after it in reading order. #}
+{% set nav = load_data(path="data/docs-nav.toml") %}
+{% set_global order = [] %}
+{% set_global group_title = "" %}
+{% set_global parent = "" %}
+{% set_global children = [] %}
+{% for g in nav.group %}
+  {% for item in g.item %}
+    {% set_global order = [...order, item.path] %}
+    {% if item.path == page.relative_path %}
+      {% set_global group_title = g.title %}
+      {% if item.child %}{% set_global children = item.child %}{% endif %}
+    {% endif %}
+    {% if item.child %}{% for c in item.child %}
+      {% set_global order = [...order, c.path] %}
+      {% if c.path == page.relative_path %}{% set_global group_title = g.title %}{% set_global parent = item.path %}{% endif %}
+    {% endfor %}{% endif %}
+  {% endfor %}
+{% endfor %}
+{% set_global prev = "" %}
+{% set_global next = "" %}
+{% for p in order %}{% if p == page.relative_path %}
+  {% if not loop.first %}{% set_global prev = order[loop.index0 - 1] %}{% endif %}
+  {% if not loop.last %}{% set_global next = order[loop.index0 + 1] %}{% endif %}
+{% endif %}{% endfor %}
+<div class="docs">
+  {% include "partials/docs-nav.html" %}
+  <main id="main" class="docs-main">
+    <article class="sheet">
+      <header class="page-head">
+        <button class="nav-toggle" type="button" aria-controls="docs-nav" aria-expanded="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Menu
+        </button>
+        <p class="crumbs">
+          <a href="{{ get_url(path='@/docs/_index.md') }}">Docs</a>
+          {% if group_title %}<span aria-hidden="true">/</span> <span>{{ group_title }}</span>{% endif %}
+          {% if parent %}{% set pp = get_page(path=parent) %}<span aria-hidden="true">/</span> <a href="{{ pp.permalink }}">{{ pp.title }}</a>{% endif %}
+        </p>
+        <h1>{{ page.title }}</h1>
+      </header>
+      {% if page.toc %}
+      <details class="toc-inline">
+        <summary>On this page</summary>
+        <ul>{% for h in page.toc %}<li><a href="{{ h.permalink }}">{{ h.title }}</a></li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+      <div class="prose">
+        {{ page.content | safe }}
+      </div>
+      {% if children %}
+      <section class="subpages">
+        <h2>In this section</h2>
+        <div class="card-grid">
+        {% for c in children %}{% set cp = get_page(path=c.path) %}
+          <a class="doc-card" href="{{ cp.permalink }}">
+            <span class="doc-card-title">{{ c.title }}</span>
+            {% if cp.description %}<span class="doc-card-desc">{{ cp.description }}</span>{% endif %}
+          </a>
+        {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      <footer class="page-foot">
+        <nav class="pager" aria-label="Previous and next page">
+          {% if prev %}{% set pv = get_page(path=prev) %}
+          <a class="prev" href="{{ pv.permalink }}" rel="prev"><span>Previous</span>{{ pv.title }}</a>
+          {% else %}<span></span>{% endif %}
+          {% if next %}{% set nx = get_page(path=next) %}
+          <a class="next" href="{{ nx.permalink }}" rel="next"><span>Next</span>{{ nx.title }}</a>
+          {% endif %}
+        </nav>
+        <p class="edit"><a href="{{ config.extra.repo }}/edit/master/site/content/{{ page.relative_path }}">Edit this page on GitHub</a></p>
+      </footer>
+    </article>
+  </main>
+  {% if page.toc %}
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p>
+    <ul>
+    {% for h in page.toc %}
+      <li><a href="{{ h.permalink }}">{{ h.title }}</a>
+      {% if h.children %}<ul>{% for c in h.children %}<li><a href="{{ c.permalink }}">{{ c.title }}</a></li>{% endfor %}</ul>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </aside>
+  {% endif %}
+</div>
+{% endblock %}

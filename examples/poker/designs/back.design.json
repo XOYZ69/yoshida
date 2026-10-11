@@ -1,0 +1,131 @@
+{
+  "format": 1,
+  "name": "Card back",
+  "note": "Poker size, 63.5 x 88.9 mm (2.5 x 3.5 in) at 300 dpi. Corners are transparent; cut along the face outline.",
+  "canvas": { "width": 750, "height": 1050, "dpi": 300 },
+  "fonts": { "display": "assets/fonts/CinzelDecorative-Bold.ttf" },
+  "params": {
+    "color": { "type": "color", "default": "#1D3557", "label": "Back color", "group": "Back" },
+    "deck_name": { "type": "text", "default": "yoshida", "max_length": 16, "group": "Back" },
+    "paper": { "type": "color", "default": "#FBF7EE", "group": "Deck colors" },
+    "red": { "type": "color", "default": "#B8232F", "group": "Deck colors" },
+    "gold": { "type": "color", "default": "#C99A2E", "group": "Deck colors" }
+  },
+  "consts": {
+    "corner": 40,
+    "margin": 36,
+    "cols": 13,
+    "rows": 19,
+    "cell_w": "(canvas.w - 2 * margin) / cols",
+    "cell_h": "(canvas.h - 2 * margin) / rows",
+    "shade": "mix(color, #FFFFFF, 0.12)"
+  },
+  "layers": [
+    {
+      "id": "face",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+      "fill": "paper",
+      "radius": "corner",
+      "stroke": { "color": "#00000026", "width": 2 }
+    },
+    {
+      "id": "field",
+      "type": "rect",
+      "box": {
+        "x": "margin",
+        "y": "margin",
+        "w": "canvas.w - 2 * margin",
+        "h": "canvas.h - 2 * margin"
+      },
+      "radius": "corner - margin / 2",
+      "fill": "color"
+    },
+    {
+      "id": "lattice_row",
+      "type": "group",
+      "note": "Nested repeat: one group per row, one diamond per column. The lattice is sized from consts so it fills the field exactly.",
+      "repeat": { "count": "rows", "index": "r" },
+      "translate": { "x": "margin", "y": "margin + r * cell_h" },
+      "layers": [
+        {
+          "id": "diamond",
+          "type": "polygon",
+          "repeat": { "count": "cols", "index": "c" },
+          "shape": { "type": "diamond" },
+          "box": {
+            "x": "(c + 0.5) * cell_w",
+            "y": "cell_h / 2",
+            "w": "cell_w - 8",
+            "h": "cell_h - 8"
+          },
+          "anchor": "center",
+          "fill": "(r + c) % 2 == 0 ? shade : with_alpha(gold, 0.35)"
+        }
+      ]
+    },
+    {
+      "id": "field_line",
+      "type": "rect",
+      "extends": "field",
+      "box": {
+        "x": "margin + 16",
+        "y": "margin + 16",
+        "w": "canvas.w - 2 * margin - 32",
+        "h": "canvas.h - 2 * margin - 32"
+      },
+      "radius": "corner - margin / 2 - 8",
+      "fill": "#00000000",
+      "stroke": { "color": "gold", "width": 4 }
+    },
+    {
+      "id": "medal",
+      "type": "ellipse",
+      "box": { "x": "canvas.w / 2", "y": "canvas.h / 2", "w": 330, "h": 330 },
+      "anchor": "center",
+      "fill": "color",
+      "stroke": { "color": "gold", "width": 8 }
+    },
+    {
+      "id": "medal_ring",
+      "type": "ellipse",
+      "extends": "medal",
+      "box": { "w": 290, "h": 290 },
+      "fill": "#00000000",
+      "stroke": {
+        "color": "gold",
+        "width": 3,
+        "dash": [2, 12]
+      }
+    },
+    {
+      "id": "medal_star",
+      "type": "polygon",
+      "shape": { "type": "star", "count": 8, "inner": 0.42 },
+      "box": { "x": "canvas.w / 2", "y": "canvas.h / 2 - 20", "w": 170, "h": 170 },
+      "anchor": "center",
+      "fill": "gold"
+    },
+    {
+      "id": "medal_suits",
+      "type": "text",
+      "text": "♠ ♥ ♣ ♦",
+      "at": { "x": "canvas.w / 2", "y": "canvas.h / 2 + 92" },
+      "anchor": "center",
+      "size": 34,
+      "color": "paper"
+    },
+    {
+      "id": "deck_label",
+      "type": "text",
+      "text": "{upper(deck_name)}",
+      "at": { "x": "canvas.w / 2", "y": "canvas.h - margin - 70" },
+      "anchor": "center",
+      "font": "display",
+      "size": 52,
+      "max_width": 520,
+      "color": "gold",
+      "stroke": { "color": "color", "width": 10 }
+    }
+  ]
+}

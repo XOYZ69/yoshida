@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "design": "designs/back.design.json",
+  "name": "Back",
+  "cards": [
+    { "id": "back" }
+  ]
+}

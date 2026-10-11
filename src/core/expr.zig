@@ -87,7 +87,8 @@ pub const Node = struct {
         color: Color,
         name: []const u8,
         builtin: Builtin,
-        layer_ref: struct { id: []const u8, path: []const []const u8 },
+        /// `@id.path` or `@id[index].path` (one iteration of a repeated layer).
+        layer_ref: struct { id: []const u8, path: []const []const u8, index: ?*Node = null },
         field: struct { obj: *Node, name: []const u8, index: usize = 0 },
         index: struct { obj: *Node, idx: *Node },
         /// A list item found by its key (`stats.speed`, `stats["Speed"]`):
@@ -95,6 +96,10 @@ pub const Node = struct {
         /// the list is a key/value list, else the whole item.
         lookup: struct { obj: *Node, key: *Node, key_field: usize, value_field: ?usize },
         call: struct { func: Func, args: []*Node },
+        /// A call to a design function (`functions`); `index` is set by the checker.
+        ucall: struct { name: []const u8, args: []*Node, index: usize = 0 },
+        /// A design constant (`consts`), resolved from a name by the checker.
+        konst: usize,
         neg: *Node,
         not: *Node,
         binary: struct { op: BinOp, l: *Node, r: *Node },
@@ -364,6 +369,12 @@ const Parser = struct {
             .ref => {
                 var path: std.ArrayList([]const u8) = .empty;
                 var end = t.end;
+                var index: ?*Node = null;
+                if (isOp(p.peek(), "[")) {
+                    p.i += 1;
+                    index = try p.expr(0);
+                    end = (try p.expect("]")).end;
+                }
                 while (isOp(p.peek(), ".")) {
                     p.i += 1;
                     const f = p.peek();
@@ -375,7 +386,7 @@ const Parser = struct {
                 if (path.items.len == 0) {
                     return p.fail(3003, t, "a layer reference needs a field", try std.fmt.allocPrint(p.arena, "for example @{s}.bounds.cx", .{t.text}));
                 }
-                return p.node(t.start, end, .{ .layer_ref = .{ .id = t.text, .path = path.items } });
+                return p.node(t.start, end, .{ .layer_ref = .{ .id = t.text, .path = path.items, .index = index } });
             },
             .name => {
                 if (std.mem.eql(u8, t.text, "true")) return p.node(t.start, t.end, .{ .boolean = true });
@@ -434,9 +445,7 @@ const Parser = struct {
     }
 
     fn call(p: *Parser, t: Tok) Error!*Node {
-        const func = std.meta.stringToEnum(Func, t.text) orelse {
-            return p.fail(3002, t, try std.fmt.allocPrint(p.arena, "unknown function '{s}'", .{t.text}), diag.suggest(p.arena, t.text, &function_names));
-        };
+        const func = std.meta.stringToEnum(Func, t.text);
         _ = try p.expect("(");
         var args: std.ArrayList(*Node) = .empty;
         if (!isOp(p.peek(), ")")) {
@@ -447,7 +456,8 @@ const Parser = struct {
             }
         }
         const close = try p.expect(")");
-        return p.node(t.start, close.end, .{ .call = .{ .func = func, .args = args.items } });
+        if (func) |f| return p.node(t.start, close.end, .{ .call = .{ .func = f, .args = args.items } });
+        return p.node(t.start, close.end, .{ .ucall = .{ .name = t.text, .args = args.items } });
     }
 
     fn postfix(p: *Parser, start_node: *Node) Error!*Node {
@@ -558,16 +568,30 @@ pub const Symbol = struct {
     ty: Type,
 };
 
+pub const FnSig = struct {
+    name: []const u8,
+    args: []const Symbol,
+    ret: Type,
+};
+
 pub const LayerSymbol = struct {
     id: []const u8,
     kind: LayerKind,
     repeated: bool,
+    /// Repeated groups around the layer (outermost first).
+    rgroups: []const usize = &.{},
 };
 
 pub const Scope = struct {
     arena: Allocator,
     params: []const Symbol,
     locals: []const Symbol = &.{},
+    /// Design constants and functions visible here.
+    consts: []const Symbol = &.{},
+    functions: []const FnSig = &.{},
+    /// Repeated groups around the layer being checked: references to layers
+    /// in the same groups mean the same iteration.
+    rgroups: []const usize = &.{},
     /// null: layer references are not allowed here.
     layers: ?[]const LayerSymbol = &.{},
     axis: Axis = .none,
@@ -638,9 +662,14 @@ pub const Checker = struct {
                     if (std.mem.eql(u8, s.locals[i].name, name)) return s.locals[i].ty;
                 }
                 for (s.params) |p| if (std.mem.eql(u8, p.name, name)) return p.ty;
+                for (s.consts, 0..) |k, ki| if (std.mem.eql(u8, k.name, name)) {
+                    n.data = .{ .konst = ki };
+                    return k.ty;
+                };
                 var names: std.ArrayList([]const u8) = .empty;
                 for (s.locals) |l| try names.append(s.arena, l.name);
                 for (s.params) |p| try names.append(s.arena, p.name);
+                for (s.consts) |k| try names.append(s.arena, k.name);
                 var hint = diag.suggest(s.arena, name, names.items);
                 if (hint == null and s.layers != null) {
                     for (s.layers.?) |l| if (std.mem.eql(u8, l.id, name)) {
@@ -653,7 +682,20 @@ pub const Checker = struct {
                 const layers = s.layers orelse return c.fail(3002, n, "layer references are not allowed here", null);
                 for (layers) |l| {
                     if (!std.mem.eql(u8, l.id, r.id)) continue;
-                    if (l.repeated) return c.fail(3005, n, try c.print("layer '{s}' is repeated and cannot be referenced", .{r.id}), null);
+                    // Repeat levels of the target that the referencing layer
+                    // is not inside: an index picks the iteration of one.
+                    var unshared: usize = if (l.repeated) 1 else 0;
+                    for (l.rgroups) |g| {
+                        if (std.mem.indexOfScalar(usize, s.rgroups, g) == null) unshared += 1;
+                    }
+                    if (r.index) |ix| {
+                        if (unshared == 0) return c.fail(3003, n, try c.print("layer '{s}' is not repeated here; remove the [index]", .{r.id}), null);
+                        if (unshared > 1) return c.fail(3005, n, try c.print("layer '{s}' is inside nested repeats and cannot be referenced from here", .{r.id}), null);
+                        try c.expectType(ix, .number, "an iteration index");
+                    } else if (unshared > 0) {
+                        if (unshared > 1) return c.fail(3005, n, try c.print("layer '{s}' is inside nested repeats and cannot be referenced from here", .{r.id}), null);
+                        return c.fail(3005, n, try c.print("layer '{s}' is repeated{s} and has no single position", .{ r.id, if (l.repeated) "" else " (inside a repeated group)" }), try c.print("pick one iteration, e.g. @{s}[0].{s}", .{ r.id, try std.mem.join(s.arena, ".", r.path) }));
+                    }
                     return refType(l.kind, r.path) orelse {
                         const joined = try std.mem.join(s.arena, ".", r.path);
                         return c.fail(3002, n, try c.print("{s} layer '{s}' has no field '{s}'", .{ @tagName(l.kind), r.id, joined }), "try bounds.left, bounds.top, bounds.w, bounds.h, bounds.cx or bounds.cy");
@@ -740,6 +782,23 @@ pub const Checker = struct {
                 return a;
             },
             .call => |cl| return c.checkCall(n, cl.func, cl.args),
+            .ucall => |*uc| {
+                for (s.functions, 0..) |f, fi| {
+                    if (!std.mem.eql(u8, f.name, uc.name)) continue;
+                    if (uc.args.len != f.args.len) return c.fail(3003, n, try c.print("{s}() takes {d} argument{s}, got {d}", .{ f.name, f.args.len, if (f.args.len == 1) "" else "s", uc.args.len }), null);
+                    for (uc.args, f.args, 0..) |a, want, i| {
+                        const t = try c.check(a);
+                        if (!t.eql(want.ty)) return c.fail(3003, a, try c.print("argument {d} of {s}() must be a {s}, got a {s}", .{ i + 1, f.name, want.ty.name(), t.name() }), null);
+                    }
+                    uc.index = fi;
+                    return f.ret;
+                }
+                var names: std.ArrayList([]const u8) = .empty;
+                try names.appendSlice(s.arena, &function_names);
+                for (s.functions) |f| try names.append(s.arena, f.name);
+                return c.fail(3002, n, try c.print("unknown function '{s}'", .{uc.name}), diag.suggest(s.arena, uc.name, names.items));
+            },
+            .konst => |ki| return s.consts[ki].ty,
         }
     }
 
@@ -822,7 +881,7 @@ pub fn refType(kind: LayerKind, path: []const []const u8) ?Type {
             if (eq(u8, b, "x") or eq(u8, b, "y")) return .number;
             return null;
         }
-        if (eq(u8, a, "stroke") and (kind == .rect or kind == .ellipse or kind == .polygon)) {
+        if (eq(u8, a, "stroke") and (kind == .rect or kind == .ellipse or kind == .polygon or kind == .text)) {
             if (eq(u8, b, "color")) return .color;
             if (eq(u8, b, "width")) return .number;
         }
@@ -881,8 +940,11 @@ pub const Env = struct {
     ctx: *anyopaque,
     /// Params and loop names.
     lookup: *const fn (ctx: *anyopaque, name: []const u8) ?Value,
-    layerRef: *const fn (ctx: *anyopaque, id: []const u8, path: []const []const u8) EvalError!Value,
+    layerRef: *const fn (ctx: *anyopaque, id: []const u8, path: []const []const u8, index: ?f64) EvalError!Value,
     avgColor: *const fn (ctx: *anyopaque, path: []const u8) EvalError!Color,
+    /// Design constants and functions (null where there are none).
+    constValue: ?*const fn (ctx: *anyopaque, index: usize) EvalError!Value = null,
+    callUser: ?*const fn (ctx: *anyopaque, index: usize, args: []const Value) EvalError!Value = null,
     problem: ?Problem = null,
 
     fn fail(env: *Env, code: u16, n: *const Node, msg: []const u8) EvalError {
@@ -913,7 +975,7 @@ pub const Env = struct {
                 .render_date => .{ .text = env.render_date },
             },
             .name => |name| return env.lookup(env.ctx, name) orelse env.fail(3002, n, "unknown name"),
-            .layer_ref => |r| return env.layerRef(env.ctx, r.id, r.path),
+            .layer_ref => |r| return env.layerRef(env.ctx, r.id, r.path, if (r.index) |ix| (try env.eval(ix)).number else null),
             .field => |f| {
                 const obj = try env.eval(f.obj);
                 return obj.item[f.index];
@@ -971,6 +1033,13 @@ pub const Env = struct {
             },
             .cond => |cd| return if ((try env.eval(cd.c)).bool) env.eval(cd.a) else env.eval(cd.b),
             .call => |cl| return env.call(cl.func, cl.args),
+            .konst => |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki),
+            .ucall => |uc| {
+                const f = env.callUser orelse return env.fail(3002, n, "functions are not available here");
+                const vals = try env.arena.alloc(Value, uc.args.len);
+                for (uc.args, vals) |a, *v| v.* = try env.eval(a);
+                return f(env.ctx, uc.index, vals);
+            },
         }
     }
 
@@ -1143,7 +1212,7 @@ fn testLookup(_: *anyopaque, name: []const u8) ?Value {
     return null;
 }
 
-fn testRef(_: *anyopaque, _: []const u8, _: []const []const u8) EvalError!Value {
+fn testRef(_: *anyopaque, _: []const u8, _: []const []const u8, _: ?f64) EvalError!Value {
     return .{ .number = 10 };
 }
 

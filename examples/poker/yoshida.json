@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "name": "Poker deck",
+  "note": "Sets are listed so they render in deck order: 40 number cards, 12 court cards, 2 jokers and the back.",
+  "sets": [
+    {
+      "name": "numbers",
+      "design": "designs/number.design.json",
+      "cards": "cards/numbers.cards.json"
+    },
+    { "name": "courts", "design": "designs/court.design.json", "cards": "cards/courts.cards.json" },
+    { "name": "jokers", "design": "designs/joker.design.json", "cards": "cards/jokers.cards.json" },
+    { "name": "back", "design": "designs/back.design.json", "cards": "cards/back.cards.json" }
+  ]
+}

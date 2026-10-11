@@ -1,0 +1,216 @@
+{
+  "format": 1,
+  "name": "Joker",
+  "note": "Poker size, 63.5 x 88.9 mm (2.5 x 3.5 in) at 300 dpi. Corners are transparent; cut along the face outline.",
+  "canvas": { "width": 750, "height": 1050, "dpi": 300 },
+  "fonts": {
+    "serif": "assets/fonts/DMSerifDisplay-Regular.ttf",
+    "display": "assets/fonts/CinzelDecorative-Bold.ttf"
+  },
+  "params": {
+    "tone": {
+      "type": "enum",
+      "options": ["red", "black"],
+      "default": "red",
+      "label": "Joker color",
+      "group": "Card"
+    },
+    "caption": { "type": "text", "default": "Joker", "max_length": 12, "group": "Card" },
+    "paper": { "type": "color", "default": "#FBF7EE", "group": "Deck colors" },
+    "red": { "type": "color", "default": "#B8232F", "group": "Deck colors" },
+    "black": { "type": "color", "default": "#1F1D27", "group": "Deck colors" },
+    "gold": { "type": "color", "default": "#C99A2E", "group": "Deck colors" }
+  },
+  "consts": {
+    "corner": 40,
+    "inset": 24,
+    "ink": "tone == 'red' ? red : black",
+    "other": "tone == 'red' ? black : red",
+    "hat_y": 470
+  },
+  "functions": {
+    "bell_x": {
+      "args": { "i": "number" },
+      "expr": "(i - 1) * 176"
+    },
+    "bell_y": {
+      "args": { "i": "number" },
+      "expr": "i == 1 ? -184 : -132"
+    }
+  },
+  "layers": [
+    {
+      "id": "face",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+      "fill": "paper",
+      "radius": "corner",
+      "stroke": { "color": "#00000026", "width": 2 }
+    },
+    {
+      "id": "frame",
+      "type": "rect",
+      "box": {
+        "x": "inset",
+        "y": "inset",
+        "w": "canvas.w - 2 * inset",
+        "h": "canvas.h - 2 * inset"
+      },
+      "fill": "#00000000",
+      "radius": "corner - inset",
+      "stroke": { "color": "with_alpha(ink, 0.28)", "width": 3 }
+    },
+    { "id": "corner_divider", "type": "divider", "label": "Corner indices" },
+    {
+      "id": "index_word",
+      "type": "text",
+      "text": "J\nO\nK\nE\nR",
+      "at": { "x": 74, "y": 52 },
+      "anchor": "top",
+      "align": "center",
+      "font": "serif",
+      "size": 56,
+      "line_spacing": -10,
+      "color": "ink"
+    },
+    {
+      "id": "index_star",
+      "type": "polygon",
+      "shape": { "type": "star", "count": 5, "inner": 0.45 },
+      "box": { "x": "@index_word.at.x", "y": "@index_word.bounds.bottom + 10", "w": 50, "h": 50 },
+      "anchor": "top",
+      "fill": "gold",
+      "stroke": { "color": "ink", "width": 2 }
+    },
+    {
+      "id": "index_word_br",
+      "type": "text",
+      "extends": "index_word",
+      "at": { "x": "canvas.w - @index_word.at.x", "y": "canvas.h - @index_word.at.y" },
+      "rotate": 180
+    },
+    {
+      "id": "index_star_br",
+      "type": "polygon",
+      "extends": "index_star",
+      "box": { "x": "canvas.w - @index_star.bounds.cx", "y": "canvas.h - @index_star.bounds.top" },
+      "rotate": 180
+    },
+    { "id": "art_divider", "type": "divider", "label": "Jester" },
+    {
+      "id": "burst",
+      "type": "polygon",
+      "shape": { "type": "star", "count": 24, "inner": 0.78 },
+      "box": { "x": "canvas.w / 2", "y": "hat_y", "w": 560, "h": 560 },
+      "anchor": "center",
+      "fill": "mix(gold, paper, 0.7)"
+    },
+    {
+      "id": "burst_ring",
+      "type": "ellipse",
+      "box": { "x": "canvas.w / 2", "y": "hat_y", "w": 400, "h": 400 },
+      "anchor": "center",
+      "fill": "paper",
+      "stroke": {
+        "color": "gold",
+        "width": 4,
+        "dash": [3, 14]
+      }
+    },
+    {
+      "id": "hat",
+      "type": "group",
+      "translate": { "x": "canvas.w / 2", "y": "hat_y + 40" },
+      "layers": [
+        {
+          "id": "hat_body",
+          "type": "polygon",
+          "points": [
+            [-140, 40],
+            [-176, -132],
+            [-58, -26],
+            [0, -184],
+            [58, -26],
+            [176, -132],
+            [140, 40]
+          ],
+          "fill": "ink",
+          "stroke": { "color": "#00000066", "width": 4 }
+        },
+        {
+          "id": "hat_flap",
+          "type": "polygon",
+          "note": "The middle flap in the other color, as on a classic jester cap.",
+          "points": [[-58, -26], [0, -184], [58, -26], [0, 40]],
+          "fill": "other",
+          "stroke": { "color": "#00000066", "width": 4 }
+        },
+        {
+          "id": "hat_brim",
+          "type": "rect",
+          "box": { "x": 0, "y": 44, "w": 316, "h": 46 },
+          "anchor": "center",
+          "radius": 23,
+          "fill": "gold",
+          "stroke": { "color": "#00000066", "width": 4 }
+        },
+        {
+          "id": "brim_dot",
+          "type": "ellipse",
+          "repeat": { "count": 5, "index": "d" },
+          "box": { "x": "(d - 2) * 56", "y": 44, "w": 16, "h": 16 },
+          "anchor": "center",
+          "fill": "ink"
+        },
+        {
+          "id": "bell",
+          "type": "ellipse",
+          "repeat": { "count": 3, "index": "i" },
+          "box": { "x": "bell_x(i)", "y": "bell_y(i)", "w": 46, "h": 46 },
+          "anchor": "center",
+          "fill": "gold",
+          "stroke": { "color": "#00000066", "width": 4 }
+        }
+      ]
+    },
+    {
+      "id": "caption_text",
+      "type": "text",
+      "text": "{upper(caption)}",
+      "at": { "x": "canvas.w / 2", "y": 800 },
+      "anchor": "center",
+      "font": "display",
+      "size": 104,
+      "max_width": 520,
+      "color": "ink",
+      "stroke": { "color": "paper", "width": 3 }
+    },
+    {
+      "id": "caption_rule",
+      "type": "rect",
+      "repeat": { "count": 2, "index": "k" },
+      "box": {
+        "x": "canvas.w / 2",
+        "y": "@caption_text.bounds.top - 18 + k * (@caption_text.bounds.h + 36)",
+        "w": 420,
+        "h": 4
+      },
+      "anchor": "center",
+      "fill": "gold"
+    },
+    {
+      "id": "caption_star",
+      "type": "polygon",
+      "repeat": { "count": 3, "index": "k" },
+      "shape": { "type": "star", "count": 5, "inner": 0.45 },
+      "box": {
+        "x": "canvas.w / 2 + (k - 1) * 64",
+        "y": "@caption_text.bounds.bottom + 70",
+        "w": 40,
+        "h": 40
+      },
+      "anchor": "center",
+      "fill": "k == 1 ? ink : gold"
+    }
+  ]
+}

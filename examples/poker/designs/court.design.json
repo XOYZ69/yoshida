@@ -1,0 +1,329 @@
+{
+  "format": 1,
+  "name": "Court cards (J, Q, K)",
+  "note": "Poker size, 63.5 x 88.9 mm (2.5 x 3.5 in) at 300 dpi. Corners are transparent; cut along the face outline.",
+  "canvas": { "width": 750, "height": 1050, "dpi": 300 },
+  "fonts": {
+    "serif": "assets/fonts/DMSerifDisplay-Regular.ttf",
+    "display": "assets/fonts/CinzelDecorative-Bold.ttf"
+  },
+  "params": {
+    "rank": {
+      "type": "enum",
+      "options": ["J", "Q", "K"],
+      "default": "K",
+      "group": "Card"
+    },
+    "suit": {
+      "type": "enum",
+      "options": ["spades", "hearts", "diamonds", "clubs"],
+      "default": "spades",
+      "group": "Card"
+    },
+    "title": {
+      "type": "text",
+      "default": "",
+      "max_length": 24,
+      "label": "Name on the banner",
+      "note": "Leave empty for King, Queen or Jack.",
+      "group": "Card"
+    },
+    "paper": { "type": "color", "default": "#FBF7EE", "group": "Deck colors" },
+    "red": { "type": "color", "default": "#B8232F", "group": "Deck colors" },
+    "black": { "type": "color", "default": "#1F1D27", "group": "Deck colors" },
+    "gold": { "type": "color", "default": "#C99A2E", "group": "Deck colors" }
+  },
+  "functions": {
+    "glyph": {
+      "args": { "s": "text" },
+      "expr": "s == 'hearts' ? '♥' : s == 'diamonds' ? '♦' : s == 'clubs' ? '♣' : '♠'",
+      "note": "The suit symbol. The serif font has no suit glyphs, so they come from the bundled symbol font."
+    },
+    "rank_name": {
+      "args": { "r": "text" },
+      "expr": "r == 'K' ? 'King' : r == 'Q' ? 'Queen' : 'Jack'"
+    }
+  },
+  "consts": {
+    "corner": 40,
+    "inset": 24,
+    "index_x": 78,
+    "index_y": 46,
+    "ink": "suit == 'hearts' or suit == 'diamonds' ? red : black",
+    "panel_x": 142,
+    "panel_y": 128,
+    "half": "(canvas.h / 2 - panel_y) / 2"
+  },
+  "layers": [
+    {
+      "id": "face",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+      "fill": "paper",
+      "radius": "corner",
+      "stroke": { "color": "#00000026", "width": 2 }
+    },
+    {
+      "id": "frame",
+      "type": "rect",
+      "box": {
+        "x": "inset",
+        "y": "inset",
+        "w": "canvas.w - 2 * inset",
+        "h": "canvas.h - 2 * inset"
+      },
+      "fill": "#00000000",
+      "radius": "corner - inset",
+      "stroke": { "color": "with_alpha(ink, 0.28)", "width": 3 }
+    },
+    { "id": "corner_divider", "type": "divider", "label": "Corner indices" },
+    {
+      "id": "index_rank",
+      "type": "text",
+      "note": "Top-left index. The bottom-right copy extends it.",
+      "text": "{rank}",
+      "at": { "x": "index_x", "y": "index_y" },
+      "anchor": "top",
+      "font": "serif",
+      "size": 112,
+      "max_width": 104,
+      "color": "ink"
+    },
+    {
+      "id": "index_suit",
+      "type": "text",
+      "text": "{glyph(suit)}",
+      "at": { "x": "@index_rank.at.x", "y": "@index_rank.bounds.bottom + 2" },
+      "anchor": "top",
+      "size": 74,
+      "color": "ink"
+    },
+    {
+      "id": "index_rank_br",
+      "type": "text",
+      "extends": "index_rank",
+      "note": "Mirror of index_rank: same text, font and size, placed at the opposite corner and turned around its anchor.",
+      "at": { "x": "canvas.w - @index_rank.at.x", "y": "canvas.h - @index_rank.at.y" },
+      "rotate": 180
+    },
+    {
+      "id": "index_suit_br",
+      "type": "text",
+      "extends": "index_suit",
+      "at": { "x": "canvas.w - @index_suit.at.x", "y": "canvas.h - @index_suit.at.y" },
+      "rotate": 180
+    },
+    { "id": "panel_divider", "type": "divider", "label": "Portrait panel" },
+    {
+      "id": "panel",
+      "type": "rect",
+      "box": {
+        "x": "panel_x",
+        "y": "panel_y",
+        "w": "canvas.w - 2 * panel_x",
+        "h": "canvas.h - 2 * panel_y"
+      },
+      "radius": 22,
+      "fill": "mix(ink, paper, 0.9)",
+      "stroke": { "color": "ink", "width": 5 }
+    },
+    {
+      "id": "panel_line",
+      "type": "rect",
+      "extends": "panel",
+      "note": "Inner dashed line, 14 px inside the panel.",
+      "box": {
+        "x": "panel_x + 14",
+        "y": "panel_y + 14",
+        "w": "canvas.w - 2 * panel_x - 28",
+        "h": "canvas.h - 2 * panel_y - 28"
+      },
+      "radius": 12,
+      "fill": "#00000000",
+      "stroke": {
+        "color": "gold",
+        "width": 3,
+        "dash": [16, 10]
+      }
+    },
+    {
+      "id": "figure",
+      "type": "group",
+      "note": "One half of the portrait, drawn twice: the second iteration is turned 180 degrees, so the card reads the same both ways up. figure_box keeps the group's bounds centred on its origin, so the turn mirrors it exactly.",
+      "repeat": { "count": 2, "index": "half_i" },
+      "translate": {
+        "x": "canvas.w / 2",
+        "y": "half_i == 0 ? panel_y + half : canvas.h - panel_y - half"
+      },
+      "rotate": "half_i * 180",
+      "layers": [
+        {
+          "id": "figure_box",
+          "type": "rect",
+          "box": { "x": 0, "y": 0, "w": 420, "h": "2 * half - 20" },
+          "anchor": "center",
+          "fill": "#00000000"
+        },
+        {
+          "id": "rays",
+          "type": "polygon",
+          "shape": { "type": "star", "count": 18, "inner": 0.72 },
+          "box": { "x": 0, "y": 0, "w": 320, "h": 320 },
+          "anchor": "center",
+          "fill": "with_alpha(gold, 0.22)"
+        },
+        {
+          "id": "crown_k",
+          "type": "polygon",
+          "visible": "rank == 'K'",
+          "points": [
+            [-118, -50],
+            [-130, -150],
+            [-78, -102],
+            [-40, -172],
+            [0, -114],
+            [40, -172],
+            [78, -102],
+            [130, -150],
+            [118, -50]
+          ],
+          "fill": "gold",
+          "stroke": { "color": "ink", "width": 4 }
+        },
+        {
+          "id": "crown_q",
+          "type": "polygon",
+          "visible": "rank == 'Q'",
+          "points": [
+            [-110, -50],
+            [-118, -124],
+            [-76, -104],
+            [-52, -150],
+            [-20, -116],
+            [0, -166],
+            [20, -116],
+            [52, -150],
+            [76, -104],
+            [118, -124],
+            [110, -50]
+          ],
+          "fill": "gold",
+          "stroke": { "color": "ink", "width": 4 }
+        },
+        {
+          "id": "crown_j",
+          "type": "polygon",
+          "visible": "rank == 'J'",
+          "points": [
+            [-112, -50],
+            [-106, -92],
+            [-64, -122],
+            [0, -130],
+            [60, -122],
+            [100, -98],
+            [112, -50]
+          ],
+          "fill": "gold",
+          "stroke": { "color": "ink", "width": 4 }
+        },
+        {
+          "id": "jack_feather",
+          "type": "polygon",
+          "visible": "rank == 'J'",
+          "points": [[30, -120], [84, -164], [150, -178], [116, -138], [62, -112]],
+          "fill": "paper",
+          "stroke": { "color": "ink", "width": 3 }
+        },
+        {
+          "id": "crown_band",
+          "type": "rect",
+          "box": { "x": 0, "y": -50, "w": 250, "h": 30 },
+          "anchor": "center",
+          "radius": 8,
+          "fill": "ink",
+          "stroke": { "color": "#00000040", "width": 2 }
+        },
+        {
+          "id": "jewel",
+          "type": "ellipse",
+          "repeat": { "count": 3, "index": "j" },
+          "box": { "x": "(j - 1) * 72", "y": -50, "w": 20, "h": 20 },
+          "anchor": "center",
+          "fill": "paper",
+          "stroke": { "color": "gold", "width": 3 }
+        },
+        {
+          "id": "letter",
+          "type": "text",
+          "text": "{rank}",
+          "at": { "x": 0, "y": 50 },
+          "anchor": "center",
+          "font": "display",
+          "size": 150,
+          "color": "ink",
+          "stroke": { "color": "paper", "width": 4 }
+        },
+        {
+          "id": "side_suit",
+          "type": "text",
+          "repeat": { "count": 2, "index": "k" },
+          "text": "{glyph(suit)}",
+          "at": { "x": "k == 0 ? -128 : 128", "y": 50 },
+          "anchor": "center",
+          "size": 66,
+          "color": "ink"
+        }
+      ]
+    },
+    { "id": "banner_divider", "type": "divider", "label": "Banner and medallion" },
+    {
+      "id": "banner",
+      "type": "rect",
+      "box": {
+        "x": "canvas.w / 2",
+        "y": "canvas.h / 2",
+        "w": "canvas.w - 2 * panel_x + 40",
+        "h": 70
+      },
+      "anchor": "center",
+      "radius": 10,
+      "fill": "ink"
+    },
+    {
+      "id": "banner_text",
+      "type": "text",
+      "text": "{upper(title == '' ? rank_name(rank) : title)}",
+      "at": { "x": "@banner.bounds.left + 40", "y": "@banner.bounds.cy" },
+      "anchor": "left",
+      "font": "serif",
+      "size": 40,
+      "max_width": 170,
+      "color": "paper"
+    },
+    {
+      "id": "banner_text_r",
+      "type": "text",
+      "extends": "banner_text",
+      "note": "The same name, read from the other end of the card.",
+      "at": { "x": "@banner.bounds.right - 40" },
+      "rotate": 180
+    },
+    {
+      "id": "medallion",
+      "type": "ellipse",
+      "box": { "x": "canvas.w / 2", "y": "canvas.h / 2", "w": 120, "h": 120 },
+      "anchor": "center",
+      "fill": "paper",
+      "stroke": { "color": "gold", "width": 6 }
+    },
+    {
+      "id": "medallion_suit",
+      "type": "text",
+      "text": "{glyph(suit)}",
+      "at": { "x": "@medallion.bounds.cx", "y": "@medallion.bounds.cy" },
+      "anchor": "center",
+      "size": 72,
+      "color": "ink"
+    }
+  ]
+}

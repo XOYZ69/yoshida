@@ -1,0 +1,36 @@
++++
+title = "Expressions: Operators"
+description = "Arithmetic, comparison and logic operators, by precedence."
++++
+
+Highest precedence first:
+
+| Operators | Operand types | Result |
+| --- | --- | --- |
+| `( )`, `f(...)`, `a.b`, `a[n]` | | |
+| unary `-`, `not` | number / bool | number / bool |
+| `*` `/` `%` | number | number. Division by zero is error 3103 (at render time) |
+| `+` `-` | number | number |
+| `<` `<=` `>` `>=` | number | bool |
+| `==` `!=` | same type on both sides | bool |
+| `and` | bool | bool, short-circuit |
+| `or` | bool | bool, short-circuit |
+| `c ? a : b` | bool, then two values of the same type | right-associative |
+
+## Notes
+
+- There is **no assignment**, **no string concatenation operator** (use [templates](@/docs/expressions-templates.md): `"{first} {last}"`) and **no implicit conversion**. `'5' + 1` is error 3003.
+- `==` and `!=` compare values of the same type: numbers with numbers, text with text, colors with colors, bools with bools.
+- `%` as the modulo operator needs operands on both sides (`a % b`); `50%` directly after a number is the percent unit (see [Literals and units](@/docs/expressions-literals-and-units.md)).
+- `and` and `or` short-circuit, so `len(list) > 0 and list[0].value > 3` does not index an empty list.
+- The conditional `c ? a : b` needs both branches to have the same type. It nests to the right: `a ? 1 : b ? 2 : 3`.
+
+## Examples
+
+```json
+"visible": "level >= 5 and not foil"
+"fill": "card_type == 'spell' ? #1D7874 : #8E2C48"
+"x": "50% + (i - (n - 1) / 2) * 56"
+"size": "clamp(90 - len(title) * 2, 40, 90)"
+"opacity": "foil ? 1 : 0.4"
+```

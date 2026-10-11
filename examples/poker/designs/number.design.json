@@ -1,0 +1,200 @@
+{
+  "format": 1,
+  "name": "Number cards (A to 10)",
+  "note": "Poker size, 63.5 x 88.9 mm (2.5 x 3.5 in) at 300 dpi. Corners are transparent; cut along the face outline.",
+  "canvas": { "width": 750, "height": 1050, "dpi": 300 },
+  "fonts": { "serif": "assets/fonts/DMSerifDisplay-Regular.ttf" },
+  "params": {
+    "rank": {
+      "type": "integer",
+      "default": 7,
+      "min": 1,
+      "max": 10,
+      "label": "Rank (1 = ace)",
+      "group": "Card"
+    },
+    "suit": {
+      "type": "enum",
+      "options": ["spades", "hearts", "diamonds", "clubs"],
+      "default": "spades",
+      "group": "Card"
+    },
+    "paper": { "type": "color", "default": "#FBF7EE", "group": "Deck colors" },
+    "red": { "type": "color", "default": "#B8232F", "group": "Deck colors" },
+    "black": { "type": "color", "default": "#1F1D27", "group": "Deck colors" },
+    "gold": { "type": "color", "default": "#C99A2E", "group": "Deck colors" }
+  },
+  "functions": {
+    "glyph": {
+      "args": { "s": "text" },
+      "expr": "s == 'hearts' ? '♥' : s == 'diamonds' ? '♦' : s == 'clubs' ? '♣' : '♠'",
+      "note": "The suit symbol. The serif font has no suit glyphs, so they come from the bundled symbol font."
+    },
+    "label": {
+      "args": { "r": "number" },
+      "expr": "r == 1 ? 'A' : fmt(r, 0)"
+    },
+    "side_n": {
+      "args": { "r": "number" },
+      "expr": "r >= 9 ? 4 : r >= 6 ? 3 : r >= 4 ? 2 : 0",
+      "note": "Pips in each side column."
+    },
+    "mid_n": {
+      "args": { "r": "number" },
+      "expr": "r == 3 ? 3 : r == 2 or r == 8 or r == 10 ? 2 : r == 5 or r == 7 or r == 9 ? 1 : 0",
+      "note": "Pips in the middle column."
+    },
+    "mid_t": {
+      "args": { "r": "number", "i": "number" },
+      "expr": "r == 2 ? i : r == 3 ? i / 2 : r == 7 ? 0.25 : r == 8 ? 0.25 + i / 2 : r == 10 ? 1 / 6 + i * 2 / 3 : 0.5",
+      "note": "Height of middle pip i, from 0 (top row) to 1 (bottom row)."
+    },
+    "side_t": {
+      "args": { "r": "number", "i": "number" },
+      "expr": "floor(i / 2) / (side_n(r) - 1)",
+      "note": "Height of side pip i; even i is the left column, odd i the right one."
+    },
+    "pip_y": {
+      "args": { "t": "number" },
+      "expr": "pip_top + t * (pip_bottom - pip_top)"
+    },
+    "flip": {
+      "args": { "t": "number" },
+      "expr": "t > 0.5 ? 180 : 0",
+      "note": "Pips below the middle point down, as on a printed deck."
+    }
+  },
+  "consts": {
+    "corner": 40,
+    "inset": 24,
+    "index_x": 78,
+    "index_y": 46,
+    "ink": "suit == 'hearts' or suit == 'diamonds' ? red : black",
+    "col_l": 238,
+    "col_m": 375,
+    "col_r": 512,
+    "pip_top": 222,
+    "pip_bottom": 828,
+    "pip_size": 158
+  },
+  "layers": [
+    {
+      "id": "face",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+      "fill": "paper",
+      "radius": "corner",
+      "stroke": { "color": "#00000026", "width": 2 }
+    },
+    {
+      "id": "frame",
+      "type": "rect",
+      "box": {
+        "x": "inset",
+        "y": "inset",
+        "w": "canvas.w - 2 * inset",
+        "h": "canvas.h - 2 * inset"
+      },
+      "fill": "#00000000",
+      "radius": "corner - inset",
+      "stroke": { "color": "with_alpha(ink, 0.28)", "width": 3 }
+    },
+    { "id": "corner_divider", "type": "divider", "label": "Corner indices" },
+    {
+      "id": "index_rank",
+      "type": "text",
+      "note": "Top-left index. The bottom-right copy extends it.",
+      "text": "{label(rank)}",
+      "at": { "x": "index_x", "y": "index_y" },
+      "anchor": "top",
+      "font": "serif",
+      "size": 112,
+      "max_width": 104,
+      "color": "ink"
+    },
+    {
+      "id": "index_suit",
+      "type": "text",
+      "text": "{glyph(suit)}",
+      "at": { "x": "@index_rank.at.x", "y": "@index_rank.bounds.bottom + 2" },
+      "anchor": "top",
+      "size": 74,
+      "color": "ink"
+    },
+    {
+      "id": "index_rank_br",
+      "type": "text",
+      "extends": "index_rank",
+      "note": "Mirror of index_rank: same text, font and size, placed at the opposite corner and turned around its anchor.",
+      "at": { "x": "canvas.w - @index_rank.at.x", "y": "canvas.h - @index_rank.at.y" },
+      "rotate": 180
+    },
+    {
+      "id": "index_suit_br",
+      "type": "text",
+      "extends": "index_suit",
+      "at": { "x": "canvas.w - @index_suit.at.x", "y": "canvas.h - @index_suit.at.y" },
+      "rotate": 180
+    },
+    { "id": "pip_divider", "type": "divider", "label": "Pips" },
+    {
+      "id": "pip",
+      "type": "text",
+      "note": "Hidden base pip. Every pip below extends it and only sets its position and turn.",
+      "visible": false,
+      "text": "{glyph(suit)}",
+      "at": { "x": "col_m", "y": "pip_y(0.5)" },
+      "anchor": "center",
+      "size": "pip_size",
+      "color": "ink"
+    },
+    {
+      "id": "pips_side",
+      "type": "text",
+      "extends": "pip",
+      "visible": true,
+      "repeat": { "count": "side_n(rank) * 2", "index": "i" },
+      "at": { "x": "i % 2 == 0 ? col_l : col_r", "y": "pip_y(side_t(rank, i))" },
+      "rotate": "flip(side_t(rank, i))"
+    },
+    {
+      "id": "pips_mid",
+      "type": "text",
+      "extends": "pip",
+      "visible": true,
+      "repeat": { "count": "mid_n(rank)", "index": "i" },
+      "at": { "y": "pip_y(mid_t(rank, i))" },
+      "rotate": "flip(mid_t(rank, i))"
+    },
+    { "id": "ace_divider", "type": "divider", "label": "Ace" },
+    {
+      "id": "ace_ring",
+      "type": "ellipse",
+      "visible": "rank == 1",
+      "box": { "x": "col_m", "y": "canvas.h / 2", "w": 470, "h": 470 },
+      "anchor": "center",
+      "fill": "mix(ink, paper, 0.93)",
+      "stroke": { "color": "ink", "width": 4 }
+    },
+    {
+      "id": "ace_ring_inner",
+      "type": "ellipse",
+      "extends": "ace_ring",
+      "box": { "w": 430, "h": 430 },
+      "fill": "#00000000",
+      "stroke": {
+        "color": "gold",
+        "width": 3,
+        "dash": [2, 12]
+      }
+    },
+    {
+      "id": "ace_pip",
+      "type": "text",
+      "extends": "pip",
+      "visible": "rank == 1",
+      "at": { "y": "canvas.h / 2" },
+      "size": 360
+    }
+  ]
+}

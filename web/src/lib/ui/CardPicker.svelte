@@ -1,37 +1,44 @@
 <script lang="ts">
-  // "Card 3 of 120" with previous/next buttons and a searchable list.
-  import type { CardInfo, Param } from '../engine';
-  import CardList from './CardList.svelte';
-  import { placeNear } from './overlay.svelte';
+// "Card 3 of 120" with previous/next buttons and a searchable list.
+import type { CardInfo, Param } from "../engine";
+import CardList from "./CardList.svelte";
+import { placeNear } from "./overlay.svelte";
 
-  let {
-    cards,
-    index,
-    onpick,
-    disabled = false,
-    params = [],
-    onbrowse = undefined,
-  }: { cards: CardInfo[]; index: number; onpick: (i: number) => void; disabled?: boolean; params?: Param[]; onbrowse?: () => void } = $props();
+let {
+	cards,
+	index,
+	onpick,
+	disabled = false,
+	params = [],
+	onbrowse = undefined,
+}: {
+	cards: CardInfo[];
+	index: number;
+	onpick: (i: number) => void;
+	disabled?: boolean;
+	params?: Param[];
+	onbrowse?: () => void;
+} = $props();
 
-  let open = $state(false);
-  let button: HTMLButtonElement | undefined = $state();
-  let pop: HTMLDivElement | undefined = $state();
-  let pos = $state({ left: 0, top: 0 });
+let open = $state(false);
+let button: HTMLButtonElement | undefined = $state();
+let pop: HTMLDivElement | undefined = $state();
+let pos = $state({ left: 0, top: 0 });
 
-  const current = $derived(cards[index]);
+const current = $derived(cards[index]);
 
-  function show() {
-    if (!button) return;
-    const p = placeNear(button.getBoundingClientRect(), 360, 380);
-    pos = { left: p.left, top: p.top };
-    open = true;
-  }
+function show() {
+	if (!button) return;
+	const p = placeNear(button.getBoundingClientRect(), 360, 380);
+	pos = { left: p.left, top: p.top };
+	open = true;
+}
 
-  function pick(i: number) {
-    open = false;
-    if (i !== index) onpick(i);
-    button?.focus();
-  }
+function pick(i: number) {
+	open = false;
+	if (i !== index) onpick(i);
+	button?.focus();
+}
 </script>
 
 <svelte:window
@@ -39,10 +46,10 @@
     if (open && !pop?.contains(e.target as Node) && !button?.contains(e.target as Node)) open = false;
   }} />
 
-<div class="picker" role="group" aria-label="Card shown in the preview">
-  <span class="cap">Card</span>
+<div class="picker" class:open role="group" aria-label="Card shown in the preview">
   <button class="step" title="Previous card" disabled={disabled || index <= 0} onclick={() => onpick(index - 1)}>‹</button>
   <button bind:this={button} class="current" {disabled} aria-haspopup="listbox" aria-expanded={open} title="Choose the card to preview" onclick={() => (open ? (open = false) : show())}>
+    <span class="cap">Card</span>
     <span class="id">{current?.id ?? '—'}</span>
     <span class="of">{cards.length ? `${index + 1} / ${cards.length}` : 'no cards'}</span>
     <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
@@ -62,27 +69,60 @@
 {/if}
 
 <style>
+  /* One joined control: previous | card ▾ | next. */
   .picker {
     display: inline-flex;
-    align-items: center;
-    gap: 2px;
+    align-items: stretch;
+    height: var(--ctl-h);
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    overflow: hidden;
+    transition: border-color 0.12s;
   }
-  .cap {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    margin-right: 4px;
+  .picker:hover {
+    border-color: color-mix(in srgb, var(--fg) 28%, var(--line));
   }
-  .step {
-    padding: 3px 8px;
+  .picker.open {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
-  .current {
+  .picker > button {
+    border: 0;
+    border-radius: 0;
+    background: none;
     display: inline-flex;
     align-items: center;
+  }
+  .picker > button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .step {
+    width: 26px;
+    justify-content: center;
+    padding: 0;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .picker > .current {
     gap: 8px;
-    min-width: 120px;
-    background: var(--bg-code);
+    min-width: 150px;
+    padding: 0 10px;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+  .cap {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    padding-right: 8px;
+    border-right: 1px solid var(--line);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
   }
   .id {
     font-family: var(--mono);
@@ -103,6 +143,11 @@
     width: 10px;
     height: 6px;
     color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .open svg {
+    transform: rotate(180deg);
+    color: var(--accent);
   }
   .list {
     min-height: 80px;
@@ -133,7 +178,7 @@
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-pop);
     overflow: hidden;
   }
 </style>

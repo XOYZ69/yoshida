@@ -1,0 +1,30 @@
+{# Sidebar from data/docs-nav.toml. get_url on an @/ path fails the build
+   when a page is missing, so the nav can never point at a deleted page.
+   On narrow screens static/docs.js turns it into a drawer (.nav-toggle). #}
+{% set nav = load_data(path="data/docs-nav.toml") %}
+<nav class="docs-nav" id="docs-nav" aria-label="Documentation">
+  <a class="nav-home" href="{{ get_url(path='@/docs/_index.md') }}" {% if current_path == "/docs/" %}aria-current="page"{% endif %}>Overview</a>
+  {% for group in nav.group %}
+  <div class="nav-group">
+    <h2>{{ group.title }}</h2>
+    <ul>
+    {% for item in group.item %}
+      {% set url = get_url(path="@/" ~ item.path) %}
+      {% set_global open = url == current_url %}
+      {% if item.child %}{% for child in item.child %}{% if get_url(path="@/" ~ child.path) == current_url %}{% set_global open = true %}{% endif %}{% endfor %}{% endif %}
+      <li{% if item.child %} class="has-children{% if open %} open{% endif %}"{% endif %}>
+        <a href="{{ url }}" {% if url == current_url %}aria-current="page"{% endif %}>{{ item.title }}</a>
+      {% if item.child %}
+        <ul>
+        {% for child in item.child %}
+          {% set curl = get_url(path="@/" ~ child.path) %}
+          <li><a href="{{ curl }}" {% if curl == current_url %}aria-current="page"{% endif %}>{{ child.title }}</a></li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</nav>

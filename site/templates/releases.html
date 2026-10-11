@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Releases · {{ config.title }}{% endblock %}
+{% block body %}
+<main id="main" class="releases">
+  <h1>{{ section.title }}</h1>
+  {{ section.content | safe }}
+  {% for p in section.pages %}
+    <article class="release">
+      <h2><a href="{{ p.permalink }}">{{ p.title }}</a>
+        {% if p.extra.prerelease %}<span class="tag">pre-release</span>{% endif %}</h2>
+      <p class="meta">{{ p.date | date(format="%Y-%m-%d") }} · <a href="{{ p.extra.url }}">{{ p.extra.tag }} on GitHub</a></p>
+      {{ p.content | safe }}
+    </article>
+  {% else %}
+    <p>No releases yet.</p>
+  {% endfor %}
+</main>
+{% endblock %}

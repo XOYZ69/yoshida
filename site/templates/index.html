@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block body %}
+{% set x = section.extra %}
+{% set releases = get_section(path="releases/_index.md") %}
+<main id="main" class="landing">
+  <section class="hero">
+    <div class="hero-text">
+      <p class="kicker">{{ x.kicker }}</p>
+      <h1>{{ x.headline }}</h1>
+      <p class="lead">{{ x.lead }}</p>
+      <p class="actions">
+        <a class="button" href="{{ get_url(path='editor/') }}">Open the editor</a>
+        <a class="button secondary" href="{{ get_url(path='@/docs/getting-started.md') }}">Get started</a>
+      </p>
+      {% if releases.pages %}{% set latest = releases.pages | first %}
+      <p class="latest"><a href="{{ latest.permalink }}"><span class="pill">New</span> {{ latest.title }} · {{ latest.date | date(format="%B %-d, %Y") }}</a></p>
+      {% endif %}
+    </div>
+    <div class="hand" aria-hidden="true">
+      {% for c in x.hand %}
+        <img src="{{ get_url(path='img/cards/' ~ c ~ '.webp') }}" alt="" style="--i: {{ loop.index0 }}; --n: {{ x.hand | length }}" width="500" height="700">
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="steps">
+    {% for s in x.steps %}
+    <div class="step">
+      <span class="num">{{ loop.index }}</span>
+      <h2>{{ s.title }}</h2>
+      <p>{{ s.text }}</p>
+      <pre><code>{{ s.code | replace(from="\n", to="
+") }}</code></pre>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="showcase">
+    <img class="only-light" src="{{ get_url(path='img/editor-light.webp') }}" alt="The yoshida editor" width="1500" height="950">
+    <img class="only-dark" src="{{ get_url(path='img/editor-dark.webp') }}" alt="The yoshida editor in dark mode" width="1500" height="950">
+  </section>
+
+  <section class="features">
+    <h2 class="section-title">What's inside</h2>
+    <div class="grid">
+    {% for f in x.features %}
+      <div class="feature"><h3>{{ f.title }}</h3><p>{{ f.text }}</p></div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="frontends">
+    <h2 class="section-title">One core, three ways to use it</h2>
+    <div class="grid">
+    {% for f in x.frontends %}
+      <a class="frontend" href="{{ get_url(path=f.link) }}"><h3>{{ f.title }}</h3><p>{{ f.text }}</p><span>{{ f.label }} →</span></a>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="outro">{{ section.content | safe }}</section>
+</main>
+{% endblock %}

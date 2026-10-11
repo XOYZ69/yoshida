@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "design": "designs/court.design.json",
+  "name": "Court cards",
+  "cards": [
+    { "id": "JS", "rank": "J", "suit": "spades" },
+    { "id": "QS", "rank": "Q", "suit": "spades" },
+    { "id": "KS", "rank": "K", "suit": "spades" },
+    { "id": "JH", "rank": "J", "suit": "hearts" },
+    { "id": "QH", "rank": "Q", "suit": "hearts" },
+    { "id": "KH", "rank": "K", "suit": "hearts" },
+    { "id": "JD", "rank": "J", "suit": "diamonds" },
+    { "id": "QD", "rank": "Q", "suit": "diamonds" },
+    { "id": "KD", "rank": "K", "suit": "diamonds" },
+    { "id": "JC", "rank": "J", "suit": "clubs" },
+    { "id": "QC", "rank": "Q", "suit": "clubs" },
+    { "id": "KC", "rank": "K", "suit": "clubs" }
+  ]
+}

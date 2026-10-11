@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Page not found · {{ config.title }}{% endblock %}
+{% block body %}
+<main id="main" class="notfound">
+  <p class="num">404</p>
+  <h1>This card is not in the deck.</h1>
+  <p class="lead">The page you asked for does not exist, or it has moved.</p>
+  <p class="actions">
+    <a class="button" href="{{ get_url(path='@/_index.md') }}">Home</a>
+    <a class="button secondary" href="{{ get_url(path='@/docs/_index.md') }}">Docs</a>
+    <a class="button secondary" href="{{ get_url(path='editor/') }}/">Open the editor</a>
+  </p>
+</main>
+{% endblock %}

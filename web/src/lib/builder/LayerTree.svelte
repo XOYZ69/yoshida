@@ -1,104 +1,196 @@
+<script module lang="ts">
+/** The last reveal request handled (see `reveal`). */
+let revealed = 0;
+</script>
+
 <script lang="ts">
-  // Layer list, topmost first (the design's arrays are bottom first). Groups
-  // are folders: click the arrow to fold them, drop a layer onto a group to
-  // move it inside. Ctrl/Cmd+click adds to the selection, Shift+click
-  // selects a range; right-click opens the layer menu. The eye sets the
-  // layer's `visible`; the lock only stops canvas selection in the editor.
-  // Dividers are titled rules that only organise the list. Right-click on
-  // empty space opens the menu for adding layers.
-  import { childrenOf, isDivider, isGroup, type Obj } from '../design';
+// Layer list, topmost first (the design's arrays are bottom first). Groups
+// are folders: click the arrow to fold them, drop a layer onto a group to
+// move it inside. Ctrl/Cmd+click adds to the selection, Shift+click
+// selects a range; right-click opens the layer menu. The eye sets the
+// layer's `visible`; the lock only stops canvas selection in the editor.
+// Dividers are titled rules that only organise the list. Right-click on
+// empty space opens the menu for adding layers.
+import { tick, untrack } from "svelte";
+import { childrenOf, isDivider, isGroup, type Obj } from "../design";
 
-  let {
-    layers,
-    selected,
-    locked,
-    problems,
-    onselect,
-    onvisible,
-    onlock,
-    onmove,
-    oncontext,
-  }: {
-    layers: Obj[];
-    selected: string[];
-    locked: Set<string>;
-    problems: Map<string, 'error' | 'warning'>;
-    onselect: (ids: string[]) => void;
-    onvisible: (id: string) => void;
-    onlock: (id: string) => void;
-    /** Drag and drop: above/below a layer, into a group, or to the very bottom (target null). */
-    onmove: (ids: string[], target: string | null, where: 'above' | 'below' | 'into') => void;
-    /** Right-click on a layer, or on empty space (id null). */
-    oncontext: (e: MouseEvent, id: string | null) => void;
-  } = $props();
+let {
+	layers,
+	selected,
+	locked,
+	problems,
+	onselect,
+	onvisible,
+	onlock,
+	onmove,
+	oncontext,
+	reveal = null,
+}: {
+	layers: Obj[];
+	selected: string[];
+	locked: Set<string>;
+	problems: Map<string, "error" | "warning">;
+	onselect: (ids: string[]) => void;
+	onvisible: (id: string) => void;
+	onlock: (id: string) => void;
+	/** Drag and drop: above/below a layer, into a group, or to the very bottom (target null). */
+	onmove: (
+		ids: string[],
+		target: string | null,
+		where: "above" | "below" | "into",
+	) => void;
+	/** Right-click on a layer, or on empty space (id null). */
+	oncontext: (e: MouseEvent, id: string | null) => void;
+	/** Unfolds the groups around a layer, scrolls to it and highlights it (go to definition). */
+	reveal?: { id: string; n: number } | null;
+} = $props();
 
-  const icons: Record<string, string> = { rect: '▭', ellipse: '◯', polygon: '△', text: 'T', image: '🖼', group: '▤' };
+const icons: Record<string, string> = {
+	rect: "▭",
+	ellipse: "◯",
+	polygon: "△",
+	text: "T",
+	image: "🖼",
+	group: "▤",
+};
 
-  let folded = $state(new Set<string>());
+let folded = $state(new Set<string>());
 
-  type Row = { l: Obj; id: string; depth: number; group: boolean; divider: boolean; count: number; hiddenBy: boolean };
-  const rows = $derived.by(() => {
-    const out: Row[] = [];
-    const walk = (list: Obj[], depth: number, hiddenBy: boolean) => {
-      for (let i = list.length - 1; i >= 0; i--) {
-        const l = list[i];
-        const id = String(l.id ?? `#${i}`);
-        const group = isGroup(l);
-        const kids = group ? childrenOf(l) : [];
-        out.push({ l, id, depth, group, divider: isDivider(l), count: kids.filter((k) => !isDivider(k)).length, hiddenBy });
-        if (group && !folded.has(id)) walk(kids, depth + 1, hiddenBy || l.visible === false);
-      }
-    };
-    walk(layers, 0, false);
-    return out;
-  });
+type Row = {
+	l: Obj;
+	id: string;
+	depth: number;
+	group: boolean;
+	divider: boolean;
+	count: number;
+	hiddenBy: boolean;
+};
+const rows = $derived.by(() => {
+	const out: Row[] = [];
+	const walk = (list: Obj[], depth: number, hiddenBy: boolean) => {
+		for (let i = list.length - 1; i >= 0; i--) {
+			const l = list[i];
+			const id = String(l.id ?? `#${i}`);
+			const group = isGroup(l);
+			const kids = group ? childrenOf(l) : [];
+			out.push({
+				l,
+				id,
+				depth,
+				group,
+				divider: isDivider(l),
+				count: kids.filter((k) => !isDivider(k)).length,
+				hiddenBy,
+			});
+			if (group && !folded.has(id))
+				walk(kids, depth + 1, hiddenBy || l.visible === false);
+		}
+	};
+	walk(layers, 0, false);
+	return out;
+});
 
-  let anchor: string | null = null;
+let anchor: string | null = null;
 
-  function pick(id: string, e: MouseEvent) {
-    if (e.shiftKey && anchor && selected.includes(anchor)) {
-      const order = rows.map((r) => r.id);
-      const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort((x, y) => x - y);
-      onselect(order.slice(a, b + 1));
-      return;
-    }
-    anchor = id;
-    if (e.ctrlKey || e.metaKey) onselect(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-    else onselect([id]);
-  }
+let tree: HTMLUListElement | undefined = $state();
+$effect(() => {
+	const r = reveal;
+	if (!r || r.n === revealed) return;
+	revealed = r.n;
+	untrack(() => show(r.id));
+});
 
-  function fold(id: string) {
-    const next = new Set(folded);
-    if (!next.delete(id)) next.add(id);
-    folded = next;
-  }
+/** The ids of the groups around a layer, outermost first; null when absent. */
+function groupsAround(list: Obj[], id: string): string[] | null {
+	for (const l of list) {
+		if (String(l.id) === id) return [];
+		if (!isGroup(l)) continue;
+		const inner = groupsAround(childrenOf(l), id);
+		if (inner) return [String(l.id), ...inner];
+	}
+	return null;
+}
 
-  // ---------------------------------------------------------------- drag and drop
+function show(id: string) {
+	const outer = groupsAround(layers, id) ?? [];
+	if (outer.some((g) => folded.has(g))) {
+		const next = new Set(folded);
+		for (const g of outer) next.delete(g);
+		folded = next;
+	}
+	tick().then(() => {
+		const el = tree?.querySelector<HTMLElement>(
+			`li[data-id="${CSS.escape(id)}"] .row`,
+		);
+		if (!el) return;
+		el.scrollIntoView({ block: "nearest" });
+		el.classList.remove("goto-flash");
+		void el.offsetWidth;
+		el.classList.add("goto-flash");
+	});
+}
 
-  let dragIds: string[] = [];
-  let drop: { id: string | null; where: 'above' | 'below' | 'into' } | null = $state(null);
+function pick(id: string, e: MouseEvent) {
+	if (e.shiftKey && anchor && selected.includes(anchor)) {
+		const order = rows.map((r) => r.id);
+		const [a, b] = [order.indexOf(anchor), order.indexOf(id)].sort(
+			(x, y) => x - y,
+		);
+		onselect(order.slice(a, b + 1));
+		return;
+	}
+	anchor = id;
+	if (e.ctrlKey || e.metaKey)
+		onselect(
+			selected.includes(id)
+				? selected.filter((x) => x !== id)
+				: [...selected, id],
+		);
+	else onselect([id]);
+}
 
-  function zone(e: DragEvent, r: Row): 'above' | 'below' | 'into' {
-    const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const f = (e.clientY - b.top) / b.height;
-    if (r.group) return f < 0.25 ? 'above' : f > 0.75 && (folded.has(r.id) || !r.count) ? 'below' : 'into';
-    return f < 0.5 ? 'above' : 'below';
-  }
+function fold(id: string) {
+	const next = new Set(folded);
+	if (!next.delete(id)) next.add(id);
+	folded = next;
+}
 
-  function dragstart(e: DragEvent, id: string) {
-    dragIds = selected.includes(id) ? rows.map((r) => r.id).filter((x) => selected.includes(x)) : [id];
-    e.dataTransfer?.setData('text/x-yoshida-layer', dragIds.join(','));
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-  }
+// ---------------------------------------------------------------- drag and drop
 
-  function finish() {
-    if (drop && dragIds.length && !(drop.id && dragIds.includes(drop.id))) onmove(dragIds, drop.id, drop.where);
-    dragIds = [];
-    drop = null;
-  }
+let dragIds: string[] = [];
+let drop: { id: string | null; where: "above" | "below" | "into" } | null =
+	$state(null);
+
+function zone(e: DragEvent, r: Row): "above" | "below" | "into" {
+	const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+	const f = (e.clientY - b.top) / b.height;
+	if (r.group)
+		return f < 0.25
+			? "above"
+			: f > 0.75 && (folded.has(r.id) || !r.count)
+				? "below"
+				: "into";
+	return f < 0.5 ? "above" : "below";
+}
+
+function dragstart(e: DragEvent, id: string) {
+	dragIds = selected.includes(id)
+		? rows.map((r) => r.id).filter((x) => selected.includes(x))
+		: [id];
+	e.dataTransfer?.setData("text/x-yoshida-layer", dragIds.join(","));
+	if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+}
+
+function finish() {
+	if (drop && dragIds.length && !(drop.id && dragIds.includes(drop.id)))
+		onmove(dragIds, drop.id, drop.where);
+	dragIds = [];
+	drop = null;
+}
 </script>
 
 <ul
+  bind:this={tree}
   class="tree"
   role="tree"
   aria-label="Layers"
@@ -112,6 +204,7 @@
   {#each rows as r (r.id)}
     {@const vis = r.l.visible}
     <li
+      data-id={r.id}
       role="treeitem"
       aria-selected={selected.includes(r.id)}
       aria-expanded={r.group ? !folded.has(r.id) : undefined}
@@ -166,7 +259,7 @@
         {/if}
         <button class="row" onclick={(e) => pick(r.id, e)}>
           <span class="icon" class:grp={r.group}>{icons[String(r.l.type)] ?? '?'}</span>
-          <span class="name" class:off={vis === false}>{r.id}</span>
+          <span class="name" class:off={vis === false} title={r.id}>{r.id}</span>
           {#if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
           {#if r.l.repeat}<span class="badge" title="Repeated">⟳</span>{/if}
           {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}">↳{r.l.extends}</span>{/if}
@@ -220,7 +313,8 @@
     align-items: center;
     border-top: 2px solid transparent;
     border-bottom: 2px solid transparent;
-    padding-left: calc(var(--depth, 0) * 14px);
+    padding-left: calc(4px + var(--depth, 0) * 14px);
+    position: relative;
   }
   li.drop-above {
     border-top-color: var(--accent);
@@ -249,10 +343,17 @@
   }
   .fold {
     all: unset;
-    text-align: center;
+    width: 18px;
+    display: grid;
+    place-items: center;
+    height: 24px;
     cursor: pointer;
     color: var(--muted);
     font-size: 11px;
+    border-radius: 4px;
+  }
+  .fold:hover {
+    background: var(--line);
   }
   .row {
     all: unset;
@@ -301,23 +402,44 @@
   .dot.warning {
     background: var(--warn);
   }
+  /* The row tools float over the end of the name instead of reserving
+     width, so names are only cut while the tools are showing. */
   .tools {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
+    align-items: center;
     gap: 0;
-    padding-right: 4px;
-    opacity: 0;
+    padding: 0 4px;
+    visibility: hidden;
+    background: var(--hover);
   }
   li:hover .tools,
+  li:focus-within .tools,
   li.selected .tools {
-    opacity: 1;
+    visibility: visible;
+  }
+  li.selected .tools {
+    background: var(--sel);
   }
   .tool {
     all: unset;
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    height: 24px;
     cursor: pointer;
     font-size: 12px;
-    padding: 2px 4px;
     border-radius: 4px;
     color: var(--muted);
+  }
+  /* Rows sit flush in a scrolling list: draw their focus ring inside. */
+  .row:focus-visible,
+  .fold:focus-visible,
+  .tool:focus-visible {
+    outline-offset: -2px !important;
   }
   .tool:hover {
     background: var(--line);

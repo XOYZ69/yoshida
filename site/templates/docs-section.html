@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Documentation · {{ config.title }}{% endblock %}
+{% block body_class %}docs-body{% endblock %}
+{% block body %}
+{# The docs overview: intro from content/docs/_index.md, the "Start here"
+   cards from its [extra.start] list, then every group of
+   data/docs-nav.toml as a card index. #}
+{% set nav = load_data(path="data/docs-nav.toml") %}
+<div class="docs docs-home">
+  {% include "partials/docs-nav.html" %}
+  <main id="main" class="docs-main">
+    <header class="home-head">
+      <button class="nav-toggle" type="button" aria-controls="docs-nav" aria-expanded="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Menu
+      </button>
+      <p class="eyebrow">Documentation</p>
+      <h1>{{ section.extra.headline | default(value=section.title) }}</h1>
+      <div class="home-intro prose">{{ section.content | safe }}</div>
+      <button class="search-open search-wide" type="button" aria-label="Search the docs">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="label">Search the docs, for example “repeat” or “auto-shrink”</span>
+        <kbd class="hint">/</kbd>
+      </button>
+    </header>
+
+    {% if section.extra.start %}
+    <section class="start" aria-labelledby="start-here">
+      <h2 id="start-here">Start here</h2>
+      <div class="task-grid">
+      {% for t in section.extra.start %}
+        <div class="task">
+          <p class="task-want">{{ t.want }}</p>
+          <ul>
+          {% for path in t.read %}{% set tp = get_page(path=path) %}
+            <li><a href="{{ tp.permalink }}">{{ tp.title }}<span aria-hidden="true">→</span></a></li>
+          {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="browse" aria-labelledby="browse">
+      <h2 id="browse">Browse the docs</h2>
+      {% for group in nav.group %}
+      <div class="browse-group">
+        <div class="browse-head">
+          <h3>{{ group.title }}</h3>
+          {% if group.blurb %}<p>{{ group.blurb }}</p>{% endif %}
+        </div>
+        <div class="card-grid">
+        {% for item in group.item %}{% set ip = get_page(path=item.path) %}
+          <div class="doc-card{% if item.child %} wide{% endif %}">
+            <a class="doc-card-title" href="{{ ip.permalink }}">{{ item.title }}</a>
+            {% if ip.description %}<span class="doc-card-desc">{{ ip.description }}</span>{% endif %}
+            {% if item.child %}
+            <ul class="chips">
+            {% for c in item.child %}<li><a href="{{ get_url(path='@/' ~ c.path) }}">{{ c.title }}</a></li>{% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+        {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+  </main>
+</div>
+{% endblock %}

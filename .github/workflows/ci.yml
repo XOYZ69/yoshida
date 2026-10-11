@@ -23,6 +23,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-zig
 
+      # build.zig.zon holds the version; the copies in web/ and the docs
+      # must match it.
+      - name: Version copies in sync
+        run: node scripts/version.mjs check
+
       - name: Zig formatting
         run: zig fmt --check build.zig src
 
@@ -93,6 +98,9 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Unit tests
+        run: npm run test:unit
+
       - name: Build
         run: npm run build
 
@@ -112,3 +120,20 @@ jobs:
           name: ui-test-results
           path: web/test-results/
           retention-days: 7
+
+  site:
+    name: Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zola
+        run: |
+          mkdir -p "$RUNNER_TEMP/zola"
+          curl -sSL "https://github.com/getzola/zola/releases/download/v0.23.6/zola-v0.23.6-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
+          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+
+      # Fails on any broken internal link or anchor in the docs.
+      - name: Build
+        working-directory: site
+        run: zola build --output-dir ../public

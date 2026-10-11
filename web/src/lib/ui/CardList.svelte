@@ -1,82 +1,106 @@
 <script lang="ts">
-  // Searchable card list that stays fast with thousands of cards: only the
-  // rows in view are drawn.
-  import type { CardInfo, Param } from '../engine';
-  import { cardLabel, nameParam } from '../cards';
+// Searchable card list that stays fast with thousands of cards: only the
+// rows in view are drawn.
 
-  let {
-    cards,
-    index,
-    onpick,
-    height = 320,
-    autofocus = false,
-    onclose = undefined,
-    params = [],
-  }: {
-    cards: CardInfo[];
-    /** The design's params, to show each card's name. */
-    params?: Param[];
-    index: number;
-    onpick: (i: number) => void;
-    /** Height of the scrolling area in px; 0 fills the parent. */
-    height?: number;
-    autofocus?: boolean;
-    onclose?: () => void;
-  } = $props();
+import { cardLabel, nameParam } from "../cards";
+import type { CardInfo, Param } from "../engine";
 
-  const row = 34;
-  let query = $state('');
-  let scroller: HTMLDivElement | undefined = $state();
-  let search: HTMLInputElement | undefined = $state();
-  let scrollTop = $state(0);
-  let viewH = $state(320);
-  let active = $state(0);
+let {
+	cards,
+	index,
+	onpick,
+	height = 320,
+	autofocus = false,
+	onclose = undefined,
+	params = [],
+}: {
+	cards: CardInfo[];
+	/** The design's params, to show each card's name. */
+	params?: Param[];
+	index: number;
+	onpick: (i: number) => void;
+	/** Height of the scrolling area in px; 0 fills the parent. */
+	height?: number;
+	autofocus?: boolean;
+	onclose?: () => void;
+} = $props();
 
-  const named = $derived(nameParam(params));
-  const items = $derived(cards.map((c, i) => ({ i, id: c.id, ...cardLabel(c, params, named), hay: `${c.id} ${Object.values(c.values).map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(' ')}`.toLowerCase() })));
-  const shown = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    return q ? items.filter((x) => x.hay.includes(q)) : items;
-  });
-  const first = $derived(Math.max(0, Math.floor(scrollTop / row) - 4));
-  const last = $derived(Math.min(shown.length, Math.ceil((scrollTop + viewH) / row) + 4));
+const row = 34;
+let query = $state("");
+let scroller: HTMLDivElement | undefined = $state();
+let search: HTMLInputElement | undefined = $state();
+let scrollTop = $state(0);
+let viewH = $state(320);
+let active = $state(0);
 
-  $effect(() => {
-    if (!scroller) return;
-    const ro = new ResizeObserver(() => (viewH = scroller!.clientHeight));
-    ro.observe(scroller);
-    return () => ro.disconnect();
-  });
+const named = $derived(nameParam(params));
+const items = $derived(
+	cards.map((c, i) => ({
+		i,
+		id: c.id,
+		...cardLabel(c, params, named),
+		hay: `${c.id} ${Object.values(c.values)
+			.map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v)))
+			.join(" ")}`.toLowerCase(),
+	})),
+);
+const shown = $derived.by(() => {
+	const q = query.trim().toLowerCase();
+	return q ? items.filter((x) => x.hay.includes(q)) : items;
+});
+const first = $derived(Math.max(0, Math.floor(scrollTop / row) - 4));
+const last = $derived(
+	Math.min(shown.length, Math.ceil((scrollTop + viewH) / row) + 4),
+);
 
-  // Keep the current card in view when the list opens or the card changes.
-  $effect(() => {
-    const at = shown.findIndex((x) => x.i === index);
-    active = Math.max(0, at);
-    if (!scroller || at < 0) return;
-    const top = at * row;
-    if (top < scroller.scrollTop || top + row > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = Math.max(0, top - scroller.clientHeight / 2);
-  });
+$effect(() => {
+	if (!scroller) return;
+	const ro = new ResizeObserver(() => (viewH = scroller!.clientHeight));
+	ro.observe(scroller);
+	return () => ro.disconnect();
+});
 
-  $effect(() => {
-    if (autofocus) requestAnimationFrame(() => search?.focus());
-  });
+// Keep the current card in view when the list opens or the card changes.
+$effect(() => {
+	const at = shown.findIndex((x) => x.i === index);
+	active = Math.max(0, at);
+	if (!scroller || at < 0) return;
+	const top = at * row;
+	if (
+		top < scroller.scrollTop ||
+		top + row > scroller.scrollTop + scroller.clientHeight
+	)
+		scroller.scrollTop = Math.max(0, top - scroller.clientHeight / 2);
+});
 
-  function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!shown.length) return;
-      active = Math.max(0, Math.min(shown.length - 1, active + (e.key === 'ArrowDown' ? 1 : -1)));
-      const top = active * row;
-      if (scroller && (top < scroller.scrollTop || top + row > scroller.scrollTop + scroller.clientHeight)) scroller.scrollTop = top - scroller.clientHeight / 2;
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (shown[active]) onpick(shown[active].i);
-    } else if (e.key === 'Escape' && onclose) {
-      e.preventDefault();
-      e.stopPropagation();
-      onclose();
-    }
-  }
+$effect(() => {
+	if (autofocus) requestAnimationFrame(() => search?.focus());
+});
+
+function onkeydown(e: KeyboardEvent) {
+	if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+		e.preventDefault();
+		if (!shown.length) return;
+		active = Math.max(
+			0,
+			Math.min(shown.length - 1, active + (e.key === "ArrowDown" ? 1 : -1)),
+		);
+		const top = active * row;
+		if (
+			scroller &&
+			(top < scroller.scrollTop ||
+				top + row > scroller.scrollTop + scroller.clientHeight)
+		)
+			scroller.scrollTop = top - scroller.clientHeight / 2;
+	} else if (e.key === "Enter") {
+		e.preventDefault();
+		if (shown[active]) onpick(shown[active].i);
+	} else if (e.key === "Escape" && onclose) {
+		e.preventDefault();
+		e.stopPropagation();
+		onclose();
+	}
+}
 </script>
 
 <div class="cards" style:height={height ? `${height + 40}px` : '100%'}>

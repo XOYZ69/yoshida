@@ -15,8 +15,9 @@ pub const text = @import("text.zig");
 pub const render = @import("render.zig");
 pub const api = @import("api.zig");
 pub const fmt = @import("fmt.zig");
+pub const pdf = @import("pdf.zig");
 
-pub const version = "0.4.0";
+pub const version = @import("build_options").version;
 pub const format_version = 1;
 pub const default_font = render.default_font_data;
 

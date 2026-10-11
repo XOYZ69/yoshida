@@ -1,21 +1,25 @@
-# Publishes the web editor to GitHub Pages after every push to master, once
-# all checks pass. The site is static: rendering runs in the visitor's
-# browser (WebAssembly) and projects are stored in their browser only.
+# Publishes the site to GitHub Pages: landing page, docs and release notes
+# built by Zola, with the web editor (Vite + WASM) under /editor/.
+# Runs after every push to master and whenever a release is published,
+# edited or deleted, so the release pages follow GitHub Releases.
 name: Deploy
 
 on:
   push:
     branches: [master]
+  release:
+    types: [published, edited, deleted]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One deployment at a time; a newer push waits instead of cancelling a
-# deployment that is already running.
 concurrency:
   group: pages
   cancel-in-progress: false
+
+env:
+  ZOLA_VERSION: 0.23.6
 
 jobs:
   checks:
@@ -25,36 +29,61 @@ jobs:
     name: Build the site
     needs: checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
+
+      # A release tag must name the version in build.zig.zon (v0.5.0 for 0.5.0).
+      - name: Release tag matches the version
+        if: github.event_name == 'release' && github.event.action == 'published'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/version.mjs check --tag "$TAG"
+
+      # Editor: same steps as before, output in web/dist.
       - uses: ./.github/actions/setup-zig
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Build the editor
+        working-directory: web
+        run: |
+          npm ci
+          npm run wasm
+          npm run examples -- --public
+          npm run build
 
-      - run: npm ci
+      # Release pages: one Markdown page per published GitHub release.
+      - name: Fetch releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/releases" --jq '.[]' | jq -s . > releases.json
+          python3 scripts/releases-to-zola.py releases.json site
 
-      - name: Build the WASM core
-        run: npm run wasm
-
-      # --public leaves out the files listed in examples/.public-exclude
-      # (fonts that may not be redistributed).
-      - name: Copy the examples
-        run: npm run examples -- --public
-
-      - name: Build
-        run: npm run build
+      - name: Install Zola
+        run: |
+          mkdir -p "$RUNNER_TEMP/zola"
+          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
+          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
 
       - uses: actions/configure-pages@v5
+        id: pages
+
+      # zola build checks every internal link and anchor and fails on a
+      # broken one. Run it from site/: with --root, a relative output folder
+      # breaks get_url(cachebust) on the compiled CSS. The editor is copied
+      # in afterwards because zola writes a fresh output folder.
+      - name: Build the site
+        working-directory: site
+        run: |
+          zola build --base-url "${{ steps.pages.outputs.base_url }}" --output-dir ../public
+          cp -r ../web/dist ../public/editor
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: public
 
   deploy:
     name: Deploy to GitHub Pages

@@ -3,7 +3,12 @@
 //!
 //!   {"op":"info"}
 //!   {"op":"check"}
-//!   {"op":"render","set":"name","card":0,"date":"2026-10-07","preview":true,"format":"rgba"|"png"|"png16","layout":true}
+//!   {"op":"render","set":"name","card":0,"date":"2026-10-07","preview":true,"format":"rgba"|"png"|"png16","layout":true,
+//!    "scale":0.5,"only":["id",...] | "except":["id",...]}
+//!   {"op":"pdf","set":"name","date":"...","crop_marks":false}
+//!   {"op":"pdf_begin"}, then {"op":"pdf_page","set":"name","card":0,"date":"...","crop_marks":false}
+//!   per card, then {"op":"pdf_finish"}: the same PDF one page per request,
+//!   so the page can show real progress.
 //!
 //! Each request leaves a JSON result and an optional binary result (pixels or
 //! a PNG) that the page reads through the result_* exports.
@@ -17,6 +22,8 @@ var fs: y.project.MemFs = .{ .gpa = std.heap.wasm_allocator };
 var assets: ?y.render.Assets = null;
 var result_json: std.ArrayList(u8) = .empty;
 var result_bin: []u8 = &.{};
+/// The PDF being built by pdf_begin / pdf_page / pdf_finish.
+var pdf_pages: ?y.pdf.Writer = null;
 
 fn getAssets() *y.render.Assets {
     if (assets == null) assets = y.render.Assets.init(gpa, fs.vfs());
@@ -120,7 +127,18 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         const preview = if (req.get("preview")) |p| (p.data == .bool and p.data.bool) else true;
         const format = if (req.get("format")) |f| (if (f.data == .string) f.data.string else "rgba") else "rgba";
         const want_layout = if (req.get("layout")) |p| (p.data == .bool and p.data.bool) else false;
+        const scale = if (req.get("scale")) |p| (if (p.data == .number) p.data.number else 1) else 1;
         var outline: y.render.Outline = .{ .arena = arena };
+        var filter: ?y.render.Options.Filter = null;
+        inline for (.{ "only", "except" }) |mode| if (req.get(mode)) |list| if (list.data == .array) {
+            const ids = try arena.alloc([]const u8, list.data.array.len);
+            var n: usize = 0;
+            for (list.data.array) |item| if (item.data == .string) {
+                ids[n] = item.data.string;
+                n += 1;
+            };
+            filter = .{ .ids = ids[0..n], .mode = @field(y.render.Options.Filter.Mode, mode) };
+        };
 
         const a = getAssets();
         for (a.missing_urls.items) |u| gpa.free(u);
@@ -128,12 +146,16 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
 
         var width: u32 = 0;
         var height: u32 = 0;
+        var canvas_w: u32 = 0;
+        var canvas_h: u32 = 0;
         if (proj.findSet(set_name)) |set| {
-            if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .preview = preview, .outline = if (want_layout) &outline else null }, &diags)) |bmp_const| {
+            if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .preview = preview, .outline = if (want_layout) &outline else null, .scale = scale, .filter = filter }, &diags)) |bmp_const| {
                 var bmp = bmp_const;
                 defer bmp.deinit(gpa);
                 width = bmp.w;
                 height = bmp.h;
+                canvas_w = bmp.canvas_w;
+                canvas_h = bmp.canvas_h;
                 if (std.mem.eql(u8, format, "png") or std.mem.eql(u8, format, "png16")) {
                     result_bin = try y.raster.encodePng(gpa, &bmp, std.mem.eql(u8, format, "png16"));
                 } else {
@@ -144,7 +166,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         }
-        try w.print("{{\"width\":{d},\"height\":{d},\"diagnostics\":", .{ width, height });
+        try w.print("{{\"width\":{d},\"height\":{d},\"canvas_width\":{d},\"canvas_height\":{d},\"diagnostics\":", .{ width, height, canvas_w, canvas_h });
         try diags.writeJson(w);
         try w.writeAll(",\"missing_urls\":");
         try y.api.writeMissingUrls(w, a);
@@ -153,6 +175,91 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try y.api.writeOutline(w, outline.items.items);
         }
         try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "pdf") or std.mem.eql(u8, op, "check_cards")) {
+        // pdf: every card of the set as one PDF (result_bin), optionally with
+        // crop marks. check_cards: evaluate every card without drawing.
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const marks = if (req.get("crop_marks")) |p| (p.data == .bool and p.data.bool) else false;
+        const dry = std.mem.eql(u8, op, "check_cards");
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        const a = getAssets();
+        var pages: usize = 0;
+        if (set.ok) {
+            var pdf = try y.pdf.Writer.init(gpa);
+            defer pdf.deinit();
+            for (0..set.cards.len) |i| {
+                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .preview = dry, .dry = dry }, &diags)) orelse continue;
+                defer bmp.deinit(gpa);
+                if (dry) continue;
+                if (marks) {
+                    const marked = try y.raster.withCropMarks(gpa, &bmp);
+                    bmp.deinit(gpa);
+                    bmp = marked;
+                }
+                try pdf.addPage(&bmp);
+                pages += 1;
+            }
+            if (!dry and pages > 0) result_bin = try pdf.finish();
+        }
+        try w.print("{{\"pages\":{d},\"diagnostics\":", .{pages});
+        try diags.writeJson(w);
+        try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "pdf_begin")) {
+        if (pdf_pages) |*p| p.deinit();
+        pdf_pages = try y.pdf.Writer.init(gpa);
+        try w.writeAll("{\"pages\":0}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "pdf_page")) {
+        const pdf = if (pdf_pages) |*p| p else {
+            try w.writeAll("{\"error\":\"no pdf_begin\"}");
+            return 1;
+        };
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const marks = if (req.get("crop_marks")) |p| (p.data == .bool and p.data.bool) else false;
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date }, &diags)) |bmp_const| {
+            var bmp = bmp_const;
+            defer bmp.deinit(gpa);
+            if (marks) {
+                const marked = try y.raster.withCropMarks(gpa, &bmp);
+                bmp.deinit(gpa);
+                bmp = marked;
+            }
+            try pdf.addPage(&bmp);
+        };
+        try w.print("{{\"pages\":{d},\"diagnostics\":", .{pdf.pages.items.len});
+        try diags.writeJson(w);
+        try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "pdf_finish")) {
+        var pdf = pdf_pages orelse {
+            try w.writeAll("{\"error\":\"no pdf_begin\"}");
+            return 1;
+        };
+        pdf_pages = null;
+        defer pdf.deinit();
+        const pages = pdf.pages.items.len;
+        if (pages > 0) result_bin = try pdf.finish();
+        try w.print("{{\"pages\":{d}}}", .{pages});
         return 0;
     }
 

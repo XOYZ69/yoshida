@@ -1,0 +1,132 @@
+[
+	{
+		"name": "editor-card-form",
+		"section": "card-data",
+		"page": "builder-card-data.md",
+		"alt": "The card form",
+		"images": [
+			"editor-card-form-light.png",
+			"editor-card-form-dark.png"
+		]
+	},
+	{
+		"name": "editor-card-browser",
+		"section": "card-data",
+		"page": "builder-card-data.md",
+		"alt": "The card browser",
+		"images": [
+			"editor-card-browser-light.png",
+			"editor-card-browser-dark.png"
+		]
+	},
+	{
+		"name": "editor-card-picker",
+		"section": "card-data",
+		"page": "builder-card-data.md",
+		"alt": "The card picker",
+		"images": [
+			"editor-card-picker-light.png",
+			"editor-card-picker-dark.png"
+		]
+	},
+	{
+		"name": "editor-expr-suggest",
+		"section": "expressions",
+		"page": "builder-expression-editor.md",
+		"alt": "Suggestions while typing: the autocomplete list open under an expression field",
+		"images": [
+			"editor-expr-suggest-light.png",
+			"editor-expr-suggest-dark.png"
+		]
+	},
+	{
+		"name": "editor-expr-signature",
+		"section": "expressions",
+		"page": "builder-expression-editor.md",
+		"alt": "Signature help: the min() signature with the second argument highlighted",
+		"images": [
+			"editor-expr-signature-light.png",
+			"editor-expr-signature-dark.png"
+		]
+	},
+	{
+		"name": "editor-expr-reference",
+		"section": "expressions",
+		"page": "builder-expression-editor.md",
+		"alt": "The ƒ reference: the reference panel open for an expression field",
+		"images": [
+			"editor-expr-reference-light.png",
+			"editor-expr-reference-dark.png"
+		]
+	},
+	{
+		"name": "editor-layers-group",
+		"section": "layers",
+		"page": "builder-layers.md, layer-group.md",
+		"alt": "The Layers tab with a group expanded and a layer inside it selected",
+		"images": [
+			"editor-layers-group-light.png",
+			"editor-layers-group-dark.png"
+		]
+	},
+	{
+		"name": "editor-text-layer",
+		"section": "layers",
+		"page": "layer-text.md",
+		"alt": "A text layer selected in the editor, with its fields in the Inspector",
+		"images": [
+			"editor-text-layer-light.png",
+			"editor-text-layer-dark.png"
+		]
+	},
+	{
+		"name": "landing-editor",
+		"section": "layers",
+		"page": "landing page (showcase picture of the editor)",
+		"alt": "The editor showing a court card with a layer selected",
+		"images": [
+			"landing-editor-light.png",
+			"landing-editor-dark.png"
+		]
+	},
+	{
+		"name": "editor-params",
+		"section": "overview",
+		"page": "builder.md, builder-params.md",
+		"alt": "The Params tab of the poker design, with params in sections and the suit param expanded",
+		"images": [
+			"editor-params-light.png",
+			"editor-params-dark.png"
+		]
+	},
+	{
+		"name": "editor-design-settings",
+		"section": "overview",
+		"page": "builder-inspector.md",
+		"alt": "The right panel with the design settings, nothing selected",
+		"images": [
+			"editor-design-settings-light.png",
+			"editor-design-settings-dark.png"
+		]
+	},
+	{
+		"name": "editor-files",
+		"section": "overview",
+		"page": "builder-files.md",
+		"alt": "The Files tab as a folder tree of the poker project, with a font file selected",
+		"images": [
+			"editor-files-light.png",
+			"editor-files-dark.png"
+		]
+	},
+	{
+		"name": "editor-project-menu",
+		"section": "overview",
+		"page": "builder.md, saving-images-and-privacy.md",
+		"alt": "The project menu open from the project button, listing the saved project",
+		"images": [
+			"editor-project-menu-light.png",
+			"editor-project-menu-dark.png"
+		]
+	}
+]

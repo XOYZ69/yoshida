@@ -26,6 +26,14 @@
         "background": {
           "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
           "type": "string"
+        },
+        "dpi": {
+          "description": "Print resolution, stored in PNG and PDF files",
+          "type": ["number", "string"]
+        },
+        "bleed": {
+          "description": "Pixels cut off on every side; the trim line is this far inside",
+          "type": ["number", "string"]
         }
       }
     },
@@ -38,6 +46,48 @@
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "additionalProperties": { "$ref": "#/$defs/param" }
+    },
+    "consts": {
+      "type": "object",
+      "description": "Named values every layer can use (FORMAT.md section 6)",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": {
+        "description": "Number, true/false or an expression",
+        "type": ["number", "boolean", "string"]
+      }
+    },
+    "functions": {
+      "type": "object",
+      "description": "Named formulas with arguments (FORMAT.md section 6)",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["expr"],
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "description": "Argument name to type, or a list of names (numbers)",
+            "oneOf": [
+              {
+                "type": "object",
+                "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+                "additionalProperties": {
+                  "enum": ["number", "text", "bool", "color"]
+                }
+              },
+              {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+              }
+            ]
+          },
+          "expr": {
+            "type": "string",
+            "description": "The expression; sees its arguments, params, constants and earlier functions"
+          },
+          "note": { "type": "string" }
+        }
+      }
     },
     "layers": {
       "type": "array",
@@ -69,7 +119,27 @@
         "item": {
           "type": "object",
           "additionalProperties": {
-            "enum": ["number", "integer", "text", "bool", "color"]
+            "oneOf": [
+              {
+                "enum": ["number", "integer", "text", "bool", "color"]
+              },
+              {
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["number", "integer", "text", "bool", "color", "enum"]
+                  },
+                  "options": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string" }
+                  },
+                  "default": { "description": "Value an item gets when it leaves the field out" }
+                }
+              }
+            ]
           }
         }
       }
@@ -87,7 +157,10 @@
           "enum": ["rect", "ellipse", "polygon", "text", "image", "group", "divider"]
         },
         "note": { "type": "string" },
-        "label": { "type": "string", "description": "Divider title shown in the editor's layer list" },
+        "label": {
+          "type": "string",
+          "description": "Divider title shown in the editor's layer list"
+        },
         "visible": {
           "description": "Boolean literal or expression",
           "type": ["boolean", "string"]
@@ -193,6 +266,18 @@
             "width": {
               "description": "Number literal or expression (FORMAT.md section 6)",
               "type": ["number", "string"]
+            },
+            "dash": {
+              "description": "Dash pattern in pixels: on, off, ...",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": ["number", "string"]
+              }
+            },
+            "arrow": {
+              "description": "Arrowheads on open polygons",
+              "enum": ["none", "start", "end", "both"]
             }
           }
         },
@@ -270,6 +355,60 @@
           "type": "array",
           "description": "Layers inside a group, first is bottom",
           "items": { "$ref": "#/$defs/layer" }
+        },
+        "arc": {
+          "description": "Part of the ellipse, degrees clockwise from the top",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "description": "Number literal or expression (FORMAT.md section 6)",
+              "type": ["number", "string"]
+            },
+            "end": {
+              "description": "Number literal or expression (FORMAT.md section 6)",
+              "type": ["number", "string"]
+            },
+            "pie": { "type": "boolean" }
+          }
+        },
+        "shape": {
+          "description": "A preset shape filling the box (instead of points)",
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": ["star", "polygon", "triangle", "diamond", "arrow", "cross", "chevron"]
+            },
+            "count": {
+              "description": "Points of a star, sides of a polygon",
+              "type": ["number", "string"]
+            },
+            "inner": {
+              "description": "Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)",
+              "type": ["number", "string"]
+            }
+          }
+        },
+        "translate": {
+          "description": "Moves the layers inside; their coordinates are relative to it",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "description": "Number literal or expression (FORMAT.md section 6)",
+              "type": ["number", "string"]
+            },
+            "y": {
+              "description": "Number literal or expression (FORMAT.md section 6)",
+              "type": ["number", "string"]
+            }
+          }
+        },
+        "shrink_group": {
+          "type": "string",
+          "description": "Texts with the same name use the smallest auto-shrunk size of all of them"
         }
       },
       "allOf": [
@@ -330,6 +469,18 @@
                   "width": {
                     "description": "Number literal or expression (FORMAT.md section 6)",
                     "type": ["number", "string"]
+                  },
+                  "dash": {
+                    "description": "Dash pattern in pixels: on, off, ...",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": ["number", "string"]
+                    }
+                  },
+                  "arrow": {
+                    "description": "Arrowheads on open polygons",
+                    "enum": ["none", "start", "end", "both"]
                   }
                 }
               }
@@ -390,7 +541,35 @@
                   "width": {
                     "description": "Number literal or expression (FORMAT.md section 6)",
                     "type": ["number", "string"]
+                  },
+                  "dash": {
+                    "description": "Dash pattern in pixels: on, off, ...",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": ["number", "string"]
+                    }
+                  },
+                  "arrow": {
+                    "description": "Arrowheads on open polygons",
+                    "enum": ["none", "start", "end", "both"]
                   }
+                }
+              },
+              "arc": {
+                "description": "Part of the ellipse, degrees clockwise from the top",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "start": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "end": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "pie": { "type": "boolean" }
                 }
               }
             },
@@ -441,6 +620,57 @@
                   },
                   "width": {
                     "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "dash": {
+                    "description": "Dash pattern in pixels: on, off, ...",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": ["number", "string"]
+                    }
+                  },
+                  "arrow": {
+                    "description": "Arrowheads on open polygons",
+                    "enum": ["none", "start", "end", "both"]
+                  }
+                }
+              },
+              "shape": {
+                "description": "A preset shape filling the box (instead of points)",
+                "type": "object",
+                "required": ["type"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["star", "polygon", "triangle", "diamond", "arrow", "cross", "chevron"]
+                  },
+                  "count": {
+                    "description": "Points of a star, sides of a polygon",
+                    "type": ["number", "string"]
+                  },
+                  "inner": {
+                    "description": "Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)",
+                    "type": ["number", "string"]
+                  }
+                }
+              },
+              "box": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "y": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "w": {
+                    "type": ["number", "string"]
+                  },
+                  "h": {
                     "type": ["number", "string"]
                   }
                 }
@@ -517,6 +747,25 @@
               "min_size": {
                 "description": "Smallest size auto-shrink may use (default 8)",
                 "type": ["number", "string"]
+              },
+              "stroke": {
+                "description": "Outline around the glyphs",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
+                    "type": "string"
+                  },
+                  "width": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  }
+                }
+              },
+              "shrink_group": {
+                "type": "string",
+                "description": "Texts with the same name use the smallest auto-shrunk size of all of them"
               }
             },
             "additionalProperties": false
@@ -587,7 +836,23 @@
               "opacity": true,
               "rotate": true,
               "effects": true,
-              "layers": true
+              "layers": true,
+              "repeat": true,
+              "translate": {
+                "description": "Moves the layers inside; their coordinates are relative to it",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  },
+                  "y": {
+                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "type": ["number", "string"]
+                  }
+                }
+              }
             },
             "additionalProperties": false
           }
@@ -599,12 +864,7 @@
             }
           },
           "then": {
-            "properties": {
-              "id": true,
-              "type": true,
-              "note": true,
-              "label": true
-            },
+            "properties": { "id": true, "type": true, "note": true, "label": true },
             "additionalProperties": false
           }
         }

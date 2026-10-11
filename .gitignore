@@ -7,3 +7,8 @@ web/public/yoshida.wasm
 web/public/examples/
 release/
 web/test-results/
+public/
+site/public/
+releases.json
+site/content/releases/*.md
+!site/content/releases/_index.md

@@ -1,0 +1,37 @@
+{#- Search index for static/docs.js: one entry per docs page intro and per
+    h2/h3 section, as JSON. Zola renders every page to index.html, so this
+    is served as HTML; the script fetches and parses it. Keys: t = title,
+    p = page title, g = sidebar group, u = URL, b = plain text. -#}
+{%- set nav = load_data(path="data/docs-nav.toml") -%}
+{%- set docs = get_section(path="docs/_index.md") -%}
+{%- set_global first = true -%}
+[
+{%- for pg in docs.pages -%}
+  {%- set_global grp = "" -%}
+  {%- for g in nav.group -%}{%- for item in g.item -%}
+    {%- if item.path == pg.relative_path -%}{%- set_global grp = g.title -%}{%- endif -%}
+    {%- if item.child -%}{%- for c in item.child -%}{%- if c.path == pg.relative_path -%}{%- set_global grp = g.title -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+  {%- endfor -%}{%- endfor -%}
+  {%- for part in pg.content | split(pat='<h2 id="') -%}
+    {%- set outer = loop.index0 -%}
+    {%- for sub in part | split(pat='<h3 id="') -%}
+      {%- if outer == 0 and loop.first -%}
+        {%- set id = "" -%}{%- set title = pg.title -%}{%- set text = sub -%}
+      {%- else -%}
+        {%- if loop.first -%}{%- set close = "</h2>" -%}{%- else -%}{%- set close = "</h3>" -%}{%- endif -%}
+        {%- set id = sub | split(pat='"') | first -%}
+        {%- set bits = sub | split(pat=close) -%}
+        {%- set head = bits | first | split(pat='>') -%}
+        {%- set title = head[1:] | join(sep='>') | striptags | trim -%}
+        {%- set text = bits[1:] | join(sep=close) -%}
+      {%- endif -%}
+      {%- if id -%}{%- set url = pg.permalink ~ "#" ~ id -%}{%- else -%}{%- set url = pg.permalink -%}{%- endif -%}
+      {#- Block ends become spaces, so table cells and list items do not run together. -#}
+      {%- set spaced = text | replace(from="</p>", to=" </p>") | replace(from="</li>", to=" </li>") | replace(from="</td>", to=" </td>") | replace(from="</th>", to=" </th>") | replace(from="</span>\n", to=" </span>") -%}
+      {%- set body = spaced | striptags | replace(from="\n", to=" ") | trim | truncate(length=1600) -%}
+      {%- if not first -%},{%- endif -%}{%- set_global first = false %}
+{"t":{{ title | json_encode | safe }},"p":{{ pg.title | json_encode | safe }},"g":{{ grp | json_encode | safe }},"u":{{ url | json_encode | safe }},"b":{{ body | json_encode | safe }}}
+    {%- endfor -%}
+  {%- endfor -%}
+{%- endfor %}
+]

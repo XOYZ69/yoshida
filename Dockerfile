@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# yoshida: web editor + optional server-side batch render, for home labs.
+# yoshida: website, docs and web editor + optional server-side batch render,
+# for home labs. Site at /, docs at /docs/, editor at /editor/.
 #
 #   docker build -t yoshida .
 #   docker run -p 8080:8080 yoshida                     # editor + server render
@@ -27,11 +28,24 @@ COPY examples /src/examples
 COPY --from=zig /src/zig-out/web/yoshida.wasm public/yoshida.wasm
 RUN npm run examples && npm run build
 
+# The website (landing page and docs) at /, with the editor in /editor/, laid
+# out like GitHub Pages. The output is plain files, copied into the final
+# image. No release pages: those come from GitHub Releases in CI.
+# Zola publishes x86_64 and aarch64 Linux builds, matching amd64 and arm64.
+FROM debian:bookworm-slim AS site
+ARG ZOLA_VERSION=0.23.6
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -fsSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-$(uname -m)-unknown-linux-gnu.tar.gz" | tar xz -C /usr/local/bin
+WORKDIR /src/site
+COPY site ./
+RUN zola build --base-url / --output-dir /public
+COPY --from=web /src/web/dist /public/editor
+
 # The binaries are static (no libc), so the final image is just files.
 FROM scratch
 COPY --from=zig /src/zig-out/bin/yoshida-server /yoshida-server
 COPY --from=zig /src/zig-out/bin/yoshida /yoshida
-COPY --from=web /src/web/dist /web
+COPY --from=site /public /web
 ENV YOSHIDA_WEB=/web \
     YOSHIDA_PORT=8080
 EXPOSE 8080

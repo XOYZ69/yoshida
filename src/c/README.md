@@ -35,7 +35,7 @@ binaries.
 1. Download the new version of the header from the upstream link above.
 2. Replace the file in this directory with the downloaded one, unmodified.
 3. Update the version in the table above.
-4. Run `zig build test`, then render an example (`yoshida render examples/feature-tour --out out`) and check that images and text still look right.
+4. Run `zig build test`, then render an example (`yoshida render examples/poker --out out`) and check that images and text still look right.
 5. If the new version needs additional libc functions, add them to the stubs in `include/`.
 
 ## Other bundled third-party files
