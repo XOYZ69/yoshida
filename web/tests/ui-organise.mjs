@@ -214,7 +214,8 @@ await p.click('.left .tabs button:has-text("Files")');
 await p.click('.ftree li[data-path="assets/images/lvl"] .row');
 const png = await readFile(`${shots}/v04-card-form.png`);
 const chooser = p.waitForEvent("filechooser");
-await p.click('header button:has-text("Upload image")');
+await p.click(".project-btn");
+await p.click('[role=menuitem]:has-text("Add files")');
 await (await chooser).setFiles({
 	name: "star.png",
 	mimeType: "image/png",
@@ -267,7 +268,7 @@ await p.click('.left .tabs button:has-text("Card data")');
 await p.click('.cards-head button:has-text("Browse")');
 await p.waitForSelector(".win");
 ok("card browser table", (await p.locator(".win .tr").count()) === 1);
-await p.click('.win .seg button:has-text("Grid")');
+await p.click('.win .btn-group button:has-text("Grid")');
 await p.waitForSelector(".win .tile img", { timeout: 15000 }).catch(() => null);
 ok(
 	"grid shows a rendered thumbnail",

@@ -22,6 +22,7 @@ export type Option = {
     label = '',
     searchable = undefined,
     compact = false,
+    caption = '',
   }: {
     value: string;
     options: (string | Option)[];
@@ -34,6 +35,8 @@ export type Option = {
     label?: string;
     searchable?: boolean;
     compact?: boolean;
+    /** Small label shown inside the button, before the value (toolbar pickers). */
+    caption?: string;
   } = $props();
 
   const opts = $derived(options.map((o): Option => (typeof o === 'string' ? { value: o } : o)));
@@ -119,6 +122,8 @@ export type Option = {
   type="button"
   class="select"
   class:compact
+  class:open
+  class:captioned={!!caption}
   class:placeholder={!current}
   class:mono
   {disabled}
@@ -128,6 +133,7 @@ export type Option = {
   aria-expanded={open}
   onclick={() => (open ? hide() : show())}
   onkeydown={onbuttonkey}>
+  {#if caption}<span class="cap">{caption}</span>{/if}
   <span class="text">{current ? (current.label ?? current.value) : value || placeholder}</span>
   <svg class="chev" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
 </button>
@@ -171,6 +177,45 @@ export type Option = {
     text-align: left;
     padding: 3px 8px;
     background: var(--bg-code);
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+  .select:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--fg) 28%, var(--line));
+  }
+  .select.open {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .select.open .chev {
+    transform: rotate(180deg);
+    color: var(--accent);
+  }
+  /* Toolbar picker: a caption and the value inside one button. */
+  .select.captioned {
+    height: var(--ctl-h);
+    box-sizing: border-box;
+    padding: 0 10px;
+    gap: 8px;
+    background: var(--bg);
+    font-weight: 500;
+  }
+  .select.captioned:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .cap {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    padding-right: 8px;
+    border-right: 1px solid var(--line);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
   }
   .select:focus-visible {
     outline: 2px solid var(--accent);
@@ -202,6 +247,7 @@ export type Option = {
     height: 6px;
     flex: none;
     color: var(--muted);
+    transition: transform 0.15s;
   }
   .pop {
     position: fixed;
@@ -211,7 +257,7 @@ export type Option = {
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-pop);
     overflow: hidden;
   }
   .search {

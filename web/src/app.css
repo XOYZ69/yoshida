@@ -135,3 +135,161 @@ body.dragging-ui {
 		box-shadow: 0 0 0 2px transparent;
 	}
 }
+
+/* ---------------------------------------------------------------- shared controls */
+
+:root {
+	/* Height of the controls in the top bar and toolbars, so they line up. */
+	--ctl-h: 28px;
+	--shadow-pop: 0 8px 24px rgb(0 0 0 / 0.18), 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+/* Buttons joined into one control with inner dividers (undo | redo,
+   PNG | ZIP | PDF). The group draws the border; its buttons do not. */
+.btn-group {
+	display: inline-flex;
+	align-items: stretch;
+	flex: none;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg);
+	overflow: hidden;
+}
+.btn-group > button,
+.btn-group > .button {
+	border: 0;
+	border-radius: 0;
+	background: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	white-space: nowrap;
+}
+.btn-group > :not(:first-child) {
+	border-left: 1px solid var(--line);
+}
+.btn-group > button:hover:not(:disabled):not(.active):not([aria-selected="true"]) {
+	background: var(--hover);
+}
+.btn-group > button.active,
+.btn-group > button[aria-selected="true"] {
+	background: var(--accent-strong);
+	color: var(--on-accent);
+}
+
+/* A row of tabs over a panel: dividers between the tabs, the selected one
+   shaded and underlined. */
+.tabbar {
+	display: flex;
+	border-bottom: 1px solid var(--line);
+	background: var(--bg-bar);
+	position: sticky;
+	top: 0;
+	z-index: 2;
+}
+.tabbar > button {
+	flex: 1 1 auto;
+	min-width: 0;
+	border: 0;
+	border-radius: 0;
+	border-right: 1px solid var(--line);
+	background: none;
+	color: var(--muted);
+	padding: 8px 6px 7px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-shadow: inset 0 -2px 0 transparent;
+}
+.tabbar > button:last-child {
+	border-right: 0;
+}
+.tabbar > button:hover:not(.active) {
+	background: var(--hover);
+	color: var(--fg);
+}
+.tabbar > button.active {
+	background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+	color: var(--fg);
+	font-weight: 600;
+	box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Tooltips (TooltipHost) and other small popups: drawn like the
+   expression autocomplete popup. */
+.yx-tip {
+	position: fixed;
+	z-index: 1200;
+	max-width: 320px;
+	width: max-content;
+	padding: 5px 9px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--bg);
+	color: var(--fg);
+	box-shadow: var(--shadow-pop);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.4;
+	text-align: left;
+	text-transform: none;
+	letter-spacing: normal;
+	white-space: pre-line;
+	overflow-wrap: anywhere;
+	pointer-events: none;
+}
+
+/* An on/off switch with its label, for settings that change what a button
+   does (render on the server). */
+.switch {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 12px;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+}
+.switch input {
+	appearance: none;
+	margin: 0;
+	flex: none;
+	width: 28px;
+	height: 16px;
+	border-radius: 8px;
+	background: var(--line);
+	position: relative;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.switch input::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: var(--bg);
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+	transition: transform 0.15s;
+}
+.switch input:checked {
+	background: var(--accent-strong);
+}
+.switch input:checked::after {
+	transform: translateX(12px);
+}
+.switch input:disabled {
+	opacity: 0.5;
+}
+
+/* Small uppercase label in front of a control or group. */
+.caption {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	white-space: nowrap;
+}

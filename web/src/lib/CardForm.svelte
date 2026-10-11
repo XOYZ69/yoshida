@@ -321,12 +321,12 @@ function removeItem(p: Param, index: number) {
     z-index: 20;
     width: max-content;
     max-width: 240px;
-    padding: 6px 8px;
+    padding: 5px 9px;
     border-radius: 6px;
     border: 1px solid var(--line);
-    background: var(--bg-bar);
+    background: var(--bg);
     color: var(--fg);
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+    box-shadow: var(--shadow-pop);
     font-size: 12px;
     font-weight: 400;
     line-height: 1.4;
@@ -402,6 +402,12 @@ function removeItem(p: Param, index: number) {
   }
   td input {
     padding: 2px 4px;
+    font-size: 12px;
+  }
+  /* Dropdowns fill their column like the inputs, so every row lines up. */
+  td :global(.select) {
+    width: 100%;
+    padding: 2px 6px;
     font-size: 12px;
   }
   .add {

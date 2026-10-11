@@ -136,7 +136,7 @@ ok(
 );
 
 // Check all cards.
-await p.click('.exports button:has-text("Check all")');
+await p.click('.problems button:has-text("Check all cards")');
 await p.waitForFunction(
 	() =>
 		/Checked \d+ card/.test(

@@ -3,6 +3,7 @@
 // message with names set as code, where it is (file:line and a readable
 // path) and the hint. The same problem on several cards is shown once.
 import type { Diagnostic, Severity } from "./engine";
+import Icon from "./ui/Icon.svelte";
 
 let {
 	diagnostics,
@@ -10,6 +11,9 @@ let {
 	crumbs = () => [],
 	focus = null,
 	onclearfocus = () => {},
+	oncheckall = undefined,
+	checkDisabled = false,
+	cardCount = 0,
 }: {
 	diagnostics: Diagnostic[];
 	onselect: (d: Diagnostic) => void;
@@ -18,6 +22,10 @@ let {
 	/** Only show the problems of one layer (or the design). */
 	focus?: { label: string; match: (d: Diagnostic) => boolean } | null;
 	onclearfocus?: () => void;
+	/** Evaluates every card: problems that only some cards have. */
+	oncheckall?: () => void;
+	checkDisabled?: boolean;
+	cardCount?: number;
 } = $props();
 
 const order: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
@@ -105,6 +113,15 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
         <button class="clear" onclick={onclearfocus} title="Show all problems">×</button>
       </span>
     {/if}
+    {#if oncheckall}
+      <button
+        class="check-all"
+        onclick={oncheckall}
+        disabled={checkDisabled}
+        title="Evaluate all {cardCount} cards without drawing them, to find problems that only some cards have (such as text that does not fit)">
+        <Icon name="check-all" /> Check all cards
+      </button>
+    {/if}
   </header>
   {#if !scoped.length}
     <p class="empty"><span class="ok">✓</span> {focus ? `No problems in ${focus.label}.` : 'No problems.'}</p>
@@ -147,6 +164,14 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .check-all {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 2px 9px;
   }
   header {
     padding: 5px 12px;

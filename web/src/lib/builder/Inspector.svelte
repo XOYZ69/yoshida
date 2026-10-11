@@ -28,6 +28,7 @@ import {
 	textAnchors,
 } from "../design";
 import type { Diagnostic } from "../engine";
+import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
 import type { CompletionContext } from "./complete";
@@ -554,16 +555,24 @@ let newFunction = $state("");
 {/snippet}
 
 {#snippet alignBar(toCanvas: boolean)}
+  {@const to = toCanvas ? ' to the canvas' : ''}
+  {@const on = toCanvas ? ' on the canvas' : ''}
   <div class="align" role="group" aria-label="Align">
-    <button title="Align left{toCanvas ? ' to the canvas' : ''}" onclick={() => onalign('left')}>⇤</button>
-    <button title="Center horizontally{toCanvas ? ' on the canvas' : ''}" onclick={() => onalign('hcenter')}>↔</button>
-    <button title="Align right{toCanvas ? ' to the canvas' : ''}" onclick={() => onalign('right')}>⇥</button>
-    <button title="Align top{toCanvas ? ' to the canvas' : ''}" onclick={() => onalign('top')}>⤒</button>
-    <button title="Center vertically{toCanvas ? ' on the canvas' : ''}" onclick={() => onalign('vcenter')}>↕</button>
-    <button title="Align bottom{toCanvas ? ' to the canvas' : ''}" onclick={() => onalign('bottom')}>⤓</button>
+    <span class="btn-group">
+      <button title="Align left{to}" aria-label="Align left{to}" onclick={() => onalign('left')}><Icon name="align-left" /></button>
+      <button title="Center horizontally{on}" aria-label="Center horizontally{on}" onclick={() => onalign('hcenter')}><Icon name="align-hcenter" /></button>
+      <button title="Align right{to}" aria-label="Align right{to}" onclick={() => onalign('right')}><Icon name="align-right" /></button>
+    </span>
+    <span class="btn-group">
+      <button title="Align top{to}" aria-label="Align top{to}" onclick={() => onalign('top')}><Icon name="align-top" /></button>
+      <button title="Center vertically{on}" aria-label="Center vertically{on}" onclick={() => onalign('vcenter')}><Icon name="align-vcenter" /></button>
+      <button title="Align bottom{to}" aria-label="Align bottom{to}" onclick={() => onalign('bottom')}><Icon name="align-bottom" /></button>
+    </span>
     {#if !toCanvas}
-      <button title="Distribute horizontally (equal gaps)" disabled={ids.length < 3} onclick={() => ondistribute('x')}>⋯</button>
-      <button title="Distribute vertically (equal gaps)" disabled={ids.length < 3} onclick={() => ondistribute('y')}>⋮</button>
+      <span class="btn-group">
+        <button title="Distribute horizontally (equal gaps)" aria-label="Distribute horizontally" disabled={ids.length < 3} onclick={() => ondistribute('x')}><Icon name="distribute-x" /></button>
+        <button title="Distribute vertically (equal gaps)" aria-label="Distribute vertically" disabled={ids.length < 3} onclick={() => ondistribute('y')}><Icon name="distribute-y" /></button>
+      </span>
     {/if}
   </div>
 {/snippet}
@@ -847,7 +856,7 @@ let newFunction = $state("");
             newFont = '';
           }}>Add</button>
       </div>
-      {#if !fontFiles.length}<p class="hint">Use <b>Add files</b> in the top bar to add .ttf or .otf fonts, then choose them here.</p>{/if}
+      {#if !fontFiles.length}<p class="hint">Add .ttf or .otf fonts with <b>Add files</b> in the project menu (or drop them on the window), then choose them here.</p>{/if}
     </section>
     <p class="hint pad">Select a layer on the canvas or in the layer list to edit it, and press Esc or use <b>Design settings</b> at the top to come back here. Drag to move, use the handles to resize, Alt+click to pick the layer underneath, hold Ctrl to move without snapping.</p>
   {/if}
@@ -1024,12 +1033,13 @@ let newFunction = $state("");
   }
   .align {
     display: flex;
-    gap: 2px;
+    gap: 6px;
     flex-wrap: wrap;
   }
   .align button {
-    padding: 2px 7px;
-    min-width: 28px;
+    width: 30px;
+    height: 26px;
+    padding: 0;
   }
   .sub {
     font-size: 11px;

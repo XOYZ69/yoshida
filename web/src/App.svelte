@@ -46,6 +46,8 @@ import {
 	pasteLayers,
 	referencesTo,
 	renameEnumOption,
+	renameItemOption,
+	renameItemValueInCards,
 	renameLayer,
 	renameParam,
 	renameParamInCards,
@@ -136,8 +138,11 @@ import {
 	type MenuItem,
 	openMenu,
 } from "./lib/ui/overlay.svelte";
+import ProgressHost from "./lib/ui/ProgressHost.svelte";
+import { formatBytes, formatMs, Run } from "./lib/ui/progress.svelte";
 import Select from "./lib/ui/Select.svelte";
 import Splitter from "./lib/ui/Splitter.svelte";
+import TooltipHost from "./lib/ui/TooltipHost.svelte";
 import Window from "./lib/ui/Window.svelte";
 
 // CodeMirror is only needed in the Advanced view; load it on demand.
@@ -163,7 +168,13 @@ let lastRender = $state.raw<RenderResult | null>(null);
 let renderMs = $state(0);
 let jump: { line: number; col: number; nonce: number } | null = $state(null);
 let sidePanel: "card" | "files" = $state("card");
-let server: { render: boolean; max_cards: number } | null = $state(null);
+type ServerInfo = {
+	render: boolean;
+	max_cards: number;
+	max_body_mb?: number;
+	version?: string;
+};
+let server = $state<ServerInfo | null>(null);
 let useServer = $state(false);
 let busy = $state("");
 
@@ -564,33 +575,62 @@ async function forgetProject(meta: ProjectMeta) {
 function projectMenu(e: MouseEvent) {
 	const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 	const current = myProjects.find((p) => p.id === projectId);
+	const open = !!files.size;
 	const items: MenuItem[] = [
-		{ label: "New project…", icon: "＋", action: newProject },
-		{ label: "Open folder…", icon: "📁", action: openFolder },
+		{ heading: "Start" },
+		{ label: "New project…", icon: "plus", action: newProject },
+		{ label: "Open folder…", icon: "folder", action: openFolder },
 		{
 			label: "Open project file…",
-			icon: "⤓",
+			icon: "file",
 			detail: ".yoshida",
 			action: openProjectFile,
 		},
+		{ separator: true },
+		{ heading: "This project" },
+		{
+			label: "New design…",
+			icon: "design",
+			detail: "with its own card file",
+			disabled: !projectName,
+			action: newDesign,
+		},
+		{
+			label: "Add files…",
+			icon: "files",
+			detail: uploadFolder ? `to ${uploadFolder}/` : "images, fonts, data",
+			disabled: !projectName,
+			action: addFiles,
+		},
+		{
+			label: dirHandle ? `Save to ${dirHandle.name}` : "Save to folder…",
+			icon: "save",
+			detail: dirHandle
+				? dirty.size
+					? `${dirty.size} changed`
+					: "up to date"
+				: "keeps saving there",
+			disabled: !open || (!!dirHandle && !dirty.size) || (!dirHandle && !canOpenWritable()),
+			action: dirHandle ? save : saveToFolder,
+		},
 		{
 			label: "Export project file",
-			icon: "⤒",
-			detail: "with images and fonts",
-			disabled: !files.size,
+			icon: "download",
+			detail: ".yoshida, with images and fonts",
+			disabled: !open,
 			action: exportProject,
 		},
 		{
 			label: "Rename…",
-			icon: "✎",
-			disabled: !files.size,
+			icon: "pencil",
+			disabled: !open,
 			action: renameProject,
 		},
 	];
 	if (current)
 		items.push({
 			label: "Delete from this browser…",
-			icon: "🗑",
+			icon: "trash",
 			danger: true,
 			action: () => forgetProject(current),
 		});
@@ -604,7 +644,7 @@ function projectMenu(e: MouseEvent) {
 	for (const p of myProjects)
 		items.push({
 			label: p.name,
-			icon: p.id === projectId ? "✓" : "",
+			icon: p.id === projectId ? "check" : "",
 			detail: `${formatAge(p.updated)} · ${formatSize(p.size)}`,
 			action: () => (p.id === projectId ? undefined : openSaved(p.id)),
 		});
@@ -612,7 +652,7 @@ function projectMenu(e: MouseEvent) {
 	for (const ex of examples)
 		items.push({
 			label: ex.title,
-			icon: !projectId && ex.name === projectName ? "✓" : "",
+			icon: !projectId && ex.name === projectName ? "check" : "",
 			detail: "opens a fresh copy",
 			action: () => openExample(ex.name),
 		});
@@ -1220,6 +1260,29 @@ function renameOptionEverywhere(param: string, from: string, to: string) {
 				path,
 				text,
 				param,
+				from,
+				to,
+				{ parse: parseCsv, write: writeCsv },
+				formatJson,
+			),
+	);
+}
+
+/** Renames an option of a list param's enum item field in the design and in every card. */
+function renameItemOptionEverywhere(
+	param: string,
+	field: string,
+	from: string,
+	to: string,
+) {
+	editDesignAndCards(
+		(d) => renameItemOption(d, param, field, from, to),
+		(path, text) =>
+			renameItemValueInCards(
+				path,
+				text,
+				param,
+				field,
 				from,
 				to,
 				{ parse: parseCsv, write: writeCsv },
@@ -1940,10 +2003,21 @@ async function save() {
 
 // ---------------------------------------------------------------- export
 
+/** Time per card of the last export in this session, for the PDF estimate. */
+let perCardMs = 0;
+/** ZIP and PDF exports go to the server (the switch next to the export buttons). */
+const onServer = $derived(useServer && !!server?.render);
+const errorCount = (ds: Diagnostic[]) =>
+	ds.filter((d) => d.severity === "error").length;
+
 async function exportPng() {
 	if (!currentSet || !currentCard) return;
+	const card = currentCard;
+	const run = new Run(`Exporting ${card.id}.png`, []);
 	busy = "Rendering PNG…";
 	try {
+		run.log(`Rendering card '${card.id}' at full size in this browser`);
+		run.estimate(renderMs ? renderMs * 1.5 : null);
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
@@ -1951,10 +2025,18 @@ async function exportPng() {
 			preview: false,
 			format: "png",
 		});
-		if (r.bin.length) download(`${currentCard.id}.png`, r.bin, "image/png");
+		if (r.bin.length) download(`${card.id}.png`, r.bin, "image/png");
 		lastRender = { ...r, bin: new Uint8Array() };
-		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
-		if (errs) status = `Exported with ${errs} error(s); see the problems.`;
+		const errs = errorCount(r.diagnostics);
+		if (errs) {
+			status = `Exported with ${errs} error(s); see the problems.`;
+			run.log(`${errs} error(s); see the problems panel`, "error");
+		} else status = `Exported ${card.id}.png.`;
+		if (r.bin.length)
+			run.finish(`Saved ${card.id}.png (${formatBytes(r.bin.length)})`);
+		else run.fail("Nothing was drawn; see the problems panel.");
+	} catch (e) {
+		run.fail(`Could not render: ${(e as Error).message}`);
 	} finally {
 		busy = "";
 	}
@@ -1962,34 +2044,62 @@ async function exportPng() {
 
 async function exportZip() {
 	if (!currentSet) return;
-	if (useServer && server?.render) return exportZipServer();
-	busy = "Rendering 0%";
+	if (onServer) return exportOnServer("png");
+	const set = currentSet;
+	const name = setName;
+	const n = set.cards.length;
+	const run = new Run(`Exporting ${n} card${n === 1 ? "" : "s"} as a ZIP`, [
+		"Render the cards",
+		"Pack the zip",
+		"Save",
+	]);
+	let stop = false;
+	run.onCancel(() => (stop = true));
+	busy = "Exporting…";
 	try {
-		const ids = currentSet.cards.map((c) => c.id);
-		const r = await engine.renderAll(
-			{ set: setName, date: today, preview: false, format: "png" },
-			ids,
-			(p) => (busy = `Rendering ${Math.round(p * 100)}%`),
-		);
+		run.step(0, `0 / ${n}`);
+		run.log(`Rendering ${n} card(s) of '${set.design_name}' in this browser`);
 		const zip: Record<string, Uint8Array> = {};
-		for (const f of r.files) zip[`${setName}/${f.id}.png`] = f.png;
-		download(
-			`${projectName}-${setName}.zip`,
-			zipSync(zip, { level: 0 }),
-			"application/zip",
+		const diagnostics: Diagnostic[] = [];
+		const t0 = Date.now();
+		for (let i = 0; i < n; i++) {
+			run.count(i, n);
+			const r = await engine.render({
+				set: name,
+				card: i,
+				date: today,
+				preview: false,
+				format: "png",
+			});
+			if (stop) {
+				status = "Export cancelled.";
+				return;
+			}
+			diagnostics.push(...r.diagnostics);
+			if (r.bin.length) zip[`${name}/${set.cards[i].id}.png`] = r.bin;
+			run.count(i + 1, n);
+			run.detail(0, `${i + 1} / ${n}`);
+		}
+		perCardMs = (Date.now() - t0) / Math.max(1, n);
+		run.log(
+			`Rendered ${n} card(s) in ${formatMs(Date.now() - t0)} (${(perCardMs / 1000).toFixed(2)} s per card)`,
 		);
-		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
+		run.step(1);
+		const bytes = zipSync(zip, { level: 0 });
+		const fileName = `${projectName}-${name}.zip`;
+		run.step(2, formatBytes(bytes.length));
+		download(fileName, bytes, "application/zip");
+		const errs = errorCount(diagnostics);
 		status =
-			`Exported ${r.files.length} card(s)` +
+			`Exported ${Object.keys(zip).length} card(s)` +
 			(errs ? ` with ${errs} error(s)` : "");
-		if (errs)
-			lastRender = {
-				width: 0,
-				height: 0,
-				missing_urls: [],
-				bin: new Uint8Array(),
-				diagnostics: r.diagnostics,
-			};
+		if (errs) {
+			showDiagnostics(diagnostics);
+			run.log(`${errs} error(s); see the problems panel`, "error");
+		}
+		run.finish(`Saved ${fileName} (${formatBytes(bytes.length)})`);
+	} catch (e) {
+		run.fail(`Could not export: ${(e as Error).message}`);
 	} finally {
 		busy = "";
 	}
@@ -2009,18 +2119,44 @@ function showDiagnostics(diagnostics: Diagnostic[]) {
 /** Every card in one PDF; with `canvas.bleed`, with crop marks. */
 async function exportPdf() {
 	if (!currentSet) return;
+	if (onServer) return exportOnServer("pdf");
+	const n = currentSet.cards.length;
+	const run = new Run(`Exporting ${n} page${n === 1 ? "" : "s"} as a PDF`, [
+		"Render the pages",
+		"Save",
+	]);
 	busy = "Rendering PDF…";
 	try {
 		const bleed = isObj(doc?.canvas) && doc.canvas.bleed !== undefined;
+		run.step(0, `${n} page(s)`);
+		// The PDF is made in one call, so the time left is an estimate from
+		// the last export (or the preview render).
+		const per = perCardMs || (renderMs ? renderMs * 1.6 : 0);
+		run.estimate(per ? per * n : null);
+		run.log(
+			`Rendering ${n} page(s) in this browser${bleed ? " with crop marks" : ""}` +
+				(per ? `; about ${formatMs(per * n)} expected` : ""),
+		);
+		const t0 = Date.now();
 		const r = await engine.pdf(setName, today, bleed);
-		if (r.bin.length)
-			download(`${projectName}-${setName}.pdf`, r.bin, "application/pdf");
-		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
+		perCardMs = (Date.now() - t0) / Math.max(1, n);
+		const fileName = `${projectName}-${setName}.pdf`;
+		run.step(1, formatBytes(r.bin.length));
+		if (r.bin.length) download(fileName, r.bin, "application/pdf");
+		const errs = errorCount(r.diagnostics);
 		status =
 			`Exported ${r.pages} page(s)` +
 			(bleed ? " with crop marks" : "") +
 			(errs ? ` with ${errs} error(s)` : "");
-		if (errs) showDiagnostics(r.diagnostics);
+		if (errs) {
+			showDiagnostics(r.diagnostics);
+			run.log(`${errs} error(s); see the problems panel`, "error");
+		}
+		if (r.bin.length)
+			run.finish(`Saved ${fileName} (${formatBytes(r.bin.length)})`);
+		else run.fail("No page was drawn; see the problems panel.");
+	} catch (e) {
+		run.fail(`Could not export: ${(e as Error).message}`);
 	} finally {
 		busy = "";
 	}
@@ -2029,13 +2165,19 @@ async function exportPdf() {
 /** Evaluates every card (without drawing) to find errors that depend on card data. */
 async function checkAllCards() {
 	if (!currentSet) return;
+	const n = currentSet.cards.length;
+	const run = new Run(`Checking ${n} card${n === 1 ? "" : "s"}`, []);
 	busy = "Checking every card…";
 	try {
+		run.log(`Evaluating every card of '${currentSet.design_name}'`);
 		const r = await engine.checkCards(setName, today);
-		const errs = r.diagnostics.filter((d) => d.severity === "error").length;
+		const errs = errorCount(r.diagnostics);
 		const warns = r.diagnostics.filter((d) => d.severity === "warning").length;
-		status = `Checked ${currentSet.cards.length} card(s): ${errs} error(s), ${warns} warning(s)`;
+		status = `Checked ${n} card(s): ${errs} error(s), ${warns} warning(s)`;
 		showDiagnostics(r.diagnostics);
+		run.finish(status);
+	} catch (e) {
+		run.fail(`Could not check the cards: ${(e as Error).message}`);
 	} finally {
 		busy = "";
 	}
@@ -2048,50 +2190,178 @@ function b64(data: Uint8Array) {
 	return btoa(s);
 }
 
-async function exportZipServer() {
-	busy = "Uploading to the server…";
+const serverStages: Record<string, string> = {
+	receiving: "receiving the project",
+	loading: "loading the project",
+	rendering: "rendering the cards",
+	packing: "packing the result",
+	finished: "finished",
+	failed: "stopped with an error",
+};
+
+/**
+ * Renders the whole set on the yoshida server this editor is served from:
+ * uploads the project, follows the server's progress, downloads the result.
+ */
+async function exportOnServer(format: "png" | "pdf") {
+	if (!currentSet) return;
+	const set = currentSet;
+	const name = setName;
+	const n = set.cards.length;
+	const what = format === "pdf" ? "PDF" : "ZIP";
+	const run = new Run(`Rendering ${n} card${n === 1 ? "" : "s"} on the server (${what})`, [
+		"Pack the project",
+		"Upload to the server",
+		"Render on the server",
+		"Download the result",
+		"Save",
+	]);
+	const job = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+		b.toString(16).padStart(2, "0"),
+	).join("");
+	const xhr = new XMLHttpRequest();
+	let poll: ReturnType<typeof setInterval> | undefined;
+	const stopPoll = () => clearInterval(poll);
+	run.onCancel(() => {
+		stopPoll();
+		xhr.abort();
+	});
+	busy = "Rendering on the server…";
+	const url = new URL("api/render", document.baseURI).href;
 	try {
+		run.step(0);
+		const raw = [...files.values()].reduce((a, d) => a + d.length, 0);
+		run.log(`Packing ${files.size} file(s) (${formatBytes(raw)}) of '${projectName}'`);
+		// Let the overlay draw before the (blocking) encoding.
+		await new Promise((r) => setTimeout(r, 30));
 		const body = JSON.stringify({
 			files: Object.fromEntries([...files].map(([p, d]) => [p, b64(d)])),
-			set: setName,
+			set: name,
 			date: today,
-			format: "png",
+			format,
 		});
-		const res = await fetch("api/render", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body,
-		});
-		if (!res.ok) {
-			const err = await res.json().catch(() => ({ error: res.statusText }));
-			status = `Server render failed: ${err.error ?? res.status}`;
-			if (err.diagnostics)
-				lastRender = {
-					width: 0,
-					height: 0,
-					missing_urls: [],
-					bin: new Uint8Array(),
-					diagnostics: err.diagnostics,
-				};
+		const limit = (server?.max_body_mb ?? 0) * 1024 * 1024;
+		if (limit && body.length > limit) {
+			run.fail(
+				`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
+			);
+			status = "Server render refused: the project is too big for this server.";
 			return;
 		}
-		download(
-			`${projectName}-${setName}.zip`,
-			await res.blob(),
-			"application/zip",
+		run.step(1, formatBytes(body.length));
+		run.log(`Uploading ${formatBytes(body.length)} to ${url} (job ${job})`);
+		const t0 = Date.now();
+		let tRender = 0;
+		let lastStage = "";
+		/** The upload is complete: the server works now (upload events, or the server's own stage, say so). */
+		const uploaded = () => {
+			if (tRender) return;
+			tRender = Date.now();
+			run.log(`Uploaded in ${formatMs(tRender - t0)}`);
+			run.step(2, `0 / ${n}`);
+			run.log(`The server is rendering ${n} card(s)`);
+		};
+		const startPoll = () => {
+			poll = setInterval(async () => {
+				try {
+					const res = await fetch(`api/render/progress?job=${job}`, {
+						cache: "no-store",
+					});
+					if (!res.ok) return;
+					const p = await res.json();
+					if (!p.found || !run.live || xhr.readyState >= 2) return;
+					if (p.stage !== "receiving") uploaded();
+					if (p.stage !== lastStage) {
+						lastStage = p.stage;
+						run.log(`Server: ${serverStages[p.stage] ?? p.stage}`);
+					}
+					if (p.total) {
+						run.count(p.done, p.total);
+						run.detail(2, `${p.done} / ${p.total}`);
+					}
+				} catch {
+					// Progress is optional (older servers do not report it).
+				}
+			}, 400);
+		};
+		const res = await new Promise<{ status: number; blob: Blob }>(
+			(resolve, reject) => {
+				xhr.open("POST", "api/render");
+				xhr.responseType = "blob";
+				xhr.setRequestHeader("content-type", "application/json");
+				xhr.setRequestHeader("x-yoshida-job", job);
+				xhr.upload.onprogress = (e) => {
+					if (!e.lengthComputable) return;
+					run.fraction(e.loaded / e.total);
+					run.detail(1, `${formatBytes(e.loaded)} of ${formatBytes(e.total)}`);
+				};
+				xhr.upload.onload = uploaded;
+				xhr.onreadystatechange = () => {
+					if (xhr.readyState !== XMLHttpRequest.HEADERS_RECEIVED) return;
+					stopPoll();
+					if (tRender)
+						run.log(
+							`Server answered ${xhr.status} after ${formatMs(Date.now() - tRender)} of rendering`,
+						);
+					if (xhr.status === 200) run.step(3);
+				};
+				xhr.onprogress = (e) => {
+					if (xhr.status !== 200) return;
+					if (e.lengthComputable) {
+						run.fraction(e.loaded / e.total);
+						run.detail(3, `${formatBytes(e.loaded)} of ${formatBytes(e.total)}`);
+					}
+				};
+				xhr.onload = () => resolve({ status: xhr.status, blob: xhr.response });
+				xhr.onerror = () =>
+					reject(new Error(`could not reach the server at ${url}`));
+				xhr.onabort = () => reject(new DOMException("cancelled", "AbortError"));
+				xhr.send(body);
+				startPoll();
+			},
 		);
-		status = "Exported on the server.";
+		if (res.status !== 200) {
+			const text = await res.blob.text();
+			let err: { error?: string; diagnostics?: Diagnostic[] };
+			try {
+				err = JSON.parse(text);
+			} catch {
+				err = { error: text.slice(0, 200) || `HTTP ${res.status}` };
+			}
+			if (err.diagnostics) showDiagnostics(err.diagnostics);
+			const msg =
+				`The server could not render: ${err.error ?? res.status}` +
+				(err.diagnostics?.length
+					? ` (${err.diagnostics.length} problem(s), see the problems panel)`
+					: "");
+			status = msg;
+			run.fail(msg);
+			return;
+		}
+		const ext = format === "pdf" ? "pdf" : "zip";
+		const fileName = `${projectName}-${name}.${ext}`;
+		run.step(4, formatBytes(res.blob.size));
+		download(fileName, res.blob, format === "pdf" ? "application/pdf" : "application/zip");
+		status = `Rendered ${n} card(s) on the server in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
+		run.finish(`Saved ${fileName} (${formatBytes(res.blob.size)})`);
+	} catch (e) {
+		if ((e as Error).name === "AbortError") status = "Server render cancelled.";
+		else {
+			status = `Server render failed: ${(e as Error).message}`;
+			run.fail(status);
+		}
 	} finally {
+		stopPoll();
 		busy = "";
 	}
 }
 
 const typeLabels: Record<LayerType, string> = {
-	rect: "▭ Rect",
-	ellipse: "◯ Ellipse",
-	text: "T Text",
-	image: "🖼 Image",
-	polygon: "△ Polygon",
+	rect: "Rect",
+	ellipse: "Ellipse",
+	text: "Text",
+	image: "Image",
+	polygon: "Polygon",
 };
 </script>
 
@@ -2107,65 +2377,71 @@ const typeLabels: Record<LayerType, string> = {
 
 {#snippet previewBar()}
 	<span class="pick">
-	<span class="caption">Design file</span>
-	<Select
-		value={setName}
-		label="Design file"
-		title="The design (card layout) being edited, with its card set"
-		options={sets.map((s) => ({
-			value: s.name,
-			label: s.design_name,
-			detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
-		}))}
-		onchange={(v) => {
-			setName = v;
-			cardIndex = 0;
-			selectedLayers = [];
-			renderPreview();
-		}}
-	/>
-	<CardPicker
-		cards={currentSet?.cards ?? []}
-		params={currentSet?.params ?? []}
-		onbrowse={() => (browsing = true)}
-		index={cardIndex}
-		disabled={!currentSet?.cards.length}
-		onpick={(i) => {
-			cardIndex = i;
-			cardIdError = "";
-			renderPreview();
-		}}
-	/>
+		<Select
+			value={setName}
+			caption="Design"
+			label="Design file"
+			title="The design (card layout) being edited, with its card set"
+			options={sets.map((s) => ({
+				value: s.name,
+				label: s.design_name,
+				detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
+			}))}
+			onchange={(v) => {
+				setName = v;
+				cardIndex = 0;
+				selectedLayers = [];
+				renderPreview();
+			}}
+		/>
+		<CardPicker
+			cards={currentSet?.cards ?? []}
+			params={currentSet?.params ?? []}
+			onbrowse={() => (browsing = true)}
+			index={cardIndex}
+			disabled={!currentSet?.cards.length}
+			onpick={(i) => {
+				cardIndex = i;
+				cardIdError = "";
+				renderPreview();
+			}}
+		/>
 	</span>
 	<span class="exports">
-	<button
-		onclick={exportPng}
-		title="Export this card as a PNG"
-		disabled={!!busy || !currentSet?.ok}>PNG</button
-	>
-	<button
-		onclick={exportZip}
-		disabled={!!busy || !currentSet?.ok}
-		title="Render every card of this design into a zip">ZIP</button
-	>
-	<button
-		onclick={exportPdf}
-		disabled={!!busy || !currentSet?.ok}
-		title="Every card of this design in one PDF, one page per card (with crop marks when the design has a bleed)">PDF</button
-	>
-	<button
-		onclick={checkAllCards}
-		disabled={!!busy || !currentSet?.ok}
-		title="Evaluate every card without drawing it: finds errors that only some cards have, such as too many layers">Check all</button
-	>
-	{#if server?.render}
-		<label
-			class="server"
-			title="Render the zip on the server at full quality"
-		>
-			<input type="checkbox" bind:checked={useServer} /> on server
-		</label>
-	{/if}
+		<span class="btn-group" role="group" aria-label="Export">
+			<span class="group-cap" aria-hidden="true"
+				><Icon name="download" /> Export</span
+			>
+			<button
+				onclick={exportPng}
+				title="Export the card shown ({currentCard?.id ?? 'none'}) as a PNG image, rendered in this browser"
+				disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+			>
+			<button
+				onclick={exportZip}
+				disabled={!!busy || !currentSet?.ok}
+				title="Export all {currentSet?.cards.length ?? 0} cards of this design as PNG images in one ZIP{onServer
+					? ', rendered on the server'
+					: ''}">ZIP</button
+			>
+			<button
+				onclick={exportPdf}
+				disabled={!!busy || !currentSet?.ok}
+				title="Export all {currentSet?.cards.length ?? 0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
+					? ', rendered on the server'
+					: ''}">PDF</button
+			>
+		</span>
+		{#if server?.render}
+			<label
+				class="switch server"
+				title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+			>
+				<input type="checkbox" role="switch" bind:checked={useServer} />
+				<Icon name="cloud" />
+				<span>Render on server</span>
+			</label>
+		{/if}
 	</span>
 {/snippet}
 
@@ -2361,7 +2637,7 @@ const typeLabels: Record<LayerType, string> = {
 				class="project-btn"
 				onclick={projectMenu}
 				aria-haspopup="menu"
-				title="Projects: new, open, export, saved in this browser, examples"
+				title="Project: new, open, add designs and files, save, export, saved projects and examples"
 			>
 				<span class="pname">{projectName || "No project"}</span>
 				{#if !projectId && projectName}<span class="tag">example</span
@@ -2377,7 +2653,7 @@ const typeLabels: Record<LayerType, string> = {
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; nothing is sent to a server. Export a .yoshida file to keep a copy elsewhere."
+				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
 				{saveState === "saving"
 					? "Saving…"
@@ -2389,33 +2665,14 @@ const typeLabels: Record<LayerType, string> = {
 								? "⚠ Not saved"
 								: "Example (saved once you change it)"}
 			</span>
-			<button
-				onclick={newDesign}
-				disabled={!projectName}
-				title="Add a blank design and card file to this project"
-				>+ Design</button
-			>
-			<button
-				onclick={uploadImage}
-				disabled={!projectName}
-				title="Add an image from your computer to {uploadFolder
-					? `${uploadFolder}/`
-					: 'assets/images/'} (it stays in your browser; choose the folder in the Files tab)"
-				>Upload image</button
-			>
-			<button
-				onclick={addFiles}
-				disabled={!projectName}
-				title="Add images, fonts or data files (or drop them on the window)"
-				>Add files</button
-			>
 			<span class="spacer"></span>
-			<div class="segmented" role="tablist">
+			<div class="btn-group mode" role="tablist" aria-label="View">
 				<button
 					role="tab"
 					aria-selected={mode === "build"}
 					class:active={mode === "build"}
-					onclick={() => (mode = "build")}>Builder</button
+					onclick={() => (mode = "build")}
+					title="Build the design visually">Builder</button
 				>
 				<button
 					role="tab"
@@ -2426,57 +2683,58 @@ const typeLabels: Record<LayerType, string> = {
 					>Advanced (JSON)</button
 				>
 			</div>
-			<button
-				onclick={undo}
-				disabled={!undoStack.length}
-				title="Undo (Ctrl+Z)">↶</button
-			>
-			<button
-				onclick={redo}
-				disabled={!redoStack.length}
-				title="Redo (Ctrl+Shift+Z)">↷</button
-			>
+			<div class="btn-group history" role="group" aria-label="History">
+				<button
+					onclick={undo}
+					disabled={!undoStack.length}
+					aria-label="Undo"
+					title="Undo (Ctrl+Z)"><Icon name="undo" /></button
+				>
+				<button
+					onclick={redo}
+					disabled={!redoStack.length}
+					aria-label="Redo"
+					title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
+				>
+			</div>
 			{#if dirHandle}
 				<button
+					class="save-btn"
 					onclick={save}
 					disabled={!dirty.size}
-					title="Write changes to {dirHandle.name}"
-					>Save to folder{dirty.size
+					title="Write changes to the folder {dirHandle.name}"
+					><Icon name="save" /> Save{dirty.size
 						? ` (${dirty.size})`
 						: ""}</button
 				>
-			{:else if canOpenWritable()}
-				<button
-					onclick={saveToFolder}
-					title="Write the whole project to a folder on your computer and keep saving there"
-					>Save to folder…</button
-				>
 			{/if}
-			<button
-				onclick={exportProject}
-				disabled={!files.size}
-				title="Download the whole project, images and fonts included, as a .yoshida file"
-				>Export .yoshida</button
-			>
 			<ThemeToggle />
 		</header>
 
 		{#if mode === "build"}
 			<aside class="left">
-				<div class="tabs">
+				<div class="tabs tabbar" role="tablist">
 					<button
+						role="tab"
+						aria-selected={leftTab === "layers"}
 						class:active={leftTab === "layers"}
 						onclick={() => (leftTab = "layers")}>Layers</button
 					>
 					<button
+						role="tab"
+						aria-selected={leftTab === "params"}
 						class:active={leftTab === "params"}
 						onclick={() => (leftTab = "params")}>Params</button
 					>
 					<button
+						role="tab"
+						aria-selected={leftTab === "card"}
 						class:active={leftTab === "card"}
 						onclick={() => (leftTab = "card")}>Card data</button
 					>
 					<button
+						role="tab"
+						aria-selected={leftTab === "files"}
 						class:active={leftTab === "files"}
 						onclick={() => (leftTab = "files")}
 						title="Project files: images, fonts, designs and card data"
@@ -2517,6 +2775,7 @@ const typeLabels: Record<LayerType, string> = {
 						onrename={renameParamEverywhere}
 						cards={designCards}
 						onrenameoption={renameOptionEverywhere}
+						onrenameitemoption={renameItemOptionEverywhere}
 						focus={paramFocus}
 					/>
 				{:else if currentSet}
@@ -2546,20 +2805,21 @@ const typeLabels: Record<LayerType, string> = {
 
 			<main class="center">
 				<div class="toolbar">
-					<span class="group" aria-label="Add layer">
-						{#each layerTypes as t}
-							<button
-								disabled={!doc}
-								onclick={() => addLayer(t)}
-								aria-label="Add a {t} layer"
-								title="Add a {t} layer"
-								><span class="ico" aria-hidden="true"
-									>{typeLabels[t].split(" ")[0]}</span
-								><span class="lbl" aria-hidden="true"
-									>{typeLabels[t].replace(/^\S+\s/, "")}</span
-								></button
-							>
-						{/each}
+					<span class="adds">
+						<span class="caption">Add</span>
+						<span class="btn-group group" role="group" aria-label="Add layer">
+							{#each layerTypes as t}
+								<button
+									disabled={!doc}
+									onclick={() => addLayer(t)}
+									aria-label="Add a {t} layer"
+									title="Add a {t} layer"
+									><Icon name={t} /><span class="lbl" aria-hidden="true"
+										>{typeLabels[t]}</span
+									></button
+								>
+							{/each}
+						</span>
 					</span>
 					<span class="sep"></span>
 					{@render previewBar()}
@@ -2629,12 +2889,16 @@ const typeLabels: Record<LayerType, string> = {
 			</aside>
 		{:else}
 			<aside class="files">
-				<div class="tabs">
+				<div class="tabs tabbar" role="tablist">
 					<button
+						role="tab"
+						aria-selected={sidePanel === "card"}
 						class:active={sidePanel === "card"}
 						onclick={() => (sidePanel = "card")}>Card</button
 					>
 					<button
+						role="tab"
+						aria-selected={sidePanel === "files"}
 						class:active={sidePanel === "files"}
 						onclick={() => (sidePanel = "files")}>Files</button
 					>
@@ -2747,6 +3011,9 @@ const typeLabels: Record<LayerType, string> = {
 				crumbs={crumbsOf}
 				focus={mode === "build" ? focus : null}
 				onclearfocus={() => (problemFocus = null)}
+				oncheckall={checkAllCards}
+				checkDisabled={!!busy || !currentSet?.ok}
+				cardCount={currentSet?.cards.length ?? 0}
 			/>
 		</footer>
 	</div>
@@ -2777,15 +3044,18 @@ const typeLabels: Record<LayerType, string> = {
 
 <DialogHost />
 <MenuHost />
+<ProgressHost />
+<TooltipHost />
 
 <style>
-	/* Splitters sit in their own 5px tracks between the panels. */
+	/* Splitters are the 1px lines between the panels (their own grid
+	   tracks); the panels draw no border on those sides. */
 	.app {
 		display: grid;
-		grid-template-columns: var(--files-w) 5px minmax(300px, 1fr) 5px var(
+		grid-template-columns: var(--files-w) 1px minmax(300px, 1fr) 1px var(
 				--preview-w
 			);
-		grid-template-rows: auto minmax(0, 1fr) 5px var(--bottom-h);
+		grid-template-rows: auto minmax(0, 1fr) 1px var(--bottom-h);
 		grid-template-areas:
 			"top top top top top"
 			"files fsplit editor psplit preview"
@@ -2794,7 +3064,7 @@ const typeLabels: Record<LayerType, string> = {
 		height: 100vh;
 	}
 	.app.build {
-		grid-template-columns: var(--left-w) 5px minmax(360px, 1fr) 5px var(
+		grid-template-columns: var(--left-w) 1px minmax(360px, 1fr) 1px var(
 				--right-w
 			);
 		grid-template-areas:
@@ -2900,9 +3170,20 @@ const typeLabels: Record<LayerType, string> = {
 		min-width: 0;
 	}
 	.top > button,
-	.top > .segmented {
+	.top > .btn-group {
 		flex: none;
 		white-space: nowrap;
+		height: var(--ctl-h);
+		box-sizing: border-box;
+	}
+	.top > button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.history > button {
+		width: 32px;
+		padding: 0;
 	}
 	.brand {
 		font-size: 16px;
@@ -2956,24 +3237,8 @@ const typeLabels: Record<LayerType, string> = {
 	.spacer {
 		flex: 1;
 	}
-	.segmented {
-		display: flex;
-		border: 1px solid var(--line);
-		border-radius: 7px;
-		overflow: hidden;
-	}
-	.segmented button {
-		border: 0;
-		border-radius: 0;
-		white-space: nowrap;
-	}
-	.segmented button.active {
-		background: var(--accent-strong);
-		color: var(--on-accent);
-	}
 	.files,
 	.left {
-		border-right: 1px solid var(--line);
 		overflow: auto;
 		min-height: 0;
 	}
@@ -2985,7 +3250,6 @@ const typeLabels: Record<LayerType, string> = {
 	}
 	.right {
 		grid-area: right;
-		border-left: 1px solid var(--line);
 		overflow: auto;
 		min-height: 0;
 	}
@@ -3009,13 +3273,18 @@ const typeLabels: Record<LayerType, string> = {
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--line);
 	}
-	.toolbar .group,
+	.adds,
 	.pick,
 	.exports {
 		display: flex;
-		gap: 4px;
+		gap: 8px;
 		align-items: center;
 		flex: none;
+	}
+	.toolbar :global(.btn-group),
+	.pane-title.row :global(.btn-group) {
+		height: var(--ctl-h);
+		box-sizing: border-box;
 	}
 	.pick {
 		gap: 6px;
@@ -3025,24 +3294,35 @@ const typeLabels: Record<LayerType, string> = {
 	}
 	.exports {
 		margin-left: auto;
+		gap: 12px;
 	}
+	/* Every button in a group has the same padding, icon box and gap. */
 	.toolbar .group button {
-		padding: 4px 8px;
-		white-space: nowrap;
+		padding: 0 10px;
+		gap: 6px;
 	}
-	.toolbar .group .ico {
-		display: inline-block;
-		min-width: 1em;
-		margin-right: 4px;
-		text-align: center;
+	.exports .btn-group button {
+		padding: 0 11px;
+		font-weight: 500;
+	}
+	.group-cap {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 0 9px 0 8px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted);
+		background: var(--bg-bar);
 	}
 	/* A narrow stage keeps the layer buttons as icons (names in the tooltip). */
-	@container (max-width: 860px) {
+	@container (max-width: 1180px) {
 		.toolbar .group .lbl {
 			display: none;
 		}
-		.toolbar .group .ico {
-			margin-right: 0;
+		.toolbar .group button {
+			padding: 0 8px;
 		}
 	}
 	.sep {
@@ -3051,36 +3331,12 @@ const typeLabels: Record<LayerType, string> = {
 		background: var(--line);
 		margin: 0 4px;
 	}
-	.tabs {
-		display: flex;
-		border-bottom: 1px solid var(--line);
-		position: sticky;
-		top: 0;
-		background: var(--bg);
-		z-index: 1;
-	}
-	.tabs button {
-		flex: 1 1 auto;
-		border: 0;
-		border-radius: 0;
-		background: none;
-		padding: 8px 4px;
-		white-space: nowrap;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.tabs button.active {
-		border-bottom: 2px solid var(--accent);
-		font-weight: 600;
-	}
 	.editor-pane {
 		grid-area: editor;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
 		min-width: 0;
-		border-right: 1px solid var(--line);
 	}
 	.editor-pane > :global(.editor) {
 		flex: 1;
@@ -3121,14 +3377,10 @@ const typeLabels: Record<LayerType, string> = {
 	}
 	.problems-pane {
 		grid-area: problems;
-		border-top: 1px solid var(--line);
 		min-height: 0;
 	}
-	.server {
-		font-size: 12px;
-		display: flex;
-		gap: 4px;
-		align-items: center;
+	.server :global(svg) {
+		color: var(--muted);
 	}
 	.advanced {
 		font-size: 12px;
@@ -3177,6 +3429,14 @@ const typeLabels: Record<LayerType, string> = {
 		.right {
 			max-height: 50vh;
 		}
+		/* Without splitters the stacked panels need their own dividers. */
+		.files,
+		.left,
+		.right,
+		.editor-pane,
+		.problems-pane {
+			border-top: 1px solid var(--line);
+		}
 		.top {
 			flex-wrap: wrap;
 		}
@@ -3196,12 +3456,6 @@ const typeLabels: Record<LayerType, string> = {
 		display: flex;
 		justify-content: space-between;
 		font-size: 12px;
-	}
-	.caption {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--muted);
 	}
 	.card-tools {
 		display: flex;

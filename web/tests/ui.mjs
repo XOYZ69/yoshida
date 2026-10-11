@@ -324,10 +324,11 @@ await p.click(".items .add");
 await settle();
 ok("add list row", (await p.locator(".items tbody tr").count()) === 4);
 
-// Upload an image from the header
+// Add an image with the project menu's Add files
 const png = await readFile(`${shots}/v02-rotate.png`);
 let chooser = p.waitForEvent("filechooser");
-await p.click('header button:has-text("Upload image")');
+await p.click(".project-btn");
+await p.click('[role=menuitem]:has-text("Add files")');
 await (await chooser).setFiles({
 	name: "logo.png",
 	mimeType: "image/png",
@@ -370,8 +371,9 @@ ok(
 await p.screenshot({ path: `${shots}/v02-code.png` });
 await p.click('button[role=tab]:has-text("Builder")');
 
-// New design in this project
-await p.click('button:has-text("+ Design")');
+// New design in this project (project menu)
+await p.click(".project-btn");
+await p.click('[role=menuitem]:has-text("New design")');
 await p.locator(".dialog input").fill("Second Design");
 await p.keyboard.press("Enter");
 await p.waitForTimeout(1500);
@@ -408,7 +410,8 @@ ok("new design survives reload", designsAfter === 2, String(designsAfter));
 
 // Export the project as a .yoshida file with its images, then open it
 const dl = p.waitForEvent("download");
-await p.click('header button:has-text("Export .yoshida")');
+await p.click(".project-btn");
+await p.click('[role=menuitem]:has-text("Export project file")');
 const zipPath = `${shots}/export.yoshida`;
 await (await dl).saveAs(zipPath);
 const zipped = unzipSync(new Uint8Array(await readFile(zipPath)));

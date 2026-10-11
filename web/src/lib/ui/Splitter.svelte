@@ -70,34 +70,43 @@ function key(e: KeyboardEvent) {
 </div>
 
 <style>
+  /* The splitter is the 1px line between two panels (the panels draw no
+     border of their own there); a wider invisible strip takes the drag. */
   .split {
     position: relative;
     z-index: 5;
-    background: transparent;
+    background: var(--line);
     touch-action: none;
     outline: none;
+    width: 100%;
+    height: 100%;
   }
   .split.x {
     cursor: col-resize;
-    width: 100%;
-    height: 100%;
   }
   .split.y {
     cursor: row-resize;
-    width: 100%;
-    height: 100%;
   }
+  .split::before,
   .split::after {
     content: '';
     position: absolute;
+  }
+  .split.x::before {
+    inset: 0 -4px;
+  }
+  .split.y::before {
+    inset: -4px 0;
+  }
+  .split::after {
     background: transparent;
     transition: background 0.12s;
   }
   .split.x::after {
-    inset: 0 1px;
+    inset: 0 -1px;
   }
   .split.y::after {
-    inset: 1px 0;
+    inset: -1px 0;
   }
   .split:hover::after,
   .split:focus-visible::after {

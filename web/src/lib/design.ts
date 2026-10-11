@@ -1267,6 +1267,91 @@ export function renameValueInCards(
 	return changed ? format(d) : text;
 }
 
+/**
+ * Calls `fn` on each item of a list value: an array of items, or an object
+ * of position to item fields (a card that changes some default items).
+ */
+export function eachItem(v: unknown, fn: (item: Obj) => void) {
+	const items = Array.isArray(v) ? v : isObj(v) ? Object.values(v) : [];
+	for (const it of items) if (isObj(it)) fn(it);
+}
+
+/** Sets `field` to `to` in every item of a list value where it is `from`. */
+export function renameItemValue(
+	v: unknown,
+	field: string,
+	from: string,
+	to: string,
+): boolean {
+	let changed = false;
+	eachItem(v, (it) => {
+		if (it[field] === from) {
+			it[field] = to;
+			changed = true;
+		}
+	});
+	return changed;
+}
+
+/**
+ * Renames an option of the enum item field `field` of list param `name`:
+ * in the field (options, default) and in the param's default items.
+ */
+export function renameItemOption(
+	doc: Obj,
+	name: string,
+	field: string,
+	from: string,
+	to: string,
+) {
+	const p = isObj(doc.params) ? doc.params[name] : undefined;
+	if (!isObj(p) || !isObj(p.item)) return;
+	const f = p.item[field];
+	if (isObj(f)) {
+		if (Array.isArray(f.options))
+			f.options = f.options.map((o) => (o === from ? to : o));
+		if (f.default === from) f.default = to;
+	}
+	renameItemValue(p.default, field, from, to);
+}
+
+/** Renames an item field value of list param `param` in every card (JSON, or CSV cells holding JSON). */
+export function renameItemValueInCards(
+	path: string,
+	text: string,
+	param: string,
+	field: string,
+	from: string,
+	to: string,
+	csv: { parse: (t: string) => string[][]; write: (r: string[][]) => string },
+	format: (v: unknown) => string,
+): string {
+	if (path.endsWith(".csv")) {
+		const rows = csv.parse(text);
+		const col = rows[0]?.indexOf(param) ?? -1;
+		if (col < 0) return text;
+		let changed = false;
+		for (const r of rows.slice(1)) {
+			try {
+				const v = JSON.parse(r[col] ?? "");
+				if (renameItemValue(v, field, from, to)) {
+					r[col] = JSON.stringify(v);
+					changed = true;
+				}
+			} catch {
+				// Not a JSON cell: nothing to rename.
+			}
+		}
+		return changed ? csv.write(rows) : text;
+	}
+	const d = JSON.parse(text);
+	if (!Array.isArray(d.cards)) return text;
+	let changed = false;
+	for (const c of d.cards)
+		if (isObj(c) && renameItemValue(c[param], field, from, to)) changed = true;
+	return changed ? format(d) : text;
+}
+
 /** Path templates (`src` fields) that use param `name`, such as `cards/{card_type}.png`. */
 export function templatesUsing(doc: Obj, name: string): string[] {
 	const out: string[] = [];

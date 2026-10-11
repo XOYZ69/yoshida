@@ -207,7 +207,7 @@ $effect(() => {
         <input type="range" min="90" max="320" step="10" bind:value={tile} onchange={remember} />
       </label>
     {/if}
-    <div class="seg" role="tablist">
+    <div class="btn-group" role="tablist">
       <button role="tab" aria-selected={view === 'table'} class:active={view === 'table'} onclick={() => ((view = 'table'), remember())}>Table</button>
       <button role="tab" aria-selected={view === 'grid'} class:active={view === 'grid'} onclick={() => ((view = 'grid'), remember())}>Grid</button>
     </div>
@@ -295,20 +295,6 @@ $effect(() => {
   }
   .spacer {
     flex: 1;
-  }
-  .seg {
-    display: flex;
-    border: 1px solid var(--line);
-    border-radius: 7px;
-    overflow: hidden;
-  }
-  .seg button {
-    border: 0;
-    border-radius: 0;
-  }
-  .seg button.active {
-    background: var(--accent-strong);
-    color: var(--on-accent);
   }
   .zoom {
     display: flex;

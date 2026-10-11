@@ -12,6 +12,7 @@ let handled = 0;
 
 import { tick, untrack } from "svelte";
 import {
+	eachItem,
 	groupOf,
 	identRe,
 	isObj,
@@ -44,6 +45,7 @@ let {
 	onrename,
 	cards,
 	onrenameoption,
+	onrenameitemoption,
 	focus = null,
 }: {
 	doc: Obj;
@@ -58,6 +60,13 @@ let {
 	cards: CardInfo[];
 	/** Renames an enum option in the design and in card data. */
 	onrenameoption: (param: string, from: string, to: string) => void;
+	/** Renames an option of a list param's enum item field in the design and in card data. */
+	onrenameitemoption: (
+		param: string,
+		field: string,
+		from: string,
+		to: string,
+	) => void;
 	/** Opens, scrolls to and highlights a param (go to definition). */
 	focus?: { name: string; n: number } | null;
 } = $props();
@@ -261,6 +270,20 @@ function usageOf(name: string): Map<string, number> {
 	}
 	return m;
 }
+/** How many cards use each option of a list param's enum item field. */
+function itemUsageOf(name: string, field: string): Map<string, number> {
+	const m = new Map<string, number>();
+	for (const c of cards) {
+		const seen = new Set<string>();
+		eachItem(c.values[name], (it) => {
+			const v = it[field];
+			if (typeof v === "string") seen.add(v);
+		});
+		for (const v of seen) m.set(v, (m.get(v) ?? 0) + 1);
+	}
+	return m;
+}
+
 let newName = $state("");
 let newType: ParamTypeName = $state("text");
 const nameError = $derived(
@@ -365,7 +388,23 @@ const typeHelp: Record<string, string> = {
 };
 
 // List item fields: name -> type name, or { type, options?, default? }.
-const itemTypes = ["text", "number", "integer", "bool", "color", "enum"];
+const itemTypes = ["text", "number", "integer", "bool", "color", "enum"].map(
+	(t) => ({ value: t, label: t, detail: typeHelp[t] }),
+);
+
+function itemOptions(ft: Json): string[] {
+	return isObj(ft) && Array.isArray(ft.options) ? ft.options.map(String) : [];
+}
+
+/** The enum item field with new options; a default that is no longer an option is dropped. */
+function withOptions(ft: Json, options: string[]): Json {
+	const base: Obj = isObj(ft) ? { ...ft } : {};
+	base.type = "enum";
+	base.options = options;
+	if (base.default !== undefined && !options.includes(String(base.default)))
+		delete base.default;
+	return base;
+}
 
 function fieldType(ft: Json): string {
 	return isObj(ft) ? String(ft.type ?? "text") : String(ft);
@@ -383,15 +422,15 @@ function retypeField(ft: Json, t: string): Json {
 		: t;
 }
 
-/** Sets or clears an item field's default (a string field becomes an object). */
-function withDefault(ft: Json, raw: string): Json {
+/** Sets or clears an item field's default (a plain type name becomes an object). */
+function withDefault(ft: Json, v: Json | undefined): Json {
 	const t = fieldType(ft);
 	const base: Obj = isObj(ft) ? { ...ft } : { type: t };
-	const v = raw.trim();
-	if (v === "") delete base.default;
-	else if (t === "number" || t === "integer") base.default = Number(v) || 0;
-	else if (t === "bool") base.default = v === "true";
-	else base.default = v;
+	if (v === undefined || v === "" || v === null) delete base.default;
+	else if (t === "number" || t === "integer")
+		base.default = typeof v === "number" ? v : Number(v) || 0;
+	else if (t === "bool") base.default = v === true || v === "true";
+	else base.default = String(v);
 	return Object.keys(base).length === 1 ? t : base;
 }
 </script>
@@ -568,17 +607,35 @@ function withDefault(ft: Json, raw: string): Json {
               {:else if t === 'list'}
                 <div class="items">
                   <span class="lbl">item fields</span>
-                  {#each Object.entries(isObj(p.item) ? p.item : {}) as [field, ft]}
-                    <div class="row">
-                      <span class="mono grow">{field}</span>
-                      <Select value={fieldType(ft)} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], retypeField(ft, v))} />
-                      <button class="mini" disabled={Object.keys(p.item as Obj).length <= 1} onclick={() => edit(name, ['item', field], undefined)}>×</button>
-                    </div>
-                    <div class="row sub-row">
-                      {#if fieldType(ft) === 'enum'}
-                        <input class="mono grow" title="Options of {field}, separated by commas" placeholder="options: a, b, c" value={isObj(ft) && Array.isArray(ft.options) ? ft.options.join(', ') : ''} onchange={(e) => edit(name, ['item', field], { ...(isObj(ft) ? ft : {}), type: 'enum', options: e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
+                  {#each Object.entries(isObj(p.item) ? p.item : {}) as [field, ft] (field)}
+                    {@const ftype = fieldType(ft)}
+                    <div class="item-field" data-field={field}>
+                      <div class="row">
+                        <span class="mono grow fname" title={field}>{field}</span>
+                        <Select value={ftype} label="Type of {field}" options={itemTypes} onchange={(v) => edit(name, ['item', field], retypeField(ft, v))} />
+                        <button
+                          class="mini"
+                          title="Remove the field {field}"
+                          aria-label="Remove the field {field}"
+                          disabled={Object.keys(p.item as Obj).length <= 1}
+                          onclick={() => edit(name, ['item', field], undefined)}>×</button>
+                      </div>
+                      {#if ftype === 'enum'}
+                        <EnumOptions
+                          options={itemOptions(ft)}
+                          usage={itemUsageOf(name, field)}
+                          templates={[]}
+                          onchange={(v) => edit(name, ['item', field], withOptions(ft, v))}
+                          onrename={(from, to) => onrenameitemoption(name, field, from, to)} />
                       {/if}
-                      <input class="mono grow" title="Value an item gets when it leaves {field} out" placeholder="default" value={isObj(ft) && ft.default !== undefined ? String(ft.default) : ''} onchange={(e) => edit(name, ['item', field], withDefault(ft, e.currentTarget.value))} />
+                      <Field
+                        label="default"
+                        kind={defaultKind(ftype)}
+                        optional
+                        value={isObj(ft) ? ft.default : undefined}
+                        options={itemOptions(ft)}
+                        title="Value an item gets when it leaves {field} out"
+                        onchange={(v) => edit(name, ['item', field], withDefault(ft, v))} />
                     </div>
                   {/each}
                   <input
@@ -775,8 +832,22 @@ function withDefault(ft: Json, raw: string): Json {
     flex: 1;
     min-width: 0;
   }
-  .sub-row {
-    padding-left: 12px;
+  /* One box per item field: name, type and remove; then its options
+     (enum fields, same editor as an enum param) and its default. */
+  .item-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg-bar);
+  }
+  .fname {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .mini {
     padding: 1px 6px;
