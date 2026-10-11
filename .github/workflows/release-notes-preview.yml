@@ -11,8 +11,11 @@ on:
     branches: [master]
     types: [opened, reopened, edited, synchronize, labeled, unlabeled, ready_for_review]
 
+# contents: write is only for POST /releases/generate-notes, which GitHub
+# gates behind write access even though it creates nothing. Safe here because
+# no PR code is checked out or run.
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -27,6 +30,8 @@ jobs:
     steps:
       # No ref: pull_request_target checks out the base branch (master).
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

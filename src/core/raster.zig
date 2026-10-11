@@ -448,7 +448,6 @@ fn segDistT(px: f32, py: f32, a: [2]f32, c: [2]f32) struct { d: f32, along: f32 
     return .{ .d = @sqrt(ex * ex + ey * ey), .along = t * @sqrt(l2) };
 }
 
-
 /// Blends an 8-bit coverage mask (a glyph) at canvas position (x, y).
 pub fn blitMask(b: *Bitmap, x: i32, y: i32, mask: []const u8, w: usize, h: usize, p: Paint) void {
     for (0..h) |j| {
