@@ -1,866 +1,742 @@
 {
-	"format": 1,
-	"name": "Party board game",
-	"note": "Canvas is A3 landscape at 300 dpi (4961 x 3508 px, 420 x 297 mm, print at 100 %). The ring is 13 x 9 tiles = 40 tiles; change the consts to resize it.",
-	"canvas": { "width": 4961, "height": 3508, "dpi": 300, "bleed": 35 },
-	"fonts": { "bebas": "assets/fonts/Bebas-Regular.ttf" },
-	"params": {
-		"title": {
-			"type": "text",
-			"default": "Road Trip Rally",
-			"max_length": 28,
-			"group": "Texts"
-		},
-		"subtitle": {
-			"type": "text",
-			"default": "Race across the map, one roll at a time",
-			"group": "Texts"
-		},
-		"rules": {
-			"type": "list",
-			"item": { "text": "text" },
-			"group": "Texts",
-			"default": [
-				{ "text": "Everyone puts a pawn on START." },
-				{ "text": "Take turns rolling a die and move clockwise." },
-				{ "text": "Follow the tile you land on." },
-				{ "text": "Safe zones protect you from going back." },
-				{ "text": "First to land on FINISH wins." }
-			]
-		},
-		"foot": {
-			"type": "text",
-			"default": "Print on A3 landscape at 100 %. Needs two dice and some pawns.",
-			"group": "Texts"
-		},
-		"show_links": {
-			"type": "bool",
-			"default": true,
-			"label": "Draw shortcut arrows",
-			"group": "Board"
-		},
-		"c_paper": {
-			"type": "color",
-			"default": "#FFF1D0",
-			"group": "Theme colors"
-		},
-		"c_ink": { "type": "color", "default": "#2B2B3A", "group": "Theme colors" },
-		"c_frame": {
-			"type": "color",
-			"default": "#2B2B3A",
-			"group": "Theme colors"
-		},
-		"c_panel": {
-			"type": "color",
-			"default": "#FFFAEB",
-			"group": "Theme colors"
-		},
-		"c_text": {
-			"type": "color",
-			"default": "#2B2B3A",
-			"group": "Theme colors"
-		},
-		"c_accent": {
-			"type": "color",
-			"default": "#D1495B",
-			"group": "Theme colors"
-		},
-		"c_start": {
-			"type": "color",
-			"default": "#8BD17C",
-			"group": "Theme colors"
-		},
-		"c_finish": {
-			"type": "color",
-			"default": "#FFD166",
-			"group": "Theme colors"
-		},
-		"c_plain": {
-			"type": "color",
-			"default": "#FFFFFF",
-			"group": "Theme colors"
-		},
-		"c_safe": {
-			"type": "color",
-			"default": "#7FD1E8",
-			"group": "Theme colors"
-		},
-		"c_skip": {
-			"type": "color",
-			"default": "#F28B82",
-			"group": "Theme colors"
-		},
-		"c_back": {
-			"type": "color",
-			"default": "#F4A261",
-			"group": "Theme colors"
-		},
-		"c_forward": {
-			"type": "color",
-			"default": "#B7E4A0",
-			"group": "Theme colors"
-		},
-		"c_shortcut": {
-			"type": "color",
-			"default": "#C3A6F0",
-			"group": "Theme colors"
-		},
-		"c_dare": {
-			"type": "color",
-			"default": "#FF9EC4",
-			"group": "Theme colors"
-		},
-		"legend": {
-			"type": "list",
-			"item": {
-				"kind": {
-					"type": "enum",
-					"options": [
-						"start",
-						"finish",
-						"plain",
-						"safe",
-						"skip",
-						"back",
-						"forward",
-						"shortcut",
-						"dare"
-					]
-				},
-				"label": "text",
-				"desc": "text"
-			},
-			"default": [
-				{ "kind": "start", "label": "Start", "desc": "Everyone begins here" },
-				{ "kind": "plain", "label": "Plain", "desc": "Do what the tile says" },
-				{
-					"kind": "safe",
-					"label": "Safe zone",
-					"desc": "Nothing bad can happen"
-				},
-				{ "kind": "skip", "label": "Skip", "desc": "Miss your next turn" },
-				{
-					"kind": "back",
-					"label": "Go back",
-					"desc": "Move back by the number"
-				},
-				{
-					"kind": "forward",
-					"label": "Go forward",
-					"desc": "Move ahead by the number"
-				},
-				{
-					"kind": "shortcut",
-					"label": "Shortcut",
-					"desc": "Jump to the tile number"
-				},
-				{
-					"kind": "dare",
-					"label": "Dare",
-					"desc": "Complete it or step back 1"
-				},
-				{ "kind": "finish", "label": "Finish", "desc": "Land here to win" }
-			],
-			"group": "Texts"
-		},
-		"tiles": {
-			"type": "list",
-			"item": {
-				"kind": {
-					"type": "enum",
-					"options": [
-						"start",
-						"finish",
-						"plain",
-						"safe",
-						"skip",
-						"back",
-						"forward",
-						"shortcut",
-						"dare"
-					],
-					"default": "plain"
-				},
-				"text": "text",
-				"n": "integer"
-			},
-			"group": "Board",
-			"note": "40 tiles clockwise from the top-left corner. kind: start, finish, plain, safe, skip, back, forward, shortcut, dare. n is the step count (back, forward) or the target tile number (shortcut).",
-			"default": [
-				{ "kind": "start", "text": "Start: pack the car", "n": 0 },
-				{ "kind": "plain", "text": "Sing the chorus of a song", "n": 0 },
-				{ "kind": "plain", "text": "Name 3 road snacks", "n": 0 },
-				{ "kind": "dare", "text": "Do your best GPS voice", "n": 0 },
-				{ "kind": "plain", "text": "Spot a red car", "n": 0 },
-				{ "kind": "safe", "text": "Rest stop, you are safe", "n": 0 },
-				{ "kind": "plain", "text": "Tell a travel story", "n": 0 },
-				{ "kind": "back", "text": "Wrong exit!", "n": 3 },
-				{ "kind": "plain", "text": "Imitate a radio DJ", "n": 0 },
-				{ "kind": "skip", "text": "Flat tire, miss a turn", "n": 0 },
-				{ "kind": "forward", "text": "Green lights", "n": 2 },
-				{ "kind": "plain", "text": "Hum a song, others guess", "n": 0 },
-				{ "kind": "shortcut", "text": "Secret backroad", "n": 28 },
-				{ "kind": "plain", "text": "Count 5 trucks aloud", "n": 0 },
-				{ "kind": "dare", "text": "Pick the next playlist song", "n": 0 },
-				{ "kind": "plain", "text": "Gas station detour", "n": 0 },
-				{ "kind": "safe", "text": "Roadside picnic, safe", "n": 0 },
-				{ "kind": "safe", "text": "Name a city with a Z", "n": 0 },
-				{ "kind": "plain", "text": "Tunnel echo cheer", "n": 0 },
-				{ "kind": "back", "text": "Traffic jam", "n": 2 },
-				{ "kind": "plain", "text": "Give the driver a compliment", "n": 0 },
-				{ "kind": "dare", "text": "Mountain pass", "n": 0 },
-				{ "kind": "skip", "text": "Detour sign", "n": 0 },
-				{ "kind": "plain", "text": "Act like a tour guide", "n": 0 },
-				{ "kind": "back", "text": "Late for dinner", "n": 4 },
-				{ "kind": "safe", "text": "Scenic overlook, safe", "n": 0 },
-				{ "kind": "plain", "text": "Reverse the alphabet game", "n": 0 },
-				{ "kind": "plain", "text": "Bumpy road", "n": 0 },
-				{ "kind": "dare", "text": "Spin the souvenir", "n": 0 },
-				{ "kind": "dare", "text": "Backseat karaoke", "n": 0 },
-				{ "kind": "shortcut", "text": "Fast lane", "n": 38 },
-				{ "kind": "plain", "text": "Name 3 national parks", "n": 0 },
-				{ "kind": "back", "text": "Lost the map", "n": 5 },
-				{ "kind": "plain", "text": "Photo stop, pose together", "n": 0 },
-				{ "kind": "plain", "text": "Tailwind", "n": 0 },
-				{ "kind": "skip", "text": "Rainstorm, miss a turn", "n": 0 },
-				{ "kind": "forward", "text": "Cheer for the driver", "n": 2 },
-				{ "kind": "plain", "text": "Last gas station", "n": 0 },
-				{ "kind": "plain", "text": "Almost there", "n": 0 },
-				{ "kind": "finish", "text": "Finish: arrive!", "n": 0 }
-			]
-		}
-	},
-	"consts": {
-		"tile": 360,
-		"cols": 13,
-		"rows": 9,
-		"ring": "2 * (cols + rows) - 4",
-		"ox": "(canvas.w - cols * tile) / 2",
-		"oy": "(canvas.h - rows * tile) / 2",
-		"pw": "(cols - 2) * tile",
-		"ph": "(rows - 2) * tile",
-		"pad": 14.8
-	},
-	"functions": {
-		"ring_col": {
-			"args": { "i": "number" },
-			"expr": "i < cols ? i : (i < cols + rows - 1 ? cols - 1 : (i < 2 * cols + rows - 2 ? 2 * cols + rows - 3 - i : 0))",
-			"note": "Column of tile i on the ring: along the top, down the right, back along the bottom, up the left."
-		},
-		"ring_row": {
-			"args": { "i": "number" },
-			"expr": "i < cols ? 0 : (i < cols + rows - 1 ? i - cols + 1 : (i < 2 * cols + rows - 2 ? rows - 1 : ring - i))"
-		},
-		"tile_x": {
-			"args": { "i": "number" },
-			"expr": "ox + ring_col(i) * tile",
-			"note": "Left edge of tile i on the canvas."
-		},
-		"tile_y": {
-			"args": { "i": "number" },
-			"expr": "oy + ring_row(i) * tile"
-		},
-		"in_x": {
-			"args": { "i": "number" },
-			"expr": "ring_row(i) == 0 or ring_row(i) == rows - 1 ? 0 : (ring_col(i) == 0 ? 1 : -1)",
-			"note": "Direction from tile i towards the middle of the board (x part)."
-		},
-		"in_y": {
-			"args": { "i": "number" },
-			"expr": "ring_row(i) == 0 ? 1 : (ring_row(i) == rows - 1 ? -1 : 0)"
-		},
-		"has_n": {
-			"args": { "k": "text" },
-			"expr": "k == 'back' or k == 'forward' or k == 'shortcut'",
-			"note": "Tiles that show a number: steps for back and forward, the target tile for a shortcut."
-		},
-		"kind_color": {
-			"args": { "k": "text" },
-			"expr": "(k == 'start' ? c_start : (k == 'finish' ? c_finish : (k == 'safe' ? c_safe : (k == 'skip' ? c_skip : (k == 'back' ? c_back : (k == 'forward' ? c_forward : (k == 'shortcut' ? c_shortcut : (k == 'dare' ? c_dare : c_plain))))))))",
-			"note": "Tile color of a kind, from the theme."
-		},
-		"pip": {
-			"args": { "face": "number", "k": "number" },
-			"expr": "face == 1 ? k == 4 : (face == 2 ? k == 0 or k == 8 : (face == 3 ? k == 0 or k == 4 or k == 8 : (face == 4 ? k % 2 == 0 and k != 4 : (face == 5 ? k % 2 == 0 : k % 3 != 1 and k != 4))))",
-			"note": "Is pip k (0-8, row by row) shown on a die face?"
-		},
-		"pawn_color": {
-			"args": { "n": "number" },
-			"expr": "n == 0 ? c_start : (n == 1 ? c_dare : (n == 2 ? c_skip : c_safe))"
-		}
-	},
-	"layers": [
-		{
-			"id": "paper",
-			"type": "rect",
-			"box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
-			"fill": "c_paper"
-		},
-		{
-			"id": "stripes",
-			"type": "group",
-			"note": "Soft diagonal stripes on the paper: a repeated group, every other iteration hidden.",
-			"repeat": { "count": "ceil((canvas.w + 847.1) / 254.1)", "index": "s" },
-			"visible": "s % 2 == 0",
-			"translate": { "x": "s * 254.1", "y": 0 },
-			"layers": [
-				{
-					"id": "stripe",
-					"type": "polygon",
-					"points": [
-						[0, 0],
-						[127.1, 0],
-						[-720, "canvas.h"],
-						[-847.1, "canvas.h"]
-					],
-					"fill": "mix(c_paper, c_ink, 0.05)"
-				}
-			]
-		},
-		{
-			"id": "frame",
-			"type": "rect",
-			"box": { "x": 76.2, "y": 76.2, "w": "100% - 152.5", "h": "100% - 152.5" },
-			"fill": "#00000000",
-			"radius": 84.7,
-			"stroke": { "color": "c_frame", "width": 16.9 }
-		},
-		{
-			"id": "board_divider",
-			"type": "divider",
-			"label": "Ring of tiles (one repeated group)"
-		},
-		{
-			"id": "tile",
-			"type": "group",
-			"repeat": { "each": "tiles", "item": "t", "index": "i" },
-			"translate": { "x": "tile_x(i)", "y": "tile_y(i)" },
-			"layers": [
-				{
-					"id": "tile_base",
-					"type": "rect",
-					"visible": false,
-					"note": "Hidden base: box and corner radius shared by shadow and background.",
-					"box": {
-						"x": "pad",
-						"y": "pad",
-						"w": "tile - 2 * pad",
-						"h": "tile - 2 * pad"
-					},
-					"radius": 38.1
-				},
-				{
-					"id": "tile_shadow",
-					"type": "rect",
-					"extends": "tile_base",
-					"visible": true,
-					"box": { "x": "pad + 10.6", "y": "pad + 14.8" },
-					"fill": "with_alpha(c_ink, 0.28)"
-				},
-				{
-					"id": "tile_bg",
-					"type": "rect",
-					"extends": "tile_base",
-					"visible": true,
-					"fill": "kind_color(t.kind)",
-					"stroke": { "color": "c_ink", "width": 10.6 }
-				},
-				{
-					"id": "tile_num",
-					"type": "text",
-					"font": "bebas",
-					"size": 63.5,
-					"color": "with_alpha(c_ink, 0.6)",
-					"anchor": "top-left",
-					"at": { "x": 42.4, "y": 25.4 },
-					"text": "{i + 1}"
-				},
-				{
-					"id": "tile_icon",
-					"type": "group",
-					"note": "One icon per kind; the group moves left when the tile also shows a number.",
-					"visible": "t.kind != 'plain'",
-					"translate": { "x": "has_n(t.kind) ? -50.8 : 0", "y": 12.7 },
-					"layers": [
-						{
-							"id": "icon_arrow",
-							"type": "polygon",
-							"shape": { "type": "arrow" },
-							"anchor": "center",
-							"box": { "x": 180, "y": 131.3, "w": 114.4, "h": 80.5 },
-							"fill": "c_ink",
-							"visible": "t.kind == 'forward'"
-						},
-						{
-							"id": "icon_back",
-							"type": "polygon",
-							"shape": { "type": "arrow" },
-							"extends": "icon_arrow",
-							"rotate": 180,
-							"visible": "t.kind == 'back'"
-						},
-						{
-							"id": "icon_chev_a",
-							"type": "polygon",
-							"shape": { "type": "chevron", "inner": 0.45 },
-							"anchor": "center",
-							"box": { "x": 152.5, "y": 131.3, "w": 76.2, "h": 84.7 },
-							"fill": "c_ink",
-							"visible": "t.kind == 'shortcut'"
-						},
-						{
-							"id": "icon_chev_b",
-							"type": "polygon",
-							"shape": { "type": "chevron", "inner": 0.45 },
-							"extends": "icon_chev_a",
-							"box": { "x": 211.8 },
-							"visible": "t.kind == 'shortcut'"
-						},
-						{
-							"id": "icon_start",
-							"type": "polygon",
-							"shape": { "type": "triangle" },
-							"anchor": "center",
-							"rotate": 90,
-							"box": { "x": 180, "y": 131.3, "w": 84.7, "h": 93.2 },
-							"fill": "c_ink",
-							"visible": "t.kind == 'start'"
-						},
-						{
-							"id": "icon_dare",
-							"type": "polygon",
-							"shape": { "type": "star", "inner": 0.45 },
-							"anchor": "center",
-							"box": { "x": 180, "y": 131.3, "w": 114.4, "h": 114.4 },
-							"fill": "c_ink",
-							"visible": "t.kind == 'dare'"
-						},
-						{
-							"id": "icon_safe",
-							"type": "polygon",
-							"points": [
-								[137.6, 93.2],
-								[222.4, 93.2],
-								[222.4, 139.8],
-								[180, 182.1],
-								[137.6, 139.8]
-							],
-							"fill": "c_ink",
-							"visible": "t.kind == 'safe'"
-						},
-						{
-							"id": "icon_skip",
-							"type": "polygon",
-							"points": [
-								[146.1, 88.9],
-								[213.9, 88.9],
-								[146.1, 173.6],
-								[213.9, 173.6]
-							],
-							"fill": "c_ink",
-							"visible": "t.kind == 'skip'"
-						},
-						{
-							"id": "icon_finish",
-							"type": "polygon",
-							"points": [
-								[152.5, 80.5],
-								[220.2, 105.9],
-								[152.5, 131.3],
-								[152.5, 182.1],
-								[139.8, 182.1],
-								[139.8, 80.5]
-							],
-							"fill": "c_ink",
-							"visible": "t.kind == 'finish'"
-						}
-					]
-				},
-				{
-					"id": "tile_n",
-					"type": "text",
-					"font": "bebas",
-					"size": 122.8,
-					"color": "c_ink",
-					"anchor": "left",
-					"visible": "has_n(t.kind)",
-					"at": { "x": 196.9, "y": 148.2 },
-					"text": "{t.kind == 'back' ? '-' : (t.kind == 'forward' ? '+' : '')}{t.n}"
-				},
-				{
-					"id": "tile_text",
-					"type": "text",
-					"font": "bebas",
-					"size": 80.5,
-					"min_size": 38.1,
-					"color": "c_ink",
-					"anchor": "center",
-					"align": "center",
-					"wrap": 296.5,
-					"max_width": 304.9,
-					"max_height": 139.8,
-					"line_spacing": 0,
-					"shrink_group": "tiles",
-					"at": { "x": 180, "y": 254.1 },
-					"text": "{t.text}"
-				}
-			]
-		},
-		{
-			"id": "links_divider",
-			"type": "divider",
-			"label": "Shortcut links (drawn from the tile to its target)"
-		},
-		{
-			"id": "link",
-			"type": "group",
-			"repeat": { "each": "tiles", "item": "t", "index": "i" },
-			"visible": "show_links and t.kind == 'shortcut'",
-			"layers": [
-				{
-					"id": "link_line",
-					"type": "polygon",
-					"closed": false,
-					"points": [
-						[
-							"@tile_bg[i].bounds.cx + in_x(i) * 165.2",
-							"@tile_bg[i].bounds.cy + in_y(i) * 165.2"
-						],
-						[
-							"@tile_bg[max(t.n, 1) - 1].bounds.cx + in_x(max(t.n, 1) - 1) * 165.2",
-							"@tile_bg[max(t.n, 1) - 1].bounds.cy + in_y(max(t.n, 1) - 1) * 165.2"
-						]
-					],
-					"stroke": {
-						"color": "mix(c_shortcut, c_ink, 0.3)",
-						"width": 21.2,
-						"dash": [42.4, 25.4],
-						"arrow": "end"
-					},
-					"opacity": 0.9
-				}
-			]
-		},
-		{
-			"id": "panel_divider",
-			"type": "divider",
-			"label": "Title and rules panel"
-		},
-		{
-			"id": "panel",
-			"type": "group",
-			"translate": { "x": "ox + tile", "y": "oy + tile" },
-			"layers": [
-				{
-					"id": "panel_shadow",
-					"type": "rect",
-					"box": { "x": "59.3", "y": "72", "w": "pw - 84.7", "h": "ph - 84.7" },
-					"radius": 97.4,
-					"fill": "with_alpha(c_ink, 0.3)"
-				},
-				{
-					"id": "panel_body",
-					"type": "rect",
-					"box": { "x": 42.4, "y": 42.4, "w": "pw - 84.7", "h": "ph - 84.7" },
-					"radius": 97.4,
-					"fill": "with_alpha(c_panel, 0.8)",
-					"stroke": { "color": "c_frame", "width": 16.9 }
-				},
-				{
-					"id": "panel_inner",
-					"type": "rect",
-					"box": { "x": 88.9, "y": 88.9, "w": "pw - 177.9", "h": "ph - 177.9" },
-					"radius": 63.5,
-					"fill": "#00000000",
-					"stroke": {
-						"color": "with_alpha(c_accent, 0.6)",
-						"width": 6.4,
-						"dash": [33.9, 21.2]
-					}
-				},
-				{
-					"id": "title",
-					"type": "text",
-					"font": "bebas",
-					"text": "{upper(title)}",
-					"size": 370.6,
-					"min_size": 169.4,
-					"max_width": "pw - 1101.2",
-					"color": "c_accent",
-					"stroke": { "color": "c_ink", "width": 14.8 },
-					"anchor": "top",
-					"align": "center",
-					"at": { "x": "pw / 2", "y": 122.8 }
-				},
-				{
-					"id": "title_stars",
-					"type": "group",
-					"note": "Two stars flanking the title: a repeated group with its own origin and rotation.",
-					"repeat": { "count": 2, "index": "s" },
-					"translate": { "x": "s == 0 ? 402.4 : pw - 402.4", "y": 381.2 },
-					"layers": [
-						{
-							"id": "title_star",
-							"type": "polygon",
-							"shape": { "type": "star", "inner": 0.45 },
-							"anchor": "center",
-							"box": { "x": 0, "y": 0, "w": 232.9, "h": 232.9 },
-							"rotate": "s == 0 ? -14 : 14",
-							"fill": "c_finish",
-							"stroke": { "color": "c_ink", "width": 12.7 }
-						},
-						{
-							"id": "title_star_dot",
-							"type": "ellipse",
-							"anchor": "center",
-							"box": { "x": 0, "y": 0, "w": 55.1, "h": 55.1 },
-							"fill": "with_alpha(#FFFFFF, 0.8)"
-						}
-					]
-				},
-				{
-					"id": "subtitle",
-					"type": "text",
-					"font": "bebas",
-					"text": "★ {subtitle} ★",
-					"size": 131.3,
-					"min_size": 63.5,
-					"max_width": "pw - 1101.2",
-					"color": "c_text",
-					"anchor": "top",
-					"align": "center",
-					"at": { "x": "pw / 2", "y": "@title.bounds.bottom + 8.5" }
-				},
-				{
-					"id": "rule_line",
-					"type": "rect",
-					"box": {
-						"x": 275.3,
-						"y": "@subtitle.bounds.bottom + 63.5",
-						"w": "pw - 550.6",
-						"h": 12.7
-					},
-					"radius": 6.4,
-					"fill": "c_accent"
-				},
-				{
-					"id": "rules",
-					"type": "group",
-					"translate": { "x": 275.3, "y": "@rule_line.bounds.bottom + 63.5" },
-					"layers": [
-						{
-							"id": "rules_head",
-							"type": "text",
-							"font": "bebas",
-							"text": "HOW TO PLAY",
-							"size": 135.5,
-							"color": "c_accent",
-							"anchor": "top-left",
-							"at": { "x": 0, "y": 0 }
-						},
-						{
-							"id": "rule_measure",
-							"type": "text",
-							"visible": false,
-							"note": "Hidden ruler: stacks the rules by measuring each text above the previous one (a group cannot read its own contents for its translate).",
-							"text": "{r.text}",
-							"size": 76.2,
-							"min_size": 50.8,
-							"wrap": 1482.4,
-							"line_spacing": 12.7,
-							"anchor": "top-left",
-							"repeat": { "each": "rules", "item": "r", "index": "ri" },
-							"at": {
-								"x": 144,
-								"y": "ri == 0 ? @rules_head.bounds.bottom + 46.6 : @rule_measure[ri - 1].bounds.bottom + 42.4"
-							}
-						},
-						{
-							"id": "rule",
-							"type": "group",
-							"note": "One group per rule, placed where its hidden ruler is.",
-							"repeat": { "each": "rules", "item": "r", "index": "ri" },
-							"translate": { "x": 0, "y": "@rule_measure[ri].bounds.top" },
-							"layers": [
-								{
-									"id": "rule_badge",
-									"type": "ellipse",
-									"box": { "x": 0, "y": 4.2, "w": 97.4, "h": 97.4 },
-									"fill": "c_accent"
-								},
-								{
-									"id": "rule_no",
-									"type": "text",
-									"font": "bebas",
-									"text": "{ri + 1}",
-									"size": 80.5,
-									"color": "c_panel",
-									"anchor": "center",
-									"at": {
-										"x": "@rule_badge.bounds.cx",
-										"y": "@rule_badge.bounds.cy + 4.2"
-									}
-								},
-								{
-									"id": "rule_text",
-									"type": "text",
-									"text": "{r.text}",
-									"size": 76.2,
-									"min_size": 50.8,
-									"wrap": 1482.4,
-									"line_spacing": 12.7,
-									"color": "c_text",
-									"anchor": "top-left",
-									"at": { "x": 144, "y": 0 }
-								}
-							]
-						}
-					]
-				},
-				{
-					"id": "legend",
-					"type": "group",
-					"translate": { "x": 2265.9, "y": "@rule_line.bounds.bottom + 63.5" },
-					"layers": [
-						{
-							"id": "legend_head",
-							"type": "text",
-							"font": "bebas",
-							"text": "TILE GUIDE",
-							"size": 135.5,
-							"color": "c_accent",
-							"anchor": "top-left",
-							"at": { "x": 0, "y": 0 }
-						},
-						{
-							"id": "legend_row",
-							"type": "group",
-							"repeat": { "each": "legend", "item": "e", "index": "j" },
-							"translate": {
-								"x": 0,
-								"y": "@legend_head.bounds.bottom + 42.4 + j * 122.8"
-							},
-							"layers": [
-								{
-									"id": "legend_swatch",
-									"type": "rect",
-									"box": { "x": 0, "y": 0, "w": 93.2, "h": 93.2 },
-									"radius": 23.3,
-									"fill": "kind_color(e.kind)",
-									"stroke": { "color": "c_text", "width": 8.5 }
-								},
-								{
-									"id": "legend_label",
-									"type": "text",
-									"font": "bebas",
-									"text": "{e.label}",
-									"size": 88.9,
-									"color": "c_text",
-									"anchor": "left",
-									"at": { "x": 139.8, "y": 46.6 }
-								},
-								{
-									"id": "legend_desc",
-									"type": "text",
-									"text": "{e.desc}",
-									"size": 61.4,
-									"min_size": 38.1,
-									"max_width": 995.3,
-									"color": "with_alpha(c_text, 0.85)",
-									"anchor": "left",
-									"at": { "x": 550.6, "y": 50.8 }
-								}
-							]
-						}
-					]
-				},
-				{
-					"id": "dice",
-					"type": "group",
-					"note": "Two dice. The face of each comes from a function; the pips are a 3 x 3 repeated group shown by pip(face, k).",
-					"repeat": { "count": 2, "index": "d" },
-					"translate": { "x": "275.3 + d * 275.3", "y": "ph - 635.3" },
-					"rotate": "d == 0 ? -8 : 7",
-					"layers": [
-						{
-							"id": "die_body",
-							"type": "rect",
-							"box": { "x": 0, "y": 0, "w": 211.8, "h": 211.8 },
-							"radius": 46.6,
-							"fill": "#FFFFFF",
-							"stroke": { "color": "c_ink", "width": 10.6 }
-						},
-						{
-							"id": "die_pips",
-							"type": "group",
-							"repeat": { "count": 9, "index": "k" },
-							"visible": "pip(d == 0 ? 5 : 6, k)",
-							"translate": {
-								"x": "105.9 + (k % 3 - 1) * 57.2",
-								"y": "105.9 + (floor(k / 3) - 1) * 57.2"
-							},
-							"layers": [
-								{
-									"id": "die_pip",
-									"type": "ellipse",
-									"anchor": "center",
-									"box": { "x": 0, "y": 0, "w": 36, "h": 36 },
-									"fill": "c_ink"
-								}
-							]
-						}
-					]
-				},
-				{
-					"id": "pawns",
-					"type": "group",
-					"repeat": { "count": 4, "index": "n" },
-					"translate": { "x": "1016.5 + n * 222.4", "y": "ph - 423.5" },
-					"layers": [
-						{
-							"id": "pawn_shadow",
-							"type": "ellipse",
-							"anchor": "center",
-							"box": { "x": 8.5, "y": 118.6, "w": 165.2, "h": 38.1 },
-							"fill": "with_alpha(c_ink, 0.3)"
-						},
-						{
-							"id": "pawn_body",
-							"type": "ellipse",
-							"anchor": "bottom",
-							"box": { "x": 0, "y": 122.8, "w": 144, "h": 114.4 },
-							"fill": "pawn_color(n)",
-							"stroke": { "color": "c_ink", "width": 10.6 }
-						},
-						{
-							"id": "pawn_head",
-							"type": "ellipse",
-							"anchor": "bottom",
-							"extends": "pawn_body",
-							"box": { "y": 21.2, "w": 88.9, "h": 88.9 }
-						},
-						{
-							"id": "pawn_gloss",
-							"type": "ellipse",
-							"anchor": "center",
-							"box": { "x": -21.2, "y": -55.1, "w": 21.2, "h": 29.6 },
-							"fill": "with_alpha(#FFFFFF, 0.6)",
-							"rotate": 25
-						}
-					]
-				},
-				{
-					"id": "foot",
-					"type": "text",
-					"text": "{foot}",
-					"size": 55.1,
-					"color": "with_alpha(c_text, 0.75)",
-					"anchor": "bottom-left",
-					"wrap": 1672.9,
-					"line_spacing": 4.2,
-					"at": { "x": 275.3, "y": "ph - 110.1" }
-				}
-			]
-		}
-	]
+  "format": 1,
+  "name": "Party board game",
+  "note": "Canvas is A3 landscape at 300 dpi (4961 x 3508 px, 420 x 297 mm, print at 100 %). The ring is 13 x 9 tiles = 40 tiles; change the consts to resize it.",
+  "canvas": { "width": 4961, "height": 3508, "dpi": 300, "bleed": 35 },
+  "fonts": { "bebas": "assets/fonts/Bebas-Regular.ttf" },
+  "params": {
+    "title": { "type": "text", "default": "Road Trip Rally", "max_length": 28, "group": "Texts" },
+    "subtitle": {
+      "type": "text",
+      "default": "Race across the map, one roll at a time",
+      "group": "Texts"
+    },
+    "rules": {
+      "type": "list",
+      "item": { "text": "text" },
+      "group": "Texts",
+      "default": [
+        { "text": "Everyone puts a pawn on START." },
+        { "text": "Take turns rolling a die and move clockwise." },
+        { "text": "Follow the tile you land on." },
+        { "text": "Safe zones protect you from going back." },
+        { "text": "First to land on FINISH wins." }
+      ]
+    },
+    "foot": {
+      "type": "text",
+      "default": "Print on A3 landscape at 100 %. Needs two dice and some pawns.",
+      "group": "Texts"
+    },
+    "show_links": {
+      "type": "bool",
+      "default": true,
+      "label": "Draw shortcut arrows",
+      "group": "Board"
+    },
+    "c_paper": { "type": "color", "default": "#FFF1D0", "group": "Theme colors" },
+    "c_ink": { "type": "color", "default": "#2B2B3A", "group": "Theme colors" },
+    "c_frame": { "type": "color", "default": "#2B2B3A", "group": "Theme colors" },
+    "c_panel": { "type": "color", "default": "#FFFAEB", "group": "Theme colors" },
+    "c_text": { "type": "color", "default": "#2B2B3A", "group": "Theme colors" },
+    "c_accent": { "type": "color", "default": "#D1495B", "group": "Theme colors" },
+    "c_start": { "type": "color", "default": "#8BD17C", "group": "Theme colors" },
+    "c_finish": { "type": "color", "default": "#FFD166", "group": "Theme colors" },
+    "c_plain": { "type": "color", "default": "#FFFFFF", "group": "Theme colors" },
+    "c_safe": { "type": "color", "default": "#7FD1E8", "group": "Theme colors" },
+    "c_skip": { "type": "color", "default": "#F28B82", "group": "Theme colors" },
+    "c_back": { "type": "color", "default": "#F4A261", "group": "Theme colors" },
+    "c_forward": { "type": "color", "default": "#B7E4A0", "group": "Theme colors" },
+    "c_shortcut": { "type": "color", "default": "#C3A6F0", "group": "Theme colors" },
+    "c_dare": { "type": "color", "default": "#FF9EC4", "group": "Theme colors" },
+    "legend": {
+      "type": "list",
+      "item": {
+        "kind": {
+          "type": "enum",
+          "options": [
+            "start",
+            "finish",
+            "plain",
+            "safe",
+            "skip",
+            "back",
+            "forward",
+            "shortcut",
+            "dare"
+          ]
+        },
+        "label": "text",
+        "desc": "text"
+      },
+      "default": [
+        { "kind": "start", "label": "Start", "desc": "Everyone begins here" },
+        { "kind": "plain", "label": "Plain", "desc": "Do what the tile says" },
+        { "kind": "safe", "label": "Safe zone", "desc": "Nothing bad can happen" },
+        { "kind": "skip", "label": "Skip", "desc": "Miss your next turn" },
+        { "kind": "back", "label": "Go back", "desc": "Move back by the number" },
+        { "kind": "forward", "label": "Go forward", "desc": "Move ahead by the number" },
+        { "kind": "shortcut", "label": "Shortcut", "desc": "Jump to the tile number" },
+        { "kind": "dare", "label": "Dare", "desc": "Complete it or step back 1" },
+        { "kind": "finish", "label": "Finish", "desc": "Land here to win" }
+      ],
+      "group": "Texts"
+    },
+    "tiles": {
+      "type": "list",
+      "item": {
+        "kind": {
+          "type": "enum",
+          "options": [
+            "start",
+            "finish",
+            "plain",
+            "safe",
+            "skip",
+            "back",
+            "forward",
+            "shortcut",
+            "dare"
+          ],
+          "default": "plain"
+        },
+        "text": "text",
+        "n": "integer"
+      },
+      "group": "Board",
+      "note": "40 tiles clockwise from the top-left corner. kind: start, finish, plain, safe, skip, back, forward, shortcut, dare. n is the step count (back, forward) or the target tile number (shortcut).",
+      "default": [
+        { "kind": "start", "text": "Start: pack the car", "n": 0 },
+        { "kind": "plain", "text": "Sing the chorus of a song", "n": 0 },
+        { "kind": "plain", "text": "Name 3 road snacks", "n": 0 },
+        { "kind": "dare", "text": "Do your best GPS voice", "n": 0 },
+        { "kind": "plain", "text": "Spot a red car", "n": 0 },
+        { "kind": "safe", "text": "Rest stop, you are safe", "n": 0 },
+        { "kind": "plain", "text": "Tell a travel story", "n": 0 },
+        { "kind": "back", "text": "Wrong exit!", "n": 3 },
+        { "kind": "plain", "text": "Imitate a radio DJ", "n": 0 },
+        { "kind": "skip", "text": "Flat tire, miss a turn", "n": 0 },
+        { "kind": "forward", "text": "Green lights", "n": 2 },
+        { "kind": "plain", "text": "Hum a song, others guess", "n": 0 },
+        { "kind": "shortcut", "text": "Secret backroad", "n": 28 },
+        { "kind": "plain", "text": "Count 5 trucks aloud", "n": 0 },
+        { "kind": "dare", "text": "Pick the next playlist song", "n": 0 },
+        { "kind": "plain", "text": "Gas station detour", "n": 0 },
+        { "kind": "safe", "text": "Roadside picnic, safe", "n": 0 },
+        { "kind": "safe", "text": "Name a city with a Z", "n": 0 },
+        { "kind": "plain", "text": "Tunnel echo cheer", "n": 0 },
+        { "kind": "back", "text": "Traffic jam", "n": 2 },
+        { "kind": "plain", "text": "Give the driver a compliment", "n": 0 },
+        { "kind": "dare", "text": "Mountain pass", "n": 0 },
+        { "kind": "skip", "text": "Detour sign", "n": 0 },
+        { "kind": "plain", "text": "Act like a tour guide", "n": 0 },
+        { "kind": "back", "text": "Late for dinner", "n": 4 },
+        { "kind": "safe", "text": "Scenic overlook, safe", "n": 0 },
+        { "kind": "plain", "text": "Reverse the alphabet game", "n": 0 },
+        { "kind": "plain", "text": "Bumpy road", "n": 0 },
+        { "kind": "dare", "text": "Spin the souvenir", "n": 0 },
+        { "kind": "dare", "text": "Backseat karaoke", "n": 0 },
+        { "kind": "shortcut", "text": "Fast lane", "n": 38 },
+        { "kind": "plain", "text": "Name 3 national parks", "n": 0 },
+        { "kind": "back", "text": "Lost the map", "n": 5 },
+        { "kind": "plain", "text": "Photo stop, pose together", "n": 0 },
+        { "kind": "plain", "text": "Tailwind", "n": 0 },
+        { "kind": "skip", "text": "Rainstorm, miss a turn", "n": 0 },
+        { "kind": "forward", "text": "Cheer for the driver", "n": 2 },
+        { "kind": "plain", "text": "Last gas station", "n": 0 },
+        { "kind": "plain", "text": "Almost there", "n": 0 },
+        { "kind": "finish", "text": "Finish: arrive!", "n": 0 }
+      ]
+    }
+  },
+  "consts": {
+    "tile": 360,
+    "cols": 13,
+    "rows": 9,
+    "ring": "2 * (cols + rows) - 4",
+    "ox": "(canvas.w - cols * tile) / 2",
+    "oy": "(canvas.h - rows * tile) / 2",
+    "pw": "(cols - 2) * tile",
+    "ph": "(rows - 2) * tile",
+    "pad": 14.8
+  },
+  "functions": {
+    "ring_col": {
+      "args": { "i": "number" },
+      "expr": "i < cols ? i : (i < cols + rows - 1 ? cols - 1 : (i < 2 * cols + rows - 2 ? 2 * cols + rows - 3 - i : 0))",
+      "note": "Column of tile i on the ring: along the top, down the right, back along the bottom, up the left."
+    },
+    "ring_row": {
+      "args": { "i": "number" },
+      "expr": "i < cols ? 0 : (i < cols + rows - 1 ? i - cols + 1 : (i < 2 * cols + rows - 2 ? rows - 1 : ring - i))"
+    },
+    "tile_x": {
+      "args": { "i": "number" },
+      "expr": "ox + ring_col(i) * tile",
+      "note": "Left edge of tile i on the canvas."
+    },
+    "tile_y": {
+      "args": { "i": "number" },
+      "expr": "oy + ring_row(i) * tile"
+    },
+    "in_x": {
+      "args": { "i": "number" },
+      "expr": "ring_row(i) == 0 or ring_row(i) == rows - 1 ? 0 : (ring_col(i) == 0 ? 1 : -1)",
+      "note": "Direction from tile i towards the middle of the board (x part)."
+    },
+    "in_y": {
+      "args": { "i": "number" },
+      "expr": "ring_row(i) == 0 ? 1 : (ring_row(i) == rows - 1 ? -1 : 0)"
+    },
+    "has_n": {
+      "args": { "k": "text" },
+      "expr": "k == 'back' or k == 'forward' or k == 'shortcut'",
+      "note": "Tiles that show a number: steps for back and forward, the target tile for a shortcut."
+    },
+    "kind_color": {
+      "args": { "k": "text" },
+      "expr": "(k == 'start' ? c_start : (k == 'finish' ? c_finish : (k == 'safe' ? c_safe : (k == 'skip' ? c_skip : (k == 'back' ? c_back : (k == 'forward' ? c_forward : (k == 'shortcut' ? c_shortcut : (k == 'dare' ? c_dare : c_plain))))))))",
+      "note": "Tile color of a kind, from the theme."
+    },
+    "pip": {
+      "args": { "face": "number", "k": "number" },
+      "expr": "face == 1 ? k == 4 : (face == 2 ? k == 0 or k == 8 : (face == 3 ? k == 0 or k == 4 or k == 8 : (face == 4 ? k % 2 == 0 and k != 4 : (face == 5 ? k % 2 == 0 : k % 3 != 1 and k != 4))))",
+      "note": "Is pip k (0-8, row by row) shown on a die face?"
+    },
+    "pawn_color": {
+      "args": { "n": "number" },
+      "expr": "n == 0 ? c_start : (n == 1 ? c_dare : (n == 2 ? c_skip : c_safe))"
+    }
+  },
+  "layers": [
+    {
+      "id": "paper",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
+      "fill": "c_paper"
+    },
+    {
+      "id": "stripes",
+      "type": "group",
+      "note": "Soft diagonal stripes on the paper: a repeated group, every other iteration hidden.",
+      "repeat": { "count": "ceil((canvas.w + 847.1) / 254.1)", "index": "s" },
+      "visible": "s % 2 == 0",
+      "translate": { "x": "s * 254.1", "y": 0 },
+      "layers": [
+        {
+          "id": "stripe",
+          "type": "polygon",
+          "points": [[0, 0], [127.1, 0], [-720, "canvas.h"], [-847.1, "canvas.h"]],
+          "fill": "mix(c_paper, c_ink, 0.05)"
+        }
+      ]
+    },
+    {
+      "id": "frame",
+      "type": "rect",
+      "box": { "x": 76.2, "y": 76.2, "w": "100% - 152.5", "h": "100% - 152.5" },
+      "fill": "#00000000",
+      "radius": 84.7,
+      "stroke": { "color": "c_frame", "width": 16.9 }
+    },
+    { "id": "board_divider", "type": "divider", "label": "Ring of tiles (one repeated group)" },
+    {
+      "id": "tile",
+      "type": "group",
+      "repeat": { "each": "tiles", "item": "t", "index": "i" },
+      "translate": { "x": "tile_x(i)", "y": "tile_y(i)" },
+      "layers": [
+        {
+          "id": "tile_base",
+          "type": "rect",
+          "visible": false,
+          "note": "Hidden base: box and corner radius shared by shadow and background.",
+          "box": { "x": "pad", "y": "pad", "w": "tile - 2 * pad", "h": "tile - 2 * pad" },
+          "radius": 38.1
+        },
+        {
+          "id": "tile_shadow",
+          "type": "rect",
+          "extends": "tile_base",
+          "visible": true,
+          "box": { "x": "pad + 10.6", "y": "pad + 14.8" },
+          "fill": "with_alpha(c_ink, 0.28)"
+        },
+        {
+          "id": "tile_bg",
+          "type": "rect",
+          "extends": "tile_base",
+          "visible": true,
+          "fill": "kind_color(t.kind)",
+          "stroke": { "color": "c_ink", "width": 10.6 }
+        },
+        {
+          "id": "tile_num",
+          "type": "text",
+          "font": "bebas",
+          "size": 63.5,
+          "color": "with_alpha(c_ink, 0.6)",
+          "anchor": "top-left",
+          "at": { "x": 42.4, "y": 25.4 },
+          "text": "{i + 1}"
+        },
+        {
+          "id": "tile_icon",
+          "type": "group",
+          "note": "One icon per kind; the group moves left when the tile also shows a number.",
+          "visible": "t.kind != 'plain'",
+          "translate": { "x": "has_n(t.kind) ? -50.8 : 0", "y": 12.7 },
+          "layers": [
+            {
+              "id": "icon_arrow",
+              "type": "polygon",
+              "shape": { "type": "arrow" },
+              "anchor": "center",
+              "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 80.5 },
+              "fill": "c_ink",
+              "visible": "t.kind == 'forward'"
+            },
+            {
+              "id": "icon_back",
+              "type": "polygon",
+              "shape": { "type": "arrow" },
+              "extends": "icon_arrow",
+              "rotate": 180,
+              "visible": "t.kind == 'back'"
+            },
+            {
+              "id": "icon_chev_a",
+              "type": "polygon",
+              "shape": { "type": "chevron", "inner": 0.45 },
+              "anchor": "center",
+              "box": { "x": 152.5, "y": 131.3, "w": 76.2, "h": 84.7 },
+              "fill": "c_ink",
+              "visible": "t.kind == 'shortcut'"
+            },
+            {
+              "id": "icon_chev_b",
+              "type": "polygon",
+              "shape": { "type": "chevron", "inner": 0.45 },
+              "extends": "icon_chev_a",
+              "box": { "x": 211.8 },
+              "visible": "t.kind == 'shortcut'"
+            },
+            {
+              "id": "icon_start",
+              "type": "polygon",
+              "shape": { "type": "triangle" },
+              "anchor": "center",
+              "rotate": 90,
+              "box": { "x": 180, "y": 131.3, "w": 84.7, "h": 93.2 },
+              "fill": "c_ink",
+              "visible": "t.kind == 'start'"
+            },
+            {
+              "id": "icon_dare",
+              "type": "polygon",
+              "shape": { "type": "star", "inner": 0.45 },
+              "anchor": "center",
+              "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 114.4 },
+              "fill": "c_ink",
+              "visible": "t.kind == 'dare'"
+            },
+            {
+              "id": "icon_safe",
+              "type": "polygon",
+              "points": [[137.6, 93.2], [222.4, 93.2], [222.4, 139.8], [180, 182.1], [137.6, 139.8]],
+              "fill": "c_ink",
+              "visible": "t.kind == 'safe'"
+            },
+            {
+              "id": "icon_skip",
+              "type": "polygon",
+              "points": [[146.1, 88.9], [213.9, 88.9], [146.1, 173.6], [213.9, 173.6]],
+              "fill": "c_ink",
+              "visible": "t.kind == 'skip'"
+            },
+            {
+              "id": "icon_finish",
+              "type": "polygon",
+              "points": [
+                [152.5, 80.5],
+                [220.2, 105.9],
+                [152.5, 131.3],
+                [152.5, 182.1],
+                [139.8, 182.1],
+                [139.8, 80.5]
+              ],
+              "fill": "c_ink",
+              "visible": "t.kind == 'finish'"
+            }
+          ]
+        },
+        {
+          "id": "tile_n",
+          "type": "text",
+          "font": "bebas",
+          "size": 122.8,
+          "color": "c_ink",
+          "anchor": "left",
+          "visible": "has_n(t.kind)",
+          "at": { "x": 196.9, "y": 148.2 },
+          "text": "{t.kind == 'back' ? '-' : (t.kind == 'forward' ? '+' : '')}{t.n}"
+        },
+        {
+          "id": "tile_text",
+          "type": "text",
+          "font": "bebas",
+          "size": 80.5,
+          "min_size": 38.1,
+          "color": "c_ink",
+          "anchor": "center",
+          "align": "center",
+          "wrap": 296.5,
+          "max_width": 304.9,
+          "max_height": 139.8,
+          "line_spacing": 0,
+          "shrink_group": "tiles",
+          "at": { "x": 180, "y": 254.1 },
+          "text": "{t.text}"
+        }
+      ]
+    },
+    {
+      "id": "links_divider",
+      "type": "divider",
+      "label": "Shortcut links (drawn from the tile to its target)"
+    },
+    {
+      "id": "link",
+      "type": "group",
+      "repeat": { "each": "tiles", "item": "t", "index": "i" },
+      "visible": "show_links and t.kind == 'shortcut'",
+      "layers": [
+        {
+          "id": "link_line",
+          "type": "polygon",
+          "closed": false,
+          "points": [
+            ["@tile_bg[i].bounds.cx + in_x(i) * 165.2", "@tile_bg[i].bounds.cy + in_y(i) * 165.2"],
+            [
+              "@tile_bg[max(t.n, 1) - 1].bounds.cx + in_x(max(t.n, 1) - 1) * 165.2",
+              "@tile_bg[max(t.n, 1) - 1].bounds.cy + in_y(max(t.n, 1) - 1) * 165.2"
+            ]
+          ],
+          "stroke": {
+            "color": "mix(c_shortcut, c_ink, 0.3)",
+            "width": 21.2,
+            "dash": [42.4, 25.4],
+            "arrow": "end"
+          },
+          "opacity": 0.9
+        }
+      ]
+    },
+    { "id": "panel_divider", "type": "divider", "label": "Title and rules panel" },
+    {
+      "id": "panel",
+      "type": "group",
+      "translate": { "x": "ox + tile", "y": "oy + tile" },
+      "layers": [
+        {
+          "id": "panel_shadow",
+          "type": "rect",
+          "box": { "x": "59.3", "y": "72", "w": "pw - 84.7", "h": "ph - 84.7" },
+          "radius": 97.4,
+          "fill": "with_alpha(c_ink, 0.3)"
+        },
+        {
+          "id": "panel_body",
+          "type": "rect",
+          "box": { "x": 42.4, "y": 42.4, "w": "pw - 84.7", "h": "ph - 84.7" },
+          "radius": 97.4,
+          "fill": "with_alpha(c_panel, 0.8)",
+          "stroke": { "color": "c_frame", "width": 16.9 }
+        },
+        {
+          "id": "panel_inner",
+          "type": "rect",
+          "box": { "x": 88.9, "y": 88.9, "w": "pw - 177.9", "h": "ph - 177.9" },
+          "radius": 63.5,
+          "fill": "#00000000",
+          "stroke": {
+            "color": "with_alpha(c_accent, 0.6)",
+            "width": 6.4,
+            "dash": [33.9, 21.2]
+          }
+        },
+        {
+          "id": "title",
+          "type": "text",
+          "font": "bebas",
+          "text": "{upper(title)}",
+          "size": 370.6,
+          "min_size": 169.4,
+          "max_width": "pw - 1101.2",
+          "color": "c_accent",
+          "stroke": { "color": "c_ink", "width": 14.8 },
+          "anchor": "top",
+          "align": "center",
+          "at": { "x": "pw / 2", "y": 122.8 }
+        },
+        {
+          "id": "title_stars",
+          "type": "group",
+          "note": "Two stars flanking the title: a repeated group with its own origin and rotation.",
+          "repeat": { "count": 2, "index": "s" },
+          "translate": { "x": "s == 0 ? 402.4 : pw - 402.4", "y": 381.2 },
+          "layers": [
+            {
+              "id": "title_star",
+              "type": "polygon",
+              "shape": { "type": "star", "inner": 0.45 },
+              "anchor": "center",
+              "box": { "x": 0, "y": 0, "w": 232.9, "h": 232.9 },
+              "rotate": "s == 0 ? -14 : 14",
+              "fill": "c_finish",
+              "stroke": { "color": "c_ink", "width": 12.7 }
+            },
+            {
+              "id": "title_star_dot",
+              "type": "ellipse",
+              "anchor": "center",
+              "box": { "x": 0, "y": 0, "w": 55.1, "h": 55.1 },
+              "fill": "with_alpha(#FFFFFF, 0.8)"
+            }
+          ]
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "font": "bebas",
+          "text": "★ {subtitle} ★",
+          "size": 131.3,
+          "min_size": 63.5,
+          "max_width": "pw - 1101.2",
+          "color": "c_text",
+          "anchor": "top",
+          "align": "center",
+          "at": { "x": "pw / 2", "y": "@title.bounds.bottom + 8.5" }
+        },
+        {
+          "id": "rule_line",
+          "type": "rect",
+          "box": { "x": 275.3, "y": "@subtitle.bounds.bottom + 63.5", "w": "pw - 550.6", "h": 12.7 },
+          "radius": 6.4,
+          "fill": "c_accent"
+        },
+        {
+          "id": "rules",
+          "type": "group",
+          "translate": { "x": 275.3, "y": "@rule_line.bounds.bottom + 63.5" },
+          "layers": [
+            {
+              "id": "rules_head",
+              "type": "text",
+              "font": "bebas",
+              "text": "HOW TO PLAY",
+              "size": 135.5,
+              "color": "c_accent",
+              "anchor": "top-left",
+              "at": { "x": 0, "y": 0 }
+            },
+            {
+              "id": "rule_measure",
+              "type": "text",
+              "visible": false,
+              "note": "Hidden ruler: stacks the rules by measuring each text above the previous one (a group cannot read its own contents for its translate).",
+              "text": "{r.text}",
+              "size": 76.2,
+              "min_size": 50.8,
+              "wrap": 1482.4,
+              "line_spacing": 12.7,
+              "anchor": "top-left",
+              "repeat": { "each": "rules", "item": "r", "index": "ri" },
+              "at": {
+                "x": 144,
+                "y": "ri == 0 ? @rules_head.bounds.bottom + 46.6 : @rule_measure[ri - 1].bounds.bottom + 42.4"
+              }
+            },
+            {
+              "id": "rule",
+              "type": "group",
+              "note": "One group per rule, placed where its hidden ruler is.",
+              "repeat": { "each": "rules", "item": "r", "index": "ri" },
+              "translate": { "x": 0, "y": "@rule_measure[ri].bounds.top" },
+              "layers": [
+                {
+                  "id": "rule_badge",
+                  "type": "ellipse",
+                  "box": { "x": 0, "y": 4.2, "w": 97.4, "h": 97.4 },
+                  "fill": "c_accent"
+                },
+                {
+                  "id": "rule_no",
+                  "type": "text",
+                  "font": "bebas",
+                  "text": "{ri + 1}",
+                  "size": 80.5,
+                  "color": "c_panel",
+                  "anchor": "center",
+                  "at": { "x": "@rule_badge.bounds.cx", "y": "@rule_badge.bounds.cy + 4.2" }
+                },
+                {
+                  "id": "rule_text",
+                  "type": "text",
+                  "text": "{r.text}",
+                  "size": 76.2,
+                  "min_size": 50.8,
+                  "wrap": 1482.4,
+                  "line_spacing": 12.7,
+                  "color": "c_text",
+                  "anchor": "top-left",
+                  "at": { "x": 144, "y": 0 }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "legend",
+          "type": "group",
+          "translate": { "x": 2265.9, "y": "@rule_line.bounds.bottom + 63.5" },
+          "layers": [
+            {
+              "id": "legend_head",
+              "type": "text",
+              "font": "bebas",
+              "text": "TILE GUIDE",
+              "size": 135.5,
+              "color": "c_accent",
+              "anchor": "top-left",
+              "at": { "x": 0, "y": 0 }
+            },
+            {
+              "id": "legend_row",
+              "type": "group",
+              "repeat": { "each": "legend", "item": "e", "index": "j" },
+              "translate": { "x": 0, "y": "@legend_head.bounds.bottom + 42.4 + j * 122.8" },
+              "layers": [
+                {
+                  "id": "legend_swatch",
+                  "type": "rect",
+                  "box": { "x": 0, "y": 0, "w": 93.2, "h": 93.2 },
+                  "radius": 23.3,
+                  "fill": "kind_color(e.kind)",
+                  "stroke": { "color": "c_text", "width": 8.5 }
+                },
+                {
+                  "id": "legend_label",
+                  "type": "text",
+                  "font": "bebas",
+                  "text": "{e.label}",
+                  "size": 88.9,
+                  "color": "c_text",
+                  "anchor": "left",
+                  "at": { "x": 139.8, "y": 46.6 }
+                },
+                {
+                  "id": "legend_desc",
+                  "type": "text",
+                  "text": "{e.desc}",
+                  "size": 61.4,
+                  "min_size": 38.1,
+                  "max_width": 995.3,
+                  "color": "with_alpha(c_text, 0.85)",
+                  "anchor": "left",
+                  "at": { "x": 550.6, "y": 50.8 }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dice",
+          "type": "group",
+          "note": "Two dice. The face of each comes from a function; the pips are a 3 x 3 repeated group shown by pip(face, k).",
+          "repeat": { "count": 2, "index": "d" },
+          "translate": { "x": "275.3 + d * 275.3", "y": "ph - 635.3" },
+          "rotate": "d == 0 ? -8 : 7",
+          "layers": [
+            {
+              "id": "die_body",
+              "type": "rect",
+              "box": { "x": 0, "y": 0, "w": 211.8, "h": 211.8 },
+              "radius": 46.6,
+              "fill": "#FFFFFF",
+              "stroke": { "color": "c_ink", "width": 10.6 }
+            },
+            {
+              "id": "die_pips",
+              "type": "group",
+              "repeat": { "count": 9, "index": "k" },
+              "visible": "pip(d == 0 ? 5 : 6, k)",
+              "translate": {
+                "x": "105.9 + (k % 3 - 1) * 57.2",
+                "y": "105.9 + (floor(k / 3) - 1) * 57.2"
+              },
+              "layers": [
+                {
+                  "id": "die_pip",
+                  "type": "ellipse",
+                  "anchor": "center",
+                  "box": { "x": 0, "y": 0, "w": 36, "h": 36 },
+                  "fill": "c_ink"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pawns",
+          "type": "group",
+          "repeat": { "count": 4, "index": "n" },
+          "translate": { "x": "1016.5 + n * 222.4", "y": "ph - 423.5" },
+          "layers": [
+            {
+              "id": "pawn_shadow",
+              "type": "ellipse",
+              "anchor": "center",
+              "box": { "x": 8.5, "y": 118.6, "w": 165.2, "h": 38.1 },
+              "fill": "with_alpha(c_ink, 0.3)"
+            },
+            {
+              "id": "pawn_body",
+              "type": "ellipse",
+              "anchor": "bottom",
+              "box": { "x": 0, "y": 122.8, "w": 144, "h": 114.4 },
+              "fill": "pawn_color(n)",
+              "stroke": { "color": "c_ink", "width": 10.6 }
+            },
+            {
+              "id": "pawn_head",
+              "type": "ellipse",
+              "anchor": "bottom",
+              "extends": "pawn_body",
+              "box": { "y": 21.2, "w": 88.9, "h": 88.9 }
+            },
+            {
+              "id": "pawn_gloss",
+              "type": "ellipse",
+              "anchor": "center",
+              "box": { "x": -21.2, "y": -55.1, "w": 21.2, "h": 29.6 },
+              "fill": "with_alpha(#FFFFFF, 0.6)",
+              "rotate": 25
+            }
+          ]
+        },
+        {
+          "id": "foot",
+          "type": "text",
+          "text": "{foot}",
+          "size": 55.1,
+          "color": "with_alpha(c_text, 0.75)",
+          "anchor": "bottom-left",
+          "wrap": 1672.9,
+          "line_spacing": 4.2,
+          "at": { "x": 275.3, "y": "ph - 110.1" }
+        }
+      ]
+    }
+  ]
 }
