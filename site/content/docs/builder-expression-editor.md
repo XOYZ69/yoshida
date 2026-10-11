@@ -1,5 +1,6 @@
 +++
 title = "Builder: Expression Editor"
+description = "Suggestions, signatures, hover info and go-to-definition in formula fields."
 +++
 
 Expression and template fields in the inspector are small code editors for [expressions](@/docs/expressions.md) and [templates](@/docs/expressions-templates.md).

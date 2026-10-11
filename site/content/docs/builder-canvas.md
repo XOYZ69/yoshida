@@ -1,5 +1,6 @@
 +++
 title = "Builder: Canvas"
+description = "The live card preview: selecting, moving, resizing and rotating layers."
 +++
 
 The canvas shows the card as it will be rendered (the real core, running in your browser), with an overlay for selection and editing. The overlay uses the resolved bounds the core returns for every layer and every repeat iteration (with rotation, pivot, polygon points and the text size after auto-shrink).

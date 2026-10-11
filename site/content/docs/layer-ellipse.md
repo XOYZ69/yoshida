@@ -1,5 +1,6 @@
 +++
 title = "Layer: ellipse"
+description = "Ellipses and circles that fill their box."
 +++
 
 An ellipse that fills its box. A circle is an ellipse with equal `w` and `h`.

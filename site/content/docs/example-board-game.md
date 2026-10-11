@@ -1,5 +1,6 @@
 +++
 title = "Example: Board Game"
+description = "A walk through the printable board game example."
 +++
 
 `examples/board-game` is a printable party board game: 40 tiles in a ring from START to FINISH, special tiles, a title and rules panel with a tile guide, dice and pawns. The design is the board, and every card in the card file is a different board with its own tiles and color theme.

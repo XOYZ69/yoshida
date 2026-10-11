@@ -1,5 +1,6 @@
 +++
 title = "Architecture"
+description = "One I/O-free core, three front ends, and how they fit together."
 +++
 
 One **I/O-free core** implements the file format and the renderer. Three front ends wrap it. All of them produce the same pixels.

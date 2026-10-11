@@ -1,5 +1,6 @@
 +++
 title = "Command Line"
+description = "Check projects, render cards and format files from a terminal or CI."
 +++
 
 The `yoshida` tool checks projects, renders cards and formats files. It never uses the network except to download `https://` images while rendering, and it can be run offline.

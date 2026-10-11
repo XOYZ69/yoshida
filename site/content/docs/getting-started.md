@@ -1,5 +1,6 @@
 +++
 title = "Getting Started"
+description = "Three ways to use yoshida, and your first rendered card."
 +++
 
 There are three ways to use yoshida. They all produce the same pixels.

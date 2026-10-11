@@ -1,5 +1,6 @@
 +++
 title = "CI and Deployment"
+description = "The GitHub Actions workflows for checks, releases and this website."
 +++
 
 Two GitHub Actions workflows live in `.github/workflows/`. They share the Zig setup in `.github/actions/setup-zig`, which installs Zig 0.16.0 from PyPI (the `ziglang` package ships the official release binaries) and caches Zig's build cache.

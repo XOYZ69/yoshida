@@ -1,5 +1,6 @@
 +++
 title = "Third-Party Notices"
+description = "Licences of the fonts and libraries yoshida ships with."
 +++
 
 > This page is the authoritative list. Every release bundle carries a copy as `THIRD_PARTY.md`.

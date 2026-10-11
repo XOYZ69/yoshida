@@ -1,5 +1,6 @@
 +++
 title = "Card Data"
+description = "The table of values that fills a design, as JSON or CSV."
 +++
 
 Card data is the table of values that fills a design's [params](@/docs/params.md), one row (JSON object or CSV line) per card. It comes in two forms.

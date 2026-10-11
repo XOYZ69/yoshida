@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Literals and Units"
+description = "Numbers, units, strings, colours and lists."
 +++
 
 ## Literals

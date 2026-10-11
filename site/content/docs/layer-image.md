@@ -1,5 +1,6 @@
 +++
 title = "Layer: image"
+description = "Pictures from the project or the web, with fill, contain and cover fitting."
 +++
 
 A picture from a file in the project or from the web.

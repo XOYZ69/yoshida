@@ -1,5 +1,6 @@
 +++
 title = "Rendering Model"
+description = "How a card becomes pixels, step by step."
 +++
 
 How a card becomes pixels.

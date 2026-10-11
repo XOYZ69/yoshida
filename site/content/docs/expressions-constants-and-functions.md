@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Constants and Functions"
+description = "Name a value or formula once and reuse it in every layer."
 +++
 
 A design can give names to values and formulas that several layers use, so a formula is written once instead of being pasted into every layer.

@@ -1,5 +1,6 @@
 +++
 title = "Builder: Layers"
+description = "The layer tree: reorder, group, hide and lock layers."
 +++
 
 The **Layers** tab lists the design's layers **topmost first**, as a tree.

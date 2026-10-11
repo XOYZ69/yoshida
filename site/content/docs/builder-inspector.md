@@ -1,5 +1,6 @@
 +++
 title = "Builder: Inspector"
+description = "Every field of the selected layer, with multi-select editing."
 +++
 
 The right panel shows every field of the selected layer.

@@ -1,5 +1,6 @@
 +++
 title = "Extends"
+description = "Start a layer from another layer and change only what differs."
 +++
 
 `"extends": "other_id"` starts from another layer's fields and applies this layer's own fields on top. It is how you avoid copy-pasting a layer that differs in a few values.

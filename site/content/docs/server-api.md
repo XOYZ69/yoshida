@@ -1,5 +1,6 @@
 +++
 title = "Server API"
+description = "The HTTP API of yoshida-server."
 +++
 
 `yoshida-server` serves the editor and a small HTTP API. See [Server and Docker](@/docs/server-and-docker.md) for running it.

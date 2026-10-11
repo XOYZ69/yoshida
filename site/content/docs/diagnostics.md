@@ -1,5 +1,6 @@
 +++
 title = "Diagnostics"
+description = "How problems are reported, and every error code with its fix."
 +++
 
 Every problem yoshida finds is a **diagnostic** with a severity, a stable numeric code, a place and a message. Loading and checking report **all** problems, not just the first, and rendering starts only when there are zero errors.

@@ -1,5 +1,6 @@
 +++
 title = "Project Layout and Manifest"
+description = "A project folder, its paths and the yoshida.json manifest."
 +++
 
 A **project** is a folder. All paths inside project files are relative to the project root, use `/` as separator and must not escape the root (a `..` that climbs above the root is error 1203).

@@ -1,5 +1,6 @@
 +++
 title = "Builder: Params"
+description = "Add and edit the params a card can set, in groups."
 +++
 
 The **Params** tab edits the design's [params](@/docs/params.md).

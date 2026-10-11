@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Functions"
+description = "Every built-in function, with arguments and return types."
 +++
 
 | Function | Signature | Notes |

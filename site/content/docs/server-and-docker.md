@@ -1,5 +1,6 @@
 +++
 title = "Server and Docker"
+description = "Host the editor and render whole card sets on your own server."
 +++
 
 `yoshida-server` is a small static HTTP server. It serves the built editor and, when enabled, renders a whole card set on the machine it runs on and returns a zip of PNGs (the "hybrid" mode, handy for home labs and big sets). It uses the same core as the CLI and the browser, so the pixels are identical.

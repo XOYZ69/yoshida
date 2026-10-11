@@ -1,5 +1,6 @@
 +++
 title = "Expressions: List Lookup by Key"
+description = "Read list params by key instead of by position."
 +++
 
 A [list param](@/docs/params.md#lists) whose items have a `text` field can be read **by key**, not only by position.

@@ -1,5 +1,6 @@
 +++
 title = "Builder: Shortcuts"
+description = "Keyboard shortcuts for the editor."
 +++
 
 On macOS use <kbd>Cmd</kbd> where the table says <kbd>Ctrl</kbd>. Shortcuts that edit layers work in Builder mode when the focus is not in a text field.

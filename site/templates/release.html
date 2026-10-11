@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ page.title }} · {{ config.title }}{% endblock %}
 {% block body %}
-<main class="releases">
+<main id="main" class="releases">
   <p><a href="{{ get_url(path='@/releases/_index.md') }}">All releases</a></p>
   <h1>{{ page.title }} {% if page.extra.prerelease %}<span class="tag">pre-release</span>{% endif %}</h1>
   <p class="meta">{{ page.date | date(format="%Y-%m-%d") }} · <a href="{{ page.extra.url }}">{{ page.extra.tag }} on GitHub</a></p>

@@ -1,5 +1,6 @@
 +++
 title = "Formatting and Schemas"
+description = "How every tool writes JSON, and the JSON Schemas for editors."
 +++
 
 ## Canonical formatting (`yoshida fmt`)

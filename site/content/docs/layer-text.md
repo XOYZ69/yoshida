@@ -1,5 +1,6 @@
 +++
 title = "Layer: text"
+description = "Text with wrapping, alignment, line limits and auto-shrink."
 +++
 
 Text with word wrapping, alignment, line limits and auto-shrink.

@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Operators"
+description = "Arithmetic, comparison and logic operators, by precedence."
 +++
 
 Highest precedence first:

@@ -1,5 +1,6 @@
 +++
 title = "Layers"
+description = "How layers are drawn, and the fields every layer type shares."
 +++
 
 The design's `layers` array is drawn in order: the first layer is at the bottom, the last on top. Each layer has a type.

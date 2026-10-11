@@ -1,5 +1,6 @@
 +++
 title = "Repeat"
+description = "Draw a layer once per item, for example a row of stars or one line per list item."
 +++
 
 `repeat` draws a layer once per iteration. Inside the layer's fields the loop names are in scope.

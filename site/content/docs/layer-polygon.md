@@ -1,5 +1,6 @@
 +++
 title = "Layer: polygon"
+description = "Triangles, banners, stars, open lines with arrowheads and preset shapes."
 +++
 
 A shape through a list of points: a triangle, a banner, a star, or an open line with arrowheads. Or a preset shape (star, polygon, arrow, ...) in a box.

@@ -1,5 +1,6 @@
 +++
 title = "Builder"
+description = "The visual editor that runs in your browser, and how its panels fit together."
 +++
 
 The editor opens in **Builder** mode: a visual editor for designs and card data. Everything it does is written back to ordinary project files, so the JSON is always one click away under **Advanced (JSON)**, for anything the builder does not cover (a code editor with JSON highlighting, folding, search, bracket matching and problem markers).

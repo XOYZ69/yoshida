@@ -1,5 +1,6 @@
 +++
 title = "Examples"
+description = "The six example projects and what each one shows."
 +++
 
 The `examples/` folder holds six projects. Open them from the editor's project menu, or render them from the command line:

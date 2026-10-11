@@ -1,5 +1,6 @@
 +++
 title = "Effects"
+description = "Crop, fade and sharpen filters applied to a layer's own pixels."
 +++
 
 `effects` is an array of operations applied, in order, to a layer's own pixels before the layer is composited onto the canvas. Effects work on every layer type, [groups](@/docs/layer-group.md) included.

@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Names and References"
+description = "Params, layer fields, canvas and card names, and reserved words."
 +++
 
 | Name | Type | Meaning |

@@ -17,7 +17,19 @@
   --shadow: 0 1px 0 rgba(0, 0, 0, .04), 0 12px 30px light-dark(rgba(60, 45, 20, .10), rgba(0, 0, 0, .35));
   --font-body: "Inter", system-ui, sans-serif; --font-head: "Fraunces", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  // Docs additions: a recessed surface for code and table heads, a soft
+  // accent wash for the current item, and search highlights.
+  --code-bg: light-dark(#f6f1e7, #1a1814);
+  --soft: light-dark(#ece5d6, #2c2822);
+  --accent-soft: light-dark(#e6ecfd, #232a40);
+  --mark: light-dark(#ffe58a, #5a4710);
+  --header-h: 3.75rem;
+  --page-max: 96rem;
 }
+// The type scales with the window: 16px on phones and laptops, up to 19px
+// on large desktop screens, so the docs do not look tiny on a 2560px monitor.
+// Everything in the docs is sized in rem and follows.
+html { font-size: clamp(16px, calc(0.25vw + 13.4px), 19px); }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 
@@ -30,6 +42,7 @@
 }
 
 @import "layout";
+@import "docs";
 
 img.only-dark { display: none; }
 img.only-dark { @include dark { display: block; } }
@@ -46,12 +59,11 @@ img.only-light { @include dark { display: none; } }
 .theme-toggle[data-pref="system"] .i-system, .theme-toggle[data-pref="light"] .i-light,
 .theme-toggle[data-pref="dark"] .i-dark { display: block; }
 
-.top nav a { font-size: 15px; }
 .bottom { border-top: 1px solid var(--line); text-align: center; }
-h1, h2, h3 { font-weight: 600; font-variation-settings: "opsz" 120; }
 
+h1, h2, h3 { font-weight: 600; }
 .button { background: var(--ink); color: var(--bg); border-radius: 99px; }
-.top nav a.button { color: var(--bg); }
+.top .tools a.button { color: var(--bg); }
 .button.secondary { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
 
 .hero { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 24px; padding-top: 72px !important; }
@@ -88,19 +100,9 @@ h1, h2, h3 { font-weight: 600; font-variation-settings: "opsz" 120; }
 .frontend h3 { font-size: 26px; }
 .outro { font-family: var(--font-head); font-style: italic; font-size: 24px; max-width: 760px; }
 
-.docs-nav h4 { font-family: var(--font-head); font-style: italic; font-weight: 400; font-size: 16px; color: var(--muted); }
-.docs-nav a { border-radius: 99px; }
-.docs-nav a[aria-current] { background: var(--ink); color: var(--bg); }
-.docs article { background: var(--panel); border-radius: 18px; padding: 44px 52px; box-shadow: var(--shadow); max-width: 820px; }
-.docs article h1 { font-size: clamp(36px, 5vw, 54px); }
-article pre { background: var(--bg) !important; border-radius: 10px; font-size: 13.5px; }
-article :not(pre) > code { background: var(--bg); border-radius: 5px; padding: 1px 5px; }
-article th { border-bottom: 2px solid var(--ink); }
-article td { border-bottom: 1px solid var(--line); }
 .release { background: var(--panel); border-radius: 16px; padding: 4px 28px 20px; margin-bottom: 20px; box-shadow: var(--shadow); }
 .tag { background: var(--bg); border-radius: 99px; }
 @media (max-width: 860px) {
-  .docs article { padding: 24px 20px; }
   .step + .step { border-left: 0; border-top: 1px solid var(--line); }
   .hand { height: 240px; }
   .hand img { width: 130px; left: calc(50% + (var(--i) - (var(--n) - 1) / 2) * 70px); }

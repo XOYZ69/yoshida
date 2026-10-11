@@ -1,5 +1,6 @@
 +++
 title = "Builder: Files"
+description = "The project's files as a folder tree: add, rename, move and delete."
 +++
 
 The **Files** tab shows the project's files as a folder tree.

@@ -1,5 +1,6 @@
 +++
 title = "Layer: divider"
+description = "A heading in the layer list that draws nothing."
 +++
 
 A divider organises the layer list in the editor. It draws nothing and takes no part in rendering.

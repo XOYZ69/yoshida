@@ -1,5 +1,6 @@
 +++
 title = "Layer: group"
+description = "Draw several layers as one picture: move, fade and clip them together."
 +++
 
 A group holds other layers and draws them as one picture, so they can be organised, moved, hidden, faded and rotated together.

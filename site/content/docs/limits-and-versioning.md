@@ -1,5 +1,6 @@
 +++
 title = "Limits and Versioning"
+description = "Size limits, the layer limit and how the format is versioned."
 +++
 
 ## Limits

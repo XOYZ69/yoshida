@@ -1,5 +1,6 @@
 +++
 title = "Saving, Images and Privacy"
+description = "Where the editor keeps your work, and what leaves your machine."
 +++
 
 ## Saved in the browser

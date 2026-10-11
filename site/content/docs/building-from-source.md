@@ -1,5 +1,6 @@
 +++
 title = "Building from Source"
+description = "Build the CLI, the server, the WASM core and the editor yourself."
 +++
 
 ## Requirements

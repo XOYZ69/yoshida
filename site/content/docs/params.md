@@ -1,5 +1,6 @@
 +++
 title = "Params"
+description = "The inputs a card can set: types, defaults, lists and enums."
 +++
 
 Params are the inputs a card can set. Each one has a name and a type. Layers read them by name in [expressions](@/docs/expressions.md) and [templates](@/docs/expressions-templates.md): `{title}`, `level * 2`, `accent`.

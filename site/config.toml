@@ -6,7 +6,7 @@ description = "Design cards with layers and formulas. Fill them from a spreadshe
 default_language = "en"
 
 compile_sass = true
-build_search_index = true
+build_search_index = false
 generate_feeds = true
 feed_filenames = ["atom.xml"]
 
@@ -26,9 +26,6 @@ style = "class"
 [link_checker]
 # zola build checks every internal link and anchor and fails on a broken one.
 skip_prefixes = ["http://localhost"]
-
-[search]
-index_format = "fuse_json"
 
 [extra]
 repo = "https://github.com/XOYZ69/yoshida"

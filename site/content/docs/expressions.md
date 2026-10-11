@@ -1,5 +1,6 @@
 +++
 title = "Expressions"
+description = "Small typed formulas that read params, other layers and the canvas."
 +++
 
 Almost every value in a design can be an **expression**: a small formula that reads params, other layers and the canvas. Expressions have no assignments, no loops and no side effects, and are checked for types when the design loads, before anything is drawn.

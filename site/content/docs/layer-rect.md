@@ -1,5 +1,6 @@
 +++
 title = "Layer: rect"
+description = "Rectangles with rounded corners, fill and stroke."
 +++
 
 A rectangle, optionally with rounded corners, a fill and a stroke.

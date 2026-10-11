@@ -1,5 +1,6 @@
 +++
 title = "Expressions: Templates"
+description = "Text and path fields with {expression} holes."
 +++
 
 `text` and `path` fields are **templates**: literal text with `{expression}` holes.

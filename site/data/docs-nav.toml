@@ -1,5 +1,9 @@
+# Docs sidebar, the docs overview index and the previous/next links.
+# Page descriptions come from each page's front matter.
+
 [[group]]
 title = "Start"
+blurb = "Install yoshida, render your first card and look at the examples."
 [[group.item]]
 title = "Getting Started"
 path = "docs/getting-started.md"
@@ -18,6 +22,7 @@ path = "docs/example-board-game.md"
 
 [[group]]
 title = "Format"
+blurb = "The project files by hand: designs, params, layers, expressions and card data."
 [[group.item]]
 title = "Project Layout and Manifest"
 path = "docs/project-layout-and-manifest.md"
@@ -102,6 +107,7 @@ path = "docs/limits-and-versioning.md"
 
 [[group]]
 title = "Builder"
+blurb = "The visual editor in your browser, panel by panel."
 [[group.item]]
 title = "Overview"
 path = "docs/builder.md"
@@ -138,6 +144,7 @@ path = "docs/saving-images-and-privacy.md"
 
 [[group]]
 title = "Contribute"
+blurb = "Build yoshida yourself and learn how the pieces fit together."
 [[group.item]]
 title = "Building from Source"
 path = "docs/building-from-source.md"

@@ -1,5 +1,6 @@
 +++
 title = "Builder: Card Data"
+description = "Edit the cards of a set as a form or a table, in JSON or CSV."
 +++
 
 The **Card data** tab edits the cards of the design's set, in JSON or CSV files. See [Card Data](@/docs/card-data.md) for the formats.

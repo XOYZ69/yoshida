@@ -1,5 +1,6 @@
 +++
 title = "WASM Interface"
+description = "How the editor talks to the WASM core."
 +++
 
 The core is built as `yoshida.wasm` (`zig build wasm`, target `wasm32-freestanding`, `ReleaseSmall`) and copied to the editor's `public/` folder. The editor runs it in a Web Worker (`web/src/lib/worker.ts`, wrapped by `web/src/lib/engine.ts`). You can use the module from your own JavaScript too.

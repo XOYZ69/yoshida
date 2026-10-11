@@ -1,5 +1,6 @@
 +++
 title = "Builder: Problems"
+description = "Every error, warning and hint in one panel, with jump-to-source."
 +++
 
 The **Problems** panel is the one place for every [diagnostic](@/docs/diagnostics.md): errors, warnings and hints for the design, the card files and the manifest.

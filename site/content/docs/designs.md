@@ -1,5 +1,6 @@
 +++
 title = "Designs"
+description = "A design file: canvas, fonts, params and the layers that are drawn."
 +++
 
 A design file (`*.design.json`) describes one card layout: the canvas, the fonts, the parameters a card can set and the layers that are drawn.
