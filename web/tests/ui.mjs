@@ -445,13 +445,21 @@ ok(
 	await status(),
 );
 await p.click(".project-btn");
-const saved = await p
-	.locator('.menu .heading:text-is("Saved in this browser") ~ [role=menuitem]')
-	.allTextContents();
+// Only the rows between "Saved in this browser" and the next heading; the
+// Examples rows follow as siblings and must not count.
+const saved = await p.evaluate(() => {
+	const rows = [];
+	let el = [...document.querySelectorAll(".menu .heading")].find(
+		(h) => h.textContent.trim() === "Saved in this browser",
+	)?.nextElementSibling;
+	for (; el && !el.classList.contains("heading"); el = el.nextElementSibling)
+		if (el.getAttribute("role") === "menuitem") rows.push(el.textContent.trim());
+	return rows;
+});
 ok(
 	"menu lists saved projects",
-	saved.filter((t) => /poker|fresh-cards/.test(t)).length >= 3,
-	`${saved.length} items`,
+	saved.some((t) => /^poker\b/.test(t)) && saved.some((t) => /^fresh-cards\b/.test(t)),
+	JSON.stringify(saved),
 );
 await p.screenshot({ path: `${shots}/project-menu.png` });
 await p

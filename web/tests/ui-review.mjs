@@ -237,8 +237,10 @@ await p.screenshot({ path: `${shots}/review-toolbar.png` });
 await openExample("board-game");
 await p.click('.left .tabs button:has-text("Card data")');
 await settle();
+// The first list with an enum field (rules, a text-only list, comes first).
 const widths = await p
 	.locator(".form .items")
+	.filter({ has: p.locator(".select") })
 	.first()
 	.locator("tbody tr")
 	.evaluateAll((rows) =>
@@ -334,7 +336,7 @@ const [zipDl] = await Promise.all([
 			(await p.locator(".backdrop").evaluate((e) =>
 				getComputedStyle(e).backdropFilter,
 			)) !== "none" &&
-				/of 3 cards/.test(await p.locator(".progress .count").innerText()),
+				/of 4 cards/.test(await p.locator(".progress .count").innerText()),
 			await p.locator(".progress .count").innerText(),
 		);
 		ok(
@@ -348,7 +350,7 @@ const [zipDl] = await Promise.all([
 const zipped = unzipSync(new Uint8Array(await readFile(await zipDl.path())));
 ok(
 	"the zip has every card",
-	Object.keys(zipped).length === 3,
+	Object.keys(zipped).length === 4,
 	Object.keys(zipped).join(", "),
 );
 await p.waitForSelector(".progress", { state: "detached", timeout: 5000 });

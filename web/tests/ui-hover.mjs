@@ -62,7 +62,14 @@ await p.click(".project-btn");
 await p.locator('.menu [role=menuitem]:has-text("board-game")').click();
 await rendered();
 
-// A param: type, card value, Ctrl+click opens it in the Params tab.
+// A param: type, card value, Ctrl+click opens it in the Params tab. The
+// first board leaves c_paper at its default; the night board sets it.
+await p.locator(".toolbar .picker .current").click();
+const pickerSearch = p.locator('.pop input[aria-label="Search cards"]');
+await pickerSearch.waitFor();
+await pickerSearch.fill("night");
+await pickerSearch.press("Enter");
+await rendered();
 await row("paper").click();
 const fill = field("fill");
 let t = await hover(fill, "c_paper");
@@ -123,7 +130,7 @@ await row("tile").click();
 const tx = field("translate.x");
 t = await hover(tx, "tile_x");
 ok("hover on a design function shows it", /tile_x\(i: number\)/.test(t), t);
-ok("hover on a design function shows its body", /= 65 \+/.test(t), t);
+ok("hover on a design function shows its body", /= ox \+ ring_col\(i\)/.test(t), t);
 t = await hover(tx, "i");
 ok(
 	"hover on a repeat name says where it comes from",
@@ -162,7 +169,7 @@ ok(
 );
 
 // A layer reference: hover, F12, Ctrl+click keeps an unsaved edit.
-await row("rules").click();
+await row("rules_head").click();
 const color = field("color");
 await color.click();
 await p.keyboard.press("Control+a");
@@ -190,7 +197,7 @@ ok(
 	(await p.locator(".tree li.selected .name").allTextContents()).join() ===
 		"title",
 );
-await row("rules").click();
+await row("rules_head").click();
 await field("color").click();
 await p.keyboard.press("End");
 await p.keyboard.type(" ", { delay: 5 });
@@ -202,7 +209,7 @@ ok(
 	(await p.locator(".tree li.selected .name").allTextContents()).join() ===
 		"title",
 );
-await row("rules").click();
+await row("rules_head").click();
 ok(
 	"going to the definition keeps what was typed",
 	(await field("color").innerText()).trim().endsWith("nopex"),
