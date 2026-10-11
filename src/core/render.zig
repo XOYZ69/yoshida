@@ -42,6 +42,22 @@ pub const Options = struct {
     /// finds the errors that depend on card data. URL images that are not
     /// in the file system are skipped instead of reported.
     dry: bool = false,
+    /// Proxy render: the bitmap is `scale` times the canvas size (0 < scale
+    /// <= 1). Layout, expressions and the outline stay in canvas pixels, so
+    /// only the pixels get coarser.
+    scale: f64 = 1,
+    /// Draw only some layers (editor drag preview). Layers that are hidden
+    /// by the filter are still evaluated and outlined.
+    filter: ?Filter = null,
+
+    pub const Filter = struct {
+        ids: []const []const u8,
+        mode: Mode,
+
+        /// `only`: just these layers (and what is inside them), without the
+        /// background. `except`: everything but these layers.
+        pub const Mode = enum { only, except };
+    };
 };
 
 /// Where a layer ended up on the canvas. Repeated layers appear once per
@@ -310,6 +326,10 @@ const Ctx = struct {
     diags: *diag.List,
     canvas_w: f64 = 0,
     canvas_h: f64 = 0,
+    /// Bitmap pixels per canvas pixel (`Options.scale`).
+    k: f64 = 1,
+    /// Inside a layer that `Options.filter` selected (mode `only`).
+    filter_inside: bool = false,
     states: []State,
     resolved: []Resolved,
     /// Repeated layers: every iteration, evaluated once per card.
@@ -1180,19 +1200,12 @@ const Ctx = struct {
     /// Draws a group's children into their own bitmap, then applies the
     /// group's effects, opacity and rotation like a single layer.
     fn drawGroup(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
-        if (!ctx.countDrawn(gi) or ctx.opts.dry) {
-            // Over the limit (or checking): keep counting the children.
-            var ci = gi + 1;
-            while (ci < l.end) : (ci += 1) {
-                const child = &ctx.d.layers[ci];
-                if (child.parent != gi) continue;
-                drawOne(ctx, canvas, child, ci) catch |err| switch (err) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Failed => continue,
-                };
-            }
-            return;
-        }
+        // Over the limit (or checking): keep counting the children.
+        if (!ctx.countDrawn(gi) or ctx.opts.dry) return ctx.drawChildren(canvas, l, gi);
+        // A plain group (no effects, fully opaque, not rotated) composites
+        // exactly like its children drawn one by one, so they draw straight
+        // onto the target without a scratch bitmap.
+        if (l.effects.len == 0 and r.opacity >= 1 and r.rotate == 0) return ctx.drawChildren(canvas, l, gi);
         // Effects work on the group's own bounds (like a single layer's);
         // otherwise the children draw onto a canvas-sized bitmap, grown to
         // the bounds when rotation can bring off-canvas parts into view.
@@ -1213,18 +1226,41 @@ const Ctx = struct {
             x1 = ctx.canvas_w;
             y1 = ctx.canvas_h;
         }
-        var tmp: ?raster.Bitmap = try raster.Bitmap.init(ctx.gpa, @intFromFloat(x0), @intFromFloat(y0), @intFromFloat(x1 - x0), @intFromFloat(y1 - y0));
+        var tmp: ?raster.Bitmap = try ctx.scratch(x0, y0, x1, y1);
         defer if (tmp) |*t| t.deinit(ctx.gpa);
+        try ctx.drawChildren(&tmp.?, l, gi);
+        try ctx.finishLayer(canvas, l, r, &tmp);
+    }
+
+    /// A transparent bitmap for the canvas rectangle (x0, y0)-(x1, y1), in
+    /// bitmap pixels (`Options.scale`).
+    fn scratch(ctx: *Ctx, x0: f64, y0: f64, x1: f64, y1: f64) Allocator.Error!raster.Bitmap {
+        const px0 = @floor(x0 * ctx.k);
+        const py0 = @floor(y0 * ctx.k);
+        const px1 = @max(px0 + 1, @ceil(x1 * ctx.k));
+        const py1 = @max(py0 + 1, @ceil(y1 * ctx.k));
+        return raster.Bitmap.init(ctx.gpa, @intFromFloat(px0), @intFromFloat(py0), @intFromFloat(px1 - px0), @intFromFloat(py1 - py0));
+    }
+
+    /// Canvas points in bitmap pixels.
+    fn scalePoints(ctx: *Ctx, pts: []const [2]f32) Allocator.Error![]const [2]f32 {
+        if (ctx.k == 1) return pts;
+        const k: f32 = @floatCast(ctx.k);
+        const out = try ctx.arena.alloc([2]f32, pts.len);
+        for (out, pts) |*o, q| o.* = .{ q[0] * k, q[1] * k };
+        return out;
+    }
+
+    fn drawChildren(ctx: *Ctx, target: *raster.Bitmap, l: *const Layer, gi: usize) Failed!void {
         var ci = gi + 1;
         while (ci < l.end) : (ci += 1) {
             const child = &ctx.d.layers[ci];
             if (child.parent != gi) continue;
-            drawOne(ctx, &tmp.?, child, ci) catch |err| switch (err) {
+            drawOne(ctx, target, child, ci) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.Failed => continue,
             };
         }
-        try ctx.finishLayer(canvas, l, r, &tmp);
     }
 
     /// Counts one drawn layer; false once the card is over the limit.
@@ -1288,20 +1324,31 @@ const Ctx = struct {
                 bx1 = @min(bx1, ctx.canvas_w);
                 by1 = @min(by1, ctx.canvas_h);
             }
-            tmp = try raster.Bitmap.init(ctx.gpa, @intFromFloat(bx0), @intFromFloat(by0), @intFromFloat(bx1 - bx0), @intFromFloat(by1 - by0));
+            tmp = try ctx.scratch(bx0, by0, bx1, by1);
             target = &tmp.?;
         }
-        const stroke: ?raster.StrokeStyle = if (r.stroke) |s| .{ .paint = raster.paint(s.color, 1), .width = @floatCast(s.width), .dash = s.dash } else null;
-        const lf: f32 = @floatCast(r.left);
-        const tf: f32 = @floatCast(r.top);
-        const wf: f32 = @floatCast(r.w);
-        const hf: f32 = @floatCast(r.h);
+        // Everything below is in bitmap pixels: canvas pixels times k.
+        const k: f32 = @floatCast(ctx.k);
+        const stroke: ?raster.StrokeStyle = if (r.stroke) |s| .{
+            .paint = raster.paint(s.color, 1),
+            .width = @as(f32, @floatCast(s.width)) * k,
+            .dash = if (k == 1 or s.dash.len == 0) s.dash else blk: {
+                const dash = try ctx.arena.alloc(f32, s.dash.len);
+                for (dash, s.dash) |*o, v| o.* = v * k;
+                break :blk dash;
+            },
+        } else null;
+        const lf: f32 = @as(f32, @floatCast(r.left)) * k;
+        const tf: f32 = @as(f32, @floatCast(r.top)) * k;
+        const wf: f32 = @as(f32, @floatCast(r.w)) * k;
+        const hf: f32 = @as(f32, @floatCast(r.h)) * k;
+        const radius: f32 = @as(f32, @floatCast(r.radius)) * k;
         switch (l.kind) {
             .group => unreachable,
             .rect => if (stroke != null and stroke.?.dash.len > 0) {
-                raster.drawShape(target, .rect, lf, tf, wf, hf, @floatCast(r.radius), raster.paint(r.fill, 1), null);
-                raster.strokePolyline(target, try raster.roundRectPath(ctx.arena, lf, tf, wf, hf, @floatCast(r.radius)), true, stroke.?);
-            } else raster.drawShape(target, .rect, lf, tf, wf, hf, @floatCast(r.radius), raster.paint(r.fill, 1), stroke),
+                raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), null);
+                raster.strokePolyline(target, try raster.roundRectPath(ctx.arena, lf, tf, wf, hf, radius), true, stroke.?);
+            } else raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), stroke),
             .ellipse => if (r.arc) |arc| {
                 const cx = lf + wf / 2;
                 const cy = tf + hf / 2;
@@ -1318,15 +1365,16 @@ const Ctx = struct {
                 raster.strokePolyline(target, try raster.ellipsePath(ctx.arena, lf + wf / 2, tf + hf / 2, wf / 2, hf / 2, 0, 360), true, stroke.?);
             } else raster.drawShape(target, .ellipse, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), stroke),
             .polygon => {
-                if (l.closed) try raster.fillPolygon(ctx.gpa, target, r.points, raster.paint(r.fill, 1));
-                if (stroke) |s| try ctx.strokeWithArrows(target, l, r.points, s);
+                const pts = try ctx.scalePoints(r.points);
+                if (l.closed) try raster.fillPolygon(ctx.gpa, target, pts, raster.paint(r.fill, 1));
+                if (stroke) |s| try ctx.strokeWithArrows(target, l, pts, s);
             },
             .text => try text.draw(ctx.gpa, target, r.font.?, &r.layout.?, lf, tf, switch (l.alignment) {
                 .left => .left,
                 .center => .center,
                 .right => .right,
                 .justify => .justify,
-            }, raster.paint(r.color, 1), if (r.stroke) |s| .{ .paint = raster.paint(s.color, 1), .width = @floatCast(s.width) } else null),
+            }, raster.paint(r.color, 1), if (r.stroke) |s| .{ .paint = raster.paint(s.color, 1), .width = @floatCast(s.width) } else null, k),
             .image => {
                 const img = r.image orelse {
                     raster.drawPlaceholder(target, lf, tf, wf, hf);
@@ -1382,7 +1430,7 @@ const Ctx = struct {
         for (l.effects) |eff| {
             switch (eff.kind) {
                 .crop, .fade => {
-                    const len: f32 = @floatCast(try ctx.num(&e, l, eff.length.?));
+                    const len: f32 = @floatCast(try ctx.num(&e, l, eff.length.?) * ctx.k);
                     const side: raster.Side = switch (eff.side) {
                         .top => .top,
                         .bottom => .bottom,
@@ -1406,7 +1454,7 @@ const Ctx = struct {
             }
         }
         if (r.rotate != 0) {
-            raster.compositeRotated(canvas, t, @floatCast(r.rotate * std.math.pi / 180), @floatCast(r.pivot[0]), @floatCast(r.pivot[1]), @floatCast(r.opacity));
+            raster.compositeRotated(canvas, t, @floatCast(r.rotate * std.math.pi / 180), @floatCast(r.pivot[0] * ctx.k), @floatCast(r.pivot[1] * ctx.k), @floatCast(r.opacity));
             return;
         }
         raster.multiplyOpacity(t, @floatCast(r.opacity));
@@ -1560,9 +1608,14 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     if (!(dpi >= 0 and dpi <= 10000)) dpi = 0;
     bleed = std.math.clamp(bleed, 0, @min(w, h) / 2);
     e = ctx.newEnv();
-    var canvas = if (opts.dry) try raster.Bitmap.init(gpa, 0, 0, 1, 1) else try raster.Bitmap.init(gpa, 0, 0, @intFromFloat(w), @intFromFloat(h));
+    ctx.k = if (opts.scale > 0 and opts.scale < 1) opts.scale else 1;
+    const pw = @max(1, @round(w * ctx.k));
+    const ph = @max(1, @round(h * ctx.k));
+    var canvas = if (opts.dry) try raster.Bitmap.init(gpa, 0, 0, 1, 1) else try raster.Bitmap.init(gpa, 0, 0, @intFromFloat(pw), @intFromFloat(ph));
     errdefer canvas.deinit(gpa);
-    if (d.background) |bg| {
+    const filter_only = if (opts.filter) |f| f.mode == .only else false;
+    if (d.background != null and !filter_only) {
+        const bg = d.background.?;
         const v = ctx.eval(&e, null, bg) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => Value{ .color = Color.transparent },
@@ -1578,16 +1631,35 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
         };
     }
     if (ctx.drawn > limits.layers) try ctx.reportLayerLimit();
-    canvas.dpi = dpi;
-    canvas.bleed = bleed;
+    canvas.dpi = dpi * ctx.k;
+    canvas.bleed = bleed * ctx.k;
+    canvas.canvas_w = @intFromFloat(w);
+    canvas.canvas_h = @intFromFloat(h);
     return canvas;
 }
 
 fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed!void {
+    // Options.filter: hidden layers are evaluated and outlined, not drawn.
+    var hide = false;
+    const saved_inside = ctx.filter_inside;
+    defer ctx.filter_inside = saved_inside;
+    if (ctx.opts.filter) |f| {
+        var listed = false;
+        for (f.ids) |id| if (std.mem.eql(u8, id, l.id)) {
+            listed = true;
+            break;
+        };
+        switch (f.mode) {
+            .except => hide = listed,
+            .only => if (!ctx.filter_inside) {
+                if (listed) ctx.filter_inside = true else hide = l.kind != .group;
+            },
+        }
+    }
     if (l.repeat == null) {
         const r = try ctx.resolve(li);
         if (ctx.opts.outline) |o| try o.add(l, ctx.outline_instance, r);
-        if (!r.visible) return;
+        if (!r.visible or hide) return;
         if (l.kind == .group) return ctx.drawGroup(canvas, l, li, r);
         return ctx.drawLayer(canvas, l, r);
     }
@@ -1599,7 +1671,7 @@ fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed
         defer ctx.leaveIteration(li);
         for (list, 0..) |*r, i| {
             if (ctx.opts.outline) |o| try o.add(l, @intCast(i), r);
-            if (!r.visible) continue;
+            if (!r.visible or hide) continue;
             ctx.enterIteration(li, i);
             ctx.outline_instance = @intCast(i);
             ctx.drawGroup(canvas, l, li, r) catch |err| switch (err) {
@@ -1611,9 +1683,95 @@ fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed
     }
     for (list, 0..) |*r, i| {
         if (ctx.opts.outline) |o| try o.add(l, @intCast(i), r);
-        if (r.visible) ctx.drawLayer(canvas, l, r) catch |err| switch (err) {
+        if (r.visible and !hide) ctx.drawLayer(canvas, l, r) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => {},
         };
     }
+}
+
+const test_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "g", "type": "group", "layers": [
+    \\      { "id": "a", "type": "rect", "box": { "x": 10, "y": 10, "w": 60, "h": 40 }, "fill": "#FF0000", "radius": 6 },
+    \\      { "id": "zig", "type": "polygon", "closed": false, "points": [[10, 90], [60, 60], [110, 90], [160, 60]], "stroke": { "color": "#0000FF", "width": 5 } }
+    \\    ] },
+    \\    { "id": "h", "type": "group", "opacity": 0.5, "layers": [
+    \\      { "id": "b", "type": "ellipse", "box": { "x": 120, "y": 10, "w": 60, "h": 40 }, "fill": "#00FF00" }
+    \\    ] }
+    \\  ]
+    \\}
+;
+
+fn testRender(gpa: Allocator, opts: Options) !raster.Bitmap {
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var fs = project.MemFs.init(gpa);
+    defer fs.deinit();
+    try fs.put("t.design.json", test_design);
+    try fs.put("t.cards.json", "{ \"format\": 1, \"design\": \"t.design.json\", \"cards\": [{ \"id\": \"one\" }] }");
+    var diags = diag.List.init(arena);
+    const proj = try project.load(arena, fs.vfs(), &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    var assets = Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    return (try renderCard(gpa, &assets, &proj.sets[0], 0, opts, &diags)).?;
+}
+
+fn pixel(b: *const raster.Bitmap, x: usize, y: usize) [4]u16 {
+    return b.px[(y * b.w + x) * 4 ..][0..4].*;
+}
+
+test "proxy render is the full render at a smaller size" {
+    const gpa = std.testing.allocator;
+    var full = try testRender(gpa, .{});
+    defer full.deinit(gpa);
+    var half = try testRender(gpa, .{ .scale = 0.5 });
+    defer half.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 100), half.w);
+    try std.testing.expectEqual(@as(u32, 50), half.h);
+    try std.testing.expectEqual(@as(u32, 200), half.canvas_w);
+    try std.testing.expectEqual(@as(u32, 100), half.canvas_h);
+    // Each proxy pixel is close to the average of the 2 x 2 full pixels.
+    var worst: f32 = 0;
+    for (0..half.h) |y| for (0..half.w) |x| for (0..4) |ch| {
+        var sum: f32 = 0;
+        for ([_][2]usize{ .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 1, 1 } }) |o| sum += @floatFromInt(pixel(&full, x * 2 + o[0], y * 2 + o[1])[ch]);
+        const d = @abs(sum / 4 - @as(f32, @floatFromInt(pixel(&half, x, y)[ch])));
+        // Edges differ a little (coverage is sampled at the coarser grid);
+        // flat areas must match.
+        worst = @max(worst, d);
+    };
+    try std.testing.expect(worst < 65535 * 0.35);
+    try std.testing.expectEqual(pixel(&full, 40, 30), pixel(&half, 20, 15));
+}
+
+test "layer filter" {
+    const gpa = std.testing.allocator;
+    var only = try testRender(gpa, .{ .filter = .{ .ids = &.{"g"}, .mode = .only } });
+    defer only.deinit(gpa);
+    // No background, the group's rect is there, the other group is not.
+    try std.testing.expectEqual([4]u16{ 0, 0, 0, 0 }, pixel(&only, 190, 5));
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&only, 40, 30));
+    try std.testing.expectEqual(@as(u16, 0), pixel(&only, 150, 30)[3]);
+    var except = try testRender(gpa, .{ .filter = .{ .ids = &.{"a"}, .mode = .except } });
+    defer except.deinit(gpa);
+    try std.testing.expectEqual([4]u16{ 65535, 65535, 65535, 65535 }, pixel(&except, 40, 30));
+    try std.testing.expect(pixel(&except, 150, 30)[0] < 65535);
+}
+
+test "plain and translucent groups" {
+    const gpa = std.testing.allocator;
+    var b = try testRender(gpa, .{});
+    defer b.deinit(gpa);
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 40, 30));
+    // Half-transparent green over white.
+    const p = pixel(&b, 150, 30);
+    try std.testing.expect(p[0] > 32000 and p[0] < 33500);
+    try std.testing.expectEqual(@as(u16, 65535), p[1]);
 }

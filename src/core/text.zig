@@ -235,14 +235,16 @@ pub const Align = enum { left, center, right, justify };
 
 pub const Outline = struct { paint: raster.Paint, width: f32 };
 
-/// Draws a laid-out block whose top-left corner is at (left, top). With
+/// Draws a laid-out block whose top-left corner is at (left, top), in bitmap
+/// pixels. The layout and the outline width are in canvas pixels; `k` is
+/// bitmap pixels per canvas pixel (1 except for proxy renders). With
 /// `outline`, every glyph first gets an outline of that width around it.
-pub fn draw(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, p: raster.Paint, outline: ?Outline) Allocator.Error!void {
-    if (outline) |o| if (o.width > 0) try drawPass(gpa, b, f, l, left, top, alignment, o.paint, o.width);
-    try drawPass(gpa, b, f, l, left, top, alignment, p, null);
+pub fn draw(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, p: raster.Paint, outline: ?Outline, k: f32) Allocator.Error!void {
+    if (outline) |o| if (o.width > 0) try drawPass(gpa, b, f, l, left / k, top / k, alignment, o.paint, o.width, k);
+    try drawPass(gpa, b, f, l, left / k, top / k, alignment, p, null, k);
 }
 
-fn drawPass(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, p: raster.Paint, outline: ?f32) Allocator.Error!void {
+fn drawPass(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, p: raster.Paint, outline: ?f32, k: f32) Allocator.Error!void {
     var mask: std.ArrayList(u8) = .empty;
     defer mask.deinit(gpa);
     for (l.lines, 0..) |ln, i| {
@@ -270,8 +272,8 @@ fn drawPass(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout,
             prev_font = g;
             if (cp != ' ') {
                 if (outline) |w| {
-                    drawOutline(b, g, cp, sc, x, baseline, w, p);
-                } else try drawGlyph(gpa, &mask, b, g, cp, sc, x, baseline, p);
+                    drawOutline(b, g, cp, sc * k, x * k, baseline * k, w * k, p);
+                } else try drawGlyph(gpa, &mask, b, g, cp, sc * k, x * k, baseline * k, p);
             }
             x += @as(f32, @floatFromInt(g.advance(cp))) * sc;
             if (cp == ' ') x += gap_extra;
