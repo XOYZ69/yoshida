@@ -2080,10 +2080,10 @@ const typeLabels: Record<LayerType, string> = {
 
 {#snippet previewBar()}
 	<span class="pick">
-	<span class="caption">Design</span>
+	<span class="caption">Design file</span>
 	<Select
 		value={setName}
-		label="Design"
+		label="Design file"
 		title="The design (card layout) being edited, with its card set"
 		options={sets.map((s) => ({
 			value: s.name,
@@ -2585,6 +2585,7 @@ const typeLabels: Record<LayerType, string> = {
 						ongroup={groupSelected}
 						onungroup={ungroupSelected}
 						onproblems={(id) => (problemFocus = id ?? "")}
+						onback={() => (selectedLayers = [])}
 						{listKeys}
 					/>
 					<p class="advanced">

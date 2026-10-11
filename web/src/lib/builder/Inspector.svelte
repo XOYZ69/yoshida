@@ -46,6 +46,7 @@ let {
 	ongroup,
 	onungroup,
 	onproblems,
+	onback,
 	listKeys = {},
 }: {
 	doc: Obj;
@@ -69,6 +70,8 @@ let {
 	onungroup: () => void;
 	/** Shows the problems of a layer (or of the design, for null) in the problems panel. */
 	onproblems: (id: string | null) => void;
+	/** Clears the selection so the design settings show again. */
+	onback: () => void;
 } = $props();
 
 const id = $derived(ids.length === 1 ? ids[0] : null);
@@ -502,6 +505,13 @@ let newFunction = $state("");
 {/snippet}
 
 <div class="inspector">
+  {#if ids.length}
+    <nav class="crumb" aria-label="Inspector">
+      <button class="back" onclick={onback} title="Back to the design settings (Esc)">‹ Design settings</button>
+      <span class="sep" aria-hidden="true">/</span>
+      <span class="here" title={ids.join(', ')}>{ids.length === 1 ? ids[0] : `${ids.length} layers`}</span>
+    </nav>
+  {/if}
   {#if ids.length > 1}
     <section>
       <h3>{ids.length} layers selected</h3>
@@ -773,7 +783,7 @@ let newFunction = $state("");
       </div>
       {#if !fontFiles.length}<p class="hint">Use <b>Add files</b> in the top bar to add .ttf or .otf fonts, then choose them here.</p>{/if}
     </section>
-    <p class="hint pad">Select a layer on the canvas or in the layer list to edit it. Drag to move, use the handles to resize, Alt+click to pick the layer underneath, hold Ctrl to move without snapping.</p>
+    <p class="hint pad">Select a layer on the canvas or in the layer list to edit it, and press Esc or use <b>Design settings</b> at the top to come back here. Drag to move, use the handles to resize, Alt+click to pick the layer underneath, hold Ctrl to move without snapping.</p>
   {/if}
 </div>
 
@@ -781,6 +791,41 @@ let newFunction = $state("");
   .inspector {
     display: flex;
     flex-direction: column;
+  }
+  .crumb {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 6px 12px;
+    background: var(--bg-bar);
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .crumb .back {
+    flex: none;
+    padding: 2px 6px;
+    border-color: transparent;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .crumb .back:hover {
+    background: var(--hover);
+    text-decoration: underline;
+  }
+  .crumb .sep {
+    color: var(--muted);
+  }
+  .crumb .here {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
   }
   section {
     padding: 10px 12px;

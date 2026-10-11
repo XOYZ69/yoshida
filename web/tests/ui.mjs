@@ -77,6 +77,19 @@ ok(
 	"inspector shows multi section",
 	(await p.locator("text=2 layers selected").count()) === 1,
 );
+ok(
+	"breadcrumb names the selection",
+	(await p.locator(".inspector .crumb .here").textContent()) === "2 layers",
+);
+await p.click(".inspector .crumb .back");
+ok(
+	"breadcrumb returns to the design settings",
+	(await p.locator(".tree li.selected").count()) === 0 &&
+		(await p.locator(".inspector h3:text-is('Design')").count()) === 1 &&
+		(await p.locator(".inspector .crumb").count()) === 0,
+);
+await row("badge").click();
+await row("art").click({ modifiers: ["Control"] });
 
 // Align left
 const before = JSON.parse(await fileText(design));
@@ -388,7 +401,7 @@ ok(
 		.count()) === 1,
 );
 await p.click('button[role=tab]:has-text("Builder")');
-await p.click('.toolbar button[aria-label="Design"]');
+await p.click('.toolbar button[aria-label="Design file"]');
 const designsAfter = await p.locator("[role=option]").count();
 await p.keyboard.press("Escape");
 ok("new design survives reload", designsAfter === 2, String(designsAfter));
