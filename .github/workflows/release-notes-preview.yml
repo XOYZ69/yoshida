@@ -9,7 +9,16 @@ name: Release notes preview
 on:
   pull_request_target:
     branches: [master]
-    types: [opened, reopened, edited, synchronize, labeled, unlabeled, ready_for_review]
+    types:
+      [
+        opened,
+        reopened,
+        edited,
+        synchronize,
+        labeled,
+        unlabeled,
+        ready_for_review,
+      ]
 
 # contents: write is only for POST /releases/generate-notes, which GitHub
 # gates behind write access even though it creates nothing. Safe here because
