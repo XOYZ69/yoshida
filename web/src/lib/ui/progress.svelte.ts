@@ -4,7 +4,13 @@
 
 export type StepState = "todo" | "active" | "done" | "error";
 
-export type Step = { label: string; state: StepState; detail?: string };
+export type Step = {
+	label: string;
+	state: StepState;
+	detail?: string;
+	/** Share of the whole task (roughly its share of the time). */
+	weight: number;
+};
 
 export type LogLine = { at: number; text: string; kind?: "error" };
 
@@ -17,9 +23,13 @@ export type Task = {
 	/** 0..1 for work measured in bytes; null when there is a count or nothing to measure. */
 	fraction: number | null;
 	started: number;
-	/** When the counted work started, for the time left. */
+	/** When the counted work of the active step started. */
 	workStarted: number | null;
-	/** Expected duration of work that reports no progress (ms), shown as an estimate. */
+	/** When the unit in flight (the card being rendered) started. */
+	unitStarted: number | null;
+	/** Time per unit: measured once a unit is done, an estimate before. */
+	perUnitMs: number | null;
+	/** Expected duration of work that reports no progress (ms), shown as text only. */
 	estimateMs: number | null;
 	steps: Step[];
 	log: LogLine[];
@@ -49,7 +59,12 @@ export class Run {
 	private t: Task;
 	private abort: (() => void) | null = null;
 
-	constructor(title: string, steps: string[], unit = "cards") {
+	/** `steps`: labels, or [label, weight] pairs (the default weight is 1). */
+	constructor(
+		title: string,
+		steps: (string | [string, number])[],
+		unit = "cards",
+	) {
 		progress.task = {
 			title,
 			done: 0,
@@ -58,8 +73,14 @@ export class Run {
 			fraction: null,
 			started: Date.now(),
 			workStarted: null,
+			unitStarted: null,
+			perUnitMs: null,
 			estimateMs: null,
-			steps: steps.map((label) => ({ label, state: "todo" })),
+			steps: steps.map((st) =>
+				typeof st === "string"
+					? { label: st, state: "todo", weight: 1 }
+					: { label: st[0], state: "todo", weight: st[1] },
+			),
 			log: [],
 			state: "running",
 			error: "",
@@ -90,6 +111,8 @@ export class Run {
 		this.t.done = 0;
 		this.t.total = 0;
 		this.t.workStarted = null;
+		this.t.unitStarted = null;
+		this.t.perUnitMs = null;
 		this.t.estimateMs = null;
 	}
 
@@ -98,16 +121,29 @@ export class Run {
 		if (s) s.detail = detail;
 	}
 
+	/** `done` of `total` units are finished; the next one starts now. */
 	count(done: number, total: number) {
-		if (this.t.workStarted === null) this.t.workStarted = Date.now();
+		const now = Date.now();
+		if (this.t.workStarted === null) this.t.workStarted = now;
+		if (done !== this.t.done || this.t.unitStarted === null) {
+			this.t.unitStarted = now;
+			// The measured pace replaces the estimate once a unit is done.
+			if (done > 0) this.t.perUnitMs = (now - this.t.workStarted) / done;
+		}
 		this.t.done = done;
 		this.t.total = total;
+	}
+
+	/** Expected time per unit before the first one is done (ms). */
+	perUnit(ms: number | null) {
+		if (!this.t.done) this.t.perUnitMs = ms && ms > 0 ? ms : null;
 	}
 
 	fraction(f: number | null) {
 		this.t.fraction = f === null ? null : Math.max(0, Math.min(1, f));
 	}
 
+	/** Expected duration of work that reports no progress; shown as text, not on the bar. */
 	estimate(ms: number | null) {
 		this.t.workStarted = Date.now();
 		this.t.estimateMs = ms;

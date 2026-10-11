@@ -3,6 +3,7 @@
 // window behind is blurred, so it is clear that work is running.
 import Icon from "./Icon.svelte";
 import { formatMs, progress } from "./progress.svelte";
+import { overall, timeLeft } from "./progressMath";
 
 let now = $state(Date.now());
 let logEl: HTMLOListElement | undefined = $state();
@@ -25,34 +26,30 @@ $effect(() => {
 	if (t?.state === "error") closeBtn?.focus();
 });
 
-/** 0..1, or null for work that reports no progress. */
+/** 0..1 over all steps, or null while nothing measurable has happened. */
 const ratio = $derived.by(() => {
 	if (!t) return null;
 	if (t.state === "done") return 1;
-	if (t.total > 0) return t.done / t.total;
-	if (t.fraction !== null) return t.fraction;
-	if (t.estimateMs && t.workStarted)
-		return Math.min(0.95, (now - t.workStarted) / t.estimateMs);
-	return null;
+	return overall(t, now);
 });
 
-/** Time left from the average time per finished card (or the estimate). */
+/** Time left from the pace of the work done so far (or the estimate). */
 const left = $derived.by(() => {
-	if (!t || t.state !== "running" || !t.workStarted) return "";
-	const spent = now - t.workStarted;
-	if (t.total > 0) {
-		if (!t.done || spent < 600) return "Working out the time left…";
-		const per = spent / t.done;
-		const rest = per * (t.total - t.done);
-		return `About ${formatMs(rest)} left · ${(per / 1000).toFixed(2)} s per ${t.unit.replace(/s$/, "")}`;
-	}
-	if (t.estimateMs) {
-		const rest = t.estimateMs - spent;
-		return rest > 0
-			? `About ${formatMs(rest)} left (estimated)`
+	if (!t || t.state !== "running") return "";
+	const per =
+		t.total > 0 && t.done > 0 && t.perUnitMs
+			? ` · ${(t.perUnitMs / 1000).toFixed(2)} s per ${t.unit.replace(/s$/, "")}`
+			: "";
+	const rest = timeLeft(ratio, t.started, now);
+	if (rest !== null && (t.done > 0 || t.total === 0))
+		return `About ${formatMs(rest)} left${per}`;
+	if (t.estimateMs && t.workStarted) {
+		const r = t.estimateMs - (now - t.workStarted);
+		return r > 0
+			? `About ${formatMs(r)} left (estimated)`
 			: "Taking longer than estimated…";
 	}
-	return "";
+	return t.total > 0 || ratio !== null ? "Working out the time left…" : "";
 });
 
 const stamp = (at: number) =>
@@ -87,7 +84,7 @@ function close() {
       </div>
       <div class="numbers">
         <span class="count">
-          {#if t.state === 'error'}Failed{:else if t.state === 'done'}Done{:else if t.total > 0}{t.done} of {t.total} {t.unit}{:else if ratio !== null}{Math.round(ratio * 100)}%{:else}Working…{/if}
+          {#if t.state === 'error'}Failed{:else if t.state === 'done'}Done{:else if t.total > 0}{t.done} of {t.total} {t.unit}{#if ratio !== null} · {Math.floor(ratio * 100)}%{/if}{:else if ratio !== null}{Math.floor(ratio * 100)}%{:else}Working…{/if}
         </span>
         <span class="left">{left}</span>
       </div>
