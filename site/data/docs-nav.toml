@@ -1,0 +1,161 @@
+[[group]]
+title = "Start"
+[[group.item]]
+title = "Getting Started"
+path = "docs/getting-started.md"
+[[group.item]]
+title = "Command Line"
+path = "docs/command-line.md"
+[[group.item]]
+title = "Server and Docker"
+path = "docs/server-and-docker.md"
+[[group.item]]
+title = "Examples"
+path = "docs/examples.md"
+[[group.item.child]]
+title = "Board game"
+path = "docs/example-board-game.md"
+
+[[group]]
+title = "Format"
+[[group.item]]
+title = "Project Layout and Manifest"
+path = "docs/project-layout-and-manifest.md"
+[[group.item]]
+title = "Designs"
+path = "docs/designs.md"
+[[group.item]]
+title = "Params"
+path = "docs/params.md"
+[[group.item]]
+title = "Layers"
+path = "docs/layers.md"
+[[group.item.child]]
+title = "rect"
+path = "docs/layer-rect.md"
+[[group.item.child]]
+title = "ellipse"
+path = "docs/layer-ellipse.md"
+[[group.item.child]]
+title = "polygon"
+path = "docs/layer-polygon.md"
+[[group.item.child]]
+title = "text"
+path = "docs/layer-text.md"
+[[group.item.child]]
+title = "image"
+path = "docs/layer-image.md"
+[[group.item.child]]
+title = "group"
+path = "docs/layer-group.md"
+[[group.item.child]]
+title = "divider"
+path = "docs/layer-divider.md"
+[[group.item]]
+title = "Repeat"
+path = "docs/repeat.md"
+[[group.item]]
+title = "Extends"
+path = "docs/extends.md"
+[[group.item]]
+title = "Effects"
+path = "docs/effects.md"
+[[group.item]]
+title = "Expressions"
+path = "docs/expressions.md"
+[[group.item.child]]
+title = "Literals and units"
+path = "docs/expressions-literals-and-units.md"
+[[group.item.child]]
+title = "Names and references"
+path = "docs/expressions-names-and-references.md"
+[[group.item.child]]
+title = "Operators"
+path = "docs/expressions-operators.md"
+[[group.item.child]]
+title = "Functions"
+path = "docs/expressions-functions.md"
+[[group.item.child]]
+title = "Templates"
+path = "docs/expressions-templates.md"
+[[group.item.child]]
+title = "List lookup"
+path = "docs/expressions-list-lookup.md"
+[[group.item.child]]
+title = "Constants and functions"
+path = "docs/expressions-constants-and-functions.md"
+[[group.item]]
+title = "Card Data"
+path = "docs/card-data.md"
+[[group.item]]
+title = "Rendering Model"
+path = "docs/rendering-model.md"
+[[group.item]]
+title = "Diagnostics"
+path = "docs/diagnostics.md"
+[[group.item]]
+title = "Formatting and Schemas"
+path = "docs/formatting-and-schemas.md"
+[[group.item]]
+title = "Limits and Versioning"
+path = "docs/limits-and-versioning.md"
+
+[[group]]
+title = "Builder"
+[[group.item]]
+title = "Overview"
+path = "docs/builder.md"
+[[group.item]]
+title = "Canvas"
+path = "docs/builder-canvas.md"
+[[group.item]]
+title = "Layers"
+path = "docs/builder-layers.md"
+[[group.item]]
+title = "Inspector"
+path = "docs/builder-inspector.md"
+[[group.item]]
+title = "Params"
+path = "docs/builder-params.md"
+[[group.item]]
+title = "Card data"
+path = "docs/builder-card-data.md"
+[[group.item]]
+title = "Files"
+path = "docs/builder-files.md"
+[[group.item]]
+title = "Problems"
+path = "docs/builder-problems.md"
+[[group.item]]
+title = "Expression editor"
+path = "docs/builder-expression-editor.md"
+[[group.item]]
+title = "Shortcuts"
+path = "docs/builder-shortcuts.md"
+[[group.item]]
+title = "Saving, Images and Privacy"
+path = "docs/saving-images-and-privacy.md"
+
+[[group]]
+title = "Contribute"
+[[group.item]]
+title = "Building from Source"
+path = "docs/building-from-source.md"
+[[group.item]]
+title = "CI and Deployment"
+path = "docs/ci-and-deployment.md"
+[[group.item]]
+title = "Architecture"
+path = "docs/architecture.md"
+[[group.item]]
+title = "WASM Interface"
+path = "docs/wasm-interface.md"
+[[group.item]]
+title = "Server API"
+path = "docs/server-api.md"
+[[group.item]]
+title = "Known Gaps"
+path = "docs/known-gaps.md"
+[[group.item]]
+title = "Third-Party Notices"
+path = "docs/third-party-notices.md"

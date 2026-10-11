@@ -1,0 +1,35 @@
+# Site for yoshida: landing page, docs (former wiki) and release notes.
+# The web editor is built separately by Vite and copied to /editor/.
+base_url = "https://xoyz69.github.io/yoshida"
+title = "yoshida"
+description = "Design cards with layers and formulas. Fill them from a spreadsheet. Get PNGs."
+default_language = "en"
+
+compile_sass = true
+build_search_index = true
+generate_feeds = true
+feed_filenames = ["atom.xml"]
+
+# Keep dots in URLs, so a release lives at /releases/v0.3.0/.
+[slugify]
+paths = "safe"
+
+[markdown]
+smart_punctuation = false
+bottom_footnotes = true
+
+[markdown.highlighting]
+light_theme = "github-light"
+dark_theme = "github-dark"
+style = "class"
+
+[link_checker]
+# zola build checks every internal link and anchor and fails on a broken one.
+skip_prefixes = ["http://localhost"]
+
+[search]
+index_format = "fuse_json"
+
+[extra]
+repo = "https://github.com/XOYZ69/yoshida"
+format_version = 1

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} · {{ config.title }}{% endblock %}
+{% block body %}
+<main class="releases">
+  <p><a href="{{ get_url(path='@/releases/_index.md') }}">All releases</a></p>
+  <h1>{{ page.title }} {% if page.extra.prerelease %}<span class="tag">pre-release</span>{% endif %}</h1>
+  <p class="meta">{{ page.date | date(format="%Y-%m-%d") }} · <a href="{{ page.extra.url }}">{{ page.extra.tag }} on GitHub</a></p>
+  {{ page.content | safe }}
+  {% if page.extra.assets %}
+  <h2>Downloads</h2>
+  <ul class="assets">
+    {% for a in page.extra.assets %}
+      <li><a href="{{ a.url }}">{{ a.name }}</a> <span>{{ a.size | filesizeformat }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</main>
+{% endblock %}

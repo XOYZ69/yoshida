@@ -1,0 +1,100 @@
+// Structure: grids, the docs layout, the card hand and responsive
+// breakpoints. Colours, type and decoration live in site.scss, which sets
+// the variables below on :root and then imports this file.
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body);
+       font-size: 16px; line-height: 1.65; }
+img { max-width: 100%; height: auto; }
+a { color: var(--link); }
+h1, h2, h3, h4 { font-family: var(--font-head); line-height: 1.15; }
+code, pre { font-family: var(--font-mono); }
+code { font-size: 0.88em; }
+pre { overflow-x: auto; padding: 14px 16px; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+       padding: 14px max(16px, calc((100vw - 1240px) / 2)); flex-wrap: wrap; }
+.top .brand img { height: 30px; display: block; }
+.top .brand .logo-dark { display: none; }
+.top nav { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.top nav a { text-decoration: none; color: var(--ink); }
+.bottom { padding: 24px max(16px, calc((100vw - 1240px) / 2)); font-size: 14px; color: var(--muted); }
+
+.button { display: inline-block; text-decoration: none; padding: 10px 18px; font-weight: 600; }
+.top nav a.button { padding: 7px 14px; }
+
+// Landing
+// The hero decoration bleeds sideways; clip it so the page never scrolls horizontally.
+.landing { overflow-x: clip; }
+.landing > section { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px;
+        align-items: center; min-height: 560px; padding-top: 48px !important; padding-bottom: 48px !important; }
+.hero h1 { font-size: clamp(40px, 6.5vw, 76px); margin: 0 0 20px; text-wrap: balance; }
+.lead { font-size: 19px; max-width: 34em; color: var(--muted); margin: 0 0 28px; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 24px; }
+.kicker { margin: 0 0 16px; font-size: 14px; }
+.latest { font-size: 14px; margin: 0; }
+.latest a { color: var(--muted); text-decoration: none; }
+
+.hand { position: relative; height: 480px; }
+.hand img { position: absolute; left: 50%; bottom: 0; width: 240px; transform-origin: 50% 120%;
+            --spread: 11deg;
+            transform: translateX(-50%) rotate(calc((var(--i) - (var(--n) - 1) / 2) * var(--spread)));
+            transition: transform .25s ease; }
+.hand:hover img { --spread: 15deg; }
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 32px !important; }
+.step h2 { font-size: 24px; margin: 8px 0; }
+.step p { margin: 0 0 14px; color: var(--muted); }
+.step pre { margin: 0; font-size: 13px; }
+
+.showcase { margin-top: 96px !important; }
+.showcase img { display: block; width: 100%; }
+
+.section-title { font-size: clamp(28px, 4vw, 40px); margin: 96px 0 32px; }
+.features .grid, .frontends .grid { display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.feature h3, .frontend h3 { margin: 0 0 6px; font-size: 19px; }
+.feature p, .frontend p { margin: 0; color: var(--muted); }
+.frontend { display: block; text-decoration: none; color: var(--ink); }
+.frontend span { display: inline-block; margin-top: 14px; color: var(--link); font-weight: 600; }
+.outro { text-align: center; color: var(--muted); padding: 96px 16px !important; font-size: 18px; }
+
+// Docs
+.docs { display: grid; grid-template-columns: 250px minmax(0, 1fr) 210px; gap: 40px;
+        max-width: 1320px; margin: 0 auto; padding: 32px 16px 64px; }
+.docs article { max-width: 760px; min-width: 0; }
+.docs article h1 { font-size: clamp(32px, 4vw, 44px); margin: 0 0 24px; }
+.docs article h2 { margin-top: 2em; }
+.docs-nav { font-size: 14px; position: sticky; top: 16px; align-self: start;
+            max-height: calc(100vh - 32px); overflow: auto; padding-right: 8px; }
+.docs-nav h4 { margin: 20px 0 6px; font-size: 12px; }
+.docs-nav ul { list-style: none; margin: 0; padding: 0; }
+.docs-nav ul ul { padding-left: 14px; }
+.docs-nav a { text-decoration: none; color: var(--ink); display: block; padding: 3px 8px; }
+.toc { font-size: 13px; position: sticky; top: 16px; align-self: start; }
+.toc::before { content: "On this page"; display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.toc ul { list-style: none; padding: 0; margin: 0; }
+.toc a { color: var(--muted); text-decoration: none; display: block; padding: 2px 0; }
+article table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 15px; }
+article th, article td { padding: 6px 10px; text-align: left; vertical-align: top; }
+.edit { margin-top: 56px; font-size: 14px; }
+
+// Releases
+.releases { max-width: 820px; margin: 0 auto; padding: 40px 16px 64px; }
+.releases h1 { font-size: clamp(32px, 4vw, 48px); }
+.meta { color: var(--muted); font-size: 14px; }
+.tag, .pill { font-size: 12px; padding: 1px 8px; vertical-align: middle; font-weight: 600; }
+
+@media (max-width: 1080px) {
+  .docs { grid-template-columns: 220px minmax(0, 1fr); }
+  .toc { display: none; }
+}
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; min-height: 0; }
+  .hand { height: 360px; }
+  .hand img { width: 180px; }
+  .steps, .features .grid, .frontends .grid { grid-template-columns: 1fr; }
+  .docs { grid-template-columns: 1fr; }
+  .docs-nav { position: static; max-height: none; }
+}

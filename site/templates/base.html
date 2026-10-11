@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ config.title }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
+  <link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ get_url(path='fonts/fonts.css') }}">
+  <link rel="stylesheet" href="{{ get_url(path='site.css', cachebust=true) }}">
+  {# Code colours; theme.js retargets the media queries when a theme is picked. #}
+  <link rel="stylesheet" href="{{ get_url(path='giallo-light.css') }}" media="(prefers-color-scheme: light)" data-scheme="light">
+  <link rel="stylesheet" href="{{ get_url(path='giallo-dark.css') }}" media="(prefers-color-scheme: dark)" data-scheme="dark">
+  {# Applies the stored theme before the page renders, so it never flashes. #}
+  <script>try{var t=localStorage.getItem("yoshida.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+  <script src="{{ get_url(path='theme.js', cachebust=true) }}" defer></script>
+  <link rel="alternate" type="application/atom+xml" title="yoshida releases" href="{{ get_url(path='releases/atom.xml') }}">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{ get_url(path='@/_index.md') }}">
+      <img src="{{ get_url(path='logo.svg') }}" alt="yoshida" class="logo-light">
+      <img src="{{ get_url(path='logo-dark.svg') }}" alt="yoshida" class="logo-dark">
+    </a>
+    <nav>
+      <a href="{{ get_url(path='@/docs/_index.md') }}">Docs</a>
+      <a href="{{ get_url(path='@/releases/_index.md') }}">Releases</a>
+      <a href="{{ get_url(path='editor/') }}" class="button">Open the editor</a>
+      <a href="{{ config.extra.repo }}">GitHub</a>
+      <button class="theme-toggle" type="button" data-pref="system" aria-label="Theme: follows your system" title="Theme: follows your system (click to change)">
+        <svg class="i-system" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>
+        <svg class="i-light" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <svg class="i-dark" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+    </nav>
+  </header>
+  {% block body %}{% endblock %}
+  <footer class="bottom">
+    {% set releases = get_section(path="releases/_index.md") %}
+    yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %} · file format {{ config.extra.format_version }} ·
+    <a href="{{ config.extra.repo }}/blob/master/THIRD_PARTY.md">Third-party notices</a>
+  </footer>
+</body>
+</html>

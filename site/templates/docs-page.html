@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} · {{ config.title }}{% endblock %}
+{% block body %}
+<div class="docs">
+  {% include "partials/docs-nav.html" %}
+  <article>
+    <h1>{{ page.title }}</h1>
+    {{ page.content | safe }}
+    <p class="edit"><a href="{{ config.extra.repo }}/edit/master/site/content/{{ page.relative_path }}">Edit this page</a></p>
+  </article>
+  {% if page.toc %}
+  <aside class="toc">
+    <ul>{% for h in page.toc %}<li><a href="{{ h.permalink }}">{{ h.title }}</a></li>{% endfor %}</ul>
+  </aside>
+  {% endif %}
+</div>
+{% endblock %}

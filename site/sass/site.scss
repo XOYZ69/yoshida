@@ -1,0 +1,107 @@
+// Paper: warm and editorial, like cards laid out on a table.
+// Fraunces for headings, Inter for text.
+//
+// Colours are light-dark(light, dark) pairs, the same Paper palette as the
+// editor (web/src/app.css: --bg-bar = page, --bg = panel, --fg = ink); keep
+// the two in sync. The system setting picks the scheme unless the visitor
+// chose one with the header switch (data-theme on <html>, static/theme.js).
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f5f0e6, #1a1814);
+  --panel: light-dark(#fffdf8, #211e1a);
+  --line: light-dark(#e3dccd, #36312a);
+  --ink: light-dark(#22201c, #efe9dd);
+  --muted: light-dark(#6b655a, #a99f8e);
+  --accent: light-dark(#3b6cf6, #6e93ff);
+  --link: light-dark(#2d5be0, #8aa8ff);
+  --shadow: 0 1px 0 rgba(0, 0, 0, .04), 0 12px 30px light-dark(rgba(60, 45, 20, .10), rgba(0, 0, 0, .35));
+  --font-body: "Inter", system-ui, sans-serif; --font-head: "Fraunces", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+// For what light-dark() cannot express (which image to show).
+@mixin dark {
+  :root[data-theme="dark"] & { @content; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) & { @content; }
+  }
+}
+
+@import "layout";
+
+img.only-dark { display: none; }
+img.only-dark { @include dark { display: block; } }
+img.only-light { @include dark { display: none; } }
+.top .brand .logo-dark { display: none; }
+.top .brand .logo-dark { @include dark { display: block; } }
+.top .brand .logo-light { @include dark { display: none; } }
+
+.theme-toggle { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 34px; height: 34px;
+                border-radius: 99px; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+.theme-toggle:hover { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-toggle svg { width: 16px; height: 16px; display: none; }
+.theme-toggle[data-pref="system"] .i-system, .theme-toggle[data-pref="light"] .i-light,
+.theme-toggle[data-pref="dark"] .i-dark { display: block; }
+
+.top nav a { font-size: 15px; }
+.bottom { border-top: 1px solid var(--line); text-align: center; }
+h1, h2, h3 { font-weight: 600; font-variation-settings: "opsz" 120; }
+
+.button { background: var(--ink); color: var(--bg); border-radius: 99px; }
+.top nav a.button { color: var(--bg); }
+.button.secondary { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+
+.hero { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 24px; padding-top: 72px !important; }
+.hero-text { max-width: 820px; }
+.hero h1 { font-size: clamp(48px, 8vw, 96px); letter-spacing: -0.02em; }
+.lead { margin-left: auto; margin-right: auto; }
+.actions { justify-content: center; }
+.kicker { font-style: italic; font-family: var(--font-head); font-size: 18px; color: var(--muted); }
+.pill { background: var(--accent); color: light-dark(#fff, #1a1814); border-radius: 99px; margin-right: 6px; }
+.hand { width: 100%; max-width: 1000px; height: 380px; }
+.hand img { width: 210px; transform-origin: 50% 50%; bottom: 20px;
+            left: calc(50% + (var(--i) - (var(--n) - 1) / 2) * 190px);
+            transform: translateX(-50%) rotate(var(--r)) translateY(var(--y));
+            border-radius: 12px; box-shadow: var(--shadow), 0 2px 4px rgba(0,0,0,.08); }
+// Hand-placed jitter, as if dealt onto a table.
+.hand img:nth-child(1) { --r: -7deg; --y: 18px; }
+.hand img:nth-child(2) { --r: 4deg;  --y: -6px; }
+.hand img:nth-child(3) { --r: -2deg; --y: -22px; z-index: 1; }
+.hand img:nth-child(4) { --r: 6deg;  --y: 4px; }
+.hand img:nth-child(5) { --r: -4deg; --y: 24px; }
+.hand:hover img { --r: 0deg; --y: -8px; }
+
+.steps { margin-top: 64px !important; gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.step { padding: 32px 28px; }
+.step + .step { border-left: 1px solid var(--line); }
+.num { font-family: var(--font-head); font-style: italic; font-size: 40px; color: var(--accent); line-height: 1; }
+.step h2 { font-size: 30px; }
+.step pre { background: var(--panel); border-radius: 8px; border: 1px solid var(--line); }
+.showcase img { border-radius: 14px; box-shadow: var(--shadow); }
+.section-title { text-align: center; font-size: clamp(32px, 5vw, 52px); }
+.feature { padding: 4px 0 0; border-top: 2px solid var(--ink); }
+.feature h3 { font-size: 22px; margin-top: 14px; }
+.frontend { background: var(--panel); border-radius: 16px; padding: 26px; box-shadow: var(--shadow); }
+.frontend h3 { font-size: 26px; }
+.outro { font-family: var(--font-head); font-style: italic; font-size: 24px; max-width: 760px; }
+
+.docs-nav h4 { font-family: var(--font-head); font-style: italic; font-weight: 400; font-size: 16px; color: var(--muted); }
+.docs-nav a { border-radius: 99px; }
+.docs-nav a[aria-current] { background: var(--ink); color: var(--bg); }
+.docs article { background: var(--panel); border-radius: 18px; padding: 44px 52px; box-shadow: var(--shadow); max-width: 820px; }
+.docs article h1 { font-size: clamp(36px, 5vw, 54px); }
+article pre { background: var(--bg) !important; border-radius: 10px; font-size: 13.5px; }
+article :not(pre) > code { background: var(--bg); border-radius: 5px; padding: 1px 5px; }
+article th { border-bottom: 2px solid var(--ink); }
+article td { border-bottom: 1px solid var(--line); }
+.release { background: var(--panel); border-radius: 16px; padding: 4px 28px 20px; margin-bottom: 20px; box-shadow: var(--shadow); }
+.tag { background: var(--bg); border-radius: 99px; }
+@media (max-width: 860px) {
+  .docs article { padding: 24px 20px; }
+  .step + .step { border-left: 0; border-top: 1px solid var(--line); }
+  .hand { height: 240px; }
+  .hand img { width: 130px; left: calc(50% + (var(--i) - (var(--n) - 1) / 2) * 70px); }
+}
