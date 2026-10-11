@@ -14,7 +14,7 @@ yoshida-server [--host ADDR] [--port N] [--web DIR] [--no-render]
 | `--host` | `YOSHIDA_HOST` | `0.0.0.0` | Address to listen on |
 | `--port` | `YOSHIDA_PORT` | `8080` | Port |
 | `--web` | `YOSHIDA_WEB` | `web` | Folder with the built editor (`web/dist` from a source build, `web/` in the release zip) |
-| `--no-render` | `YOSHIDA_RENDER=0` | rendering on | Serve the editor only; `POST /api/render` answers 403 and the editor hides the "on server" choice |
+| `--no-render` | `YOSHIDA_RENDER=0` | rendering on | Serve the editor only; `POST /api/render` answers 403 and the editor hides the **Render on server** switch |
 | `--max-cards` | `YOSHIDA_MAX_CARDS` | `1000` | Largest set the server will render in one request |
 | `--max-body-mb` | `YOSHIDA_MAX_BODY_MB` | `200` | Largest request body |
 | `--threads` | `YOSHIDA_THREADS` | all CPUs | Worker threads used to render a set |
@@ -70,7 +70,21 @@ The image also contains the `yoshida` CLI at `/yoshida`, which you can run with 
 
 ## Using server rendering from the editor
 
-When the editor is served by `yoshida-server` with rendering enabled, the zip export offers an **on server** choice. If you tick it, the editor uploads the project's files to `POST /api/render` and downloads the zip of PNGs. Otherwise rendering happens in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
+When the editor is served by `yoshida-server` with rendering enabled, the toolbar shows a **Render on server** switch next to the export buttons. Switched on, **ZIP** and **PDF** upload the project's files to `POST /api/render` and download the result; otherwise rendering happens in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
+
+The progress window shows each step (pack, upload with the bytes sent, render on the server with the cards done, download, save) and an activity log; the same lines go to the browser console as `[yoshida] …`. The cards done come from [`GET /api/render/progress`](@/docs/server-api.md#get-api-render-progress).
+
+The server logs every render request on stderr (`docker logs`), for example:
+
+```text
+render #3: receiving 4.2 MB
+render #3: 31 files, set 'boards', 120 cards as png on 8 thread(s)
+render #3: 12/120 cards
+…
+render #3: done, 120 cards in 9412 ms, sending 38.0 MB of zip
+```
+
+Refused and failed requests are logged too (over `--max-body-mb` or `--max-cards`, unknown set, a project with errors).
 
 The server never downloads images from URLs; upload images with the project instead (an unreachable URL is error 4001).
 

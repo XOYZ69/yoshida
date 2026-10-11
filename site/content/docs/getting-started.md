@@ -43,7 +43,7 @@ If the repository publishes to GitHub Pages, the editor is available at `https:/
 2. Click layers on the canvas or in the **Layers** tab and change values in the inspector on the right.
 3. Switch to **Card data** to edit the cards, or use the **Card** picker in the toolbar to switch cards.
 4. Use **PNG** to export the card you see, or **ZIP** for every card.
-5. **Export zip** (top bar) downloads the whole project, which you can open again later or render with the command line.
+5. **Export project file** (project menu) downloads the whole project as a `.yoshida` file, which you can open again later or, unzipped, render with the command line.
 
 More in [Builder](@/docs/builder.md).
 

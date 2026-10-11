@@ -10,22 +10,26 @@ The editor opens in **Builder** mode: a visual editor for designs and card data.
 
 | Area | What it is | Page |
 | --- | --- | --- |
-| Top bar | Project menu, **+ Design**, **Upload image**, **Add files**, **Builder / Advanced (JSON)**, undo and redo, **Save to folder**, **Export zip** | [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) |
-| Toolbar | Add a layer, pick the **Design** and the **Card**, export **PNG**, **ZIP** or **PDF**, **Check all** cards | below |
+| Top bar | The project menu (new, open, **New design**, **Add files**, **Save to folder**, **Export project file**, rename, saved projects, examples), whether it is saved, **Builder / Advanced (JSON)**, undo and redo, **Save** (when a folder is linked), the theme | [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) |
+| Toolbar | **Add** a layer, pick the **Design** and the **Card**, **Export** as **PNG**, **ZIP** or **PDF**, **Render on server** (when the server offers it) | below |
 | Left panel | **Layers**, **Params**, **Card data**, **Files** tabs | [Layers](@/docs/builder-layers.md), [Params](@/docs/builder-params.md), [Card data](@/docs/builder-card-data.md), [Files](@/docs/builder-files.md) |
 | Canvas | The live card with selection, move, resize, rotate | [Canvas](@/docs/builder-canvas.md) |
 | Right panel | The inspector for the selected layer, or the design settings | [Inspector](@/docs/builder-inspector.md) |
-| Problems panel | Every error, warning and hint | [Problems](@/docs/builder-problems.md) |
+| Problems panel | Every error, warning and hint, and **Check all cards** | [Problems](@/docs/builder-problems.md) |
 
 Every panel can be resized: drag the lines between the left panel, the canvas, the right panel and the problems panel (in Advanced view: the files, editor and preview columns). Double-click a line to reset it. Sizes are remembered in the browser. Dialogs and the card browser move by their title bar and resize from the corner.
 
 ## Toolbar
 
 - **Add a layer**: rect, ellipse, text, image or polygon. The new layer is centred and placed above the selected layer.
-- **Design** picks the design being edited (with its card count and card file). **+ Design** in the top bar creates a blank design with its own card file.
+- **Design** picks the design being edited (with its card count and card file). **New design…** in the project menu creates a blank design with its own card file.
 - **Card** picks the card shown in the preview. The arrows step through the cards; the middle opens a searchable list that stays fast with thousands of cards. At its bottom, **Browse** opens the [card browser](@/docs/builder-card-data.md#browse).
-- **PNG** exports the card you see; **ZIP** exports all cards of the set as PNG files; **PDF** exports all cards of the set as one PDF, one page per card, with crop marks when the design has a `canvas.bleed` (see [Command Line: PDF](@/docs/command-line.md#pdf)).
-- **Check all** evaluates every card of the set without drawing it and shows what it finds in the [Problems panel](@/docs/builder-problems.md): errors that only some cards have, such as too many layers or a missing image.
+- **Export**: **PNG** exports the card you see; **ZIP** exports all cards of the set as PNG files; **PDF** exports all cards of the set as one PDF, one page per card, with crop marks when the design has a `canvas.bleed` (see [Command Line: PDF](@/docs/command-line.md#pdf)).
+- **Render on server** appears when the editor is served by `yoshida-server` with rendering on. Switched on, **ZIP** and **PDF** are rendered by the server instead of the browser (see [Server and Docker](@/docs/server-and-docker.md#using-server-rendering-from-the-editor)). **PNG** always renders in the browser.
+
+While an export or a check runs, a progress window covers the editor (the editor behind it is blurred): the steps, how many cards are done, the time left (from the average time per card so far; for a PDF rendered in the browser it is an estimate from the last export) and an activity log. **Cancel** stops a ZIP export, or a server render. When something fails, the window stays open with the reason until you close it.
+
+Hovering a button or a field shows what it does in a tooltip drawn like the expression suggestions.
 
 ## How edits are written
 

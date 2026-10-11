@@ -8,11 +8,12 @@ title = "Server API"
 | ----------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `GET /api/capabilities` |                                                                            | `{ "version", "format", "render", "max_cards", "max_body_mb" }`                        |
 | `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "format": "png" \| "png16" \| "pdf" }` | `application/zip` with `<set>/<card id>.png` (or `application/pdf` for `pdf`), or 422 with `{ "error", "diagnostics" }` |
+| `GET /api/render/progress?job=<id>` |                                                               | `{ "found", "stage", "done", "total" }` for a render sent with `x-yoshida-job: <id>` |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 
 The API also answers under `/editor/api/`, where the editor's calls land when it is served from `/editor/`. A folder asked for without its trailing slash (`/editor`) redirects to `/editor/`. A missing static file answers 404 with `--web`'s `404.html` when there is one, otherwise with a JSON error.
 
-The editor shows the "on server" choice only when `capabilities.render` is `true`.
+The editor shows the **Render on server** switch only when `capabilities.render` is `true`.
 
 ## `GET /api/capabilities`
 
@@ -54,6 +55,27 @@ Other statuses (all with `{ "error": "..." }`):
 | 500    | Out of memory while rendering                                                                             |
 
 The server renders cards in parallel (`--threads`). It never downloads images from URLs; an unreachable URL is error 4001, so include the images in `files`.
+
+An optional `x-yoshida-job: <id>` header (up to 16 hex digits, not 0) makes the request's progress readable with `GET /api/render/progress`. Every request is logged on stderr, see [Server and Docker](@/docs/server-and-docker.md#using-server-rendering-from-the-editor).
+
+## `GET /api/render/progress`
+
+`?job=<id>` names a render sent with `x-yoshida-job: <id>`. The answer is never cached:
+
+```json
+{ "found": true, "stage": "rendering", "done": 12, "total": 120 }
+```
+
+| `stage`     | Meaning                                         |
+| ----------- | ----------------------------------------------- |
+| `receiving` | Reading the request body                        |
+| `loading`   | Decoding the files and loading the project      |
+| `rendering` | Drawing the cards; `done` of `total` are drawn  |
+| `packing`   | Building the zip or the PDF                     |
+| `finished`  | The response was sent                           |
+| `failed`    | The request ended with an error (see its reply) |
+
+An unknown id answers `{ "found": false }`. The server keeps the last 32 renders; a finished one stays readable until its slot is reused.
 
 ## Example
 

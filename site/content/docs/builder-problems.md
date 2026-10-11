@@ -15,6 +15,10 @@ The **Problems** panel is the one place for every [diagnostic](@/docs/diagnostic
   - where it is: `group › layer › field`.
 - Toggle **errors**, **warnings** and **hints** at the top of the panel.
 
+## Check all cards
+
+The preview only evaluates the card you see. **Check all cards** (top right of the panel) evaluates every card of the set without drawing it and lists what it finds: problems that only some cards have, such as text that does not fit, too many layers or a missing image.
+
 ## Jumping
 
 Click a block to jump to the layer, the param, the card, or (in Advanced view) the line in the code editor.

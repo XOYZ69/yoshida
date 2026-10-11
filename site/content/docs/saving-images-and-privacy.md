@@ -14,24 +14,30 @@ Every change is saved automatically in the browser's storage (IndexedDB), with *
 
 ## The project menu
 
-The project's name in the top bar opens the menu: new project, open a folder, open a project zip, export the project as a zip, rename, delete from this browser, the projects saved in this browser, and the examples. Next to it the editor shows whether the project is saved in this browser.
+The project's name in the top bar opens the menu, in sections:
+
+- **Start**: new project, open a folder, open a project file (`.yoshida`).
+- **This project**: new design (with its own card file), add files, save to a folder, export the project file, rename, delete from this browser.
+- **Saved in this browser** and **Examples**.
+
+Next to it the editor shows whether the project is saved in this browser.
 
 ## Open a folder, save to a folder
 
 - **Open a folder**: read and write in Chromium-based browsers (Chrome, Edge), read-only elsewhere.
-- **Save to folder…** (Chromium): write the whole project to a folder you pick and keep saving there. The result is a normal project folder you can render with the [command line](@/docs/command-line.md) or commit to git.
+- **Save to folder…** (Chromium, in the project menu): write the whole project to a folder you pick and keep saving there; a **Save** button in the top bar then writes the changed files. The result is a normal project folder you can render with the [command line](@/docs/command-line.md) or commit to git.
 
 ## Export and open a zip
 
-**Export zip** downloads the whole project as `<name>.zip` with one folder inside, files at their project paths (images and fonts as files, not base64). The zip opens again with *Open project zip…* (or by dropping it on the window); unpacked, it is a normal project folder for the CLI and the server.
+**Export project file** (project menu) downloads the whole project as `<name>.yoshida`, a zip with one folder inside, files at their project paths (images and fonts as files, not base64). It opens again with *Open project file…* (or by dropping it on the window); unpacked, it is a normal project folder for the CLI and the server.
 
 ## Images
 
 Images are added with:
 
-- **Upload image** in the top bar,
 - *Choose or upload an image* in an image layer, an image param's default or a card's image field,
-- **Add files**,
+- **Add files** in the project menu,
+- the upload button in the [Files tab](@/docs/builder-files.md),
 - or by dropping files on the window.
 
 They are copied into the project as `assets/images/<name>` (or the folder chosen in the [Files tab](@/docs/builder-files.md)) and referenced by that **project path**, never by a path on your computer. URLs (`https://…`) work too; the browser downloads them from that site, which must allow it with CORS headers. See [Layer: image](@/docs/layer-image.md).
@@ -62,7 +68,7 @@ That is a 63 x 88 mm poker card with 3 mm bleed: 744 + 2 x 35 by 1039 + 2 x 35 p
 ## Privacy
 
 - **Nothing is sent to a server.** Rendering runs in the browser (WebAssembly), and projects live in the browser's storage.
-- The only upload is the optional *on server* zip export. It appears only when the editor is served by `yoshida-server` with rendering enabled, and only when you tick it. See [Server and Docker](@/docs/server-and-docker.md).
+- The only upload is the optional **Render on server** export (ZIP and PDF). The switch appears only when the editor is served by `yoshida-server` with rendering enabled, and nothing is sent unless you switch it on. The progress window then logs what is uploaded and where. See [Server and Docker](@/docs/server-and-docker.md).
 - Images given as `https://` URLs are downloaded by your browser directly from the site that hosts them.
 - The hosted editor on GitHub Pages is a static site: it has no backend that could receive your data. See [CI and Deployment](@/docs/ci-and-deployment.md).
 
