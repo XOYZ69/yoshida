@@ -4,6 +4,10 @@
 //!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
 //!   POST /api/render         {"files": {path: base64}, "set", "date", "format": "png"|"png16"|"pdf"}
 //!                            -> application/zip with <set>/<card id>.png, or 422 with diagnostics
+//!                            An `x-yoshida-job: <hex id>` header makes its progress readable:
+//!   GET  /api/render/progress?job=<hex id>
+//!                            {"found", "stage", "done", "total"} (stage: receiving, loading,
+//!                            rendering, packing, finished, failed)
 //!   GET  /*                  static files from --web (the built editor, or the
 //!                            site with the editor in editor/)
 //!
@@ -118,6 +122,7 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
         const body = try std.fmt.allocPrint(arena, "{{\"version\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d}}}", .{ y.version, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
         return req.respond(body, .{ .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }} });
     }
+    if (std.mem.eql(u8, path, "/api/render/progress")) return progressResponse(arena, req, target);
     if (std.mem.eql(u8, path, "/api/render")) {
         if (req.head.method != .POST) return jsonError(req, .method_not_allowed, "use POST");
         if (!cfg.render) return jsonError(req, .forbidden, "server rendering is disabled on this server");
@@ -187,6 +192,83 @@ fn notFound(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Server.
     return req.respond(page, .{ .status = .not_found, .extra_headers = &.{.{ .name = "content-type", .value = "text/html; charset=utf-8" }} });
 }
 
+// ---------------------------------------------------------------- render progress
+
+/// What a render request is doing, for GET /api/render/progress.
+const Stage = enum(u8) { free, receiving, loading, rendering, packing, finished, failed };
+
+/// One render request the editor can follow. Slots are reused once their
+/// request is over; a request that finds no free slot renders without one.
+const Progress = struct {
+    id: std.atomic.Value(u64) = .init(0),
+    stage: std.atomic.Value(u8) = .init(@intFromEnum(Stage.free)),
+    done: std.atomic.Value(usize) = .init(0),
+    total: std.atomic.Value(usize) = .init(0),
+
+    fn set(p: *Progress, stage: Stage) void {
+        p.stage.store(@intFromEnum(stage), .release);
+    }
+};
+
+var progress_slots: [32]Progress = @splat(.{});
+/// Numbers the render requests in the log.
+var request_count: std.atomic.Value(u32) = .init(0);
+
+fn claimProgress(id: u64) ?*Progress {
+    if (id == 0) return null;
+    for (&progress_slots) |*p| {
+        const stage: Stage = @enumFromInt(p.stage.load(.acquire));
+        if (stage != .free and stage != .finished and stage != .failed) continue;
+        const old = p.id.load(.acquire);
+        if (p.id.cmpxchgStrong(old, id, .acq_rel, .acquire) != null) continue;
+        p.done.store(0, .release);
+        p.total.store(0, .release);
+        p.set(.receiving);
+        return p;
+    }
+    return null;
+}
+
+fn findProgress(id: u64) ?*Progress {
+    if (id == 0) return null;
+    for (&progress_slots) |*p| {
+        if (p.id.load(.acquire) == id and p.stage.load(.acquire) != @intFromEnum(Stage.free)) return p;
+    }
+    return null;
+}
+
+fn jobHeader(req: *std.http.Server.Request) u64 {
+    var it = req.iterateHeaders();
+    while (it.next()) |h| {
+        if (std.ascii.eqlIgnoreCase(h.name, "x-yoshida-job"))
+            return std.fmt.parseInt(u64, std.mem.trim(u8, h.value, " "), 16) catch 0;
+    }
+    return 0;
+}
+
+fn progressResponse(arena: Allocator, req: *std.http.Server.Request, target: []const u8) !void {
+    const query = if (std.mem.indexOfScalar(u8, target, '?')) |q| target[q + 1 ..] else "";
+    var id: u64 = 0;
+    var parts = std.mem.splitScalar(u8, query, '&');
+    while (parts.next()) |kv| {
+        if (std.mem.startsWith(u8, kv, "job=")) id = std.fmt.parseInt(u64, kv[4..], 16) catch 0;
+    }
+    const body = if (findProgress(id)) |p|
+        try std.fmt.allocPrint(arena, "{{\"found\":true,\"stage\":\"{s}\",\"done\":{d},\"total\":{d}}}", .{
+            @tagName(@as(Stage, @enumFromInt(p.stage.load(.acquire)))), p.done.load(.acquire), p.total.load(.acquire),
+        })
+    else
+        "{\"found\":false}";
+    return req.respond(body, .{ .extra_headers = &.{
+        .{ .name = "content-type", .value = "application/json" },
+        .{ .name = "cache-control", .value = "no-store" },
+    } });
+}
+
+fn mb(bytes: usize) f64 {
+    return @as(f64, @floatFromInt(bytes)) / (1024 * 1024);
+}
+
 const Job = struct {
     gpa: Allocator,
     fs: *y.project.MemFs,
@@ -201,12 +283,16 @@ const Job = struct {
     pages: []?y.pdf.Page = &.{},
     diags: y.diag.List,
     failed: bool = false,
+    progress: ?*Progress = null,
+    /// Request number, for the log.
+    n: u32 = 0,
 
     fn run(job: *Job) void {
         var assets = y.render.Assets.init(job.gpa, job.fs.vfs());
         defer assets.deinit();
         var i = job.offset;
         while (i < job.set.cards.len) : (i += job.stride) {
+            defer job.cardDone();
             var bmp = (y.render.renderCard(job.gpa, &assets, job.set, i, .{ .date = job.date }, &job.diags) catch {
                 job.failed = true;
                 return;
@@ -225,14 +311,34 @@ const Job = struct {
             };
         }
     }
+
+    /// Counts a finished card; the log gets a line at every 10%.
+    fn cardDone(job: *Job) void {
+        const p = job.progress orelse return;
+        const total = job.set.cards.len;
+        const done = p.done.fetchAdd(1, .acq_rel) + 1;
+        if (total >= 20 and done * 10 / total != (done - 1) * 10 / total)
+            std.debug.print("render #{d}: {d}/{d} cards\n", .{ job.n, done, total });
+    }
 };
 
 fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: *std.http.Server.Request) !void {
+    const req_n = request_count.fetchAdd(1, .monotonic) + 1;
+    const started = Io.Timestamp.now(io, .awake);
+    // Headers must be read before the body.
+    const progress = claimProgress(jobHeader(req));
+    var ok = false;
+    defer if (progress) |p| p.set(if (ok) .finished else .failed);
     const max_body = cfg.max_body_mb * 1024 * 1024;
-    if (req.head.content_length) |n| if (n > max_body) return jsonError(req, .payload_too_large, "request body is too large");
+    std.debug.print("render #{d}: receiving {d:.1} MB\n", .{ req_n, mb(req.head.content_length orelse 0) });
+    if (req.head.content_length) |len| if (len > max_body) {
+        std.debug.print("render #{d}: refused, the body is over --max-body-mb {d}\n", .{ req_n, cfg.max_body_mb });
+        return jsonError(req, .payload_too_large, "request body is too large");
+    };
     var body_buf: [16 * 1024]u8 = undefined;
     const body_reader = req.readerExpectNone(&body_buf);
     const body = body_reader.allocRemaining(arena, .limited(max_body)) catch return jsonError(req, .bad_request, "could not read the request body");
+    if (progress) |p| p.set(.loading);
 
     const doc = switch (try y.json.parse(arena, body)) {
         .ok => |n| n,
@@ -259,9 +365,22 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
 
     var diags = y.diag.List.init(arena);
     const proj = try y.project.load(arena, fs.vfs(), &diags);
-    const set = proj.findSet(set_name) orelse return jsonError(req, .not_found, "unknown set");
-    if (set.cards.len > cfg.max_cards) return jsonError(req, .payload_too_large, try std.fmt.allocPrint(arena, "the set has {d} cards; this server allows {d}", .{ set.cards.len, cfg.max_cards }));
-    if (!set.ok) return diagnosticsResponse(arena, req, &diags);
+    const set = proj.findSet(set_name) orelse {
+        std.debug.print("render #{d}: unknown set '{s}'\n", .{ req_n, set_name });
+        return jsonError(req, .not_found, "unknown set");
+    };
+    if (set.cards.len > cfg.max_cards) {
+        std.debug.print("render #{d}: refused, {d} cards is over --max-cards {d}\n", .{ req_n, set.cards.len, cfg.max_cards });
+        return jsonError(req, .payload_too_large, try std.fmt.allocPrint(arena, "the set has {d} cards; this server allows {d}", .{ set.cards.len, cfg.max_cards }));
+    }
+    if (!set.ok) {
+        std.debug.print("render #{d}: set '{s}' has {d} error(s), sent the problems back\n", .{ req_n, set.name, diags.errorCount() });
+        return diagnosticsResponse(arena, req, &diags);
+    }
+    if (progress) |p| {
+        p.total.store(set.cards.len, .release);
+        p.set(.rendering);
+    }
 
     const pngs = try gpa.alloc([]u8, set.cards.len);
     defer {
@@ -276,13 +395,16 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     }
     @memset(pages, null);
     const n_jobs = @min(cfg.threads, @max(1, set.cards.len));
+    std.debug.print("render #{d}: {d} files, set '{s}', {d} cards as {s} on {d} thread(s)\n", .{
+        req_n, files.data.object.len, set.name, set.cards.len, if (want_pdf) "pdf" else if (sixteen) "png16" else "png", n_jobs,
+    });
     const jobs = try arena.alloc(Job, n_jobs);
     const threads = try arena.alloc(?std.Thread, n_jobs);
     // Each job keeps its own diagnostics arena; the main arena is not thread-safe.
     const job_arenas = try arena.alloc(std.heap.ArenaAllocator, n_jobs);
     for (jobs, 0..) |*job, j| {
         job_arenas[j] = std.heap.ArenaAllocator.init(gpa);
-        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()) };
+        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()), .progress = progress, .n = req_n };
     }
     defer for (job_arenas) |*a| a.deinit();
     for (jobs, 0..) |*job, j| {
@@ -295,8 +417,15 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         failed = failed or job.failed;
         for (job.diags.items.items) |d| try diags.add(d);
     }
-    if (failed) return jsonError(req, .internal_server_error, "out of memory while rendering");
-    if (diags.errorCount() > 0) return diagnosticsResponse(arena, req, &diags);
+    if (failed) {
+        std.debug.print("render #{d}: out of memory while rendering\n", .{req_n});
+        return jsonError(req, .internal_server_error, "out of memory while rendering");
+    }
+    if (diags.errorCount() > 0) {
+        std.debug.print("render #{d}: {d} error(s) while rendering, sent the problems back\n", .{ req_n, diags.errorCount() });
+        return diagnosticsResponse(arena, req, &diags);
+    }
+    if (progress) |p| p.set(.packing);
 
     if (want_pdf) {
         var w = try y.pdf.Writer.init(gpa);
@@ -305,6 +434,8 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         const bytes = try w.finish();
         defer gpa.free(bytes);
         const pdf_disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.pdf\"", .{set.name});
+        std.debug.print("render #{d}: done, {d} pages in {d} ms, sending {d:.1} MB of PDF\n", .{ req_n, set.cards.len, started.untilNow(io, .awake).toMilliseconds(), mb(bytes.len) });
+        ok = true;
         return req.respond(bytes, .{ .extra_headers = &.{
             .{ .name = "content-type", .value = "application/pdf" },
             .{ .name = "content-disposition", .value = pdf_disposition },
@@ -317,8 +448,9 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         try entries.append(arena, .{ .name = try std.fmt.allocPrint(arena, "{s}/{s}.png", .{ set.name, card.id }), .data = pngs[ci] });
     }
     const archive = try zip.store(arena, entries.items);
-    _ = io;
     const disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.zip\"", .{set.name});
+    std.debug.print("render #{d}: done, {d} cards in {d} ms, sending {d:.1} MB of zip\n", .{ req_n, entries.items.len, started.untilNow(io, .awake).toMilliseconds(), mb(archive.len) });
+    ok = true;
     return req.respond(archive, .{ .extra_headers = &.{
         .{ .name = "content-type", .value = "application/zip" },
         .{ .name = "content-disposition", .value = disposition },
