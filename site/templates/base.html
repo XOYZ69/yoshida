@@ -38,7 +38,7 @@
   <footer class="bottom">
     {% set releases = get_section(path="releases/_index.md") %}
     yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %} · file format {{ config.extra.format_version }} ·
-    <a href="{{ config.extra.repo }}/blob/master/THIRD_PARTY.md">Third-party notices</a>
+    <a href="{{ get_url(path='@/docs/third-party-notices.md') }}">Third-party notices</a>
   </footer>
 </body>
 </html>

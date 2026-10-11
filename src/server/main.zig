@@ -158,7 +158,7 @@ fn serveStatic(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Serv
     if (rel.len == 0 or rel[rel.len - 1] == '/') rel = try std.mem.concat(arena, u8, &.{ rel, "index.html" });
     // Percent-decoding is limited to spaces and '!' (used by the example font names).
     const decoded = try std.mem.replaceOwned(u8, arena, try std.mem.replaceOwned(u8, arena, rel, "%20", " "), "%21", "!");
-    const clean = (try y.project.normalize(arena, decoded)) orelse return jsonError(req, .not_found, "not found");
+    const clean = (try y.project.normalize(arena, decoded)) orelse return notFound(io, arena, cfg, req);
     const full = try std.fs.path.join(arena, &.{ cfg.web, clean });
     const data = Io.Dir.cwd().readFileAlloc(io, full, arena, .limited(64 * 1024 * 1024)) catch {
         // A folder without its trailing slash ("/editor"): redirect, so the
@@ -170,12 +170,21 @@ fn serveStatic(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Serv
                 return req.respond("", .{ .status = .moved_permanently, .extra_headers = &.{.{ .name = "location", .value = location }} });
             } else |_| {}
         }
-        return jsonError(req, .not_found, "not found");
+        return notFound(io, arena, cfg, req);
     };
     return req.respond(data, .{ .extra_headers = &.{
         .{ .name = "content-type", .value = contentType(clean) },
         .{ .name = "cache-control", .value = "no-cache" },
     } });
+}
+
+/// The site's own 404.html when --web has one (Zola writes it), else a JSON error.
+fn notFound(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Server.Request) !void {
+    const path = try std.fs.path.join(arena, &.{ cfg.web, "404.html" });
+    const page = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(1024 * 1024)) catch {
+        return jsonError(req, .not_found, "not found");
+    };
+    return req.respond(page, .{ .status = .not_found, .extra_headers = &.{.{ .name = "content-type", .value = "text/html; charset=utf-8" }} });
 }
 
 const Job = struct {

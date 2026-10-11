@@ -41,7 +41,7 @@ docker run -p 8080:8080 yoshida
 
 **Or use a release zip** (prebuilt for Linux, macOS and Windows, nothing to install):
 
-unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `start.bat` (Windows), then open <http://localhost:8080>.
+unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `start.bat` (Windows), then open <http://localhost:8080/editor/>.
 
 **Or render from the command line**
 

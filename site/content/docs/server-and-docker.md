@@ -33,7 +33,7 @@ The server has no authentication and no TLS. Put it behind a reverse proxy (and 
 
 ## Docker
 
-The `Dockerfile` is a multi-stage build: Zig 0.16.0 (from the `ziglang` package on PyPI) builds the two static binaries and the WASM module, Node 22 builds the editor, and the final image is `scratch` with just `yoshida`, `yoshida-server` and the built editor. It runs as an unprivileged user (`65534:65534`).
+The `Dockerfile` is a multi-stage build: Zig 0.16.0 (from the `ziglang` package on PyPI) builds the two static binaries and the WASM module, Node 22 builds the editor, Zola builds the website, and the final image is `scratch` with just `yoshida`, `yoshida-server` and the website, with the editor in `/editor/` and the docs in `/docs/`. It runs as an unprivileged user (`65534:65534`).
 
 ```sh
 docker build -t yoshida .

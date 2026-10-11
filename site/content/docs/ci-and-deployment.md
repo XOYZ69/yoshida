@@ -63,6 +63,6 @@ npm run test:ui
 
 ## Releases
 
-`scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module and the web editor, plus the start scripts, the examples, the schemas, `README.md` and `THIRD_PARTY.md`. It needs Zig 0.16.0 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
+`scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
 
 A bundle made from the full examples contains commercial fonts and is **for private use only**.

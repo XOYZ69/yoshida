@@ -105,3 +105,8 @@ article td { border-bottom: 1px solid var(--line); }
   .hand { height: 240px; }
   .hand img { width: 130px; left: calc(50% + (var(--i) - (var(--n) - 1) / 2) * 70px); }
 }
+
+.notfound { max-width: 640px; margin: 0 auto; padding: 96px 16px 120px; text-align: center; }
+.notfound .num { font-size: 72px; margin: 0; }
+.notfound h1 { font-size: clamp(32px, 5vw, 48px); margin: 8px 0 16px; }
+.notfound .actions { justify-content: center; }

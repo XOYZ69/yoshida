@@ -20,7 +20,7 @@ Download and unzip a release. It contains prebuilt binaries for Linux (x86_64 an
 | macOS | double-click `start.command`, or run `./start.sh` in Terminal |
 | Windows | double-click `start.bat` |
 
-Open <http://localhost:8080>. For another port run `./start.sh 9000` (or `start.bat 9000`). The start scripts listen on `127.0.0.1` only, so only your own computer can reach the editor. To share it, see [Server and Docker](@/docs/server-and-docker.md).
+Open <http://localhost:8080/editor/> (the start scripts on macOS and Windows open it for you; the docs are at `/docs/`). For another port run `./start.sh 9000` (or `start.bat 9000`). The start scripts listen on `127.0.0.1` only, so only your own computer can reach the editor. To share it, see [Server and Docker](@/docs/server-and-docker.md).
 
 macOS binaries are unsigned. `start.sh` clears the quarantine flag; if Gatekeeper still asks, right-click the file and choose Open once.
 
@@ -31,7 +31,7 @@ docker build -t yoshida .
 docker run -p 8080:8080 yoshida
 ```
 
-Then open <http://localhost:8080>. Details: [Server and Docker](@/docs/server-and-docker.md).
+Then open <http://localhost:8080/editor/> (the landing page is at `/`, the docs at `/docs/`). Details: [Server and Docker](@/docs/server-and-docker.md).
 
 ## Option 3: the hosted editor
 

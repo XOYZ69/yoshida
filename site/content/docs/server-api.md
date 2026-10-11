@@ -10,6 +10,8 @@ title = "Server API"
 | `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "format": "png" \| "png16" \| "pdf" }` | `application/zip` with `<set>/<card id>.png` (or `application/pdf` for `pdf`), or 422 with `{ "error", "diagnostics" }` |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 
+The API also answers under `/editor/api/`, where the editor's calls land when it is served from `/editor/`. A folder asked for without its trailing slash (`/editor`) redirects to `/editor/`. A missing static file answers 404 with `--web`'s `404.html` when there is one, otherwise with a JSON error.
+
 The editor shows the "on server" choice only when `capabilities.render` is `true`.
 
 ## `GET /api/capabilities`

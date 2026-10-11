@@ -6,6 +6,7 @@ title = "Building from Source"
 
 - **Zig 0.16.0**. `pip install ziglang==0.16.0` is an easy way to get it on any platform (then run it as `python3 -m ziglang`), or download it from ziglang.org.
 - **Node 22**, only for the web editor.
+- **Zola 0.23**, only for the website (`site/`) and the release bundle.
 
 The C libraries (stb_image, stb_truetype, simplewebp) are included in `src/c/` and compiled by Zig without libc. No other system dependencies.
 
@@ -81,7 +82,7 @@ These are the same steps [CI](@/docs/ci-and-deployment.md) runs.
 scripts/release.sh release
 ```
 
-Runs the tests, builds the web editor, cross-compiles the CLI and server for five platforms, and copies the examples, schemas, `README.md`, `THIRD_PARTY.md` and the start scripts (`start.sh`, `start.bat`, `start.command`) next to them.
+Runs the tests, builds the web editor and the website (editor in `web/editor/`, as in Docker), cross-compiles the CLI and server for five platforms, and copies the examples, schemas, `README.md`, `THIRD_PARTY.md` (from [Third-Party Notices](@/docs/third-party-notices.md)) and the start scripts (`start.sh`, `start.bat`, `start.command`) next to them.
 
 ## Project layout
 

@@ -2,7 +2,7 @@
 title = "Third-Party Notices"
 +++
 
-> The authoritative copy of this list is `THIRD_PARTY.md` in the repository, which also ships in every release bundle. If the two differ, the file in the repository wins.
+> This page is the authoritative list. Every release bundle carries a copy as `THIRD_PARTY.md`.
 
 ## Components
 
