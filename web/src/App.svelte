@@ -7,6 +7,7 @@
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
 	import CardForm from "./lib/CardForm.svelte";
+	import Logo from "./lib/ui/Logo.svelte";
 	import ThemeToggle from "./lib/ui/ThemeToggle.svelte";
 	import {
 		type AlignMode,
@@ -2898,7 +2899,7 @@
 		role="application"
 	>
 		<header class="top">
-			<strong class="brand">yoshida</strong>
+			<span class="brand"><Logo size={26} /></span>
 			<span class="ver">{engine.version}</span>
 			<button
 				class="project-btn"
@@ -3476,7 +3477,10 @@
 		padding: 0;
 	}
 	.brand {
-		font-size: 16px;
+		display: inline-flex;
+		align-items: center;
+		flex: none;
+		color: var(--fg);
 	}
 	.project-btn {
 		display: inline-flex;

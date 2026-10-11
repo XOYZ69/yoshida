@@ -23,6 +23,11 @@
 	--warn-text: light-dark(#96620a, #f0b429);
 	--check-a: light-dark(#ebe5d8, #2a2621);
 	--check-b: light-dark(#f7f3ea, #322d27);
+	/* yoshida logo (branding/yoshida-logo): the three cards and the "y" on the front one. */
+	--logo-card-1: light-dark(#3b6cf6, #6e93ff);
+	--logo-card-2: light-dark(#9db5fb, #3f5597);
+	--logo-card-3: light-dark(#c9d7fd, #2c3757);
+	--logo-ink: light-dark(#ffffff, #1b1b1f);
 	--mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
