@@ -33,7 +33,7 @@ const COPIES = [
 		count: 2,
 		first: 2, // the root entry and packages[""]; later ones are dependencies
 	},
-	{ file: 'site/content/docs/_index.md', re: /(documents version )(\S+)( of the tool)/, count: 1 },
+	{ file: 'site/content/docs/_index.md', re: /(covers version )(\S+)( of the tool)/, count: 1 },
 	{ file: 'site/content/docs/limits-and-versioning.md', re: /(implemented by yoshida \*\*)([^*]+)(\*\*)/, count: 1 },
 	{ file: 'site/content/docs/server-api.md', re: /(\t"version": ")([^"]*)(")/, count: 1 },
 	{ file: 'site/content/docs/wasm-interface.md', re: /(\{ "version": ")([^"]*)(", "format")/, count: 1 },
