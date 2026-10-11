@@ -11,7 +11,7 @@ sort_by = "title"
 
 yoshida turns a **design** (layers, parameters and expressions in a JSON file) and a table of **card data** into finished card images. One core renders everything, and three front ends use it: a command-line tool, a visual editor that runs in the browser, and a small server.
 
-This wiki documents version 0.4.0 of the tool and version 1 of the file format.
+This wiki documents version 0.5.0 of the tool and version 1 of the file format.
 
 > Disclaimer: If you are searching for the old python version please check out [0.3.1-python](https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python)
 

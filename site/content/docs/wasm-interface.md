@@ -31,7 +31,7 @@ Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 J
 
 ### `info`
 
-Returns `{ "version": "0.4.0", "format": 1 }`.
+Returns `{ "version": "0.5.0", "format": 1 }`.
 
 ### `check`
 

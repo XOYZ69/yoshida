@@ -19,7 +19,7 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 
 ```json
 {
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"format": 1,
 	"render": true,
 	"max_cards": 1000,

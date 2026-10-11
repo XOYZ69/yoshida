@@ -1,7 +1,7 @@
 {
 	"name": "yoshida-editor",
 	"private": true,
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"type": "module",
 	"scripts": {
 		"wasm": "cd .. && zig build wasm && mkdir -p web/public && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm",
