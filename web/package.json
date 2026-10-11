@@ -10,7 +10,8 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs && node tests/ui-hover.mjs && node tests/ui-review.mjs"
+		"test:unit": "node --experimental-strip-types tests/progress-math.mjs",
+		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs && node tests/ui-hover.mjs && node tests/ui-review.mjs && node tests/ui-perf.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",

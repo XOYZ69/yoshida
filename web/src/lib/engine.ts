@@ -65,8 +65,12 @@ export type ProjectInfo = { name: string; sets: SetInfo[] };
 export type CheckResult = { diagnostics: Diagnostic[]; project: ProjectInfo };
 
 export type RenderResult = {
+	/** Size of the bitmap in `bin`; smaller than the canvas for a proxy render. */
 	width: number;
 	height: number;
+	/** Size of the canvas the design describes. */
+	canvas_width?: number;
+	canvas_height?: number;
 	diagnostics: Diagnostic[];
 	missing_urls: string[];
 	/** Layer bounds, when the request asked for `layout`. */
@@ -81,6 +85,12 @@ export type RenderArgs = {
 	preview: boolean;
 	format: "rgba" | "png" | "png16";
 	layout?: boolean;
+	/** Proxy render: bitmap pixels per canvas pixel (0 < scale <= 1). */
+	scale?: number;
+	/** Draw only these layer ids (and what is inside them), without the background. */
+	only?: string[];
+	/** Draw everything but these layer ids. */
+	except?: string[];
 };
 
 export class Engine {
@@ -183,18 +193,32 @@ export class Engine {
 		});
 	}
 
-	/** Every card of a set as one PDF, one page per card. */
-	pdf(set: string, date: string, cropMarks: boolean) {
+	/**
+	 * Every card of a set as one PDF, one page per card. `progress` gets the
+	 * number of cards rendered so far.
+	 */
+	pdf(
+		set: string,
+		date: string,
+		cropMarks: boolean,
+		cards: number,
+		progress?: (done: number) => void,
+	) {
 		return this.call<{
 			pages: number;
 			diagnostics: Diagnostic[];
 			bin: Uint8Array;
-		}>({
-			op: "pdf",
-			set,
-			date,
-			crop_marks: cropMarks,
-		});
+		}>(
+			{
+				op: "pdf",
+				set,
+				date,
+				crop_marks: cropMarks,
+				cards,
+			},
+			[],
+			progress,
+		);
 	}
 
 	render(args: RenderArgs) {

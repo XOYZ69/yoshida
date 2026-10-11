@@ -43,7 +43,13 @@ type Msg = { id: number } & (
 	| { op: "render"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
 	| { op: "checkCards"; set: string; date: string }
-	| { op: "pdf"; set: string; date: string; crop_marks: boolean }
+	| {
+			op: "pdf";
+			set: string;
+			date: string;
+			crop_marks: boolean;
+			cards: number;
+	  }
 );
 
 function withBytes<T>(bytes: Uint8Array, fn: (ptr: number) => T): T {
@@ -166,13 +172,36 @@ async function handle(
 					.json,
 			};
 		case "pdf": {
-			const r = request({
-				op: "pdf",
-				set: msg.set,
-				date: msg.date,
-				crop_marks: msg.crop_marks,
-			});
-			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
+			// One page per request, so the page can show real progress.
+			request({ op: "pdf_begin" });
+			const diagnostics: unknown[] = [];
+			const seen = new Set<string>();
+			for (let i = 0; i < msg.cards; i++) {
+				const page = request({
+					op: "pdf_page",
+					set: msg.set,
+					card: i,
+					date: msg.date,
+					crop_marks: msg.crop_marks,
+				});
+				// Problems in the design come back with every page; keep one of each.
+				for (const d of page.json.diagnostics ?? []) {
+					const key = JSON.stringify(d);
+					if (!seen.has(key)) {
+						seen.add(key);
+						diagnostics.push(d);
+					}
+				}
+				(self as unknown as Worker).postMessage({
+					id: msg.id,
+					progress: i + 1,
+				});
+			}
+			const r = request({ op: "pdf_finish" });
+			return {
+				result: { ...r.json, diagnostics, bin: r.bin },
+				transfer: [r.bin.buffer],
+			};
 		}
 		default:
 			throw new Error(`unknown op ${(msg as { op: string }).op}`);

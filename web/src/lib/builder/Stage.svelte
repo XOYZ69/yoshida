@@ -1,3 +1,8 @@
+<script lang="ts" module>
+/** Moving layers: the card without them, and them alone, offset by (dx, dy) canvas pixels. */
+export type Sprite = { bg: ImageBitmap; fg: ImageBitmap; dx: number; dy: number };
+</script>
+
 <script lang="ts">
 // The rendered card with an editing overlay.
 //   click: select; Shift/Ctrl+click: add or remove; drag on empty space:
@@ -14,6 +19,9 @@ import type { Bounds, Gesture, HandleMode, Placed } from "../design";
 
 let {
 	image,
+	size = null,
+	sprite = null,
+	onview = undefined,
 	layout,
 	selected,
 	handles,
@@ -27,6 +35,11 @@ let {
 	oncontext = undefined,
 }: {
 	image: ImageData | null;
+	/** Canvas size; the image may be a smaller proxy render of it. */
+	size?: { w: number; h: number } | null;
+	sprite?: Sprite | null;
+	/** Screen pixels per canvas pixel, whenever the view changes. */
+	onview?: (shown: number) => void;
 	layout: Placed[];
 	selected: string[];
 	handles: (id: string) => HandleMode;
@@ -54,8 +67,8 @@ let avail = $state({ w: 0, h: 0 });
 /** Middle-button drag of the view. */
 let panning: { id: number; x: number; y: number } | null = $state(null);
 
-const W = $derived(image?.width ?? 0);
-const H = $derived(image?.height ?? 0);
+const W = $derived(image ? (size?.w ?? image.width) : 0);
+const H = $derived(image ? (size?.h ?? image.height) : 0);
 const scale = $derived(
 	fit && W && H && avail.w > 0
 		? Math.min((avail.w - 32) / W, (avail.h - 32) / H, 4)
@@ -66,9 +79,26 @@ const offset = $derived(fit ? centred(scale) : pan);
 
 $effect(() => {
 	if (!canvas || !image) return;
+	const g = canvas.getContext("2d")!;
+	if (sprite) {
+		const { bg, fg } = sprite;
+		if (canvas.width !== bg.width || canvas.height !== bg.height) {
+			canvas.width = bg.width;
+			canvas.height = bg.height;
+		}
+		const k = bg.width / (W || bg.width);
+		g.clearRect(0, 0, bg.width, bg.height);
+		g.drawImage(bg, 0, 0);
+		g.drawImage(fg, Math.round(sprite.dx * k), Math.round(sprite.dy * k));
+		return;
+	}
 	canvas.width = image.width;
 	canvas.height = image.height;
-	canvas.getContext("2d")!.putImageData(image, 0, 0);
+	g.putImageData(image, 0, 0);
+});
+
+$effect(() => {
+	if (scale > 0) onview?.(scale);
 });
 
 $effect(() => {

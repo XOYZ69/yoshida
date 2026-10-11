@@ -5,7 +5,7 @@ import type { GotoTarget } from "./lib/builder/complete";
 import Inspector from "./lib/builder/Inspector.svelte";
 import LayerTree from "./lib/builder/LayerTree.svelte";
 import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
-import Stage from "./lib/builder/Stage.svelte";
+import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
 import CardForm from "./lib/CardForm.svelte";
 import ThemeToggle from "./lib/ui/ThemeToggle.svelte";
 import {
@@ -128,6 +128,12 @@ import CardBrowser from "./lib/ui/CardBrowser.svelte";
 import CardList from "./lib/ui/CardList.svelte";
 import CardPicker from "./lib/ui/CardPicker.svelte";
 import DialogHost from "./lib/ui/DialogHost.svelte";
+import {
+	type PreviewQuality,
+	previewScale,
+	qualityLabels,
+	thumbScale,
+} from "./lib/quality";
 import { loadPref, savePref } from "./lib/ui/drag";
 import FileBrowser from "./lib/ui/FileBrowser.svelte";
 import Icon from "./lib/ui/Icon.svelte";
@@ -166,6 +172,8 @@ let setName = $state("");
 let cardIndex = $state(0);
 let lastRender = $state.raw<RenderResult | null>(null);
 let renderMs = $state(0);
+/** Proxy scale of the render that took `renderMs`. */
+let renderScale = 1;
 let jump: { line: number; col: number; nonce: number } | null = $state(null);
 let sidePanel: "card" | "files" = $state("card");
 type ServerInfo = {
@@ -213,8 +221,37 @@ const selectedLayer = $derived(
 );
 let locked = $state.raw(new Set<string>());
 let image = $state.raw<ImageData | null>(null);
+/** Canvas size of the last render (the image is smaller for a proxy render). */
+let imageSize = $state.raw<{ w: number; h: number } | null>(null);
 let layout = $state.raw<Placed[]>([]);
 let stale = $state(false);
+
+// Proxy renders: the preview renders as many pixels as the screen shows.
+const qualityKey = "yoshida.preview";
+let previewQuality = $state<PreviewQuality>(
+	loadPref(qualityKey, { quality: "auto" as PreviewQuality }).quality,
+);
+/** Screen (CSS) pixels per canvas pixel on the stage; 0 until it is laid out. */
+let stageShown = $state(0);
+/** The scale of the picture on the stage. */
+let shownScale = 1;
+const dpr = () => (typeof devicePixelRatio === "number" ? devicePixelRatio : 1);
+const wantedScale = $derived.by(() => {
+	const c = canvasSize;
+	// Before the stage is laid out, assume it is about 1400 pixels wide.
+	const shown = stageShown || Math.min(1, 1400 / Math.max(c.w, c.h, 1));
+	return previewScale(previewQuality, shown, dpr());
+});
+// A zoom or quality change that needs a sharper (or allows a cheaper) picture.
+$effect(() => {
+	const k = wantedScale;
+	if (image && k !== shownScale) scheduleRefresh();
+});
+
+function setPreviewQuality(q: PreviewQuality) {
+	previewQuality = q;
+	savePref(qualityKey, { quality: q });
+}
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -318,7 +355,7 @@ const parsed = $derived.by((): { doc: Obj | null; error: string } => {
 });
 const doc = $derived(parsed.doc);
 const canvasSize = $derived.by(() => {
-	if (image) return { w: image.width, h: image.height };
+	if (image && imageSize) return imageSize;
 	const w =
 		literalNumber(getPath(doc ?? undefined, ["canvas", "width"])) ?? 1000;
 	const h =
@@ -933,6 +970,8 @@ function cardThumb(i: number): Promise<string | null> {
 				date: today,
 				preview: true,
 				format: "png",
+				// Tiles are at most 320 x 448 screen pixels.
+				scale: thumbScale(canvasSize, 448 * dpr()),
 			})
 			.then((r) =>
 				r.bin.length
@@ -1048,6 +1087,9 @@ async function renderPreview() {
 		return;
 	}
 	const t0 = performance.now();
+	// Resizing and rotating render on every move: at half the pixels.
+	const scale =
+		gestureBase !== null ? Math.max(wantedScale / 2, 1 / 64) : wantedScale;
 	const r = await engine.render({
 		set: setName,
 		card: cardIndex,
@@ -1055,10 +1097,17 @@ async function renderPreview() {
 		preview: true,
 		format: "rgba",
 		layout: true,
+		scale,
 	});
 	renderMs = Math.round(performance.now() - t0);
+	renderScale = scale;
 	lastRender = r;
 	if (r.width) {
+		shownScale = scale;
+		imageSize = {
+			w: r.canvas_width || r.width,
+			h: r.canvas_height || r.height,
+		};
 		image = new ImageData(
 			new Uint8ClampedArray(
 				r.bin.buffer as ArrayBuffer,
@@ -1070,7 +1119,11 @@ async function renderPreview() {
 		);
 		layout = r.layout ?? [];
 		stale = false;
-		status = `${r.width} × ${r.height} px, rendered in ${renderMs} ms`;
+		dragSprite = null;
+		status =
+			`${imageSize.w} × ${imageSize.h} px` +
+			(scale < 1 ? ` (preview at ${r.width} × ${r.height})` : "") +
+			`, rendered in ${renderMs} ms`;
 	} else {
 		stale = !!image;
 		status = "Nothing could be drawn; see the problems below.";
@@ -1819,13 +1872,83 @@ function handlesFor(id: string): HandleMode {
 // started, so every move recomputes from the same base.
 let gestureBase: string | null = null;
 
+// Moving layers does not render while the pointer moves: at the start the
+// card is rendered once without the moved layers and once with only them,
+// and the stage slides the second picture over the first. The real render
+// follows on release. (Layers that depend on the moved ones by expression
+// catch up then.)
+let dragSprite = $state.raw<Sprite | null>(null);
+let spriteToken: object | null = null;
+
+async function prepareSprite(ids: string[]) {
+	const token = {};
+	spriteToken = token;
+	const args = {
+		set: setName,
+		card: cardIndex,
+		date: today,
+		preview: true,
+		format: "rgba" as const,
+		scale: shownScale,
+	};
+	try {
+		const [bg, fg] = await Promise.all([
+			engine.render({ ...args, except: ids }),
+			engine.render({ ...args, only: ids }),
+		]);
+		if (spriteToken !== token || !bg.width || !fg.width) return;
+		const bitmap = (r: RenderResult) =>
+			createImageBitmap(
+				new ImageData(
+					new Uint8ClampedArray(
+						r.bin.buffer as ArrayBuffer,
+						r.bin.byteOffset,
+						r.bin.byteLength,
+					),
+					r.width,
+					r.height,
+				),
+			);
+		const [b, f] = await Promise.all([bitmap(bg), bitmap(fg)]);
+		if (spriteToken !== token) {
+			b.close();
+			f.close();
+			return;
+		}
+		dragSprite = { bg: b, fg: f, dx: spriteMove.dx, dy: spriteMove.dy };
+	} catch {
+		// No sprite: the boxes still follow the pointer, the render comes on release.
+	}
+}
+let spriteMove = { dx: 0, dy: 0 };
+
+$effect(() => {
+	const sp = dragSprite;
+	return () => {
+		// Free the bitmaps once the next picture replaces them.
+		if (sp && dragSprite?.bg !== sp.bg) {
+			sp.bg.close();
+			sp.fg.close();
+		}
+	};
+});
+
 function onGesture(g: Gesture, phase: "start" | "move" | "end") {
 	if (!designPath) return;
 	if (phase === "start") {
 		gestureBase = designText;
+		spriteMove = { dx: 0, dy: 0 };
+		// A plain copy: the ids may be reactive state, which cannot be posted.
+		if (g.mode === "move") prepareSprite([...g.ids]);
 		return;
 	}
 	if (gestureBase === null) return;
+	if (g.mode === "move" && phase === "move") {
+		spriteMove = { dx: g.dx, dy: g.dy };
+		if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+		return;
+	}
+	if (phase === "end") spriteToken = null;
 	let d: Obj;
 	try {
 		d = JSON.parse(gestureBase);
@@ -1844,6 +1967,7 @@ function onGesture(g: Gesture, phase: "start" | "move" | "end") {
 		gestureBase = null;
 	}
 	if (text !== designText) updateFile(designPath, text, true);
+	else if (phase === "end") dragSprite = null;
 }
 
 function nudge(ids: string[], dx: number, dy: number) {
@@ -2003,8 +2127,19 @@ async function save() {
 
 // ---------------------------------------------------------------- export
 
-/** Time per card of the last export in this session, for the PDF estimate. */
+/** Time per card of the last export in this browser, for the next estimate. */
 let perCardMs = 0;
+
+/**
+ * Expected time to render one card at full size here: the last export, or
+ * the preview scaled up to the full pixel count (render time is roughly
+ * proportional to the pixels).
+ */
+function fullCardEstimate(): number | null {
+	if (perCardMs) return perCardMs;
+	if (!renderMs) return null;
+	return (renderMs / Math.max(renderScale * renderScale, 1 / 4096)) * 1.2;
+}
 /** ZIP and PDF exports go to the server (the switch next to the export buttons). */
 const onServer = $derived(useServer && !!server?.render);
 const errorCount = (ds: Diagnostic[]) =>
@@ -2017,7 +2152,10 @@ async function exportPng() {
 	busy = "Rendering PNG…";
 	try {
 		run.log(`Rendering card '${card.id}' at full size in this browser`);
-		run.estimate(renderMs ? renderMs * 1.5 : null);
+		// One call with no progress inside: the bar stays indeterminate and
+		// the estimate is shown as text only.
+		run.estimate(fullCardEstimate());
+		const t0 = Date.now();
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
@@ -2025,6 +2163,7 @@ async function exportPng() {
 			preview: false,
 			format: "png",
 		});
+		perCardMs = Date.now() - t0;
 		if (r.bin.length) download(`${card.id}.png`, r.bin, "image/png");
 		lastRender = { ...r, bin: new Uint8Array() };
 		const errs = errorCount(r.diagnostics);
@@ -2048,10 +2187,11 @@ async function exportZip() {
 	const set = currentSet;
 	const name = setName;
 	const n = set.cards.length;
+	// Weights: rendering is nearly all of the time; the zip is stored, not compressed.
 	const run = new Run(`Exporting ${n} card${n === 1 ? "" : "s"} as a ZIP`, [
-		"Render the cards",
-		"Pack the zip",
-		"Save",
+		["Render the cards", 94],
+		["Pack the zip", 4],
+		["Save", 2],
 	]);
 	let stop = false;
 	run.onCancel(() => (stop = true));
@@ -2062,6 +2202,7 @@ async function exportZip() {
 		const zip: Record<string, Uint8Array> = {};
 		const diagnostics: Diagnostic[] = [];
 		const t0 = Date.now();
+		run.perUnit(fullCardEstimate());
 		for (let i = 0; i < n; i++) {
 			run.count(i, n);
 			const r = await engine.render({
@@ -2085,6 +2226,8 @@ async function exportZip() {
 			`Rendered ${n} card(s) in ${formatMs(Date.now() - t0)} (${(perCardMs / 1000).toFixed(2)} s per card)`,
 		);
 		run.step(1);
+		// Let the bar show the step before the (blocking) packing.
+		await new Promise((r) => setTimeout(r, 0));
 		const bytes = zipSync(zip, { level: 0 });
 		const fileName = `${projectName}-${name}.zip`;
 		run.step(2, formatBytes(bytes.length));
@@ -2121,25 +2264,35 @@ async function exportPdf() {
 	if (!currentSet) return;
 	if (onServer) return exportOnServer("pdf");
 	const n = currentSet.cards.length;
-	const run = new Run(`Exporting ${n} page${n === 1 ? "" : "s"} as a PDF`, [
-		"Render the pages",
-		"Save",
-	]);
+	const run = new Run(
+		`Exporting ${n} page${n === 1 ? "" : "s"} as a PDF`,
+		[
+			["Render the pages", 97],
+			["Save", 3],
+		],
+		"pages",
+	);
 	busy = "Rendering PDF…";
 	try {
 		const bleed = isObj(doc?.canvas) && doc.canvas.bleed !== undefined;
-		run.step(0, `${n} page(s)`);
-		// The PDF is made in one call, so the time left is an estimate from
-		// the last export (or the preview render).
-		const per = perCardMs || (renderMs ? renderMs * 1.6 : 0);
-		run.estimate(per ? per * n : null);
+		run.step(0, `0 / ${n}`);
+		// Pages are rendered one by one, and each one reports back.
+		const per = fullCardEstimate();
+		run.perUnit(per);
+		run.count(0, n);
 		run.log(
 			`Rendering ${n} page(s) in this browser${bleed ? " with crop marks" : ""}` +
 				(per ? `; about ${formatMs(per * n)} expected` : ""),
 		);
 		const t0 = Date.now();
-		const r = await engine.pdf(setName, today, bleed);
+		const r = await engine.pdf(setName, today, bleed, n, (done) => {
+			run.count(done, n);
+			run.detail(0, `${done} / ${n}`);
+		});
 		perCardMs = (Date.now() - t0) / Math.max(1, n);
+		run.log(
+			`Rendered ${r.pages} page(s) in ${formatMs(Date.now() - t0)} (${(perCardMs / 1000).toFixed(2)} s per page)`,
+		);
 		const fileName = `${projectName}-${setName}.pdf`;
 		run.step(1, formatBytes(r.bin.length));
 		if (r.bin.length) download(fileName, r.bin, "application/pdf");
@@ -2209,12 +2362,14 @@ async function exportOnServer(format: "png" | "pdf") {
 	const name = setName;
 	const n = set.cards.length;
 	const what = format === "pdf" ? "PDF" : "ZIP";
+	// Weights: a rough share of the time on a local network; the bar moves
+	// with the bytes sent, the cards the server reports and the bytes received.
 	const run = new Run(`Rendering ${n} card${n === 1 ? "" : "s"} on the server (${what})`, [
-		"Pack the project",
-		"Upload to the server",
-		"Render on the server",
-		"Download the result",
-		"Save",
+		["Pack the project", 3],
+		["Upload to the server", 10],
+		["Render on the server", 77],
+		["Download the result", 8],
+		["Save", 2],
 	]);
 	const job = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
 		b.toString(16).padStart(2, "0"),
@@ -2826,6 +2981,9 @@ const typeLabels: Record<LayerType, string> = {
 				</div>
 				<Stage
 					{image}
+					size={imageSize}
+					sprite={dragSprite}
+					onview={(v) => (stageShown = v)}
 					{layout}
 					selected={selectedLayers}
 					handles={handlesFor}
@@ -2838,7 +2996,20 @@ const typeLabels: Record<LayerType, string> = {
 					pick={pickOnCanvas}
 					oncontext={layerMenu}
 				/>
-				<div class="status">{busy || status}</div>
+				<div class="status">
+					<span class="status-text">{busy || status}</span>
+					<Select
+						compact
+						caption="Preview"
+						label="Preview quality"
+						title="How many pixels the preview renders. Sharp on screen matches the zoom; exports always render at full size."
+						value={previewQuality}
+						options={(Object.keys(qualityLabels) as PreviewQuality[]).map(
+							(q) => ({ value: q, label: qualityLabels[q] }),
+						)}
+						onchange={(v) => setPreviewQuality(v as PreviewQuality)}
+					/>
+				</div>
 			</main>
 
 			<div class="split-r">
@@ -2971,6 +3142,8 @@ const typeLabels: Record<LayerType, string> = {
 				<div class="pane-title row">{@render previewBar()}</div>
 				<Stage
 					{image}
+					size={imageSize}
+					onview={(v) => (stageShown = v)}
 					{layout}
 					selected={[]}
 					handles={() => "none"}
@@ -3370,10 +3543,20 @@ const typeLabels: Record<LayerType, string> = {
 		overflow: hidden;
 	}
 	.status {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		padding: 4px 12px;
 		font-size: 12px;
 		color: var(--muted);
 		border-top: 1px solid var(--line);
+	}
+	.status-text {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.problems-pane {
 		grid-area: problems;
