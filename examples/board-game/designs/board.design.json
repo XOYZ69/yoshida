@@ -190,22 +190,22 @@
     },
     "has_n": {
       "args": { "k": "text" },
-      "expr": "k == 'back' or k == 'forward' or k == 'shortcut'",
+      "expr": "k in ['back', 'forward', 'shortcut']",
       "note": "Tiles that show a number: steps for back and forward, the target tile for a shortcut."
     },
     "kind_color": {
       "args": { "k": "text" },
-      "expr": "(k == 'start' ? c_start : (k == 'finish' ? c_finish : (k == 'safe' ? c_safe : (k == 'skip' ? c_skip : (k == 'back' ? c_back : (k == 'forward' ? c_forward : (k == 'shortcut' ? c_shortcut : (k == 'dare' ? c_dare : c_plain))))))))",
+      "expr": "match(k, 'start', c_start, 'finish', c_finish, 'safe', c_safe, 'skip', c_skip, 'back', c_back, 'forward', c_forward, 'shortcut', c_shortcut, 'dare', c_dare, c_plain)",
       "note": "Tile color of a kind, from the theme."
     },
     "pip": {
       "args": { "face": "number", "k": "number" },
-      "expr": "face == 1 ? k == 4 : (face == 2 ? k == 0 or k == 8 : (face == 3 ? k == 0 or k == 4 or k == 8 : (face == 4 ? k % 2 == 0 and k != 4 : (face == 5 ? k % 2 == 0 : k % 3 != 1 and k != 4))))",
+      "expr": "match(face, 1, k in [4], 2, k in [0, 8], 3, k in [0, 4, 8], 4, k in [0, 2, 6, 8], 5, k in [0, 2, 4, 6, 8], k in [0, 2, 3, 5, 6, 8])",
       "note": "Is pip k (0-8, row by row) shown on a die face?"
     },
     "pawn_color": {
       "args": { "n": "number" },
-      "expr": "n == 0 ? c_start : (n == 1 ? c_dare : (n == 2 ? c_skip : c_safe))"
+      "expr": "match(n, 0, c_start, 1, c_dare, 2, c_skip, c_safe)"
     }
   },
   "layers": [
@@ -379,7 +379,7 @@
           "anchor": "left",
           "visible": "has_n(t.kind)",
           "at": { "x": 196.9, "y": 148.2 },
-          "text": "{t.kind == 'back' ? '-' : (t.kind == 'forward' ? '+' : '')}{t.n}"
+          "text": "{match(t.kind, 'back', '-', 'forward', '+', '')}{t.n}"
         },
         {
           "id": "tile_text",
