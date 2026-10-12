@@ -46,6 +46,7 @@ pub const Func = enum {
     with_alpha,
     rgb,
     rgba,
+    match,
 };
 
 pub const function_names = blk: {
@@ -55,7 +56,7 @@ pub const function_names = blk: {
     break :blk names;
 };
 
-pub const reserved_names = [_][]const u8{ "canvas", "render", "card", "true", "false", "and", "or", "not" };
+pub const reserved_names = [_][]const u8{ "canvas", "render", "card", "true", "false", "and", "or", "not", "in" };
 
 pub fn isReserved(name: []const u8) bool {
     for (reserved_names) |r| if (std.mem.eql(u8, r, name)) return true;
@@ -104,6 +105,8 @@ pub const Node = struct {
         not: *Node,
         binary: struct { op: BinOp, l: *Node, r: *Node },
         cond: struct { c: *Node, a: *Node, b: *Node },
+        /// `v in [items...]`: true when some item equals `v`.
+        in_list: struct { v: *Node, items: []*Node },
     };
 };
 
@@ -344,12 +347,34 @@ const Parser = struct {
                 left = try p.node(left.start, b.end, .{ .cond = .{ .c = left, .a = a, .b = b } });
                 continue;
             }
+            if (t.kind == .name and std.mem.eql(u8, t.text, "in")) {
+                if (3 <= min_bp) return left;
+                p.i += 1;
+                left = try p.inList(left);
+                continue;
+            }
             const info = binOp(t) orelse return left;
             if (info.bp <= min_bp) return left;
             p.i += 1;
             const right = try p.expr(info.bp);
             left = try p.node(left.start, right.end, .{ .binary = .{ .op = info.op, .l = left, .r = right } });
         }
+    }
+
+    /// The bracket list after `in`: `[e1, e2, ...]`, one or more items.
+    fn inList(p: *Parser, v: *Node) Error!*Node {
+        const open = p.peek();
+        if (!isOp(open, "[")) return p.fail(3001, open, "expected '[' after 'in'", "list the values, e.g. k in ['a', 'b']");
+        p.i += 1;
+        if (isOp(p.peek(), "]")) return p.fail(3001, p.peek(), "the list after 'in' is empty", null);
+        var items: std.ArrayList(*Node) = .empty;
+        try items.append(p.arena, try p.expr(0));
+        while (isOp(p.peek(), ",")) {
+            p.i += 1;
+            try items.append(p.arena, try p.expr(0));
+        }
+        const close = try p.expect("]");
+        return p.node(v.start, close.end, .{ .in_list = .{ .v = v, .items = items.items } });
     }
 
     fn prefix(p: *Parser) Error!*Node {
@@ -395,7 +420,7 @@ const Parser = struct {
                     const operand = try p.expr(7);
                     return p.node(t.start, operand.end, .{ .not = operand });
                 }
-                if (std.mem.eql(u8, t.text, "and") or std.mem.eql(u8, t.text, "or")) {
+                if (std.mem.eql(u8, t.text, "and") or std.mem.eql(u8, t.text, "or") or std.mem.eql(u8, t.text, "in")) {
                     return p.fail(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null);
                 }
                 if (isOp(p.peek(), "(")) return p.postfix(try p.call(t));
@@ -774,6 +799,15 @@ pub const Checker = struct {
                     },
                 }
             },
+            .in_list => |il| {
+                const lt = try c.check(il.v);
+                if (!keyable(lt)) return c.fail(3003, il.v, try c.print("'in' compares numbers, text, bools or colors, got a {s}", .{lt.name()}), null);
+                for (il.items, 1..) |item, i| {
+                    const it = try c.check(item);
+                    if (!it.eql(lt)) return c.fail(3003, item, try c.print("item {d} of the list is a {s}, but the left side is a {s}", .{ i, it.name(), lt.name() }), null);
+                }
+                return .bool;
+            },
             .cond => |cd| {
                 try c.expectType(cd.c, .bool, "the condition of '? :'");
                 const a = try c.check(cd.a);
@@ -802,7 +836,35 @@ pub const Checker = struct {
         }
     }
 
+    /// match(value, key1, result1, ..., default): the keys are compared with
+    /// the value, and the results and the default share one type.
+    fn checkMatch(c: *Checker, n: *Node, args: []*Node) Error!Type {
+        if (args.len < 4 or args.len % 2 != 0) {
+            return c.fail(3003, n, "match() needs a value, then key/result pairs, then a default", "e.g. match(k, 'a', 1, 'b', 2, 0)");
+        }
+        const vt = try c.check(args[0]);
+        if (!keyable(vt)) return c.fail(3003, args[0], try c.print("match() compares numbers, text, bools or colors, got a {s}", .{vt.name()}), null);
+        var i: usize = 1;
+        var pair: usize = 1;
+        while (i < args.len - 1) : (i += 2) {
+            const kt = try c.check(args[i]);
+            if (!kt.eql(vt)) return c.fail(3003, args[i], try c.print("key {d} of match() is a {s}, but the value is a {s}", .{ pair, kt.name(), vt.name() }), null);
+            pair += 1;
+        }
+        const rt = try c.check(args[2]);
+        var j: usize = 4;
+        while (j < args.len) : (j += 2) try c.matchResult(args[j], rt);
+        try c.matchResult(args[args.len - 1], rt);
+        return rt;
+    }
+
+    fn matchResult(c: *Checker, a: *Node, rt: Type) Error!void {
+        const t = try c.check(a);
+        if (!t.eql(rt)) return c.fail(3003, a, try c.print("the results of match() differ: {s} and {s}", .{ rt.name(), t.name() }), null);
+    }
+
     fn checkCall(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
+        if (func == .match) return c.checkMatch(n, args);
         const Sig = struct { min: usize, max: usize, args: []const ?Type, ret: Type };
         const num: ?Type = .number;
         const txt: ?Type = .text;
@@ -820,6 +882,7 @@ pub const Checker = struct {
             .with_alpha => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
             .rgb => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
             .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
+            .match => unreachable, // checked by checkMatch
         };
         if (args.len < sig.min or args.len > sig.max) {
             const msg = if (sig.min == sig.max)
@@ -909,6 +972,14 @@ pub fn keyField(def: *const value.ItemDef) ?usize {
 pub fn valueField(def: *const value.ItemDef, key: usize) ?usize {
     if (def.types.len != 2) return null;
     return 1 - key;
+}
+
+/// Types that `in` and `match()` can compare.
+fn keyable(t: Type) bool {
+    return switch (t) {
+        .number, .text, .bool, .color => true,
+        else => false,
+    };
 }
 
 pub fn checkTemplate(t: Template, scope: *const Scope, problem: *?Problem) Error!void {
@@ -1031,6 +1102,13 @@ pub const Env = struct {
                     else => unreachable,
                 };
             },
+            .in_list => |il| {
+                const v = try env.eval(il.v);
+                for (il.items) |item| {
+                    if (v.eql(try env.eval(item))) return .{ .bool = true };
+                }
+                return .{ .bool = false };
+            },
             .cond => |cd| return if ((try env.eval(cd.c)).bool) env.eval(cd.a) else env.eval(cd.b),
             .call => |cl| return env.call(cl.func, cl.args),
             .konst => |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki),
@@ -1122,6 +1200,15 @@ pub const Env = struct {
                 if (func == .rgba) c.a = unit16(try env.num(args[3]));
                 return .{ .color = c };
             },
+            .match => {
+                // Lazy like `? :`: only the chosen result is evaluated.
+                const v = try env.eval(args[0]);
+                var i: usize = 1;
+                while (i < args.len - 1) : (i += 2) {
+                    if ((try env.eval(args[i])).eql(v)) return env.eval(args[i + 1]);
+                }
+                return env.eval(args[args.len - 1]);
+            },
         }
     }
 
@@ -1189,6 +1276,21 @@ test "parse and check" {
     try testing.expect((try testCheck(a, "edition == '1  Edition'", &scope)) == .bool);
     try testing.expect((try testCheck(a, "@bg.bounds.cx + 1", &scope)) == .number);
     try testing.expect((try testCheck(a, "level > 3 ? #FF0000 : rgb(0, 0, 255)", &scope)) == .color);
+    try testing.expect((try testCheck(a, "edition in ['a', 'b']", &scope)) == .bool);
+    try testing.expect((try testCheck(a, "level in [1, 2, 3]", &scope)) == .bool);
+    try testing.expect((try testCheck(a, "match(level, 1, #FF0000, 2, #00FF00, #0000FF)", &scope)) == .color);
+    try testing.expect((try testCheck(a, "match(edition, 'a', 1, 0)", &scope)) == .number);
+
+    try expectProblem(a, "level in ['a']", &scope, 3003);
+    try expectProblem(a, "level in 1", &scope, 3001);
+    try expectProblem(a, "level in []", &scope, 3001);
+    try expectProblem(a, "level in [1, 2,]", &scope, 3001);
+    try expectProblem(a, "in", &scope, 3001);
+    try expectProblem(a, "match(level, 1, 2)", &scope, 3003);
+    try expectProblem(a, "match(level, 1)", &scope, 3003);
+    try expectProblem(a, "match(level, 1, 2, 3, 4)", &scope, 3003);
+    try expectProblem(a, "match(level, 'a', 1, 0)", &scope, 3003);
+    try expectProblem(a, "match(level, 1, 'x', 0)", &scope, 3003);
 
     var problem: ?Problem = null;
     const n = try parse(a, "lvl + 1", 0, &problem);
@@ -1205,6 +1307,19 @@ test "parse and check" {
     problem = null;
     try testing.expectError(error.Invalid, parse(a, "(1 + 2", 0, &problem));
     try testing.expectEqual(@as(u16, 3001), problem.?.code);
+}
+
+/// Expects `src` to fail with `code`, either while parsing or while checking.
+fn expectProblem(arena: Allocator, src: []const u8, scope: *const Scope, code: u16) !void {
+    var problem: ?Problem = null;
+    const n = parse(arena, src, 0, &problem) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        try testing.expectEqual(code, problem.?.code);
+        return;
+    };
+    var c: Checker = .{ .scope = scope, .problem = &problem };
+    try testing.expectError(error.Invalid, c.check(n));
+    try testing.expectEqual(code, problem.?.code);
 }
 
 fn testLookup(_: *anyopaque, name: []const u8) ?Value {
@@ -1245,4 +1360,10 @@ test "evaluate" {
     try testing.expectEqualStrings("Lv 4 {x} 0.50 001", try env.template(t));
     try testing.expectError(error.Eval, env.eval(try parse(a, "1 / (level - 4)", 0, &problem)));
     try testing.expectEqual(@as(u16, 3103), env.problem.?.code);
+
+    try testing.expect((try env.eval(try parse(a, "level in [1, 4]", 0, &problem))).bool);
+    try testing.expect(!(try env.eval(try parse(a, "level in [1, 2]", 0, &problem))).bool);
+    try testing.expectEqual(@as(f64, 40), (try env.eval(try parse(a, "match(level, 1, 10, 4, 40, 0)", 0, &problem))).number);
+    try testing.expectEqual(@as(f64, 0), (try env.eval(try parse(a, "match(level, 1, 10, 0)", 0, &problem))).number);
+    try testing.expectEqual(@as(f64, 1), (try env.eval(try parse(a, "match(level, 4, 1, 1 / (level - 4))", 0, &problem))).number);
 }
