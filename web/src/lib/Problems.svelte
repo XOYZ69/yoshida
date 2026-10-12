@@ -175,7 +175,6 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
   }
   header {
     padding: 5px 12px;
-    border-bottom: 1px solid var(--line);
     display: flex;
     gap: 8px;
     align-items: center;
