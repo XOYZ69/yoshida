@@ -1181,6 +1181,12 @@
 		renderMs = Math.round(performance.now() - t0);
 		renderScale = scale;
 		lastRender = r;
+		if (gestureBase !== null) {
+			// A drag started while this render ran: its picture and layout are
+			// older than what the stage shows. The release renders again.
+			previewSkipped = true;
+			return;
+		}
 		if (r.width) {
 			const size = showPicture(r, scale);
 			dragSprite = null;
@@ -2112,6 +2118,8 @@
 	let liveToken: object | null = null;
 	let liveWant: Gesture | null = null;
 	let liveRunning = false;
+	/** A preview render finished during a gesture and was not shown. */
+	let previewSkipped = false;
 
 	async function liveRender(token: object) {
 		if (liveRunning) return;
@@ -2138,8 +2146,9 @@
 				if (liveToken !== token) break;
 				if (r.width) showPicture(r, scale);
 			}
-		} catch {
-			// A failed render keeps the last picture; the release renders again.
+		} catch (err) {
+			// The last picture stays; the release renders again.
+			status = `Live preview failed: ${err instanceof Error ? err.message : err}`;
 		} finally {
 			liveRunning = false;
 			// A newer gesture may have asked for a render while this one ran.
@@ -2163,6 +2172,7 @@
 		if (!designPath) return;
 		if (phase === "start") {
 			gestureBase = designText;
+			previewSkipped = false;
 			spriteMove = { dx: 0, dy: 0 };
 			if (g.mode === "move" && dragPreview === "fast" && !needsLive(g.ids)) {
 				// A plain copy: the ids may be reactive state, which cannot be posted.
@@ -2205,10 +2215,8 @@
 		else {
 			dragSprite = null;
 			// A live preview left the changed card in the worker: put the card back.
-			if (live) {
-				engine.put(designPath, bytesOf(designText));
-				refresh();
-			}
+			if (live) engine.put(designPath, bytesOf(designText));
+			if (live || previewSkipped) refresh();
 		}
 	}
 

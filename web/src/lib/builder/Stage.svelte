@@ -409,6 +409,11 @@ function union(bs: Bounds[]): Bounds | null {
 
 function pointerdown(e: PointerEvent) {
 	if (!interactive || e.button !== 0 || !svg) return;
+	// No text selection or native drag: either takes the pointer stream away
+	// mid-gesture in some browsers, so pointerup never reaches the stage.
+	e.preventDefault();
+	// A gesture whose release was missed ends here, before a new one starts.
+	if (drag) finish();
 	const p = toCanvas(e);
 	const t = e.target as Element;
 	const handle = t.getAttribute("data-handle");
@@ -580,6 +585,11 @@ function pointermove(e: PointerEvent) {
 		if (interactive) hover = hitsAt(p.x, p.y)[0]?.id ?? null;
 		return;
 	}
+	// The button was released without a pointerup reaching the stage.
+	if (e.pointerType === "mouse" && !(e.buttons & 1)) {
+		finish();
+		return;
+	}
 	const rx = p.x - drag.sx;
 	const ry = p.y - drag.sy;
 	if (!drag.started) {
@@ -674,19 +684,26 @@ function pointermove(e: PointerEvent) {
 	if (g) ongesture(g, "move");
 }
 
-function pointerup() {
-	if (drag?.started) {
-		const g = gestureOf(drag);
-		if (g) {
-			ongesture(g, "end");
-			settling = drag;
-		}
-	} else if (drag?.kind === "marquee" && !drag.base?.length) {
-		onselect([]);
-	}
+function pointerup(e: PointerEvent) {
+	if (svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+	finish();
+}
+
+/** Ends the current gesture; the stage state is cleared even if the commit throws. */
+function finish() {
+	const d = drag;
 	drag = null;
 	guides = [];
 	marquee = null;
+	if (d?.started) {
+		const g = gestureOf(d);
+		if (g) {
+			settling = d;
+			ongesture(g, "end");
+		}
+	} else if (d?.kind === "marquee" && !d.base?.length) {
+		onselect([]);
+	}
 }
 
 // ------------------------------------------------------------ drawing
@@ -846,6 +863,7 @@ function cursorFor(h: string, rot: number) {
         onpointermove={pointermove}
         onpointerup={pointerup}
         onpointercancel={pointerup}
+        onlostpointercapture={() => drag && finish()}
         onpointerleave={() => (hover = null)}
         ondblclick={dblclick}
         oncontextmenu={contextmenu}>
@@ -919,6 +937,8 @@ function cursorFor(h: string, rot: number) {
     position: absolute;
     left: 0;
     top: 0;
+    user-select: none;
+    -webkit-user-select: none;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
   }
   .stage-wrap.panning,
