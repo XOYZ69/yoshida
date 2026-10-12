@@ -89,7 +89,7 @@ ok(
 		)
 		.count()) === 0,
 );
-const history = p.locator("header .btn-group.history > button");
+const history = p.locator(".btn-group.history > button");
 const hBoxes = await history.evaluateAll((els) =>
 	els.map((e) => e.getBoundingClientRect().toJSON()),
 );

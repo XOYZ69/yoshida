@@ -146,6 +146,8 @@ body.dragging-ui {
 :root {
 	/* Height of the controls in the top bar and toolbars, so they line up. */
 	--ctl-h: 28px;
+	/* Height of a toolbar or tab row: the controls plus padding and bottom border. */
+	--bar-h: calc(var(--ctl-h) + 13px);
 	--shadow-pop: 0 8px 24px rgb(0 0 0 / 0.18), 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
@@ -187,6 +189,8 @@ body.dragging-ui {
    shaded and underlined. */
 .tabbar {
 	display: flex;
+	height: var(--bar-h);
+	box-sizing: border-box;
 	border-bottom: 1px solid var(--line);
 	background: var(--bg-bar);
 	position: sticky;
@@ -201,7 +205,7 @@ body.dragging-ui {
 	border-right: 1px solid var(--line);
 	background: none;
 	color: var(--muted);
-	padding: 8px 6px 7px;
+	padding: 0 6px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;

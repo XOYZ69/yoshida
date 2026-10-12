@@ -2686,44 +2686,38 @@
 			}}
 		/>
 	</span>
-	<span class="exports">
-		<span class="btn-group" role="group" aria-label="Export">
-			<span class="group-cap" aria-hidden="true"
-				><Icon name="download" /> Export</span
+	<span class="edit">
+		<div class="btn-group mode" role="tablist" aria-label="View">
+			<button
+				role="tab"
+				aria-selected={mode === "build"}
+				class:active={mode === "build"}
+				onclick={() => (mode = "build")}
+				title="Build the design visually">Builder</button
 			>
 			<button
-				onclick={exportPng}
-				title="Export the card shown ({currentCard?.id ??
-					'none'}) as a PNG image, rendered in this browser"
-				disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+				role="tab"
+				aria-selected={mode === "code"}
+				class:active={mode === "code"}
+				onclick={() => (mode = "code")}
+				title="Raw files, for everything the builder does not cover"
+				>Advanced (JSON)</button
+			>
+		</div>
+		<div class="btn-group history" role="group" aria-label="History">
+			<button
+				onclick={undo}
+				disabled={!undoStack.length}
+				aria-label="Undo"
+				title="Undo (Ctrl+Z)"><Icon name="undo" /></button
 			>
 			<button
-				onclick={exportZip}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design as PNG images in one ZIP{onServer
-					? ', rendered on the server'
-					: ''}">ZIP</button
+				onclick={redo}
+				disabled={!redoStack.length}
+				aria-label="Redo"
+				title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
 			>
-			<button
-				onclick={exportPdf}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
-					? ', rendered on the server'
-					: ''}">PDF</button
-			>
-		</span>
-		{#if server?.render}
-			<label
-				class="switch server"
-				title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
-			>
-				<input type="checkbox" role="switch" bind:checked={useServer} />
-				<Icon name="cloud" />
-				<span>Render on server</span>
-			</label>
-		{/if}
+		</div>
 	</span>
 {/snippet}
 
@@ -2949,37 +2943,45 @@
 								: "Example (saved once you change it)"}
 			</span>
 			<span class="spacer"></span>
-			<div class="btn-group mode" role="tablist" aria-label="View">
-				<button
-					role="tab"
-					aria-selected={mode === "build"}
-					class:active={mode === "build"}
-					onclick={() => (mode = "build")}
-					title="Build the design visually">Builder</button
-				>
-				<button
-					role="tab"
-					aria-selected={mode === "code"}
-					class:active={mode === "code"}
-					onclick={() => (mode = "code")}
-					title="Raw files, for everything the builder does not cover"
-					>Advanced (JSON)</button
-				>
-			</div>
-			<div class="btn-group history" role="group" aria-label="History">
-				<button
-					onclick={undo}
-					disabled={!undoStack.length}
-					aria-label="Undo"
-					title="Undo (Ctrl+Z)"><Icon name="undo" /></button
-				>
-				<button
-					onclick={redo}
-					disabled={!redoStack.length}
-					aria-label="Redo"
-					title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
-				>
-			</div>
+			<span class="exports">
+				<span class="btn-group" role="group" aria-label="Export">
+					<span class="group-cap" aria-hidden="true"
+						><Icon name="download" /> Export</span
+					>
+					<button
+						onclick={exportPng}
+						title="Export the card shown ({currentCard?.id ??
+							'none'}) as a PNG image, rendered in this browser"
+						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+					>
+					<button
+						onclick={exportZip}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design as PNG images in one ZIP{onServer
+							? ', rendered on the server'
+							: ''}">ZIP</button
+					>
+					<button
+						onclick={exportPdf}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
+							? ', rendered on the server'
+							: ''}">PDF</button
+					>
+				</span>
+				{#if server?.render}
+					<label
+						class="switch server"
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+					>
+						<input type="checkbox" role="switch" bind:checked={useServer} />
+						<Icon name="cloud" />
+						<span>Render on server</span>
+					</label>
+				{/if}
+			</span>
 			{#if dirHandle}
 				<button
 					class="save-btn"
@@ -3089,12 +3091,14 @@
 			<main class="center">
 				<div class="toolbar">
 					<span class="adds">
-						<span class="caption">Add</span>
 						<span
 							class="btn-group group"
 							role="group"
 							aria-label="Add layer"
 						>
+							<span class="group-cap" aria-hidden="true"
+								><Icon name="plus" /> Add</span
+							>
 							{#each layerTypes as t}
 								<button
 									disabled={!doc}
@@ -3476,7 +3480,7 @@
 		min-width: 0;
 	}
 	.top > button,
-	.top > .btn-group {
+	.top .btn-group {
 		flex: none;
 		white-space: nowrap;
 		height: var(--ctl-h);
@@ -3571,19 +3575,23 @@
 		overflow: hidden;
 		container-type: inline-size;
 	}
-	/* Toolbars wrap whole groups, never single buttons; the export group
-	   stays on the right. */
+	/* Toolbars wrap whole groups, never single buttons; the editing
+	   switch and undo/redo stay on the right. Same height as the tab
+	   strip beside them (.tabbar). */
 	.toolbar,
 	.pane-title.row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
 		align-items: center;
+		min-height: var(--bar-h);
+		box-sizing: border-box;
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--line);
 	}
 	.adds,
 	.pick,
+	.edit,
 	.exports {
 		display: flex;
 		gap: 8px;
@@ -3601,8 +3609,10 @@
 		flex-wrap: wrap;
 		min-width: 0;
 	}
-	.exports {
+	.edit {
 		margin-left: auto;
+	}
+	.exports {
 		gap: 12px;
 	}
 	/* Every button in a group has the same padding, icon box and gap. */
