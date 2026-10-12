@@ -1,6 +1,16 @@
 <script lang="ts" module>
-/** Moving layers: the card without them, and them alone, offset by (dx, dy) canvas pixels. */
-export type Sprite = { bg: ImageBitmap; fg: ImageBitmap; dx: number; dy: number };
+/**
+ * Moving layers: the card without them (`bg`), and them alone, offset by
+ * (dx, dy) canvas pixels (`fg`). `top`, when set, is the layers drawn above
+ * the moved ones, on top of `fg` (not offset).
+ */
+export type Sprite = {
+	bg: ImageBitmap;
+	fg: ImageBitmap;
+	top: ImageBitmap | null;
+	dx: number;
+	dy: number;
+};
 </script>
 
 <script lang="ts">
@@ -81,7 +91,7 @@ $effect(() => {
 	if (!canvas || !image) return;
 	const g = canvas.getContext("2d")!;
 	if (sprite) {
-		const { bg, fg } = sprite;
+		const { bg, fg, top } = sprite;
 		if (canvas.width !== bg.width || canvas.height !== bg.height) {
 			canvas.width = bg.width;
 			canvas.height = bg.height;
@@ -90,6 +100,7 @@ $effect(() => {
 		g.clearRect(0, 0, bg.width, bg.height);
 		g.drawImage(bg, 0, 0);
 		g.drawImage(fg, Math.round(sprite.dx * k), Math.round(sprite.dy * k));
+		if (top) g.drawImage(top, 0, 0);
 		return;
 	}
 	canvas.width = image.width;

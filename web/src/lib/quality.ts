@@ -10,6 +10,18 @@ export const qualityLabels: Record<PreviewQuality, string> = {
 	full: "Full size",
 };
 
+/**
+ * What the stage shows while a layer is dragged. Live: the whole card is
+ * re-rendered at the pointer's position. Fast: the card stays as it was and
+ * only the moved layers follow the pointer.
+ */
+export type DragPreview = "live" | "fast";
+
+export const dragLabels: Record<DragPreview, string> = {
+	live: "Live (whole card)",
+	fast: "Fast (moved layer only)",
+};
+
 /** Smallest proxy scale: below this the preview is a blur. */
 const MIN_SCALE = 1 / 64;
 

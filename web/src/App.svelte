@@ -130,6 +130,8 @@
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import {
+		type DragPreview,
+		dragLabels,
 		type PreviewQuality,
 		previewScale,
 		qualityLabels,
@@ -259,6 +261,19 @@
 	function setPreviewQuality(q: PreviewQuality) {
 		previewQuality = q;
 		savePref(qualityKey, { quality: q });
+	}
+
+	// What the stage shows while a layer is dragged (see Stage's drag preview).
+	const dragKey = "yoshida.dragPreview";
+	let dragPreview = $state<DragPreview>(
+		loadPref(dragKey, { mode: "live" as string }).mode === "fast"
+			? "fast"
+			: "live",
+	);
+
+	function setDragPreview(m: DragPreview) {
+		dragPreview = m;
+		savePref(dragKey, { mode: m });
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
@@ -1113,6 +1128,28 @@
 		}
 	}
 
+	/** Puts a rendered picture (drawn at `scale`) on the stage; returns the canvas size. */
+	function showPicture(r: RenderResult, scale: number) {
+		shownScale = scale;
+		const size = {
+			w: r.canvas_width || r.width,
+			h: r.canvas_height || r.height,
+		};
+		imageSize = size;
+		image = new ImageData(
+			new Uint8ClampedArray(
+				r.bin.buffer as ArrayBuffer,
+				r.bin.byteOffset,
+				r.bin.byteLength,
+			),
+			r.width,
+			r.height,
+		);
+		layout = r.layout ?? [];
+		stale = false;
+		return size;
+	}
+
 	async function renderPreview() {
 		if (!currentSet?.cards.length) {
 			lastRender = null;
@@ -1132,8 +1169,9 @@
 		}
 		const t0 = performance.now();
 		// Resizing and rotating render on every move: at half the pixels.
+		// (Moving does not: its picture is the one the user sees.)
 		const scale =
-			gestureBase !== null
+			gestureBase !== null && gestureProxy
 				? Math.max(wantedScale / 2, 1 / 64)
 				: wantedScale;
 		const r = await engine.render({
@@ -1149,25 +1187,10 @@
 		renderScale = scale;
 		lastRender = r;
 		if (r.width) {
-			shownScale = scale;
-			imageSize = {
-				w: r.canvas_width || r.width,
-				h: r.canvas_height || r.height,
-			};
-			image = new ImageData(
-				new Uint8ClampedArray(
-					r.bin.buffer as ArrayBuffer,
-					r.bin.byteOffset,
-					r.bin.byteLength,
-				),
-				r.width,
-				r.height,
-			);
-			layout = r.layout ?? [];
-			stale = false;
+			const size = showPicture(r, scale);
 			dragSprite = null;
 			status =
-				`${imageSize.w} × ${imageSize.h} px` +
+				`${size.w} × ${size.h} px` +
 				(scale < 1 ? ` (preview at ${r.width} × ${r.height})` : "") +
 				`, rendered in ${renderMs} ms`;
 		} else {
@@ -1949,14 +1972,71 @@
 	// Canvas gestures are applied to the design as it was when the gesture
 	// started, so every move recomputes from the same base.
 	let gestureBase: string | null = null;
+	/** Whether the gesture under way renders at half the pixels (resize, rotate). */
+	let gestureProxy = false;
 
-	// Moving layers does not render while the pointer moves: at the start the
-	// card is rendered once without the moved layers and once with only them,
-	// and the stage slides the second picture over the first. The real render
+	// Moving layers, Fast drag preview: at the start the card is rendered as
+	// three pictures, the layers below the moved ones (with the card), the moved
+	// ones alone, and the layers above them alone. The stage slides the moved
+	// picture over the first and draws the last over it. The real render
 	// follows on release. (Layers that depend on the moved ones by expression
-	// catch up then.)
+	// do not follow until then.)
 	let dragSprite = $state.raw<Sprite | null>(null);
 	let spriteToken: object | null = null;
+
+	/**
+	 * Layers drawn above the layers `ids` (in card order), at every level, not
+	 * including them. A later sibling inside a group is listed as it is (the
+	 * render filter takes nested ids); a group listed covers its children, so
+	 * only the outermost of those are listed.
+	 */
+	function layersAbove(ids: string[]): string[] {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return [];
+		const order = layersOf(d).map((l) => String(l.id));
+		const cut = Math.max(-1, ...ids.map((id) => order.indexOf(id)));
+		if (cut < 0) return [];
+		const moved = new Set(ids);
+		const out: string[] = [];
+		const listed = new Set<string>();
+		for (const id of order.slice(cut + 1)) {
+			// Inside a moved layer (it moves with the layer) or inside a listed group.
+			if (ancestorsOf(d, id).some((a) => moved.has(a) || listed.has(a))) continue;
+			out.push(id);
+			listed.add(id);
+		}
+		return out;
+	}
+
+	/**
+	 * Whether Fast cannot draw the moved layers exactly, so the gesture uses
+	 * Live: an ancestor group with a repeat, effects, opacity below 1 or a
+	 * rotation (rendered through a scratch bitmap, or once per iteration), or a
+	 * layer that is not moved lying between moved layers in card order.
+	 */
+	function needsLive(ids: string[]): boolean {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return true;
+		const all = layersOf(d);
+		const byId = new Map(all.map((l) => [String(l.id), l]));
+		const moved = new Set(ids);
+		const composites = (g: Obj) =>
+			g.repeat != null ||
+			(Array.isArray(g.effects) ? g.effects.length > 0 : g.effects != null) ||
+			(typeof g.opacity === "number" ? g.opacity < 1 : g.opacity != null) ||
+			(typeof g.rotate === "number" ? g.rotate !== 0 : g.rotate != null);
+		for (const id of ids)
+			for (const a of ancestorsOf(d, id))
+				if (byId.has(a) && composites(byId.get(a)!)) return true;
+		const pos = ids.map((id) => all.findIndex((l) => String(l.id) === id));
+		if (pos.some((i) => i < 0)) return true;
+		for (let i = Math.min(...pos) + 1; i < Math.max(...pos); i++) {
+			const id = String(all[i].id);
+			if (!moved.has(id) && !ancestorsOf(d, id).some((a) => moved.has(a)))
+				return true;
+		}
+		return false;
+	}
 
 	async function prepareSprite(ids: string[]) {
 		const token = {};
@@ -1967,15 +2047,20 @@
 			date: today,
 			preview: true,
 			format: "rgba" as const,
-			scale: shownScale,
+			scale: wantedScale,
 		};
+		const above = layersAbove(ids);
 		try {
-			const [bg, fg] = await Promise.all([
-				engine.render({ ...args, except: ids }),
+			const [bg, fg, top] = await Promise.all([
+				engine.render({ ...args, except: [...ids, ...above] }),
 				engine.render({ ...args, only: ids }),
+				above.length
+					? engine.render({ ...args, only: above })
+					: Promise.resolve(null),
 			]);
 			if (spriteToken !== token || !bg.width || !fg.width) return;
-			const bitmap = (r: RenderResult) =>
+			// async: a throw here becomes a rejection, so the others are still closed.
+			const bitmap = async (r: RenderResult) =>
 				createImageBitmap(
 					new ImageData(
 						new Uint8ClampedArray(
@@ -1987,18 +2072,78 @@
 						r.height,
 					),
 				);
-			const [b, f] = await Promise.all([bitmap(bg), bitmap(fg)]);
-			if (spriteToken !== token) {
-				b.close();
-				f.close();
+			const settled = await Promise.allSettled([
+				bitmap(bg),
+				bitmap(fg),
+				top?.width ? bitmap(top) : Promise.resolve(null),
+			]);
+			// Close the bitmaps that were made, also when a later one failed.
+			const made: ImageBitmap[] = [];
+			for (const s of settled)
+				if (s.status === "fulfilled" && s.value) made.push(s.value);
+			if (
+				settled.some((s) => s.status === "rejected") ||
+				spriteToken !== token
+			) {
+				for (const m of made) m.close();
 				return;
 			}
-			dragSprite = { bg: b, fg: f, dx: spriteMove.dx, dy: spriteMove.dy };
+			const [b, f, t] = settled.map((s) =>
+				s.status === "fulfilled" ? s.value : null,
+			) as [ImageBitmap, ImageBitmap, ImageBitmap | null];
+			dragSprite = {
+				bg: b,
+				fg: f,
+				top: t,
+				dx: spriteMove.dx,
+				dy: spriteMove.dy,
+			};
 		} catch {
 			// No sprite: the boxes still follow the pointer, the render comes on release.
 		}
 	}
 	let spriteMove = { dx: 0, dy: 0 };
+
+	// Live drag preview: the whole card is re-rendered with the moved layers
+	// where the pointer is. One render runs at a time; positions that arrive
+	// meanwhile are skipped, and the latest one is rendered next.
+	let liveToken: object | null = null;
+	let liveWant: { ids: string[]; dx: number; dy: number } | null = null;
+	let liveRunning = false;
+
+	async function liveRender(token: object) {
+		if (liveRunning) return;
+		liveRunning = true;
+		try {
+			while (liveWant && liveToken === token) {
+				const want = liveWant;
+				liveWant = null;
+				const d = JSON.parse(gestureBase!) as Obj;
+				moveLayers(d, want.ids, want.dx, want.dy, canvasSize);
+				// The worker reads the design from its file system: put the candidate there.
+				await engine.put(designPath!, bytesOf(formatJson(d)));
+				if (liveToken !== token) break;
+				const scale = wantedScale;
+				const r = await engine.render({
+					set: setName,
+					card: cardIndex,
+					date: today,
+					preview: true,
+					format: "rgba",
+					layout: true,
+					scale,
+				});
+				if (liveToken !== token) break;
+				if (r.width) showPicture(r, scale);
+			}
+		} catch {
+			// A failed render keeps the last picture; the release renders again.
+		} finally {
+			liveRunning = false;
+			// A newer gesture may have asked for a render while this one ran.
+			if (liveWant && liveToken) void liveRender(liveToken);
+		}
+	}
 
 	$effect(() => {
 		const sp = dragSprite;
@@ -2007,6 +2152,7 @@
 			if (sp && dragSprite?.bg !== sp.bg) {
 				sp.bg.close();
 				sp.fg.close();
+				sp.top?.close();
 			}
 		};
 	});
@@ -2015,18 +2161,36 @@
 		if (!designPath) return;
 		if (phase === "start") {
 			gestureBase = designText;
+			gestureProxy = g.mode !== "move";
 			spriteMove = { dx: 0, dy: 0 };
-			// A plain copy: the ids may be reactive state, which cannot be posted.
-			if (g.mode === "move") prepareSprite([...g.ids]);
+			if (g.mode === "move") {
+				if (dragPreview === "live" || needsLive(g.ids)) {
+					liveToken = {};
+					liveWant = null;
+				} else {
+					// A plain copy: the ids may be reactive state, which cannot be posted.
+					prepareSprite([...g.ids]);
+				}
+			}
 			return;
 		}
 		if (gestureBase === null) return;
 		if (g.mode === "move" && phase === "move") {
 			spriteMove = { dx: g.dx, dy: g.dy };
-			if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+			if (liveToken) {
+				liveWant = { ids: [...g.ids], dx: g.dx, dy: g.dy };
+				void liveRender(liveToken);
+			} else if (dragSprite) {
+				dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+			}
 			return;
 		}
-		if (phase === "end") spriteToken = null;
+		const live = liveToken !== null;
+		if (phase === "end") {
+			spriteToken = null;
+			liveToken = null;
+			liveWant = null;
+		}
 		let d: Obj;
 		try {
 			d = JSON.parse(gestureBase);
@@ -2045,7 +2209,14 @@
 			gestureBase = null;
 		}
 		if (text !== designText) updateFile(designPath, text, true);
-		else if (phase === "end") dragSprite = null;
+		else if (phase === "end") {
+			dragSprite = null;
+			// A live preview left the moved card in the worker: put the card back.
+			if (live) {
+				engine.put(designPath, bytesOf(designText));
+				refresh();
+			}
+		}
 	}
 
 	function nudge(ids: string[], dx: number, dy: number) {
@@ -3159,6 +3330,18 @@
 							Object.keys(qualityLabels) as PreviewQuality[]
 						).map((q) => ({ value: q, label: qualityLabels[q] }))}
 						onchange={(v) => setPreviewQuality(v as PreviewQuality)}
+					/>
+					<Select
+						compact
+						caption="Drag"
+						label="Drag preview"
+						title="What the picture shows while layers are dragged. Live re-renders the whole card at the pointer, so layers above and below and layers that depend on the moved ones are right. Fast keeps the card still and moves only the dragged layers, drawn in their place in the stack; layers that depend on them follow on release. Fast switches to Live automatically for layers inside repeated or effect groups."
+						value={dragPreview}
+						options={(Object.keys(dragLabels) as DragPreview[]).map((m) => ({
+							value: m,
+							label: dragLabels[m],
+						}))}
+						onchange={(v) => setDragPreview(v as DragPreview)}
 					/>
 				</div>
 			</main>

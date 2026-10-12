@@ -27,6 +27,21 @@ await ctx.addInitScript(() => {
 	};
 });
 const p = await ctx.newPage();
+// The Fast drag preview: the moved layer alone, the card kept still.
+await p.addInitScript(() =>
+	localStorage.setItem("yoshida.dragPreview", JSON.stringify({ mode: "fast" })),
+);
+// A checksum of the picture on the stage, computed in the page.
+await p.addInitScript(() => {
+	window.__pictureSum = () => {
+		const c = document.querySelector(".stage canvas");
+		if (!c) return -1;
+		const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+		let h = 0;
+		for (let i = 0; i < d.length; i += 7) h = (h * 31 + d[i]) | 0;
+		return h;
+	};
+});
 const logs = [];
 let failed = 0;
 p.on("pageerror", (e) => logs.push(`pageerror: ${e.message}`));
@@ -95,23 +110,16 @@ await p.waitForFunction(
 ok("back to the screen-sized preview", (await canvasWidth()) < 4961);
 await rendered();
 
-// Moving a layer: two renders at the start (the card without it, and it
-// alone), none while the pointer moves, one after the release.
+// Moving a layer (Fast): two renders at the start (the card without it, and
+// it alone; panel has no layers above it, so no third), none while the
+// pointer moves, one after the release.
 await p.locator('.tree .row:has(.name:text-is("panel"))').first().click();
 await p.waitForTimeout(300);
 const box = await p.locator(".stage svg rect.sel").first().boundingBox();
 const before = await renders();
 const sx = box.x + box.width / 2;
 const sy = box.y + box.height / 2;
-// A checksum of the picture on the stage.
-const picture = () =>
-	p.evaluate(() => {
-		const c = document.querySelector(".stage canvas");
-		const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-		let h = 0;
-		for (let i = 0; i < d.length; i += 7) h = (h * 31 + d[i]) | 0;
-		return h;
-	});
+const picture = () => p.evaluate(() => window.__pictureSum());
 const under = await picture();
 await p.mouse.move(sx, sy);
 await p.mouse.down();
@@ -147,6 +155,48 @@ ok(
 await p.keyboard.press("Control+z");
 await p.waitForTimeout(500);
 await rendered();
+
+// Live: the whole card is rendered at the pointer while it moves.
+await p.click('button[aria-label="Drag preview"]');
+await p.locator('[role=option]:has-text("Live")').first().click();
+await p.waitForTimeout(300);
+await p.locator('.tree .row:has(.name:text-is("panel"))').first().click();
+await p.waitForTimeout(300);
+const liveBox = await p.locator(".stage svg rect.sel").first().boundingBox();
+const lx = liveBox.x + liveBox.width / 2;
+const ly = liveBox.y + liveBox.height / 2;
+const liveUnder = await picture();
+const liveBefore = await renders();
+await p.mouse.move(lx, ly);
+await p.mouse.down();
+for (let i = 1; i <= 8; i++) {
+	await p.mouse.move(lx - i * 12, ly + i * 4);
+	await p.waitForTimeout(400);
+}
+const liveDuring = (await renders()) - liveBefore;
+const liveMoved = await picture();
+ok("live: renders while the pointer moves", liveDuring >= 2, `${liveDuring} renders`);
+ok(
+	"live: the card changes before the release",
+	liveMoved !== liveUnder,
+	`${liveUnder} -> ${liveMoved}`,
+);
+await p.mouse.up();
+await p.waitForTimeout(1000);
+await rendered();
+// One undo step takes the layer back where it was.
+await p.keyboard.press("Control+z");
+// The status already says "rendered in" before the undo's render: wait for the picture.
+await p
+	.waitForFunction((want) => window.__pictureSum() === want, liveUnder, {
+		timeout: 10000,
+	})
+	.catch(() => {});
+ok(
+	"live: one undo restores the layer position",
+	(await picture()) === liveUnder,
+	`${liveUnder} after undo`,
+);
 
 // Thumbnails in the card browser are small renders.
 const tb = await renders();
