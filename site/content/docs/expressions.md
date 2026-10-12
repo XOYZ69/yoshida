@@ -37,8 +37,8 @@ Expressions have the types number, bool, text, color, image, list and list item.
 | --- | --- |
 | [Literals and units](@/docs/expressions-literals-and-units.md) | numbers, strings, booleans, colors, `%`, `vw`, `vh` |
 | [Names and references](@/docs/expressions-names-and-references.md) | params, loop names, `canvas`, `card`, `render`, `@layer` references |
-| [Operators](@/docs/expressions-operators.md) | precedence, arithmetic, comparison, logic, `? :` |
-| [Functions](@/docs/expressions-functions.md) | `min`, `clamp`, `round`, `fmt`, `mix`, `avg_color`, ... |
+| [Operators](@/docs/expressions-operators.md) | precedence, arithmetic, comparison, logic, `in`, `? :` |
+| [Functions](@/docs/expressions-functions.md) | `min`, `clamp`, `round`, `fmt`, `mix`, `avg_color`, `match`, ... |
 | [Templates](@/docs/expressions-templates.md) | `{expression}` holes in `text` and `path` fields |
 | [List lookup by key](@/docs/expressions-list-lookup.md) | `stats.Speed`, `stats["Speed"]` |
 | [Constants and functions](@/docs/expressions-constants-and-functions.md) | `consts` and `functions` of a design: named values and formulas |

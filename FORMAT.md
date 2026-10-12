@@ -95,7 +95,7 @@ Unknown top-level fields are [1101].
 
 ## 4. Params
 
-Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`) or a function name [1106].
+Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) or a function name [1106].
 
 ```json
 "params": {
@@ -358,9 +358,14 @@ Highest precedence first:
 | `+ -` | number | number |
 | `< <= > >=` | number | bool |
 | `== !=` | same type on both sides | bool |
+| `in` | left: number, text, bool or color; right: a bracket list | bool, short-circuit |
 | `and` | bool | bool, short-circuit |
 | `or` | bool | bool, short-circuit |
 | `c ? a : b` | bool, then same type | right-associative |
+
+`in` takes a bracket list written right there: `k in ['back', 'forward']` or `k in [0, 4, 8]`. The list has one or more items and no trailing comma; an empty or missing list is [3001]. Each item must have the left side's type [3003]. The check stops at the first equal item. Lists are not values elsewhere, so `[...]` cannot be stored in a constant or param. Because `not` binds tighter than `in`, write `not (k in [...])`.
+
+`? :` is right-associative, so a chain needs no brackets: `a ? x : b ? y : z` is `a ? x : (b ? y : z)`.
 
 `%` as an operator needs spaces or operands on both sides (`a % b`); `50%` directly after a number is the unit. There is no assignment, no string concatenation operator (use templates), and no implicit conversion: `'5' + 1` is [3003].
 
@@ -379,6 +384,9 @@ Highest precedence first:
 | `mix` | `(color, color, t) -> color`, linear blend, `t` 0 to 1 |
 | `with_alpha` | `(color, a) -> color`, `a` 0 to 1 |
 | `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 |
+| `match` | `(value, key, result, ..., default) -> result type` |
+
+`match` compares `value` with each `key` in order and gives the result of the first equal key, else `default`. Keys have the value's type (number, text, bool or color). All results and the default share one type, which is the return type. Only the chosen result is evaluated. It needs an even number of arguments, at least four: value, one or more key and result pairs, and the default ([3003] otherwise).
 
 Calling an unknown function is [3002]; wrong argument count or types is [3003]. Design functions (6.8) are called the same way.
 

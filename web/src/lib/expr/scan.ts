@@ -141,7 +141,8 @@ export function scanExpr(
 			let k = e;
 			while (k < to && text[k] === " ") k++;
 			const call = text[k] === "(";
-			if (w === "and" || w === "or" || w === "not") push(i, e, "keyword");
+			if (w === "and" || w === "or" || w === "not" || w === "in")
+				push(i, e, "keyword");
 			else if (w === "true" || w === "false") push(i, e, "bool");
 			else if (call) {
 				const known = FN_BY_NAME.has(w) || !names || !!names.functions?.has(w);

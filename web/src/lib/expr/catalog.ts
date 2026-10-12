@@ -150,6 +150,18 @@ export const FUNCTIONS: FnDoc[] = [
 		doc: "A color from channels 0 to 255 and alpha 0 to 1.",
 		example: "rgba(0, 0, 0, 0.4)",
 	},
+	{
+		name: "match",
+		args: [
+			{ name: "value", type: "any" },
+			{ name: "key", type: "any" },
+			{ name: "result", type: "any" },
+			{ name: "…", type: "any", rest: true },
+		],
+		ret: "any",
+		doc: "The result of the first key equal to value, else the default (the last argument). Only the chosen result is evaluated.",
+		example: "match(k, 'start', c_start, 'finish', c_finish, c_plain)",
+	},
 ];
 
 export const FN_BY_NAME = new Map(FUNCTIONS.map((f) => [f.name, f]));
@@ -274,6 +286,11 @@ export const KEYWORDS: FieldDoc[] = [
 	{ name: "and", type: "bool", doc: "Both sides true (short-circuit)." },
 	{ name: "or", type: "bool", doc: "Either side true (short-circuit)." },
 	{ name: "not", type: "bool", doc: "Negates a bool." },
+	{
+		name: "in",
+		type: "bool",
+		doc: "True if the value equals one item of a bracket list, e.g. k in [0, 4].",
+	},
 	{ name: "true", type: "bool", doc: "Boolean true." },
 	{ name: "false", type: "bool", doc: "Boolean false." },
 ];
@@ -303,8 +320,10 @@ export const CHEATSHEET: { title: string; rows: [string, string][] }[] = [
 		rows: [
 			["+ - * / %", "arithmetic on numbers (a % b needs spaces)"],
 			["< <= > >= == !=", "comparisons, give a bool"],
+			["v in [a, b]", "true if v equals one of the items"],
 			["and or not", "logic on bools"],
-			["c ? a : b", "a if c is true, else b"],
+			["c ? a : b", "a if c is true, else b (chains without brackets)"],
+			["match(v, k, r, …, d)", "r for the first k equal to v, else d"],
 			["list[n]  item.f", "index from 0, item field"],
 		],
 	},
