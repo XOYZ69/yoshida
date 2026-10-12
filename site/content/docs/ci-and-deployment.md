@@ -3,12 +3,14 @@ title = "CI and Deployment"
 description = "The GitHub Actions workflows for checks, releases and this website."
 +++
 
-Two GitHub Actions workflows live in `.github/workflows/`. They share the Zig setup in `.github/actions/setup-zig`, which installs Zig 0.16.0 from PyPI (the `ziglang` package ships the official release binaries) and caches Zig's build cache.
+The GitHub Actions workflows live in `.github/workflows/`. They share the Zig setup in `.github/actions/setup-zig`, which installs Zig 0.16.0 from PyPI (the `ziglang` package ships the official release binaries) and caches Zig's build cache.
 
 | Workflow | Runs on | What it does |
 | --- | --- | --- |
 | `ci.yml` | every pull request, manually, and when called by `deploy.yml` | Checks and tests, below |
-| `deploy.yml` | every push to `master`, and manually | Runs all of `ci.yml` first, then builds the site and publishes `web/dist` to GitHub Pages |
+| `deploy.yml` | every push to `master`, every published, edited or deleted release, and manually | Runs all of `ci.yml` first, then builds the site and publishes it to GitHub Pages |
+| `release.yml` | every successful `deploy.yml` run on `master`, and manually | Publishes a GitHub release when the version has no tag yet, see [Releases](#releases) |
+| `release-notes-preview.yml` | every pull request to `master` | Comments the release notes the PR will produce |
 
 ## `ci.yml`
 
@@ -77,10 +79,20 @@ node scripts/version.mjs check        # fail if a copy differs from build.zig.zo
 
 After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag is `v` plus the version.
 
-To release: bump on a branch, merge the pull request to `master`, then publish a GitHub release tagged `v<version>` (for example `v0.5.0`). Publishing it redeploys the site with the new release page.
+### Publishing a release
+
+To release: bump on a branch, merge the pull request to `master`, and wait. `release.yml` does the rest:
+
+1. It runs after every successful `deploy.yml` run on `master`, on the commit that was deployed.
+2. If the version in `build.zig.zon` already has a tag (`v0.5.0`, or `0.5.0` like the older releases), it stops.
+3. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
+4. It writes the notes with `.github/scripts/release-notes.mjs release` (the categories from `.github/release.yml` plus the `release-note` blocks from the PR bodies), then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
+5. It starts `deploy.yml`, so the site gets the new release page. A release created by a workflow does not trigger `deploy.yml` by itself.
+
+To retry a failed release, run `release.yml` manually from the Actions tab. It releases the version on the head of `master` if that version has no tag yet.
 
 ### Release bundle
 
 `scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
 
-A bundle made from the full examples contains commercial fonts and is **for private use only**.
+The bundle contains the full examples, including their fonts. `release.yml` refuses to publish while `examples/.public-exclude` lists any file, because those files are not meant to be shared; a bundle built from such examples is **for private use only**.

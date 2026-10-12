@@ -1,0 +1,142 @@
+# Publishes a GitHub release when master is deployed with a version that has
+# no release yet: bump the version in build.zig.zon (node scripts/version.mjs),
+# merge to master, and once Deploy succeeds this tags v<version>, builds the
+# release bundle (scripts/release.sh), attaches it as a zip and writes the
+# notes with .github/scripts/release-notes.mjs.
+#
+# A release created with GITHUB_TOKEN does not trigger other workflows, so the
+# deploy.yml `release` trigger does not fire for it; this workflow starts
+# Deploy itself afterwards to add the release page to the site. That Deploy
+# run ends here again and stops at "Find the version", because the tag exists.
+name: Release
+
+on:
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  ZOLA_VERSION: 0.23.6
+
+jobs:
+  version:
+    name: Find the version
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      # The commit that was deployed, not whatever master is by now.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # Releases up to 0.4.0 were tagged without the v, so either spelling
+      # counts as already released.
+      - name: Find the version
+        id: version
+        run: |
+          version=$(node scripts/version.mjs)
+          tag="v$version"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" "refs/tags/$version" > /dev/null; then
+            echo "$version is already tagged, nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$version has no tag yet, releasing $tag"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Release ${{ needs.version.outputs.tag }}
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and the release
+      actions: write # start Deploy afterwards
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      SHA: ${{ needs.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Version copies match the tag
+        run: node scripts/version.mjs check --tag "$TAG"
+
+      - uses: ./.github/actions/setup-zig
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Zola
+        run: |
+          mkdir -p "$RUNNER_TEMP/zola"
+          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
+          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+
+      - name: Install the editor's dependencies
+        working-directory: web
+        run: npm ci
+
+      # release.sh ships the full examples, while the public web build leaves
+      # out examples/.public-exclude. A public release must not contain
+      # private fonts or images, so stop if that list names anything.
+      - name: Examples may be redistributed
+        run: |
+          if grep -qvE '^[[:space:]]*(#|$)' examples/.public-exclude; then
+            echo "::error::examples/.public-exclude lists private files; the release bundle would ship them"
+            exit 1
+          fi
+
+      # One bundle for every platform, unpacked into yoshida-<version>/.
+      - name: Build the release bundle
+        run: |
+          sh scripts/release.sh "yoshida-$VERSION"
+          zip -qr "yoshida-$VERSION.zip" "yoshida-$VERSION"
+
+      - name: Write the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: release-notes.md
+        run: node .github/scripts/release-notes.mjs release
+
+      # A version with a pre-release part (0.6.0-rc.1) becomes a pre-release
+      # and does not replace the latest release.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$VERSION" in *-*) flags+=(--prerelease --latest=false) ;; esac
+          gh release create "$TAG" "yoshida-$VERSION.zip" \
+            --target "$SHA" \
+            --title "$VERSION" \
+            --notes-file release-notes.md \
+            "${flags[@]}"
+
+      - name: Deploy the site with the new release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref master
