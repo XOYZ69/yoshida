@@ -77,8 +77,10 @@ jobs:
       # in afterwards because zola writes a fresh output folder.
       - name: Build the site
         working-directory: site
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
-          zola build --base-url "${{ steps.pages.outputs.base_url }}" --output-dir ../public
+          zola build --base-url "https://${BASE_URL#*://}" --output-dir ../public
           cp -r ../web/dist ../public/editor
 
       - uses: actions/upload-pages-artifact@v3
