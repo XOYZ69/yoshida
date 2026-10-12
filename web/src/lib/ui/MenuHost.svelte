@@ -1,6 +1,6 @@
 <script lang="ts">
 // Draws the context menu opened with openMenu().
-import Icon, { isIcon } from "./Icon.svelte";
+import Icon from "./Icon.svelte";
 import { closeMenu, type MenuItem, overlay } from "./overlay.svelte";
 
 let el: HTMLDivElement | undefined = $state();
@@ -76,7 +76,7 @@ function onkeydown(e: KeyboardEvent) {
           disabled={it.disabled}
           onpointerenter={() => (active = i)}
           onclick={() => run(it)}>
-          <span class="icon">{#if isIcon(it.icon)}<Icon name={it.icon} />{:else}{it.icon ?? ''}{/if}</span>
+          <span class="icon">{#if it.icon}<Icon name={it.icon} />{/if}</span>
           <span class="label">{it.label}</span>
           {#if it.detail}<span class="detail">{it.detail}</span>{/if}
           {#if it.shortcut}<kbd>{it.shortcut}</kbd>{/if}

@@ -137,7 +137,7 @@
 	} from "./lib/quality";
 	import { loadPref, savePref } from "./lib/ui/drag";
 	import FileBrowser from "./lib/ui/FileBrowser.svelte";
-	import Icon from "./lib/ui/Icon.svelte";
+	import Icon, { layerIcon } from "./lib/ui/Icon.svelte";
 	import MenuHost from "./lib/ui/MenuHost.svelte";
 	import {
 		askText,
@@ -715,7 +715,7 @@
 		for (const p of myProjects)
 			items.push({
 				label: p.name,
-				icon: p.id === projectId ? "check" : "",
+				icon: p.id === projectId ? "check" : undefined,
 				detail: `${formatAge(p.updated)} · ${formatSize(p.size)}`,
 				action: () =>
 					p.id === projectId ? undefined : openSaved(p.id),
@@ -724,7 +724,7 @@
 		for (const ex of examples)
 			items.push({
 				label: ex.title,
-				icon: !projectId && ex.name === projectName ? "check" : "",
+				icon: !projectId && ex.name === projectName ? "check" : undefined,
 				detail: "opens a fresh copy",
 				action: () => openExample(ex.name),
 			});
@@ -1628,20 +1628,20 @@
 			});
 			for (const t of layerTypes)
 				items.push({
-					label: typeLabels[t].replace(/^\S+\s/, ""),
-					icon: typeLabels[t].split(" ")[0],
+					label: typeLabels[t],
+					icon: layerIcon(t),
 					action: () => addLayer(t),
 				});
 			items.push(
 				{
 					label: "Group",
-					icon: "▤",
+					icon: "group",
 					detail: "empty",
 					action: () => addContainer("group"),
 				},
 				{
 					label: "Divider…",
-					icon: "―",
+					icon: "divider",
 					detail: "only in this list",
 					action: () => addContainer("divider"),
 				},
@@ -1650,12 +1650,14 @@
 			items.push(
 				{
 					label: "Paste",
+					icon: "paste",
 					shortcut: "Ctrl+V",
 					disabled: !clipboard.length,
 					action: () => pasteFromMemory(),
 				},
 				{
 					label: "Select all",
+					icon: "select-all",
 					shortcut: "Ctrl+A",
 					action: () =>
 						(selectedLayers = layersOf(doc!)
@@ -1669,18 +1671,19 @@
 		if (one)
 			items.push({
 				label: "Rename…",
-				icon: "✎",
+				icon: "pencil",
 				action: () => renameAsk(one),
 			});
 		if (one && isDivider(l))
 			items.push({
 				label: "Edit title…",
+				icon: "pencil",
 				action: () => editDividerLabel(one),
 			});
 		if (one)
 			items.push({
 				label: "Add above",
-				icon: "＋",
+				icon: "plus",
 				detail: "layer, group or divider",
 				action: () => {
 					selectedLayers = [one];
@@ -1696,17 +1699,19 @@
 		items.push(
 			{
 				label: "Duplicate",
-				icon: "⧉",
+				icon: "copy",
 				shortcut: "Ctrl+D",
 				action: () => duplicateMany(ids),
 			},
 			{
 				label: "Copy",
+				icon: "clipboard",
 				shortcut: "Ctrl+C",
 				action: () => copyToMemory(ids),
 			},
 			{
 				label: "Cut",
+				icon: "scissors",
 				shortcut: "Ctrl+X",
 				action: () => {
 					copyToMemory(ids);
@@ -1715,6 +1720,7 @@
 			},
 			{
 				label: "Paste above",
+				icon: "paste",
 				shortcut: "Ctrl+V",
 				disabled: !clipboard.length,
 				action: () => pasteFromMemory(),
@@ -1722,12 +1728,13 @@
 			{ separator: true },
 			{
 				label: "Group",
-				icon: "▤",
+				icon: "group",
 				shortcut: "Ctrl+G",
 				action: groupSelected,
 			},
 			{
 				label: "Ungroup",
+				icon: "ungroup",
 				shortcut: "Ctrl+Shift+G",
 				disabled: !anyGroup,
 				action: ungroupSelected,
@@ -1738,11 +1745,13 @@
 			items.push(
 				{
 					label: "Bring forward",
+					icon: "up",
 					shortcut: "Ctrl+↑",
 					action: () => editDoc((d) => stepLayer(d, one, 1)),
 				},
 				{
 					label: "Send backward",
+					icon: "down",
 					shortcut: "Ctrl+↓",
 					action: () => editDoc((d) => stepLayer(d, one, -1)),
 				},
@@ -1750,6 +1759,7 @@
 			if (at)
 				items.push({
 					label: `Move out of '${at}'`,
+					icon: "move-out",
 					action: () => editDoc((d) => reorderLayer(d, one, at)),
 				});
 		}
@@ -1758,19 +1768,19 @@
 			items.push(
 				{
 					label: l.visible === false ? "Show" : "Hide",
-					icon: l.visible === false ? "◉" : "○",
+					icon: l.visible === false ? "eye" : "eye-off",
 					action: () => toggleVisible(one!),
 				},
 				{
 					label: locked.has(one!) ? "Unlock" : "Lock",
-					icon: "🔒",
+					icon: locked.has(one!) ? "lock" : "unlock",
 					action: () => toggleLock(one!),
 				},
 			);
 		}
 		items.push({
 			label: ids.length > 1 ? `Delete ${ids.length} layers` : "Delete",
-			icon: "🗑",
+			icon: "trash",
 			shortcut: "Del",
 			danger: true,
 			action: () => removeLayers(ids),
@@ -2782,7 +2792,7 @@
 					class="mini"
 					onclick={() => (browsing = true)}
 					title="Browse all cards in a big window, as a table or as pictures"
-					>⤢ Browse</button
+					><Icon name="expand" /> Browse</button
 				>
 			</div>
 			<CardList
@@ -2932,15 +2942,18 @@
 				class="saved {saveState}"
 				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
-				{saveState === "saving"
-					? "Saving…"
-					: saveState === "saved"
-						? "✓ Saved in this browser"
-						: saveState === "unsaved"
-							? "● Unsaved"
-							: saveState === "error"
-								? "⚠ Not saved"
-								: "Example (saved once you change it)"}
+				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
+				<span class="text"
+					>{saveState === "saving"
+						? "Saving…"
+						: saveState === "saved"
+							? "Saved in this browser"
+							: saveState === "unsaved"
+								? "Unsaved"
+								: saveState === "error"
+									? "Not saved"
+									: "Example (saved once you change it)"}</span
+				>
 			</span>
 			<span class="spacer"></span>
 			<span class="exports">
@@ -3100,12 +3113,13 @@
 								><Icon name="plus" /> Add</span
 							>
 							{#each layerTypes as t}
+								{@const ic = layerIcon(t)}
 								<button
 									disabled={!doc}
 									onclick={() => addLayer(t)}
 									aria-label="Add a {t} layer"
 									title="Add a {t} layer"
-									><Icon name={t} /><span
+									>{#if ic}<Icon name={ic} />{/if}<span
 										class="lbl"
 										aria-hidden="true">{typeLabels[t]}</span
 									></button
@@ -3425,6 +3439,9 @@
 	.cards-head .mini {
 		padding: 1px 8px;
 		font-size: 12px;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
 	.cards-head {
 		align-items: center;
@@ -3530,12 +3547,26 @@
 		color: var(--muted);
 	}
 	.saved {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 12px;
 		color: var(--muted);
 		white-space: nowrap;
 		overflow: hidden;
-		text-overflow: ellipsis;
 		max-width: 16em;
+	}
+	.saved .text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.saved .dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: currentColor;
+		flex: none;
 	}
 	.saved.unsaved {
 		color: var(--warn);

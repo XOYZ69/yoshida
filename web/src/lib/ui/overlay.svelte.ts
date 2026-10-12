@@ -2,6 +2,8 @@
 // menus. Components call these functions; DialogHost and MenuHost (mounted
 // once in App) draw them.
 
+import type { IconName } from "./Icon.svelte";
+
 export type DialogRequest =
 	| {
 			kind: "text";
@@ -29,7 +31,7 @@ export type MenuItem =
 			shortcut?: string;
 			disabled?: boolean;
 			danger?: boolean;
-			icon?: string;
+			icon?: IconName;
 			action: () => void;
 	  }
 	| { separator: true }

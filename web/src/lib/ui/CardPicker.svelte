@@ -2,6 +2,7 @@
 // "Card 3 of 120" with previous/next buttons and a searchable list.
 import type { CardInfo, Param } from "../engine";
 import CardList from "./CardList.svelte";
+import Icon from "./Icon.svelte";
 import { placeNear } from "./overlay.svelte";
 
 let {
@@ -63,7 +64,7 @@ function pick(i: number) {
       <CardList {cards} {params} {index} height={0} onpick={pick} autofocus onclose={() => (open = false)} />
     </div>
     {#if onbrowse}
-      <button class="browse" onclick={() => ((open = false), onbrowse?.())}>⤢ Browse all cards…</button>
+      <button class="browse" onclick={() => ((open = false), onbrowse?.())}><Icon name="expand" /> Browse all cards…</button>
     {/if}
   </div>
 {/if}
@@ -169,6 +170,13 @@ function pick(i: number) {
     background: var(--bg-bar);
     font-size: 12px;
     padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .browse :global(svg) {
+    margin: 0;
   }
   /* The corner grip resizes the list (CSS resize, themed by the browser). */
   .pop {

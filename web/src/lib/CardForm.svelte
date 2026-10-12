@@ -5,6 +5,7 @@
 import { paramSections } from "./design";
 import type { CardInfo, Param } from "./engine";
 import ColorPicker from "./ui/ColorPicker.svelte";
+import Icon from "./ui/Icon.svelte";
 import ImagePicker from "./ui/ImagePicker.svelte";
 import Select from "./ui/Select.svelte";
 
@@ -161,7 +162,7 @@ function removeItem(p: Param, index: number) {
   {#each sections as sec (sec.group)}
     {#if sec.group}
       <button class="section" aria-expanded={!folded.has(sec.group)} onclick={() => fold(sec.group)}>
-        <span>{folded.has(sec.group) ? '▸' : '▾'}</span>
+        <span><Icon name={folded.has(sec.group) ? 'chevron-right' : 'chevron-down'} /></span>
         <span class="title">{sec.group}</span>
         <span class="count">{sec.params.length}</span>
       </button>
@@ -175,7 +176,7 @@ function removeItem(p: Param, index: number) {
         {#if p.required}<b>*</b>{/if}
         {#if p.note}
           <button type="button" class="info" aria-label="About {p.label ?? p.name}: {p.note}">
-            ⓘ<span class="tip" role="tooltip">{p.note}</span>
+            <Icon name="info" /><span class="tip" role="tooltip">{p.note}</span>
           </button>
         {/if}
         <small>{p.type}{isSet ? '' : ' (default)'}</small>

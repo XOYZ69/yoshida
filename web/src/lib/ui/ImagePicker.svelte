@@ -32,7 +32,7 @@ async function choose(v: string) {
   mono
   {disabled}
   options={[
-    { value: UPLOAD, label: '⤒ Upload image…', detail: 'from your computer' },
+    { value: UPLOAD, label: 'Upload image…', detail: 'from your computer' },
     ...imageFiles.map((f) => ({ value: f, label: f.split('/').pop(), detail: f.split('/').slice(0, -1).join('/') })),
   ]}
   onchange={choose} />

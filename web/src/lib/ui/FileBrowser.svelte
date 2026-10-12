@@ -8,7 +8,7 @@
 import { buildTree, dirOf, join, nameError, type TreeNode } from "../paths";
 import { type Files, isImage } from "../project";
 import { formatSize } from "../store";
-import Icon from "./Icon.svelte";
+import Icon, { type IconName, isIcon } from "./Icon.svelte";
 import { askText, type MenuItem, openMenu } from "./overlay.svelte";
 
 let {
@@ -114,13 +114,14 @@ $effect(() => {
 	);
 });
 
-function icon(n: TreeNode) {
-	if (n.dir) return folded.has(n.path) && !query ? "📁" : "📂";
-	if (/\.design\.json$/i.test(n.name)) return "◧";
-	if (/\.cards\.(json|csv)$/i.test(n.name)) return "▦";
+/** A shared icon, or a short text badge for font and JSON files. */
+function icon(n: TreeNode): IconName | string {
+	if (n.dir) return folded.has(n.path) && !query ? "folder" : "folder-open";
+	if (/\.design\.json$/i.test(n.name)) return "design";
+	if (/\.cards\.(json|csv)$/i.test(n.name)) return "table";
 	if (/\.(ttf|otf)$/i.test(n.name)) return "Aa";
 	if (/\.json$/i.test(n.name)) return "{}";
-	return "·";
+	return "file";
 }
 
 function click(n: TreeNode) {
@@ -186,22 +187,22 @@ function menu(e: MouseEvent, n: TreeNode | null) {
 	if (n && !n.dir) {
 		items.push({ label: "Open", action: () => click(n) });
 		items.push(
-			{ label: "Rename…", icon: "✎", action: () => rename(n) },
-			{ label: "Duplicate", icon: "⧉", action: () => onduplicate(n.path) },
+			{ label: "Rename…", icon: "pencil", action: () => rename(n) },
+			{ label: "Duplicate", icon: "copy", action: () => onduplicate(n.path) },
 		);
 	}
 	if (n?.dir)
-		items.push({ label: "Rename folder…", icon: "✎", action: () => rename(n) });
+		items.push({ label: "Rename folder…", icon: "pencil", action: () => rename(n) });
 	if (n) items.push({ separator: true });
 	items.push(
 		{
 			label: target ? `Upload to ${target}/…` : "Upload to the project root…",
-			icon: "⤒",
+			icon: "upload",
 			action: () => onupload(target),
 		},
 		{
 			label: "New folder…",
-			icon: "📁",
+			icon: "folder-plus",
 			detail: target ? `in ${target}/` : "",
 			action: () => newFolder(target),
 		},
@@ -212,7 +213,7 @@ function menu(e: MouseEvent, n: TreeNode | null) {
 			{ separator: true },
 			{
 				label: n.dir ? "Delete folder…" : "Delete…",
-				icon: "🗑",
+				icon: "trash",
 				danger: true,
 				detail: uses_ ? `used by ${uses_} file${uses_ > 1 ? "s" : ""}` : "",
 				action: () => ondelete(n.path),
@@ -305,7 +306,8 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
           {#if !n.dir && thumbs.has(n.path)}
             <img class="thumb" src={thumbs.get(n.path)} alt="" loading="lazy" />
           {:else}
-            <span class="icon" class:dir={n.dir}>{icon(n)}</span>
+            {@const ic = icon(n)}
+            <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
           {/if}
           <span class="name">{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
           {#if !n.dir && (uses.get(n.path) ?? 0) > 0}<span class="uses" title="Referred to by {uses.get(n.path)} file(s)">{uses.get(n.path)}↩</span>{/if}

@@ -13,6 +13,7 @@ let revealed = 0;
 // empty space opens the menu for adding layers.
 import { tick, untrack } from "svelte";
 import { childrenOf, isDivider, isGroup, type Obj } from "../design";
+import Icon, { layerIcon } from "../ui/Icon.svelte";
 
 let {
 	layers,
@@ -44,15 +45,6 @@ let {
 	/** Unfolds the groups around a layer, scrolls to it and highlights it (go to definition). */
 	reveal?: { id: string; n: number } | null;
 } = $props();
-
-const icons: Record<string, string> = {
-	rect: "▭",
-	ellipse: "◯",
-	polygon: "△",
-	text: "T",
-	image: "🖼",
-	group: "▤",
-};
 
 let folded = $state(new Set<string>());
 
@@ -249,21 +241,22 @@ function finish() {
             onclick={(e) => {
               if (!selected.includes(r.id)) onselect([r.id]);
               oncontext(e, r.id);
-            }}>⋯</button>
+            }}><Icon name="more" /></button>
         </span>
       {:else}
+        {@const kind = layerIcon(String(r.l.type))}
         {#if r.group}
-          <button class="fold" aria-label={folded.has(r.id) ? 'Expand group' : 'Collapse group'} onclick={() => fold(r.id)}>{folded.has(r.id) ? '▸' : '▾'}</button>
+          <button class="fold" aria-label={folded.has(r.id) ? 'Expand group' : 'Collapse group'} onclick={() => fold(r.id)}><Icon name={folded.has(r.id) ? 'chevron-right' : 'chevron-down'} /></button>
         {:else}
           <span class="fold-space"></span>
         {/if}
         <button class="row" onclick={(e) => pick(r.id, e)}>
-          <span class="icon" class:grp={r.group}>{icons[String(r.l.type)] ?? '?'}</span>
+          <span class="icon" class:grp={r.group}>{#if kind}<Icon name={kind} />{/if}</span>
           <span class="name" class:off={vis === false} title={r.id}>{r.id}</span>
           {#if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
-          {#if r.l.repeat}<span class="badge" title="Repeated">⟳</span>{/if}
-          {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}">↳{r.l.extends}</span>{/if}
-          {#if Array.isArray(r.l.effects) && r.l.effects.length}<span class="badge" title="Effects">✦</span>{/if}
+          {#if r.l.repeat}<span class="badge" title="Repeated"><Icon name="repeat" /></span>{/if}
+          {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}"><Icon name="extends" />{r.l.extends}</span>{/if}
+          {#if Array.isArray(r.l.effects) && r.l.effects.length}<span class="badge" title="Effects"><Icon name="effects" /></span>{/if}
           {#if problems.get(r.id)}<span class="dot {problems.get(r.id)}" title="Has problems"></span>{/if}
         </button>
         <span class="tools">
@@ -271,16 +264,16 @@ function finish() {
             class="tool"
             title={typeof vis === 'string' ? `visible: ${vis}` : vis === false ? 'Show' : 'Hide'}
             disabled={typeof vis === 'string'}
-            onclick={() => onvisible(r.id)}>{typeof vis === 'string' ? 'fx' : vis === false ? '◌' : '👁'}</button>
+            onclick={() => onvisible(r.id)}>{#if typeof vis === 'string'}fx{:else}<Icon name={vis === false ? 'eye-off' : 'eye'} />{/if}</button>
           <button class="tool" class:on={locked.has(r.id)} title={locked.has(r.id) ? 'Unlock' : 'Lock (canvas clicks pass through)'} onclick={() => onlock(r.id)}
-            >{locked.has(r.id) ? '🔒' : '🔓'}</button>
+            ><Icon name={locked.has(r.id) ? 'lock' : 'unlock'} /></button>
           <button
             class="tool"
             title="More actions"
             onclick={(e) => {
               if (!selected.includes(r.id)) onselect([r.id]);
               oncontext(e, r.id);
-            }}>⋯</button>
+            }}><Icon name="more" /></button>
         </span>
       {/if}
     </li>
@@ -386,6 +379,9 @@ function finish() {
     color: var(--muted);
   }
   .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     font-size: 10px;
     color: var(--accent);
     white-space: nowrap;
