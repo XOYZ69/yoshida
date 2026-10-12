@@ -174,7 +174,9 @@ pub fn writeMissingUrls(w: *Writer, assets: *const render.Assets) Writer.Error!v
     try w.writeByte(']');
 }
 
-/// `[{id, instance?, visible, x, y, w, h, rotate?, px?, py?, size?, points?}]` for the editor's canvas overlay.
+/// `[{id, instance?, visible, x, y, w, h, px, py, rotate?, size?, points?}]` for the editor's canvas overlay.
+/// The pivot (px, py) is always written: a gesture that starts on an unrotated
+/// layer must turn it around the same point the renderer will use.
 pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void {
     try w.writeByte('[');
     for (items, 0..) |p, i| {
@@ -190,13 +192,13 @@ pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void 
         try value.writeNumber(w, p.w);
         try w.writeAll(",\"h\":");
         try value.writeNumber(w, p.h);
+        try w.writeAll(",\"px\":");
+        try value.writeNumber(w, p.px);
+        try w.writeAll(",\"py\":");
+        try value.writeNumber(w, p.py);
         if (p.rotate != 0) {
             try w.writeAll(",\"rotate\":");
             try value.writeNumber(w, p.rotate);
-            try w.writeAll(",\"px\":");
-            try value.writeNumber(w, p.px);
-            try w.writeAll(",\"py\":");
-            try value.writeNumber(w, p.py);
         }
         if (p.size) |sz| {
             try w.writeAll(",\"size\":");

@@ -704,7 +704,7 @@ let newFunction = $state("");
           <Field label="wrap" kind="number" optional value={ownVal(['wrap'])} fallback={effVal(['wrap'])} placeholder="no wrapping" bindings={numberParams} error={errorAt(['wrap'])} onchange={(v) => set(['wrap'], v)} />
         {/if}
       {/if}
-      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons: their centre)" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
+      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons with a point list and groups: their centre)" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
     </section>
 
     <section>
