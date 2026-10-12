@@ -1,4 +1,5 @@
 {
+	"root": false,
 	"files": {
 		"includes": [
 			"src/**",
