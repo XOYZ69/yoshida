@@ -50,8 +50,8 @@ function pick(i: number) {
   <button class="step" title="Previous card" disabled={disabled || index <= 0} onclick={() => onpick(index - 1)}>‹</button>
   <button bind:this={button} class="current" {disabled} aria-haspopup="listbox" aria-expanded={open} title="Choose the card to preview" onclick={() => (open ? (open = false) : show())}>
     <span class="cap">Card</span>
-    <span class="id">{current?.id ?? '—'}</span>
     <span class="of">{cards.length ? `${index + 1} / ${cards.length}` : 'no cards'}</span>
+    <span class="id">{current?.id ?? '—'}</span>
     <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
   </button>
   <button class="step" title="Next card" disabled={disabled || index >= cards.length - 1} onclick={() => onpick(index + 1)}>›</button>
@@ -123,25 +123,32 @@ function pick(i: number) {
     align-self: stretch;
     display: flex;
     align-items: center;
+    flex: none;
+  }
+  /* Position sits right after the caption and never shrinks out of view;
+     the card name takes the remaining room and truncates. */
+  .of {
+    flex: none;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .id {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 140px;
     font-family: var(--mono);
     font-size: 12px;
-    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .of {
-    flex: 1;
-    text-align: right;
-    font-size: 11px;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
   svg {
+    flex: none;
     width: 10px;
     height: 6px;
+    margin-left: auto;
     color: var(--muted);
     transition: transform 0.15s;
   }
