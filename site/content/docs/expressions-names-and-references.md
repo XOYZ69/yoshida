@@ -18,7 +18,7 @@ description = "Params, layer fields, canvas and card names, and reserved words."
 | `list[n]`, `item.field` | | Indexing (0-based) and field access |
 | `list.Key`, `list["Key"]` | | [Lookup by key](@/docs/expressions-list-lookup.md) |
 
-Reserved names that cannot be params, constants or functions: `canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, and every [built-in function name](@/docs/expressions-functions.md).
+Reserved names that cannot be params, constants or functions: `canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`, and every [built-in function name](@/docs/expressions-functions.md).
 
 ## Layer references
 

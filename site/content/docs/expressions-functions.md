@@ -16,12 +16,59 @@ description = "Every built-in function, with arguments and return types."
 | `mix` | `(color, color, t) -> color` | Linear blend, `t` from 0 to 1 |
 | `with_alpha` | `(color, a) -> color` | `a` from 0 (transparent) to 1 |
 | `rgb`, `rgba` | `(r, g, b[, a]) -> color` | Channels 0 to 255, `a` from 0 to 1 |
+| `match` | `(value, key, result, ..., default) -> result type` | Result of the first key equal to `value`, else `default`. See below |
 
 Calling an unknown function is error 3002 (with a "did you mean" hint). A wrong number of arguments or a wrong argument type is error 3003.
 
 Function names cannot be used as param names (error 1106).
 
 A design can add its own functions, such as `tile_x(i)`, and named constants: see [Constants and functions](@/docs/expressions-constants-and-functions.md).
+
+## Choosing between several values
+
+`match` gives the result of the first key equal to the value, and `in` tests whether a value equals one item of a list. Both replace long chains of `==` tests. Keys have the value's type, and all results and the default share one type. Only the chosen result is evaluated, as with `? :`.
+
+Membership, with `in` in place of `or`.
+
+Before:
+
+```json
+"has_n": "k == 'back' or k == 'forward' or k == 'shortcut'"
+```
+
+After:
+
+```json
+"has_n": "k in ['back', 'forward', 'shortcut']"
+```
+
+A value picked by key, with `match` in place of a `? :` chain.
+
+Before:
+
+```json
+"kind_color": "k == 'start' ? c_start : k == 'finish' ? c_finish : k == 'safe' ? c_safe : c_plain"
+```
+
+After:
+
+```json
+"kind_color": "match(k, 'start', c_start, 'finish', c_finish, 'safe', c_safe, c_plain)"
+```
+
+Which pips of a die face are shown, with one `match` in place of six comparisons.
+
+Before:
+
+```json
+"pip": "face == 1 ? k == 4 : face == 2 ? (k == 0 or k == 8) : face == 3 ? (k == 0 or k == 4 or k == 8) : face == 4 ? (k == 0 or k == 2 or k == 6 or k == 8) : face == 5 ? (k == 0 or k == 2 or k == 4 or k == 6 or k == 8) : (k == 0 or k == 2 or k == 3 or k == 5 or k == 6 or k == 8)"
+```
+
+After:
+
+```json
+"pip": "match(face, 1, k in [4], 2, k in [0, 8], 3, k in [0, 4, 8], 4, k in [0, 2, 6, 8], 5, k in [0, 2, 4, 6, 8], k in [0, 2, 3, 5, 6, 8])"
+```
 
 ## Examples
 
