@@ -146,7 +146,12 @@
 		openMenu,
 	} from "./lib/ui/overlay.svelte";
 	import ProgressHost from "./lib/ui/ProgressHost.svelte";
-	import { formatBytes, formatMs, Run } from "./lib/ui/progress.svelte";
+	import {
+		formatBytes,
+		formatMs,
+		progress,
+		Run,
+	} from "./lib/ui/progress.svelte";
 	import Select from "./lib/ui/Select.svelte";
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
@@ -2395,6 +2400,7 @@
 		if (!currentSet) return;
 		const n = currentSet.cards.length;
 		const run = new Run(`Checking ${n} card${n === 1 ? "" : "s"}`, []);
+		const doneTitle = `Checked ${n} card${n === 1 ? "" : "s"}`;
 		busy = "Checking every card…";
 		try {
 			run.log(`Evaluating every card of '${currentSet.design_name}'`);
@@ -2403,9 +2409,18 @@
 			const warns = r.diagnostics.filter(
 				(d) => d.severity === "warning",
 			).length;
+			const hints = r.diagnostics.filter(
+				(d) => d.severity === "hint",
+			).length;
+			const plural = (k: number, word: string) =>
+				`${k} ${word}${k === 1 ? "" : "s"}`;
 			status = `Checked ${n} card(s): ${errs} error(s), ${warns} warning(s)`;
 			showDiagnostics(r.diagnostics);
-			run.finish(status);
+			run.finish(
+				status,
+				`Checked ${plural(n, "card")}: ${plural(errs, "error")}, ${plural(warns, "warning")}, ${plural(hints, "hint")}.`,
+			);
+			if (run.live && progress.task) progress.task.title = doneTitle;
 		} catch (e) {
 			run.fail(`Could not check the cards: ${(e as Error).message}`);
 		} finally {

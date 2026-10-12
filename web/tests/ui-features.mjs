@@ -150,6 +150,9 @@ ok(
 	/Checked 4 card\(s\): 0 error/.test(await status()),
 	await status(),
 );
+// The result stays in the overlay until it is closed.
+await p.click('.progress button:has-text("Close")');
+await p.waitForSelector(".progress", { state: "detached", timeout: 5000 });
 
 // PDF export.
 const [dl] = await Promise.all([

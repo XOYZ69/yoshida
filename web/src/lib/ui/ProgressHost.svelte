@@ -10,6 +10,10 @@ let logEl: HTMLOListElement | undefined = $state();
 let closeBtn: HTMLButtonElement | undefined = $state();
 
 const t = $derived(progress.task);
+/** Shown until the user closes it: a failure, or a finished task with a summary. */
+const waiting = $derived(
+	t?.state === 'error' || (t?.state === 'done' && t.summary !== ''),
+);
 
 $effect(() => {
 	if (!t) return;
@@ -23,7 +27,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (t?.state === "error") closeBtn?.focus();
+	if (waiting) closeBtn?.focus();
 });
 
 /** 0..1 over all steps, or null while nothing measurable has happened. */
@@ -62,9 +66,17 @@ function close() {
 
 <svelte:window
   onkeydowncapture={(e) => {
-    if (!t || t.state === 'done') return;
+    if (!t) return;
+    // Esc (and Enter on a finished summary) closes what is waiting for the user.
+    if (waiting && (e.key === 'Escape' || (e.key === 'Enter' && t.state === 'done'))) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      return;
+    }
+    // A finished task closes by itself after a moment; keys pass through meanwhile.
+    if (t.state === 'done' && !waiting) return;
     // Nothing behind the overlay reacts to keys while it is open.
-    if (e.key === 'Escape' && t.state === 'error') close();
     if (!(e.target as Element)?.closest?.('.progress')) {
       e.preventDefault();
       e.stopPropagation();
@@ -72,7 +84,7 @@ function close() {
   }} />
 
 {#if t}
-  <div class="backdrop" class:done={t.state === 'done'} role="presentation">
+  <div class="backdrop" class:running={t.state === 'running'} class:done={t.state === 'done' && !t.summary} role="presentation">
     <div class="progress" role="alertdialog" aria-modal="true" aria-labelledby="progress-title" aria-busy={t.state === 'running'}>
       <div class="head">
         <h2 id="progress-title">{t.title}</h2>
@@ -88,6 +100,8 @@ function close() {
         </span>
         <span class="left">{left}</span>
       </div>
+
+      {#if t.summary}<p class="summary">{t.summary}</p>{/if}
 
       {#if t.steps.length > 1}
         <ol class="steps">
@@ -117,7 +131,7 @@ function close() {
       {/if}
 
       <div class="actions">
-        {#if t.state === 'error'}
+        {#if waiting}
           <button bind:this={closeBtn} onclick={close}>Close</button>
         {:else if t.cancel && t.state === 'running'}
           <button onclick={() => t.cancel?.()}>Cancel</button>
@@ -137,13 +151,15 @@ function close() {
     padding: 16px;
     background: color-mix(in srgb, var(--bg) 45%, transparent);
     backdrop-filter: blur(5px) saturate(0.8);
-    cursor: progress;
-    transition: opacity 0.3s;
+    cursor: default;
   }
-  /* Finished: shown a moment longer, but no longer in the way. */
+  .backdrop.running {
+    cursor: progress;
+  }
+  /* Finished: shown a moment longer, but no longer in the way. The dialog
+     itself is never faded: only the backdrop could be made see-through. */
   .backdrop.done {
     pointer-events: none;
-    opacity: 0.7;
   }
   .progress {
     box-sizing: border-box;
@@ -214,6 +230,10 @@ function close() {
   }
   .count {
     font-weight: 600;
+  }
+  .summary {
+    margin: 0;
+    font-size: 13px;
   }
   .left {
     color: var(--muted);

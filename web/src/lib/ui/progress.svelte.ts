@@ -35,6 +35,8 @@ export type Task = {
 	log: LogLine[];
 	state: "running" | "done" | "error" | "cancelled";
 	error: string;
+	/** Result shown when the task is done and kept open until the user closes it. */
+	summary: string;
 	cancel: (() => void) | null;
 };
 
@@ -84,6 +86,7 @@ export class Run {
 			log: [],
 			state: "running",
 			error: "",
+			summary: "",
 			cancel: null,
 		};
 		this.t = progress.task;
@@ -169,13 +172,20 @@ export class Run {
 		this.close(0);
 	}
 
-	/** Marks every step done and closes after a moment, so the end is seen. */
-	finish(text?: string) {
+	/**
+	 * Marks every step done and closes after a moment, so the end is seen.
+	 * With `summary`, the overlay stays open showing it until the user closes it.
+	 */
+	finish(text?: string, summary?: string) {
 		if (this.t.state !== "running") return;
 		for (const s of this.t.steps) if (s.state !== "error") s.state = "done";
 		this.t.state = "done";
 		this.t.cancel = null;
 		if (text) this.log(text);
+		if (summary) {
+			this.t.summary = summary;
+			return;
+		}
 		this.close(700);
 	}
 
