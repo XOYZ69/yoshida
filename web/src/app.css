@@ -189,6 +189,7 @@ body.dragging-ui {
    shaded and underlined. */
 .tabbar {
 	display: flex;
+	flex: none;
 	height: var(--bar-h);
 	box-sizing: border-box;
 	border-bottom: 1px solid var(--line);

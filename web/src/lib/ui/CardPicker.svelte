@@ -48,9 +48,9 @@ function pick(i: number) {
   }} />
 
 <div class="picker" class:open role="group" aria-label="Card shown in the preview">
+  <span class="cap" aria-hidden="true">Card</span>
   <button class="step" title="Previous card" disabled={disabled || index <= 0} onclick={() => onpick(index - 1)}>‹</button>
   <button bind:this={button} class="current" {disabled} aria-haspopup="listbox" aria-expanded={open} title="Choose the card to preview" onclick={() => (open ? (open = false) : show())}>
-    <span class="cap">Card</span>
     <span class="of">{cards.length ? `${index + 1} / ${cards.length}` : 'no cards'}</span>
     <span class="id">{current?.id ?? '—'}</span>
     <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
@@ -70,7 +70,7 @@ function pick(i: number) {
 {/if}
 
 <style>
-  /* One joined control: previous | card ▾ | next. */
+  /* One joined control: CARD | previous | position name ▾ | next. */
   .picker {
     display: inline-flex;
     align-items: stretch;
@@ -113,18 +113,19 @@ function pick(i: number) {
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line);
   }
+  /* The caption leads the group, like the Design picker's caption. */
   .cap {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 10px;
+    border-right: 1px solid var(--line);
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--muted);
-    padding-right: 8px;
-    border-right: 1px solid var(--line);
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    flex: none;
+    background: var(--bg);
   }
   /* Position sits right after the caption and never shrinks out of view;
      the card name takes the remaining room and truncates. */

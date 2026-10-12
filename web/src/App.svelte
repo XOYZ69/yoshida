@@ -1168,12 +1168,7 @@
 			return;
 		}
 		const t0 = performance.now();
-		// Resizing and rotating render on every move: at half the pixels.
-		// (Moving does not: its picture is the one the user sees.)
-		const scale =
-			gestureBase !== null && gestureProxy
-				? Math.max(wantedScale / 2, 1 / 64)
-				: wantedScale;
+		const scale = wantedScale;
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
@@ -1972,8 +1967,14 @@
 	// Canvas gestures are applied to the design as it was when the gesture
 	// started, so every move recomputes from the same base.
 	let gestureBase: string | null = null;
-	/** Whether the gesture under way renders at half the pixels (resize, rotate). */
-	let gestureProxy = false;
+
+	function applyGesture(d: Obj, g: Gesture) {
+		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
+		else if (g.mode === "resize")
+			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
+		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
+		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+	}
 
 	// Moving layers, Fast drag preview: at the start the card is rendered as
 	// three pictures, the layers below the moved ones (with the card), the moved
@@ -2104,11 +2105,12 @@
 	}
 	let spriteMove = { dx: 0, dy: 0 };
 
-	// Live drag preview: the whole card is re-rendered with the moved layers
-	// where the pointer is. One render runs at a time; positions that arrive
-	// meanwhile are skipped, and the latest one is rendered next.
+	// Live gesture preview (moving in Live mode, resizing, rotating, moving a
+	// point): the whole card is re-rendered with the gesture applied, without
+	// checking the project or touching the open files. One render runs at a
+	// time; gestures that arrive meanwhile are skipped, the latest is rendered next.
 	let liveToken: object | null = null;
-	let liveWant: { ids: string[]; dx: number; dy: number } | null = null;
+	let liveWant: Gesture | null = null;
 	let liveRunning = false;
 
 	async function liveRender(token: object) {
@@ -2119,7 +2121,7 @@
 				const want = liveWant;
 				liveWant = null;
 				const d = JSON.parse(gestureBase!) as Obj;
-				moveLayers(d, want.ids, want.dx, want.dy, canvasSize);
+				applyGesture(d, want);
 				// The worker reads the design from its file system: put the candidate there.
 				await engine.put(designPath!, bytesOf(formatJson(d)));
 				if (liveToken !== token) break;
@@ -2161,57 +2163,48 @@
 		if (!designPath) return;
 		if (phase === "start") {
 			gestureBase = designText;
-			gestureProxy = g.mode !== "move";
 			spriteMove = { dx: 0, dy: 0 };
-			if (g.mode === "move") {
-				if (dragPreview === "live" || needsLive(g.ids)) {
-					liveToken = {};
-					liveWant = null;
-				} else {
-					// A plain copy: the ids may be reactive state, which cannot be posted.
-					prepareSprite([...g.ids]);
-				}
+			if (g.mode === "move" && dragPreview === "fast" && !needsLive(g.ids)) {
+				// A plain copy: the ids may be reactive state, which cannot be posted.
+				prepareSprite([...g.ids]);
+			} else {
+				liveToken = {};
+				liveWant = null;
 			}
 			return;
 		}
 		if (gestureBase === null) return;
-		if (g.mode === "move" && phase === "move") {
-			spriteMove = { dx: g.dx, dy: g.dy };
+		if (phase === "move") {
 			if (liveToken) {
-				liveWant = { ids: [...g.ids], dx: g.dx, dy: g.dy };
+				// A plain copy, for the same reason.
+				liveWant = $state.snapshot(g) as Gesture;
 				void liveRender(liveToken);
-			} else if (dragSprite) {
-				dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+			} else if (g.mode === "move") {
+				spriteMove = { dx: g.dx, dy: g.dy };
+				if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
 			}
 			return;
 		}
+		// phase "end"
 		const live = liveToken !== null;
-		if (phase === "end") {
-			spriteToken = null;
-			liveToken = null;
-			liveWant = null;
-		}
+		spriteToken = null;
+		liveToken = null;
+		liveWant = null;
 		let d: Obj;
 		try {
 			d = JSON.parse(gestureBase);
 		} catch {
 			return;
 		}
-		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
-		else if (g.mode === "resize")
-			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
-		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
-		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+		applyGesture(d, g);
 		const text = formatJson(d);
-		if (phase === "end") {
-			if (text !== gestureBase) record(designPath, gestureBase);
-			lastKey = "";
-			gestureBase = null;
-		}
+		if (text !== gestureBase) record(designPath, gestureBase);
+		lastKey = "";
+		gestureBase = null;
 		if (text !== designText) updateFile(designPath, text, true);
-		else if (phase === "end") {
+		else {
 			dragSprite = null;
-			// A live preview left the moved card in the worker: put the card back.
+			// A live preview left the changed card in the worker: put the card back.
 			if (live) {
 				engine.put(designPath, bytesOf(designText));
 				refresh();
