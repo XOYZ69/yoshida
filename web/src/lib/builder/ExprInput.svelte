@@ -2,12 +2,16 @@
 // Input for expressions and templates (CodeMirror 6): syntax highlighting,
 // suggestions with types and docs (params, repeat names, @layer fields,
 // built-ins, functions), signature help inside a function call, and a ƒ
-// button that opens a reference of everything usable in this field.
+// button that opens a reference of everything usable in this field, and a ⤢
+// button (or Ctrl+Shift+E) that opens the formula panel: the expression as
+// its parts, for editing.
 // Hovering a name shows what it is; Ctrl/Cmd+click (or F12) shows where it
 // is defined, through the `yoshida-goto` context.
-// Single line: Enter or leaving the field commits, newlines are dropped.
-// Multiline (templates): newlines allowed, leaving the field (or Ctrl+Enter)
-// commits. Escape reverts the draft. One EditorView per instance.
+// Enter (or leaving the field, or Ctrl+Enter) commits; Shift+Enter starts a
+// new line. Long text wraps. Templates: Enter starts a new line and Ctrl+Enter
+// commits. Shift+Alt+F (or Ctrl+Shift+F) reformats an expression. Escape
+// reverts the draft. Under the text, a breadcrumb shows where the caret is in
+// the syntax tree. One EditorView per instance.
 
 import {
 	acceptCompletion,
@@ -27,8 +31,6 @@ import {
 	EditorState,
 	type Extension,
 	Prec,
-	Transaction,
-	type TransactionSpec,
 } from "@codemirror/state";
 import {
 	placeholder as cmPlaceholder,
@@ -40,6 +42,9 @@ import {
 import { getContext, onMount } from "svelte";
 import type { Expect } from "../expr/catalog";
 import { exprCompletion, kindBadge, optionClass } from "../expr/completion";
+import { exprCoreReady, formatExpr } from "../expr/core";
+import { crumbPath } from "../expr/crumbs";
+import FormulaPanel from "../expr/FormulaPanel.svelte";
 import { exprHighlight, refreshNames } from "../expr/highlight";
 import { exprHover } from "../expr/hover";
 import Reference from "../expr/Reference.svelte";
@@ -59,6 +64,7 @@ let {
 	rows = 1,
 	expect = "any",
 	label = "",
+	path,
 	oncommit,
 }: {
 	value: string;
@@ -72,6 +78,8 @@ let {
 	expect?: Expect;
 	/** Accessible name of the input. */
 	label?: string;
+	/** JSON pointer of the field in the design (e.g. `/layers/3/fill`): live values in the formula panel. */
+	path?: string;
 	oncommit: (v: string) => void;
 } = $props();
 
@@ -92,6 +100,11 @@ let editing = false;
 /** True while we replace the text ourselves (outside value). */
 let syncing = false;
 let refOpen = $state(false);
+/** The formula panel, and the text it opened with. */
+let formulaOpen = $state(false);
+let formulaText = $state("");
+/** The breadcrumb under the text: the path to the caret in the syntax tree. */
+let crumbs: string[] = $state([]);
 
 // Read through getters so the long-lived editor sees current props.
 const getCtx = () => ctxFn?.() ?? null;
@@ -120,6 +133,25 @@ function commit() {
 	if (d !== value) oncommit(d);
 }
 
+/** Opens the formula panel on the field's current text (not for templates). */
+function openFormula(): boolean {
+	if (template || !suggest) return false;
+	formulaText = text();
+	formulaOpen = true;
+	return true;
+}
+
+/** Hands the panel's text to the field and commits it, as Enter does. */
+function applyFormula(v: string) {
+	setText(v);
+	commit();
+}
+
+function closeFormula() {
+	formulaOpen = false;
+	view?.focus();
+}
+
 function revert(v: EditorView) {
 	if (refOpen) {
 		refOpen = false;
@@ -143,28 +175,6 @@ function setText(t: string) {
 	syncing = false;
 }
 
-/** Single line: newlines typed or pasted become spaces. */
-const oneLine = EditorState.transactionFilter.of(
-	(
-		tr: Transaction,
-	): Transaction | TransactionSpec | readonly TransactionSpec[] => {
-		if (!tr.docChanged || tr.newDoc.lines === 1) return tr;
-		const changes: { from: number; to: number; insert: string }[] = [];
-		let end = 0;
-		tr.changes.iterChanges((fromA, toA, _fromB, toB, ins) => {
-			const insert = ins.toString().replace(/\r?\n/g, " ");
-			changes.push({ from: fromA, to: toA, insert });
-			end = toB;
-		});
-		return {
-			changes,
-			selection: EditorSelection.cursor(end),
-			userEvent: tr.annotation(Transaction.userEvent),
-			scrollIntoView: true,
-		};
-	},
-);
-
 function extensions(): Extension[] {
 	const keys = keymap.of([
 		{
@@ -175,6 +185,7 @@ function extensions(): Extension[] {
 				return true;
 			},
 		},
+		{ key: "Shift-Enter", run: insertNewline },
 		{
 			key: "Mod-Enter",
 			run: () => {
@@ -182,6 +193,9 @@ function extensions(): Extension[] {
 				return true;
 			},
 		},
+		{ key: "Shift-Alt-f", run: reformat },
+		{ key: "Ctrl-Shift-f", run: reformat },
+		{ key: "Mod-Shift-e", run: openFormula },
 		{ key: "Escape", run: revert },
 		...defaultKeymap.filter((k) => k.key !== "Enter" && k.key !== "Mod-Enter"),
 		...historyKeymap,
@@ -202,6 +216,8 @@ function extensions(): Extension[] {
 		}),
 		EditorView.updateListener.of((u) => {
 			if (u.docChanged && !syncing) editing = true;
+			if (u.docChanged || u.selectionSet || u.focusChanged)
+				refreshCrumbs(u.view);
 		}),
 		EditorView.domEventHandlers({
 			blur: () => {
@@ -213,8 +229,7 @@ function extensions(): Extension[] {
 			},
 		}),
 	];
-	if (multiline) ext.push(EditorView.lineWrapping);
-	else ext.push(oneLine);
+	ext.push(EditorView.lineWrapping);
 	if (placeholder) ext.push(cmPlaceholder(placeholder));
 	if (highlighted) ext.push(exprHighlight(template, names));
 	if (suggest && ctxFn) {
@@ -270,6 +285,37 @@ $effect(() => {
 	view?.dispatch({ effects: refreshNames.of(null) });
 });
 
+/** The breadcrumb for the caret, while this field has focus. */
+function refreshCrumbs(v: EditorView) {
+	const path =
+		suggest && v.hasFocus
+			? crumbPath(v.state.doc.toString(), v.state.selection.main.head, template)
+			: [];
+	crumbs = path.length >= 2 ? path : [];
+}
+
+/** The field's width in characters, for formatting: 24 to 100. */
+function fieldWidth(v: EditorView): number {
+	const cw = v.defaultCharacterWidth || 8;
+	return Math.min(100, Math.max(24, Math.floor(v.contentDOM.clientWidth / cw)));
+}
+
+/** Replaces the expression with its canonical layout, and commits it. Templates are left alone. */
+function reformat(v: EditorView): boolean {
+	if (template || !exprCoreReady()) return true;
+	const doc = v.state.doc.toString();
+	const out = formatExpr(doc, fieldWidth(v));
+	if (out === null || out === doc) return true;
+	v.dispatch({
+		changes: { from: 0, to: v.state.doc.length, insert: out },
+		selection: { anchor: out.length },
+		userEvent: "input",
+		scrollIntoView: true,
+	});
+	commit();
+	return true;
+}
+
 function toggleRef() {
 	if (!view) return;
 	if (!refOpen) {
@@ -310,21 +356,41 @@ function insertRef(t: string, reopen: boolean) {
 <!-- A long one-line value is cut at the edge: the tooltip shows all of it. -->
 <div class="expr" class:mono class:multiline class:hasfx={suggest && !!ctxFn} style:--rows={rows} title={!multiline && value.length > 18 ? value : undefined}>
   <div class="host" bind:this={host}></div>
-  {#if suggest && ctxFn}
-    <button
-      bind:this={fbtn}
-      class="fx"
-      class:on={refOpen}
-      tabindex="-1"
-      title="What can I use here? (functions, params, layers…)"
-      aria-label="Expression reference"
-      aria-expanded={refOpen}
-      onmousedown={(e) => e.preventDefault()}
-      onclick={toggleRef}>ƒ</button>
+  {#if suggest && (ctxFn || !template)}
+    <div class="fxs">
+      {#if suggest && ctxFn}
+        <button
+          bind:this={fbtn}
+          class="fx"
+          class:on={refOpen}
+          tabindex="-1"
+          title="What can I use here? (functions, params, layers…)"
+          aria-label="Expression reference"
+          aria-expanded={refOpen}
+          onmousedown={(e) => e.preventDefault()}
+          onclick={toggleRef}>ƒ</button>
+      {/if}
+      {#if !template}
+        <button
+          class="fx fe"
+          tabindex="-1"
+          title="Formula panel (Ctrl+Shift+E)"
+          aria-label="Formula panel"
+          aria-expanded={formulaOpen}
+          onmousedown={(e) => e.preventDefault()}
+          onclick={openFormula}>⤢</button>
+      {/if}
+    </div>
+  {/if}
+  {#if crumbs.length}
+    <div class="yx-crumbs" title={crumbs.join(' › ')}>{crumbs.join(' › ')}</div>
   {/if}
 </div>
 {#if refOpen && ctxFn}
   <Reference ctx={ctxFn()} {expect} {template} anchor={() => fbtn?.getBoundingClientRect() ?? null} ignore={fbtn} oninsert={insertRef} onclose={() => (refOpen = false)} />
+{/if}
+{#if formulaOpen}
+  <FormulaPanel text={formulaText} {label} {path} onapply={applyFormula} onclose={closeFormula} />
 {/if}
 
 <style>
@@ -340,6 +406,7 @@ function insertRef(t: string, reopen: boolean) {
     flex: 1;
     min-width: 0;
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     box-sizing: border-box;
     background: var(--bg-code);
@@ -364,11 +431,28 @@ function insertRef(t: string, reopen: boolean) {
     min-width: 0;
     display: flex;
   }
+  /* Under the text, inside the field: the path to the caret. */
+  .yx-crumbs {
+    flex: 1 1 100%;
+    padding: 0 8px 3px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+  }
   .host :global(.cm-editor) {
     width: 100%;
   }
   .multiline .host :global(.cm-content) {
     min-height: calc(var(--rows, 1) * 18px + 6px);
+  }
+  .fxs {
+    flex: none;
+    align-self: flex-start;
+    display: flex;
   }
   .fx {
     flex: none;
@@ -387,6 +471,9 @@ function insertRef(t: string, reopen: boolean) {
   .expr:hover .fx,
   .expr:focus-within .fx {
     opacity: 1;
+  }
+  .fe {
+    font: 600 13px/24px system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   .fx:hover,
   .fx.on {

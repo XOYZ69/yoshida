@@ -26,6 +26,7 @@ RUN npm ci
 COPY web ./
 COPY examples /src/examples
 COPY --from=zig /src/zig-out/web/yoshida.wasm public/yoshida.wasm
+COPY --from=zig /src/zig-out/web/expr.wasm public/expr.wasm
 RUN npm run examples && npm run build
 
 # The website (landing page and docs) at /, with the editor in /editor/, laid

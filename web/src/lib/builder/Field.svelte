@@ -30,6 +30,7 @@ let {
 	title = "",
 	allowAuto = false,
 	expect = undefined,
+	path = undefined,
 	onchange,
 }: {
 	label: string;
@@ -48,6 +49,8 @@ let {
 	allowAuto?: boolean;
 	/** The value type an expression must give (for suggestions). */
 	expect?: "number" | "color" | "bool" | "text" | "list" | "image" | "any";
+	/** JSON pointer of the field in the design file, for live values. */
+	path?: string;
 	onchange: (v: Json | undefined) => void;
 } = $props();
 
@@ -140,7 +143,7 @@ function scrubEnd() {
 }
 </script>
 
-<div class="field" class:unset class:inherited class:bad={!!error} {title}>
+<div class="field" class:unset class:inherited class:bad={!!error} {title} data-path={path}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <span
     class="label"
@@ -160,11 +163,11 @@ function scrubEnd() {
       <input type="checkbox" checked={shown === true} onchange={(e) => onchange(e.currentTarget.checked)} />
     {:else if kind === 'color' && !exprMode}
       <ColorPicker value={hex ?? '#000000'} title="Pick {label}" onchange={(v) => onchange(v)} />
-      <ExprInput value={text} mono {placeholder} {label} expect="color" oncommit={commitText} />
+      <ExprInput value={text} mono {placeholder} {label} {path} expect="color" oncommit={commitText} />
     {:else if kind === 'template'}
-      <ExprInput value={text} template multiline rows={text.length > 30 || text.includes('\n') ? 3 : 1} {placeholder} {label} expect="text" oncommit={commitText} />
+      <ExprInput value={text} template multiline rows={text.length > 30 || text.includes('\n') ? 3 : 1} {placeholder} {label} {path} expect="text" oncommit={commitText} />
     {:else}
-      <ExprInput value={text} suggest={kind !== 'text'} mono={exprMode || kind === 'expr'} {placeholder} {label} expect={expects} oncommit={commitText} />
+      <ExprInput value={text} suggest={kind !== 'text'} mono={exprMode || kind === 'expr'} {placeholder} {label} {path} expect={expects} oncommit={commitText} />
     {/if}
     {#if kind !== 'enum'}
       <!-- Trailing buttons sit in one group pushed to the right edge, and the

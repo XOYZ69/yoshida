@@ -187,7 +187,8 @@ ok(
 	(await color.locator(".yx-unknown[title]").count()) === 0,
 );
 await color.click();
-await p.keyboard.press("Home");
+// Ctrl+Home, not Home: the field wraps, so Home stops at the visual line.
+await p.keyboard.press("Control+Home");
 await p.keyboard.press("ArrowRight");
 await p.keyboard.press("ArrowRight");
 await p.keyboard.press("F12");
@@ -199,7 +200,8 @@ ok(
 );
 await row("rules_head").click();
 await field("color").click();
-await p.keyboard.press("End");
+// Ctrl+End, not End: the field wraps, so End stops at the visual line.
+await p.keyboard.press("Control+End");
 await p.keyboard.type(" ", { delay: 5 });
 await p.keyboard.press("Backspace");
 await p.keyboard.type("x", { delay: 5 });
