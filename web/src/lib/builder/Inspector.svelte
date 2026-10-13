@@ -41,6 +41,10 @@ let {
 	imageFiles,
 	upload,
 	fontFiles,
+	fontFaces = {},
+	fontLicenses = {},
+	fontText = "",
+	onfonts = () => {},
 	diagnostics,
 	designFile,
 	editLayer,
@@ -64,6 +68,14 @@ let {
 	/** Adds an image from the user's computer; returns its project path. */
 	upload: () => Promise<string | null>;
 	fontFiles: string[];
+	/** CSS font-family of each project font file, for previews (null: could not load). */
+	fontFaces?: Record<string, string | null>;
+	/** License tag of each project font file ("OFL", "Apache"...), "" when it has no license file. */
+	fontLicenses?: Record<string, string>;
+	/** The selected text layer's text as the current card shows it, for font previews. */
+	fontText?: string;
+	/** Opens the Fonts window (on a font file, or to upload one). */
+	onfonts?: (target?: { path?: string; upload?: boolean }) => void;
 	diagnostics: Diagnostic[];
 	designFile: string;
 	editLayer: (fn: (own: Obj) => void, key?: string) => void;
@@ -492,7 +504,32 @@ function parseCoord(raw: string): Json {
 const fontEntries = $derived(
 	isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : [],
 );
-let newFont = $state("");
+const fontPathOf = (name: string) => {
+	const p = isObj(doc.fonts) ? (doc.fonts as Obj)[name] : undefined;
+	return typeof p === "string" ? p : "";
+};
+const faceOf = (name: string) => fontFaces[fontPathOf(name)] ?? null;
+// Text for font previews: the selected text layer's text, shortened.
+const fontSampleText = $derived(
+	fontText && type === "text" ? fontText.slice(0, 18) : "Aa Bb Cc",
+);
+const sampleOf = (name: string) => {
+	const family = faceOf(name);
+	return family ? { family, text: fontSampleText } : undefined;
+};
+const BROWSE = "\u0001browse";
+const UPLOAD = "\u0001upload";
+const fontOptions = $derived([
+	{ value: "default", sample: sampleOf("default") },
+	...fonts.filter((f) => f !== "default").map((f) => ({ value: f, sample: sampleOf(f) })),
+	{ value: BROWSE, label: "Browse fonts…", divider: true, action: true },
+	{ value: UPLOAD, label: "Upload font file…", action: true },
+]);
+function pickFont(v: unknown) {
+	if (v === BROWSE) onfonts();
+	else if (v === UPLOAD) onfonts({ upload: true });
+	else set(["font"], v as string | undefined);
+}
 let newConst = $state("");
 let newFunction = $state("");
 </script>
@@ -718,7 +755,12 @@ let newFunction = $state("");
       <h3>Appearance</h3>
       {#if type === 'text'}
         <Field label="text" kind="template" value={ownVal(['text']) ?? effVal(['text'])} bindings={textParams} error={errorAt(['text'])} path={pathOf(['text'])} onchange={(v) => set(['text'], v)} />
-        <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={String(effVal(['font']) ?? 'default')} options={['default', ...fonts.filter((f) => f !== 'default')]} onchange={(v) => set(['font'], v)} />
+        {@const fontNow = String(effVal(['font']) ?? 'default')}
+        <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={fontNow} options={fontOptions} sample={sampleOf(fontNow) ?? null} defaultSample={sampleOf(fontNow)} onchange={pickFont}>
+          {#snippet extra()}
+            <button class="mini aa" title="Browse fonts: preview, upload and import fonts" aria-label="Browse fonts" onclick={() => onfonts({ path: fontPathOf(fontNow) || undefined })}>Aa</button>
+          {/snippet}
+        </Field>
         <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size']) ?? 16} bindings={numberParams} error={errorAt(['size'])} path={pathOf(['size'])} onchange={(v) => set(['size'], v)} />
         <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
         <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'left')} options={['left', 'center', 'right', 'justify']} onchange={(v) => set(['align'], v)} />
@@ -840,30 +882,30 @@ let newFunction = $state("");
     <section>
       <h3>Fonts</h3>
       {#each fontEntries as [name, path]}
-        <div class="field-like">
+        {@const face = fontFaces[String(path)]}
+        {@const lic = fontLicenses[String(path)]}
+        <div class="field-like font-row">
           <span class="lbl mono">{name}</span>
+          <button class="font-sample" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
           <div class="row">
             <Select
               value={String(path)}
               mono
               label="Font file for {name}"
-              options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop() }))]}
+              options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
               onchange={(v) => setDoc(['fonts', name], v)} />
-            {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>{/if}
+            {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>
+            {:else if lic}<span class="lic" title="License file next to the font">{lic}</span>
+            {:else}<span class="missing" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">?</span>{/if}
             <button class="mini" title="Remove" onclick={() => setDoc(['fonts', name], undefined)}>×</button>
           </div>
         </div>
       {/each}
-      <div class="row">
-        <input class="mono" placeholder="font name" bind:value={newFont} />
-        <button
-          disabled={!identRe.test(newFont) || fontEntries.some(([n]) => n === newFont)}
-          onclick={() => {
-            setDoc(['fonts', newFont], fontFiles[0] ?? `assets/fonts/${newFont}.ttf`);
-            newFont = '';
-          }}>Add</button>
+      <div class="row font-actions">
+        <button onclick={() => onfonts()}>Browse fonts…</button>
+        <button onclick={() => onfonts({ upload: true })}>Upload…</button>
       </div>
-      {#if !fontFiles.length}<p class="hint">Add .ttf or .otf fonts with <b>Add files</b> in the project menu (or drop them on the window), then choose them here.</p>{/if}
+      {#if !fontEntries.length}<p class="hint">Text uses the bundled default font until you add one. <b>Browse fonts…</b> previews the fonts in the project and on Google Fonts and adds them here; <b>Upload…</b> adds a .ttf or .otf file from this computer.</p>{/if}
     </section>
     <p class="hint pad">Select a layer on the canvas or in the layer list to edit it, and press Esc or use <b>Design settings</b> at the top to come back here. Drag to move, use the handles to resize, Alt+click to pick the layer underneath, hold Ctrl to move without snapping.</p>
   {/if}
@@ -945,6 +987,35 @@ let newFunction = $state("");
   .row {
     display: flex;
     gap: 4px;
+  }
+  .font-sample {
+    grid-column: 2;
+    justify-self: start;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 18px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .lic {
+    align-self: center;
+    padding: 0 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .font-actions > button {
+    flex: 1;
+  }
+  .aa {
+    font-weight: 600;
   }
   .row > :global(:first-child) {
     flex: 1;

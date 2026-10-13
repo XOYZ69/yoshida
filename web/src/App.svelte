@@ -160,6 +160,16 @@
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
 	import Window from "./lib/ui/Window.svelte";
+	import FontsWindow, {
+		type FontAdd,
+		type FontsTarget,
+	} from "./lib/fonts/FontsWindow.svelte";
+	import {
+		findLicense,
+		licenseKind,
+		previewFace,
+		previewTextOf,
+	} from "./lib/fonts/project";
 
 	// CodeMirror is only needed in the Advanced view; load it on demand.
 	const loadEditor = () => import("./lib/Editor.svelte");
@@ -370,7 +380,37 @@
 		[...files.keys()].filter((p) => !isKeep(p)).sort(),
 	);
 	const imageFiles = $derived(fileList.filter(isImage));
-	const fontFiles = $derived(fileList.filter((f) => /\.(ttf|otf)$/i.test(f)));
+	const fontFiles = $derived(
+		fileList.filter((f) => /\.(ttf|otf|ttc)$/i.test(f)),
+	);
+	// CSS font-family of each project font, loaded from its bytes for previews.
+	let fontFaces = $state<Record<string, string | null>>({});
+	$effect(() => {
+		for (const p of fontFiles) {
+			const data = files.get(p);
+			if (!data) continue;
+			previewFace(data).then((name) => {
+				if (fontFaces[p] !== name) fontFaces = { ...fontFaces, [p]: name };
+			});
+		}
+	});
+	// License tag of each project font: "" when no license file is next to it.
+	const fontLicenses = $derived(
+		Object.fromEntries(
+			fontFiles.map((p) => {
+				const lp = findLicense(files, p);
+				const kind = lp ? licenseKind(textOf(files.get(lp)!)) : "";
+				const tags: Record<string, string> = {
+					OFL: "OFL",
+					APACHE2: "Apache",
+					UFL: "UFL",
+					restricted: "limited",
+					other: "license",
+				};
+				return [p, kind ? tags[kind] : ""];
+			}),
+		),
+	);
 	const sets = $derived(check?.project.sets ?? []);
 	const currentSet = $derived(sets.find((s) => s.name === setName));
 	const currentCard = $derived(currentSet?.cards[cardIndex]);
@@ -715,6 +755,13 @@
 				action: newDesign,
 			},
 			{
+				label: "Fonts…",
+				icon: "text",
+				detail: "preview, upload, Google Fonts",
+				disabled: !projectName || !doc,
+				action: () => openFonts(),
+			},
+			{
 				label: "Add files…",
 				icon: "files",
 				detail: uploadFolder
@@ -1046,6 +1093,52 @@
 	// ---------------------------------------------------------------- card browser
 
 	let browsing = $state(false);
+
+	// ---------------------------------------------------------------- fonts window
+
+	let fontsTarget = $state<FontsTarget | null>(null);
+
+	/** The selected text layer, for the Fonts window's preview and "use". */
+	const fontLayer = $derived.by(() => {
+		if (!doc || !selectedLayer) return null;
+		const l = effectiveLayer(doc, selectedLayer);
+		if (l?.type !== "text") return null;
+		const values: Record<string, unknown> = {};
+		for (const p of currentSet?.params ?? []) values[p.name] = p.default;
+		const text = previewTextOf(String(l.text ?? ""), { ...values, ...currentCard?.values });
+		return { id: selectedLayer, font: String(l.font ?? "default"), text };
+	});
+
+	function openFonts(target: FontsTarget = {}) {
+		fontsTarget = { ...target };
+	}
+
+	/**
+	 * Adds font and license files, declares font names in the design and
+	 * switches the selected text layer to `use`, all as one undo step.
+	 */
+	async function applyFonts(
+		add: FontAdd[],
+		declare: Record<string, string>,
+		use: string | null,
+	) {
+		const changes: Snapshot = add.map((a) => ({ path: a.path, data: a.data }));
+		if (designPath && doc && (Object.keys(declare).length || use)) {
+			const next = clone(doc);
+			if (Object.keys(declare).length)
+				next.fonts = { ...(isObj(next.fonts) ? next.fonts : {}), ...declare };
+			if (use && selectedLayer) {
+				const l = findLayer(next, selectedLayer);
+				if (l) l.font = use;
+			}
+			const text = formatJson(next);
+			if (text !== designText)
+				changes.push({ path: designPath, data: bytesOf(text) });
+		}
+		if (!changes.length) return;
+		recordMany(changes.map((c) => snap(c.path)));
+		await writeFiles(changes);
+	}
 	const thumbCache = new Map<string, Promise<string | null>>();
 	let thumbFiles: Files | null = null;
 
@@ -3408,6 +3501,10 @@
 						{imageFiles}
 						upload={uploadImage}
 						{fontFiles}
+						{fontFaces}
+						{fontLicenses}
+						fontText={fontLayer?.text ?? ""}
+						onfonts={openFonts}
 						{diagnostics}
 						designFile={designPath ?? ""}
 						{editLayer}
@@ -3588,6 +3685,19 @@
 			}}
 		/>
 	</Window>
+{/if}
+
+{#if fontsTarget && doc}
+	{#key fontsTarget}
+	<FontsWindow
+		{files}
+		{doc}
+		layer={fontLayer}
+		target={fontsTarget}
+		onapply={applyFonts}
+		onclose={() => (fontsTarget = null)}
+	/>
+	{/key}
 {/if}
 
 <DialogHost />
