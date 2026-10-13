@@ -1,6 +1,6 @@
 +++
 title = "Builder: Expression Editor"
-description = "Suggestions, signatures, hover info, formatting and the formula panel for expression fields."
+description = "Suggestions, signatures, hover info, formatting and the formula window for expression fields."
 +++
 
 Expression and template fields in the inspector are small code editors for [expressions](@/docs/expressions.md) and [templates](@/docs/expressions-templates.md).
@@ -48,13 +48,15 @@ The **ƒ** button in a field opens a reference of everything available there: re
 
 ## Long expressions
 
-- Long text wraps inside the field, and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line.
+- A field stays on one line and scrolls sideways, like any text box. <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line; once the text has one, the field grows and wraps. Templates always wrap.
 - <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) **reformats** the expression: one `?:` branch or `match` pair per line, redundant parentheses removed, numbers and colors kept as written. It is a normal edit, so undo brings the old text back.
 - Under the text, a **breadcrumb** shows where the caret is, such as `match › arg 4 › with_alpha › arg 1`.
 
-## The formula panel
+## The formula window
 
-The **⤢** button in a field (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>) opens the field in a panel at the right edge of the window. The outline on the left lists the calls and conditions of the expression; the main area shows the selected part by its shape:
+The **⤢** button in a field (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>) opens the field in a **floating window**. Drag it by its title to move it, and drag its corner to make it wider; it remembers where it was. Its height follows what it shows. The **⤢** button only appears when the field holds an expression with parts. A plain number, color, text or name has nothing to take apart, but the shortcut still opens it.
+
+At the top, a **path** shows where you are, such as *whole › result 2*. Click a step to go back up. A part that has parts of its own, such as a call inside a `match` result, has an **open** button (›) next to it that shows that part on its own. The window shows the current part by its shape:
 
 - a `match(...)` as a table of key and result rows, with **+ row** and a delete button per row,
 - a chain of `?:` conditions as *when … then …* rows and an *else* row,
@@ -62,13 +64,13 @@ The **⤢** button in a field (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>)
 - an `in [...]` test as chips you can add and remove,
 - anything else as one text box.
 
-Colors show a swatch. The whole expression stays editable as text at the bottom, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits from the panel rewrite the expression in its canonical layout.
+Colors show a swatch. A see-through color shows a checkerboard behind it, the same in light and dark mode. The whole expression stays editable as text under the parts, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits in the window rewrite the expression in its canonical layout.
 
 **Live values.** For the card shown on the stage, a part shows its value when the card has one, and the row of a `match` or `?:` chain that was taken is marked. A value that is not there is left out, not shown as a dash. Values come from a real render of the card, so repeat names, function arguments and `@layer` positions are the actual ones. A field that the card never evaluates (a hidden layer, an unused constant) says so.
 
 **Quick actions.**
 
-- *Convert to match* turns a `?:` chain that tests one value (`k == 'a' ? … : k == 'b' ? … : …`, also with `k in [...]`) into a `match`. *Convert to ?: chain* turns a `match` back into a chain of `?:` conditions.
+- *To match* turns a `?:` chain that tests one value (`k == 'a' ? … : k == 'b' ? … : …`, also with `k in [...]`) into a `match`. *To ?: chain* turns a `match` back into a chain of `?:` conditions.
 - **Extract to** moves the part you select out of the expression, into the design, and leaves its name in its place. The two buttons are *Constant* and *Function*. Each one shows why it is unavailable in its tooltip.
 
 A **constant** is a named value of the design, such as a size or a color, that any field can use by name. A **function** is a named formula with arguments, which any field can call. See [Constants and functions](@/docs/expressions-constants-and-functions.md) for both.
@@ -89,7 +91,7 @@ A repeat over a list gives a name for each item, such as `t`. An item is not a n
 
 Each extraction is one undo step. <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings back the expression and removes the new name in one go.
 
-**Apply** (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the text) writes the expression to the field. Closing the panel applies pending changes too.
+**Apply** (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the text) writes the expression to the field. Closing the window applies pending changes too. <kbd>Esc</kbd> closes it while it has the focus.
 
 ## Committing
 
