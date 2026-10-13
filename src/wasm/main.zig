@@ -9,6 +9,10 @@
 //!   {"op":"pdf_begin"}, then {"op":"pdf_page","set":"name","card":0,"date":"...","crop_marks":false}
 //!   per card, then {"op":"pdf_finish"}: the same PDF one page per request,
 //!   so the page can show real progress.
+//!   {"op":"scope","set":"name","path":"/layers/3/fill"}: the names and types an
+//!   expression field can use.
+//!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
+//!   the value of every node of `src` evaluated in place of that field.
 //!
 //! Each request leaves a JSON result and an optional binary result (pixels or
 //! a PNG) that the page reads through the result_* exports.
@@ -175,6 +179,31 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try y.api.writeOutline(w, outline.items.items);
         }
         try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "scope") or std.mem.eql(u8, op, "eval")) {
+        // The expression field at JSON pointer `path` of the set's design:
+        // what it can use (scope), or the live value of `src` in its place
+        // for one card (eval).
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const path = if (req.get("path")) |p| (if (p.data == .string) p.data.string else "") else "";
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        const field = y.exprapi.fieldAt(set.design, path) orelse {
+            try w.writeAll("{\"error\":\"no expression field at path\"}");
+            return 1;
+        };
+        if (std.mem.eql(u8, op, "scope")) {
+            try y.exprapi.writeScope(w, set.design, field);
+            return 0;
+        }
+        const src = if (req.get("src")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        try y.exprapi.writeEval(gpa, arena, w, getAssets(), set, field, src, .{ .card = card_index, .date = date });
         return 0;
     }
 

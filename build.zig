@@ -56,7 +56,27 @@ pub fn build(b: *std.Build) void {
     wasm.entry = .disabled;
     wasm.rdynamic = true;
     const wasm_install = b.addInstallArtifact(wasm, .{ .dest_dir = .{ .override = .{ .custom = "web" } } });
-    b.step("wasm", "Build yoshida.wasm into zig-out/web").dependOn(&wasm_install.step);
+    // Expression syntax only (parse, tokens, format), for the editor's main
+    // thread: no project, no renderer.
+    const expr_wasm = b.addExecutable(.{
+        .name = "expr",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasm/expr.zig"),
+            .target = wasm_target,
+            .optimize = .ReleaseSmall,
+            .imports = &.{.{ .name = "exprjson", .module = b.createModule(.{
+                .root_source_file = b.path("src/core/exprjson.zig"),
+                .target = wasm_target,
+                .optimize = .ReleaseSmall,
+            }) }},
+        }),
+    });
+    expr_wasm.entry = .disabled;
+    expr_wasm.rdynamic = true;
+    const expr_wasm_install = b.addInstallArtifact(expr_wasm, .{ .dest_dir = .{ .override = .{ .custom = "web" } } });
+    const wasm_step = b.step("wasm", "Build yoshida.wasm and expr.wasm into zig-out/web");
+    wasm_step.dependOn(&wasm_install.step);
+    wasm_step.dependOn(&expr_wasm_install.step);
 
     // Tests
     const tests = b.addTest(.{ .root_module = core });

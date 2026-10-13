@@ -280,8 +280,14 @@ const warnCount = $derived(
 	myDiags.filter((d) => d.severity === "warning").length,
 );
 
+/** JSON pointer of a field in the design file, escaped as in the core's diagnostics. */
+function pathOf(path: string[]): string {
+	const segs = path.map((s) => s.replace(/~/g, "~0").replace(/\//g, "~1"));
+	return ptr ? `${ptr}/${segs.join("/")}` : `/${segs.join("/")}`;
+}
+
 function errorAt(path: string[]) {
-	const p = ptr ? `${ptr}/${path.join("/")}` : `/${path.join("/")}`;
+	const p = pathOf(path);
 	const d = myDiags.find(
 		(x) =>
 			x.severity === "error" && (x.path === p || x.path.startsWith(`${p}/`)),
@@ -505,9 +511,9 @@ let newFunction = $state("");
         </div>
         {#if fx.type === 'fade' || fx.type === 'crop'}
           <Field label="side" kind="enum" value={fx.side} options={['top', 'bottom', 'left', 'right']} onchange={(v) => editEffects((l) => (l[i].side = v ?? 'bottom'))} />
-          <Field label="length" kind="number" value={fx.length} bindings={numberParams} error={errorAt(['effects', String(i)])} onchange={(v) => editEffects((l) => (l[i].length = v ?? 0), `fx${i}.length`)} />
+          <Field label="length" kind="number" value={fx.length} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'length'])} onchange={(v) => editEffects((l) => (l[i].length = v ?? 0), `fx${i}.length`)} />
         {:else}
-          <Field label="strength" kind="number" optional value={fx.strength} fallback={1} bindings={numberParams} error={errorAt(['effects', String(i)])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].strength : (l[i].strength = v)), `fx${i}.strength`)} />
+          <Field label="strength" kind="number" optional value={fx.strength} fallback={1} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'strength'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].strength : (l[i].strength = v)), `fx${i}.strength`)} />
         {/if}
       </div>
     {/each}
@@ -531,9 +537,9 @@ let newFunction = $state("");
           onchange={setRepeatMode} />
       </div>
       {#if repeatMode === 'count'}
-        <Field label="count" kind="number" value={effVal(['repeat', 'count'])} bindings={numberParams} error={errorAt(['repeat', 'count'])} onchange={(v) => set(['repeat', 'count'], v)} />
+        <Field label="count" kind="number" value={effVal(['repeat', 'count'])} bindings={numberParams} error={errorAt(['repeat', 'count'])} path={pathOf(['repeat', 'count'])} onchange={(v) => set(['repeat', 'count'], v)} />
       {:else if repeatMode === 'each'}
-        <Field label="each" kind="expr" expect="list" value={effVal(['repeat', 'each'])} bindings={listParams} error={errorAt(['repeat', 'each'])} onchange={(v) => set(['repeat', 'each'], v)} />
+        <Field label="each" kind="expr" expect="list" value={effVal(['repeat', 'each'])} bindings={listParams} error={errorAt(['repeat', 'each'])} path={pathOf(['repeat', 'each'])} onchange={(v) => set(['repeat', 'each'], v)} />
         <Field label="item" kind="text" value={effVal(['repeat', 'item'])} placeholder="item" error={errorAt(['repeat', 'item'])} onchange={(v) => set(['repeat', 'item'], v)} />
       {/if}
       {#if repeatMode !== 'none'}
@@ -623,17 +629,17 @@ let newFunction = $state("");
       <h3>Group contents</h3>
       <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
       {@render alignBar(true)}
-      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
-      <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
-      <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
+      <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
+      <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
       <div class="row">
         <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
       </div>
     </section>
     <section>
       <h3>Origin</h3>
-      <Field label="translate.x" kind="number" optional value={ownVal(['translate', 'x'])} fallback={0} title="Moves everything inside; coordinates inside the group are relative to this point" bindings={numberParams} error={errorAt(['translate', 'x'])} onchange={(v) => set(['translate', 'x'], v)} />
-      <Field label="translate.y" kind="number" optional value={ownVal(['translate', 'y'])} fallback={0} bindings={numberParams} error={errorAt(['translate', 'y'])} onchange={(v) => set(['translate', 'y'], v)} />
+      <Field label="translate.x" kind="number" optional value={ownVal(['translate', 'x'])} fallback={0} title="Moves everything inside; coordinates inside the group are relative to this point" bindings={numberParams} error={errorAt(['translate', 'x'])} path={pathOf(['translate', 'x'])} onchange={(v) => set(['translate', 'x'], v)} />
+      <Field label="translate.y" kind="number" optional value={ownVal(['translate', 'y'])} fallback={0} bindings={numberParams} error={errorAt(['translate', 'y'])} path={pathOf(['translate', 'y'])} onchange={(v) => set(['translate', 'y'], v)} />
       <p class="hint">With a translate, the layers inside use coordinates relative to it, and moving the group on the canvas changes only the translate.</p>
     </section>
     {@render repeatSection()}
@@ -683,10 +689,10 @@ let newFunction = $state("");
         {#if isShape}
           <Field label="shape" kind="enum" value={effVal(['shape', 'type'])} options={shapeTypes} error={errorAt(['shape', 'type'])} onchange={(v) => set(['shape', 'type'], v ?? 'star')} />
           {#if effVal(['shape', 'type']) === 'star' || effVal(['shape', 'type']) === 'polygon'}
-            <Field label="count" kind="number" optional value={ownVal(['shape', 'count'])} fallback={effVal(['shape', 'type']) === 'star' ? 5 : 6} title="Points of a star, sides of a polygon" bindings={numberParams} error={errorAt(['shape', 'count'])} onchange={(v) => set(['shape', 'count'], v)} />
+            <Field label="count" kind="number" optional value={ownVal(['shape', 'count'])} fallback={effVal(['shape', 'type']) === 'star' ? 5 : 6} title="Points of a star, sides of a polygon" bindings={numberParams} error={errorAt(['shape', 'count'])} path={pathOf(['shape', 'count'])} onchange={(v) => set(['shape', 'count'], v)} />
           {/if}
           {#if ['star', 'arrow', 'cross', 'chevron'].includes(String(effVal(['shape', 'type'])))}
-            <Field label="inner" kind="number" optional value={ownVal(['shape', 'inner'])} title="Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)" bindings={numberParams} error={errorAt(['shape', 'inner'])} onchange={(v) => set(['shape', 'inner'], v)} />
+            <Field label="inner" kind="number" optional value={ownVal(['shape', 'inner'])} title="Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)" bindings={numberParams} error={errorAt(['shape', 'inner'])} path={pathOf(['shape', 'inner'])} onchange={(v) => set(['shape', 'inner'], v)} />
           {/if}
         {/if}
         {#each type === 'text' ? [['at', 'x'], ['at', 'y']] : [['box', 'x'], ['box', 'y'], ['box', 'w'], ['box', 'h']] as path}
@@ -698,32 +704,33 @@ let newFunction = $state("");
             bindings={numberParams}
             allowAuto={type === 'image' && path[1] !== 'x' && path[1] !== 'y'}
             error={errorAt(path)}
+            path={pathOf(path)}
             onchange={(v) => set(path, v)} />
         {/each}
         {#if type === 'text'}
-          <Field label="wrap" kind="number" optional value={ownVal(['wrap'])} fallback={effVal(['wrap'])} placeholder="no wrapping" bindings={numberParams} error={errorAt(['wrap'])} onchange={(v) => set(['wrap'], v)} />
+          <Field label="wrap" kind="number" optional value={ownVal(['wrap'])} fallback={effVal(['wrap'])} placeholder="no wrapping" bindings={numberParams} error={errorAt(['wrap'])} path={pathOf(['wrap'])} onchange={(v) => set(['wrap'], v)} />
         {/if}
       {/if}
-      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons with a point list and groups: their centre)" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
+      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons with a point list and groups: their centre)" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
     </section>
 
     <section>
       <h3>Appearance</h3>
       {#if type === 'text'}
-        <Field label="text" kind="template" value={ownVal(['text']) ?? effVal(['text'])} bindings={textParams} error={errorAt(['text'])} onchange={(v) => set(['text'], v)} />
+        <Field label="text" kind="template" value={ownVal(['text']) ?? effVal(['text'])} bindings={textParams} error={errorAt(['text'])} path={pathOf(['text'])} onchange={(v) => set(['text'], v)} />
         <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={String(effVal(['font']) ?? 'default')} options={['default', ...fonts.filter((f) => f !== 'default')]} onchange={(v) => set(['font'], v)} />
-        <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size']) ?? 16} bindings={numberParams} error={errorAt(['size'])} onchange={(v) => set(['size'], v)} />
-        <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} onchange={(v) => set(['color'], v)} />
+        <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size']) ?? 16} bindings={numberParams} error={errorAt(['size'])} path={pathOf(['size'])} onchange={(v) => set(['size'], v)} />
+        <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
         <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'left')} options={['left', 'center', 'right', 'justify']} onchange={(v) => set(['align'], v)} />
-        <Field label="line_spacing" kind="number" optional value={ownVal(['line_spacing'])} fallback={effVal(['line_spacing']) ?? 4} bindings={numberParams} error={errorAt(['line_spacing'])} onchange={(v) => set(['line_spacing'], v)} />
+        <Field label="line_spacing" kind="number" optional value={ownVal(['line_spacing'])} fallback={effVal(['line_spacing']) ?? 4} bindings={numberParams} error={errorAt(['line_spacing'])} path={pathOf(['line_spacing'])} onchange={(v) => set(['line_spacing'], v)} />
         <p class="sub">Auto-shrink: the size goes down until the text fits.</p>
-        <Field label="max_width" kind="number" optional value={ownVal(['max_width'])} fallback={effVal(['max_width'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_width'])} onchange={(v) => set(['max_width'], v)} />
-        <Field label="max_height" kind="number" optional value={ownVal(['max_height'])} fallback={effVal(['max_height'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_height'])} onchange={(v) => set(['max_height'], v)} />
-        <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} onchange={(v) => set(['min_size'], v)} />
-        <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
+        <Field label="max_width" kind="number" optional value={ownVal(['max_width'])} fallback={effVal(['max_width'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_width'])} path={pathOf(['max_width'])} onchange={(v) => set(['max_width'], v)} />
+        <Field label="max_height" kind="number" optional value={ownVal(['max_height'])} fallback={effVal(['max_height'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_height'])} path={pathOf(['max_height'])} onchange={(v) => set(['max_height'], v)} />
+        <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} path={pathOf(['min_size'])} onchange={(v) => set(['min_size'], v)} />
+        <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} path={pathOf(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
         <Field label="shrink_group" kind="text" optional value={ownVal(['shrink_group'])} fallback={effVal(['shrink_group'])} placeholder="none" title="Texts with the same name (and all their iterations) use the smallest size any of them shrank to" onchange={(v) => set(['shrink_group'], v === '' ? undefined : v)} />
       {:else if type === 'image'}
-        <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} onchange={(v) => set(['src'], v)} />
+        <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
           <span class="lbl"></span>
           <ImagePicker {imageFiles} {upload} onpick={(v) => set(['src'], v)} />
@@ -731,9 +738,9 @@ let newFunction = $state("");
         <Field label="fit" kind="enum" optional value={ownVal(['fit'])} fallback={String(effVal(['fit']) ?? 'fill')} options={['fill', 'contain', 'cover']} onchange={(v) => set(['fit'], v)} />
         <Field label="smoothing" kind="enum" optional value={ownVal(['smoothing'])} fallback={String(effVal(['smoothing']) ?? 'bilinear')} options={['bilinear', 'nearest']} onchange={(v) => set(['smoothing'], v)} />
       {:else}
-        <Field label="fill" kind="color" optional value={ownVal(['fill'])} fallback={effVal(['fill']) ?? '#FFFFFFFF'} bindings={colorParams} error={errorAt(['fill'])} onchange={(v) => set(['fill'], v)} />
+        <Field label="fill" kind="color" optional value={ownVal(['fill'])} fallback={effVal(['fill']) ?? '#FFFFFFFF'} bindings={colorParams} error={errorAt(['fill'])} path={pathOf(['fill'])} onchange={(v) => set(['fill'], v)} />
         {#if type === 'rect'}
-          <Field label="radius" kind="number" optional value={ownVal(['radius'])} fallback={effVal(['radius']) ?? 0} bindings={numberParams} error={errorAt(['radius'])} onchange={(v) => set(['radius'], v)} />
+          <Field label="radius" kind="number" optional value={ownVal(['radius'])} fallback={effVal(['radius']) ?? 0} bindings={numberParams} error={errorAt(['radius'])} path={pathOf(['radius'])} onchange={(v) => set(['radius'], v)} />
         {/if}
         {#if type === 'ellipse'}
           <div class="field-like">
@@ -741,8 +748,8 @@ let newFunction = $state("");
             <input type="checkbox" checked={isObj(eff.arc)} title="Draw part of the ellipse" onchange={(e) => set(['arc'], e.currentTarget.checked ? { start: 0, end: 270 } : undefined)} />
           </div>
           {#if isObj(eff.arc)}
-            <Field label="arc.start" kind="number" optional value={ownVal(['arc', 'start'])} fallback={effVal(['arc', 'start']) ?? 0} title="Degrees clockwise from the top" bindings={numberParams} error={errorAt(['arc', 'start'])} onchange={(v) => set(['arc', 'start'], v)} />
-            <Field label="arc.end" kind="number" optional value={ownVal(['arc', 'end'])} fallback={effVal(['arc', 'end']) ?? 360} bindings={numberParams} error={errorAt(['arc', 'end'])} onchange={(v) => set(['arc', 'end'], v)} />
+            <Field label="arc.start" kind="number" optional value={ownVal(['arc', 'start'])} fallback={effVal(['arc', 'start']) ?? 0} title="Degrees clockwise from the top" bindings={numberParams} error={errorAt(['arc', 'start'])} path={pathOf(['arc', 'start'])} onchange={(v) => set(['arc', 'start'], v)} />
+            <Field label="arc.end" kind="number" optional value={ownVal(['arc', 'end'])} fallback={effVal(['arc', 'end']) ?? 360} bindings={numberParams} error={errorAt(['arc', 'end'])} path={pathOf(['arc', 'end'])} onchange={(v) => set(['arc', 'end'], v)} />
             <Field label="arc.pie" kind="enum" optional value={ownVal(['arc', 'pie']) === undefined ? undefined : String(ownVal(['arc', 'pie']))} fallback="true" options={['true', 'false']} title="true: a slice through the centre; false: only the curve (stroke)" onchange={(v) => set(['arc', 'pie'], v === undefined ? undefined : v === 'true')} />
           {/if}
         {/if}
@@ -753,8 +760,8 @@ let newFunction = $state("");
           <input type="checkbox" checked={isObj(eff.stroke)} onchange={(e) => set(['stroke'], e.currentTarget.checked ? { color: '#000000', width: type === 'text' ? 2 : 4 } : undefined)} />
         </div>
         {#if isObj(eff.stroke)}
-          <Field label="stroke.color" kind="color" value={ownVal(['stroke', 'color']) ?? effVal(['stroke', 'color'])} bindings={colorParams} error={errorAt(['stroke', 'color'])} onchange={(v) => set(['stroke', 'color'], v)} />
-          <Field label="stroke.width" kind="number" value={ownVal(['stroke', 'width']) ?? effVal(['stroke', 'width'])} bindings={numberParams} error={errorAt(['stroke', 'width'])} onchange={(v) => set(['stroke', 'width'], v)} />
+          <Field label="stroke.color" kind="color" value={ownVal(['stroke', 'color']) ?? effVal(['stroke', 'color'])} bindings={colorParams} error={errorAt(['stroke', 'color'])} path={pathOf(['stroke', 'color'])} onchange={(v) => set(['stroke', 'color'], v)} />
+          <Field label="stroke.width" kind="number" value={ownVal(['stroke', 'width']) ?? effVal(['stroke', 'width'])} bindings={numberParams} error={errorAt(['stroke', 'width'])} path={pathOf(['stroke', 'width'])} onchange={(v) => set(['stroke', 'width'], v)} />
           {#if type !== 'text'}
             <div class="field-like">
               <span class="lbl">stroke.dash</span>
@@ -767,8 +774,8 @@ let newFunction = $state("");
           {/if}
         {/if}
       {/if}
-      <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
-      <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
+      <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
     </section>
 
     {@render repeatSection()}
@@ -778,11 +785,11 @@ let newFunction = $state("");
     <section>
       <h3>Design</h3>
       <Field label="name" kind="text" value={doc.name} error={errorAt(['name'])} onchange={(v) => setDoc(['name'], v ?? '')} />
-      <Field label="width" kind="number" value={getPath(doc, ['canvas', 'width'])} bindings={numberParams} error={errorAt(['canvas', 'width'])} onchange={(v) => setDoc(['canvas', 'width'], v)} />
-      <Field label="height" kind="number" value={getPath(doc, ['canvas', 'height'])} bindings={numberParams} error={errorAt(['canvas', 'height'])} onchange={(v) => setDoc(['canvas', 'height'], v)} />
-      <Field label="background" kind="color" optional value={getPath(doc, ['canvas', 'background'])} fallback="#00000000" bindings={colorParams} error={errorAt(['canvas', 'background'])} onchange={(v) => setDoc(['canvas', 'background'], v)} />
-      <Field label="dpi" kind="number" optional value={getPath(doc, ['canvas', 'dpi'])} placeholder="not set" title="Print resolution, stored in PNG and PDF files" bindings={numberParams} error={errorAt(['canvas', 'dpi'])} onchange={(v) => setDoc(['canvas', 'dpi'], v)} />
-      <Field label="bleed" kind="number" optional value={getPath(doc, ['canvas', 'bleed'])} placeholder="none" title="Pixels on every side that are cut off; the trim line (and crop marks) sit this far inside the edge" bindings={numberParams} error={errorAt(['canvas', 'bleed'])} onchange={(v) => setDoc(['canvas', 'bleed'], v)} />
+      <Field label="width" kind="number" value={getPath(doc, ['canvas', 'width'])} bindings={numberParams} error={errorAt(['canvas', 'width'])} path={pathOf(['canvas', 'width'])} onchange={(v) => setDoc(['canvas', 'width'], v)} />
+      <Field label="height" kind="number" value={getPath(doc, ['canvas', 'height'])} bindings={numberParams} error={errorAt(['canvas', 'height'])} path={pathOf(['canvas', 'height'])} onchange={(v) => setDoc(['canvas', 'height'], v)} />
+      <Field label="background" kind="color" optional value={getPath(doc, ['canvas', 'background'])} fallback="#00000000" bindings={colorParams} error={errorAt(['canvas', 'background'])} path={pathOf(['canvas', 'background'])} onchange={(v) => setDoc(['canvas', 'background'], v)} />
+      <Field label="dpi" kind="number" optional value={getPath(doc, ['canvas', 'dpi'])} placeholder="not set" title="Print resolution, stored in PNG and PDF files" bindings={numberParams} error={errorAt(['canvas', 'dpi'])} path={pathOf(['canvas', 'dpi'])} onchange={(v) => setDoc(['canvas', 'dpi'], v)} />
+      <Field label="bleed" kind="number" optional value={getPath(doc, ['canvas', 'bleed'])} placeholder="none" title="Pixels on every side that are cut off; the trim line (and crop marks) sit this far inside the edge" bindings={numberParams} error={errorAt(['canvas', 'bleed'])} path={pathOf(['canvas', 'bleed'])} onchange={(v) => setDoc(['canvas', 'bleed'], v)} />
       <Field label="note" kind="text" optional value={doc.note} onchange={(v) => setDoc(['note'], v)} />
       {@render problemChip()}
     </section>
@@ -790,7 +797,7 @@ let newFunction = $state("");
       <h3>Constants</h3>
       {#each consts as [name, v]}
         <div class="const" data-goto="const:{name}">
-          <Field label={name} kind="expr" value={v} error={errorAt(['consts', name])} onchange={(x) => setDoc(['consts', name], x ?? 0)} />
+          <Field label={name} kind="expr" value={v} error={errorAt(['consts', name])} path={pathOf(['consts', name])} onchange={(x) => setDoc(['consts', name], x ?? 0)} />
           <button class="mini" title="Remove" onclick={() => editDoc((d) => {
             if (isObj(d.consts)) delete (d.consts as Obj)[name];
             if (isObj(d.consts) && !Object.keys(d.consts).length) delete d.consts;
@@ -820,7 +827,7 @@ let newFunction = $state("");
             <input class="mono" value={argsText(fn.args)} placeholder="i: number, kind: text" onchange={(e) => setDoc(['functions', name, 'args'], parseArgs(e.currentTarget.value))} />
           </div>
           <Scope context={() => functionScope(name, fn)}>
-            <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
+            <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} path={pathOf(['functions', name, 'expr'])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
           </Scope>
         </div>
       {/each}

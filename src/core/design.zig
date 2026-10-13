@@ -26,6 +26,18 @@ pub const Tmpl = struct {
     pos: u32,
 };
 
+/// What an expression field may contain, for editors: the names it sees and
+/// the type it needs. One per expression or template field of the design.
+pub const FieldInfo = struct {
+    /// Byte offset of the JSON value.
+    pos: u32,
+    /// The type the field needs; null for any (constants, function bodies,
+    /// `repeat.each`, which needs a list).
+    want: ?Type,
+    template: bool = false,
+    scope: expr.Scope,
+};
+
 pub const ParamKind = enum { number, integer, text, bool, color, @"enum", image, list };
 
 pub const Param = struct {
@@ -244,6 +256,8 @@ pub const Design = struct {
     const_symbols: []const expr.Symbol = &.{},
     functions: []const Function = &.{},
     fn_sigs: []const expr.FnSig = &.{},
+    /// Every expression and template field (see `FieldInfo`).
+    fields: []const FieldInfo = &.{},
     /// False when loading found errors; such a design is never rendered.
     ok: bool = false,
 
@@ -265,6 +279,12 @@ pub const Design = struct {
     pub fn pathAt(d: *const Design, arena: Allocator, pos: u32) []const u8 {
         return json.pointerTo(arena, &d.root, pos) catch "";
     }
+
+    /// The expression field at a JSON value offset.
+    pub fn fieldAt(d: *const Design, pos: u32) ?*const FieldInfo {
+        for (d.fields) |*f| if (f.pos == pos) return f;
+        return null;
+    }
 };
 
 // ------------------------------------------------------------------ loader
@@ -277,6 +297,20 @@ const Loader = struct {
     errors: usize = 0,
     /// Set while compiling `repeat.count`: a list there counts its items.
     list_counts: bool = false,
+    fields: std.ArrayList(FieldInfo) = .empty,
+
+    /// Remembers the scope of an expression field (see `FieldInfo`). The
+    /// first note for a position wins.
+    fn note(l: *Loader, pos: u32, want: ?Type, is_template: bool, scope: *const expr.Scope) Allocator.Error!void {
+        for (l.fields.items) |f| if (f.pos == pos) return;
+        var sc = scope.*;
+        // The lists may still grow while the design loads: keep a copy.
+        sc.locals = try l.arena.dupe(expr.Symbol, scope.locals);
+        sc.consts = try l.arena.dupe(expr.Symbol, scope.consts);
+        sc.functions = try l.arena.dupe(expr.FnSig, scope.functions);
+        sc.rgroups = try l.arena.dupe(usize, scope.rgroups);
+        try l.fields.append(l.arena, .{ .pos = pos, .want = want, .template = is_template, .scope = sc });
+    }
 
     fn report(l: *Loader, sev: diag.Severity, code: u16, pos: u32, msg: []const u8, hint: ?[]const u8) Allocator.Error!void {
         if (sev == .err) l.errors += 1;
@@ -351,6 +385,7 @@ const Loader = struct {
 
     /// Compiles a number, bool or color field.
     fn prop(l: *Loader, n: *const Node, want: Type, scope: *const expr.Scope) Allocator.Error!?Prop {
+        try l.note(n.pos, want, false, scope);
         var problem: ?expr.Problem = null;
         switch (n.data) {
             .number => |x| {
@@ -413,6 +448,7 @@ const Loader = struct {
     }
 
     fn template(l: *Loader, n: *const Node, scope: *const expr.Scope) Allocator.Error!?Tmpl {
+        try l.note(n.pos, .text, true, scope);
         const s = switch (n.data) {
             .string => |s| s,
             else => {
@@ -694,6 +730,7 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
         } else try l.err(1103, ln.pos, "layers must be an array, found {s}", .{ln.kindName()});
     } else try l.err(1102, root.pos, "the design needs \"layers\"", .{});
 
+    d.fields = l.fields.items;
     d.ok = l.errors == 0;
     return d;
 }
@@ -719,6 +756,7 @@ fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
             continue;
         }
         const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = null };
+        try l.note(f.value.pos, null, false, &scope);
         const want: Type = switch (f.value.data) {
             .number => .number,
             .bool => .bool,
@@ -798,6 +836,7 @@ fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
         };
         const src = (try l.literalString(en, "expr")) orelse continue;
         const scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .locals = args.items, .consts = d.const_symbols, .functions = sigs.items, .layers = null };
+        try l.note(en.pos, null, false, &scope);
         var problem: ?expr.Problem = null;
         const node = expr.parse(arena, src, 0, &problem) catch |e| switch (e) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -1192,6 +1231,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             rep.count = try l.prop(v, .number, &base_scope);
         }
         if (rn.get("each")) |v| {
+            try l.note(v.pos, null, false, &base_scope);
             var problem: ?expr.Problem = null;
             if (v.data != .string) {
                 try l.err(1103, v.pos, "repeat.each must be an expression giving a list", .{});

@@ -1,6 +1,7 @@
 // Main-thread client for the render worker, plus the shapes the core returns.
 
 import type { Placed } from "./design";
+import type { EvalResult } from "./expr/live";
 
 export type Severity = "error" | "warning" | "hint";
 
@@ -91,6 +92,35 @@ export type RenderArgs = {
 	only?: string[];
 	/** Draw everything but these layer ids. */
 	except?: string[];
+};
+
+/** A name an expression can use, with its type (`number`, `list`, ...). */
+export type ScopeSymbol = {
+	name: string;
+	type: string;
+	/** Params: the param type (`enum`, `integer`, ...) and enum options. */
+	kind?: string;
+	options?: string[];
+	/** Lists and list items: their fields. */
+	fields?: { name: string; type: string; options?: string[] }[];
+};
+
+/** What one expression field can use, from the core (`scope` op). */
+export type ScopeResult = {
+	/** The type the field needs; null for any. */
+	want: string | null;
+	template: boolean;
+	axis: "none" | "x" | "y";
+	units: boolean;
+	builtins: boolean;
+	/** False where layer references are not allowed (constants, functions). */
+	layers: boolean;
+	params: ScopeSymbol[];
+	consts: ScopeSymbol[];
+	functions: { name: string; args: ScopeSymbol[]; ret: string | null }[];
+	locals: ScopeSymbol[];
+	/** ok: `@id` works; index: needs `@id[i]`; none: cannot be referenced here. */
+	layer_refs: { id: string; kind: string; ref: "ok" | "index" | "none" }[];
 };
 
 export class Engine {
@@ -191,6 +221,37 @@ export class Engine {
 			set,
 			date,
 		});
+	}
+
+	/**
+	 * What the expression field at JSON pointer `path` of the set's design can
+	 * use; null when there is no such field (or the design does not load).
+	 */
+	scope(set: string, path: string): Promise<ScopeResult | null> {
+		return this.call<ScopeResult>({ op: "scope", set, path }).catch(
+			() => null,
+		);
+	}
+
+	/**
+	 * Evaluates `src` in place of the field at `path` while rendering card
+	 * `card` (without drawing); null when there is no such field.
+	 */
+	eval(
+		set: string,
+		path: string,
+		src: string,
+		card: number,
+		date: string,
+	): Promise<EvalResult | null> {
+		return this.call<EvalResult>({
+			op: "eval",
+			set,
+			path,
+			src,
+			card,
+			date,
+		}).catch(() => null);
 	}
 
 	/**

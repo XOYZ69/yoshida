@@ -183,6 +183,27 @@ pub const Value = union(enum) {
             .list, .item => false,
         };
     }
+
+    /// A deep copy in `arena`.
+    pub fn dupe(v: Value, arena: Allocator) Allocator.Error!Value {
+        return switch (v) {
+            .number, .bool, .color => v,
+            .text => |x| .{ .text = try arena.dupe(u8, x) },
+            .image => |x| .{ .image = try arena.dupe(u8, x) },
+            .item => |fields| .{ .item = try dupeAll(fields, arena) },
+            .list => |items| blk: {
+                const out = try arena.alloc([]const Value, items.len);
+                for (items, out) |it, *o| o.* = try dupeAll(it, arena);
+                break :blk .{ .list = out };
+            },
+        };
+    }
+
+    fn dupeAll(vs: []const Value, arena: Allocator) Allocator.Error![]const Value {
+        const out = try arena.alloc(Value, vs.len);
+        for (vs, out) |x, *o| o.* = try x.dupe(arena);
+        return out;
+    }
 };
 
 /// Shortest readable decimal: 5, 0.5, never 5.0.

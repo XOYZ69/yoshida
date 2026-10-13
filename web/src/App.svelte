@@ -29,6 +29,7 @@
 		isDivider,
 		isGroup,
 		isObj,
+		type Json,
 		type LayerType,
 		layerAtPointer,
 		layerPointer,
@@ -66,6 +67,7 @@
 		type RenderResult,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
+	import { LIVE_CONTEXT, type LiveContext } from "./lib/expr/live";
 	import Problems from "./lib/Problems.svelte";
 	import {
 		baseOf,
@@ -225,6 +227,44 @@
 		}
 	}
 	setContext("yoshida-goto", goto);
+	// Live values in the formula panel: the field evaluated for the card on
+	// the stage.
+	const live: LiveContext = {
+		card: () => {
+			const s = currentSet;
+			const c = currentCard;
+			return s && c ? `${c.id} (${cardIndex + 1}/${s.cards.length})` : null;
+		},
+		eval: (path, src) =>
+			currentSet
+				? engine.eval(currentSet.name, path, src, cardIndex, today)
+				: Promise.resolve(null),
+		scope: (path) =>
+			currentSet
+				? engine.scope(currentSet.name, path)
+				: Promise.resolve(null),
+		design: () => doc,
+		extract: (next, path, text) =>
+			editDoc((d) => {
+				for (const key of ["consts", "functions"])
+					if (next[key] !== undefined) d[key] = next[key] as Json;
+				setPointer(d, path, text);
+			}, "extract"),
+	};
+
+	/** Sets the value at a JSON pointer of `d` (the parents exist: it is a field being edited). */
+	function setPointer(d: Obj, path: string, v: string) {
+		const segs = path
+			.split("/")
+			.slice(1)
+			.map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
+		let cur: unknown = d;
+		for (const seg of segs.slice(0, -1))
+			cur = (cur as Record<string, unknown> | undefined)?.[seg];
+		if (cur && typeof cur === "object")
+			(cur as Record<string, unknown>)[segs[segs.length - 1]] = v;
+	}
+	setContext(LIVE_CONTEXT, live);
 	const selectedLayer = $derived(
 		selectedLayers.length === 1 ? selectedLayers[0] : null,
 	);

@@ -20,7 +20,7 @@ pub const Builtin = enum {
     render_index,
     render_date,
 
-    fn ty(b: Builtin) Type {
+    pub fn ty(b: Builtin) Type {
         return switch (b) {
             .canvas_w, .canvas_h, .render_index => .number,
             .card_id, .render_date => .text,
@@ -86,28 +86,38 @@ pub const Node = struct {
         string: []const u8,
         boolean: bool,
         color: Color,
-        name: []const u8,
+        /// A param, loop name, function argument or design constant; the
+        /// checker sets `konst` when the name is a constant.
+        name: struct { text: []const u8, konst: ?usize = null },
         builtin: Builtin,
         /// `@id.path` or `@id[index].path` (one iteration of a repeated layer).
         layer_ref: struct { id: []const u8, path: []const []const u8, index: ?*Node = null },
-        field: struct { obj: *Node, name: []const u8, index: usize = 0 },
-        index: struct { obj: *Node, idx: *Node },
-        /// A list item found by its key (`stats.speed`, `stats["Speed"]`):
-        /// the first item whose key field equals `key`; the value field when
-        /// the list is a key/value list, else the whole item.
-        lookup: struct { obj: *Node, key: *Node, key_field: usize, value_field: ?usize },
+        /// `obj.name`: a field of a list item (`index`), or a key lookup on a
+        /// list (`key`, set by the checker; `stats.Speed`).
+        field: struct { obj: *Node, name: []const u8, index: usize = 0, key: ?KeyLookup = null },
+        /// `obj[idx]`: an item by position, or by key when `idx` is text
+        /// (`key`, set by the checker; `stats["Speed"]`).
+        index: struct { obj: *Node, idx: *Node, key: ?KeyLookup = null },
         call: struct { func: Func, args: []*Node },
         /// A call to a design function (`functions`); `index` is set by the checker.
         ucall: struct { name: []const u8, args: []*Node, index: usize = 0 },
-        /// A design constant (`consts`), resolved from a name by the checker.
-        konst: usize,
         neg: *Node,
         not: *Node,
         binary: struct { op: BinOp, l: *Node, r: *Node },
         cond: struct { c: *Node, a: *Node, b: *Node },
         /// `v in [items...]`: true when some item equals `v`.
         in_list: struct { v: *Node, items: []*Node },
+        /// `( inner )`, kept so the tree maps back to the source text.
+        paren: *Node,
+        /// Text that does not parse (only from `parseTolerant`), with the
+        /// part that did parse, if any.
+        err: ?*Node,
     };
+
+    /// Finds list items by key: the first item whose `key_field` equals the
+    /// key; gives the `value_field` when the list is a key/value list, else
+    /// the whole item.
+    pub const KeyLookup = struct { key_field: usize, value_field: ?usize };
 };
 
 /// A problem found while parsing, checking or evaluating an expression.
@@ -121,6 +131,26 @@ pub const Problem = struct {
 
 pub const Error = error{ Invalid, OutOfMemory };
 
+/// Problems collected by the tolerant parser, at most `max`.
+const Diags = struct {
+    arena: Allocator,
+    list: std.ArrayList(Problem) = .empty,
+    max: usize,
+    truncated: bool = false,
+
+    fn add(d: *Diags, pr: Problem) Allocator.Error!void {
+        for (d.list.items) |q| if (q.start == pr.start) return;
+        if (d.list.items.len >= d.max) {
+            d.truncated = true;
+            return;
+        }
+        try d.list.append(d.arena, pr);
+    }
+};
+
+/// Nesting deeper than this is an error (it protects the stack).
+const max_depth = 200;
+
 // ------------------------------------------------------------------ lexer
 
 const Tok = struct {
@@ -131,7 +161,7 @@ const Tok = struct {
     num: f64 = 0,
     unit: ?Unit = null,
 
-    const Kind = enum { number, string, color, ref, name, op, end };
+    const Kind = enum { number, string, color, ref, name, op, bad, end };
 };
 
 const Lexer = struct {
@@ -140,6 +170,8 @@ const Lexer = struct {
     base: u32,
     i: usize = 0,
     problem: *?Problem,
+    /// Tolerant mode: a bad token is reported here and lexing goes on.
+    diags: ?*Diags = null,
 
     fn fail(lx: *Lexer, code: u16, start: usize, end: usize, msg: []const u8, hint: ?[]const u8) Error {
         lx.problem.* = .{
@@ -155,7 +187,20 @@ const Lexer = struct {
     fn all(lx: *Lexer) Error![]Tok {
         var toks: std.ArrayList(Tok) = .empty;
         while (true) {
-            const t = try lx.next();
+            const before = lx.i;
+            const t = lx.next() catch |e| switch (e) {
+                error.Invalid => {
+                    const d = lx.diags orelse return e;
+                    const pr = lx.problem.*.?;
+                    lx.problem.* = null;
+                    try d.add(pr);
+                    // Skip the bad text; always move forward.
+                    lx.i = @min(@max(pr.end - lx.base, before + 1), lx.src.len);
+                    try toks.append(lx.arena, .{ .kind = .bad, .start = pr.start, .end = lx.base + @as(u32, @intCast(lx.i)), .text = lx.src[pr.start - lx.base .. lx.i] });
+                    continue;
+                },
+                else => return e,
+            };
             try toks.append(lx.arena, t);
             if (t.kind == .end) return toks.items;
         }
@@ -240,7 +285,7 @@ const Lexer = struct {
             lx.i += 1;
             const ns = lx.i;
             while (lx.i < s.len and (std.ascii.isLower(s[lx.i]) or std.ascii.isDigit(s[lx.i]) or s[lx.i] == '_')) lx.i += 1;
-            if (lx.i == ns) return lx.fail(3001, start, lx.i + 1, "expected a layer id after '@'", null);
+            if (lx.i == ns) return lx.fail(3001, start, @min(lx.i + 1, s.len), "expected a layer id after '@'", null);
             var t = lx.tok(.ref, start);
             t.text = s[ns..lx.i];
             return t;
@@ -281,6 +326,10 @@ const Parser = struct {
     toks: []Tok,
     i: usize = 0,
     problem: *?Problem,
+    /// Tolerant mode: problems are collected here and the bad part becomes
+    /// an `err` node, so there is always a tree.
+    diags: ?*Diags = null,
+    depth: u32 = 0,
 
     fn peek(p: *Parser) Tok {
         return p.toks[p.i];
@@ -302,6 +351,11 @@ const Parser = struct {
                 try std.fmt.allocPrint(p.arena, "expected '{s}' but the expression ended", .{op})
             else
                 try std.fmt.allocPrint(p.arena, "expected '{s}' but found '{s}'", .{ op, t.text });
+            if (p.diags) |d| {
+                // Report it and go on as if it were there.
+                try d.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = msg });
+                return .{ .kind = .op, .start = t.start, .end = t.start, .text = op };
+            }
             return p.fail(3001, t, msg, null);
         }
         p.i += 1;
@@ -312,6 +366,21 @@ const Parser = struct {
         const n = try p.arena.create(Node);
         n.* = .{ .start = start, .end = end, .data = data };
         return n;
+    }
+
+    /// A problem where a value was expected. Strict mode fails; tolerant
+    /// mode reports it and gives an `err` node over [start, end) that keeps
+    /// `child`, the part before the problem that did parse.
+    fn bad(p: *Parser, code: u16, t: Tok, msg: []const u8, hint: ?[]const u8, start: u32, child: ?*Node) Error!*Node {
+        const d = p.diags orelse return p.fail(code, t, msg, hint);
+        try d.add(.{ .code = code, .start = t.start, .end = t.end, .message = msg, .hint = hint });
+        return p.node(@min(start, t.start), @max(t.end, if (child) |c| c.end else t.end), .{ .err = child });
+    }
+
+    /// True for tokens a tolerant parse must not swallow as a bad value:
+    /// they close or separate an enclosing construct.
+    fn isCloser(t: Tok) bool {
+        return t.kind == .end or isOp(t, ")") or isOp(t, "]") or isOp(t, ",") or isOp(t, ":");
     }
 
     fn binOp(t: Tok) ?struct { op: BinOp, bp: u8 } {
@@ -364,9 +433,14 @@ const Parser = struct {
     /// The bracket list after `in`: `[e1, e2, ...]`, one or more items.
     fn inList(p: *Parser, v: *Node) Error!*Node {
         const open = p.peek();
-        if (!isOp(open, "[")) return p.fail(3001, open, "expected '[' after 'in'", "list the values, e.g. k in ['a', 'b']");
+        if (!isOp(open, "[")) return p.bad(3001, open, "expected '[' after 'in'", "list the values, e.g. k in ['a', 'b']", v.start, v);
         p.i += 1;
-        if (isOp(p.peek(), "]")) return p.fail(3001, p.peek(), "the list after 'in' is empty", null);
+        if (isOp(p.peek(), "]")) {
+            const close = p.peek();
+            const n = try p.bad(3001, close, "the list after 'in' is empty", null, v.start, v);
+            p.i += 1;
+            return n;
+        }
         var items: std.ArrayList(*Node) = .empty;
         try items.append(p.arena, try p.expr(0));
         while (isOp(p.peek(), ",")) {
@@ -379,9 +453,23 @@ const Parser = struct {
 
     fn prefix(p: *Parser) Error!*Node {
         const t = p.peek();
+        if (p.depth >= max_depth) {
+            if (!isCloser(t)) p.i += 1;
+            return p.bad(3001, t, "the expression is nested too deeply", null, t.start, null);
+        }
+        p.depth += 1;
+        defer p.depth -= 1;
+        if (p.diags != null and isCloser(t)) {
+            // Leave the closer to the construct it belongs to.
+            const msg = if (t.kind == .end) "expected a value but the expression ended" else try std.fmt.allocPrint(p.arena, "expected a value before '{s}'", .{t.text});
+            const z: Tok = .{ .kind = t.kind, .start = t.start, .end = t.start, .text = t.text };
+            return p.bad(3001, z, msg, null, t.start, null);
+        }
         p.i += 1;
         switch (t.kind) {
             .end => return p.fail(3001, t, "expected a value but the expression ended", null),
+            // Already reported by the lexer.
+            .bad => return p.node(t.start, t.end, .{ .err = null }),
             .number => {
                 const n = if (t.unit) |u|
                     try p.node(t.start, t.end, .{ .unit = .{ .value = t.num, .unit = u } })
@@ -403,13 +491,13 @@ const Parser = struct {
                 while (isOp(p.peek(), ".")) {
                     p.i += 1;
                     const f = p.peek();
-                    if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+                    if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, t.start, null);
                     p.i += 1;
                     try path.append(p.arena, f.text);
                     end = f.end;
                 }
                 if (path.items.len == 0) {
-                    return p.fail(3003, t, "a layer reference needs a field", try std.fmt.allocPrint(p.arena, "for example @{s}.bounds.cx", .{t.text}));
+                    return p.bad(3003, t, "a layer reference needs a field", try std.fmt.allocPrint(p.arena, "for example @{s}.bounds.cx", .{t.text}), t.start, null);
                 }
                 return p.node(t.start, end, .{ .layer_ref = .{ .id = t.text, .path = path.items, .index = index } });
             },
@@ -421,28 +509,26 @@ const Parser = struct {
                     return p.node(t.start, operand.end, .{ .not = operand });
                 }
                 if (std.mem.eql(u8, t.text, "and") or std.mem.eql(u8, t.text, "or") or std.mem.eql(u8, t.text, "in")) {
-                    return p.fail(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null);
+                    return p.bad(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null, t.start, null);
                 }
                 if (isOp(p.peek(), "(")) return p.postfix(try p.call(t));
                 if (std.mem.eql(u8, t.text, "canvas") or std.mem.eql(u8, t.text, "render") or std.mem.eql(u8, t.text, "card")) {
                     return p.builtin(t);
                 }
-                return p.postfix(try p.node(t.start, t.end, .{ .name = t.text }));
+                return p.postfix(try p.node(t.start, t.end, .{ .name = .{ .text = t.text } }));
             },
             .op => {
                 if (isOp(t, "(")) {
                     const inner = try p.expr(0);
                     const close = try p.expect(")");
-                    inner.start = t.start;
-                    inner.end = close.end;
-                    return p.postfix(inner);
+                    return p.postfix(try p.node(t.start, close.end, .{ .paren = inner }));
                 }
                 if (isOp(t, "-")) {
                     const operand = try p.expr(7);
                     return p.node(t.start, operand.end, .{ .neg = operand });
                 }
-                if (isOp(t, ".")) return p.fail(3001, t, "unexpected '.'", "write numbers with a leading digit, e.g. 0.5");
-                return p.fail(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null);
+                if (isOp(t, ".")) return p.bad(3001, t, "unexpected '.'", "write numbers with a leading digit, e.g. 0.5", t.start, null);
+                return p.bad(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null, t.start, null);
             },
         }
     }
@@ -457,16 +543,16 @@ const Parser = struct {
         var names: [2][]const u8 = undefined;
         for (fields, 0..) |f, i| names[i] = f[0];
         if (!isOp(p.peek(), ".")) {
-            return p.fail(3003, t, try std.fmt.allocPrint(p.arena, "'{s}' needs a field", .{t.text}), try std.fmt.allocPrint(p.arena, "for example {s}.{s}", .{ t.text, fields[0][0] }));
+            return p.bad(3003, t, try std.fmt.allocPrint(p.arena, "'{s}' needs a field", .{t.text}), try std.fmt.allocPrint(p.arena, "for example {s}.{s}", .{ t.text, fields[0][0] }), t.start, null);
         }
         p.i += 1;
         const f = p.peek();
-        if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+        if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, t.start, null);
         p.i += 1;
         for (fields) |e| {
             if (std.mem.eql(u8, e[0], f.text)) return p.postfix(try p.node(t.start, f.end, .{ .builtin = e[1] }));
         }
-        return p.fail(3002, f, try std.fmt.allocPrint(p.arena, "'{s}' has no field '{s}'", .{ t.text, f.text }), diag.suggest(p.arena, f.text, names[0..fields.len]));
+        return p.bad(3002, f, try std.fmt.allocPrint(p.arena, "'{s}' has no field '{s}'", .{ t.text, f.text }), diag.suggest(p.arena, f.text, names[0..fields.len]), t.start, null);
     }
 
     fn call(p: *Parser, t: Tok) Error!*Node {
@@ -492,7 +578,7 @@ const Parser = struct {
             if (isOp(t, ".")) {
                 p.i += 1;
                 const f = p.peek();
-                if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+                if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, n.start, n);
                 p.i += 1;
                 n = try p.node(n.start, f.end, .{ .field = .{ .obj = n, .name = f.text } });
             } else if (isOp(t, "[")) {
@@ -516,6 +602,91 @@ pub fn parse(arena: Allocator, src: []const u8, base: u32, problem: *?Problem) E
         return p.fail(3001, t, try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), if (Parser.isOp(t, "%")) "the '%' unit must follow a number directly; the '%' operator needs operands on both sides" else null);
     }
     return n;
+}
+
+/// A token for highlighting: the lexer's view of the text, never failing.
+pub const Token = struct {
+    kind: Kind,
+    start: u32,
+    end: u32,
+
+    pub const Kind = enum { number, unit, string, color, ref, name, keyword, op, punct, bad };
+};
+
+/// The tokens of an expression (spans start at `base`); bad text becomes
+/// `bad` tokens and lexing goes on.
+pub fn tokenize(arena: Allocator, src: []const u8, base: u32) Allocator.Error![]const Token {
+    var diags: Diags = .{ .arena = arena, .max = 0 };
+    var problem: ?Problem = null;
+    var lx: Lexer = .{ .arena = arena, .src = src, .base = base, .problem = &problem, .diags = &diags };
+    const toks = lx.all() catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => unreachable, // tolerant lexing does not fail
+    };
+    var out: std.ArrayList(Token) = .empty;
+    for (toks) |t| {
+        const kind: Token.Kind = switch (t.kind) {
+            .end => continue,
+            .number => {
+                // `10%` is one token for the parser, two for highlighting.
+                const ulen: u32 = if (t.unit) |u| (if (u == .percent) 1 else 2) else 0;
+                try out.append(arena, .{ .kind = .number, .start = t.start, .end = t.end - ulen });
+                if (ulen > 0) try out.append(arena, .{ .kind = .unit, .start = t.end - ulen, .end = t.end });
+                continue;
+            },
+            .string => .string,
+            .color => .color,
+            .ref => .ref,
+            .bad => .bad,
+            .name => if (isKeyword(t.text)) .keyword else .name,
+            .op => if (std.mem.indexOfScalar(u8, "()[],.", t.text[0]) != null) .punct else .op,
+        };
+        try out.append(arena, .{ .kind = kind, .start = t.start, .end = t.end });
+    }
+    return out.items;
+}
+
+fn isKeyword(s: []const u8) bool {
+    for ([_][]const u8{ "and", "or", "not", "in", "true", "false" }) |k| if (std.mem.eql(u8, s, k)) return true;
+    return false;
+}
+
+/// The result of `parseTolerant`: always a tree, with `err` nodes where the
+/// text does not parse, and the problems found (at most `max`).
+pub const Parsed = struct {
+    root: *Node,
+    problems: []const Problem,
+    /// More problems were found than were kept.
+    truncated: bool = false,
+};
+
+/// Parses one expression without stopping at the first problem: for
+/// editors, which need a tree while the user is typing.
+pub fn parseTolerant(arena: Allocator, src: []const u8, base: u32, max: usize) Allocator.Error!Parsed {
+    var diags: Diags = .{ .arena = arena, .max = max };
+    const root = tolerantRoot(arena, src, base, &diags) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        // Tolerant parsing reports instead of failing; keep a tree anyway.
+        error.Invalid => blk: {
+            const n = try arena.create(Node);
+            n.* = .{ .start = base, .end = base + @as(u32, @intCast(src.len)), .data = .{ .err = null } };
+            break :blk n;
+        },
+    };
+    return .{ .root = root, .problems = diags.list.items, .truncated = diags.truncated };
+}
+
+fn tolerantRoot(arena: Allocator, src: []const u8, base: u32, diags: *Diags) Error!*Node {
+    var problem: ?Problem = null;
+    var lx: Lexer = .{ .arena = arena, .src = src, .base = base, .problem = &problem, .diags = diags };
+    const toks = try lx.all();
+    var p: Parser = .{ .arena = arena, .toks = toks, .problem = &problem, .diags = diags };
+    const n = try p.expr(0);
+    const t = p.peek();
+    if (t.kind == .end) return n;
+    // Text after a complete expression: one error node over all of it.
+    try diags.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}) });
+    return p.node(n.start, toks[toks.len - 1].start, .{ .err = n });
 }
 
 // ------------------------------------------------------------------ templates
@@ -586,6 +757,80 @@ pub fn parseTemplate(arena: Allocator, src: []const u8, problem: *?Problem) Erro
     return .{ .parts = parts.items };
 }
 
+/// A template split for an editor: literal text, `{{`/`}}` escapes and
+/// `{...}` holes, each with its span; every hole parsed tolerantly.
+pub const TemplateParsed = struct {
+    pieces: []const Piece,
+    problems: []const Problem,
+    truncated: bool = false,
+
+    pub const Piece = struct {
+        kind: enum { lit, escape, hole },
+        start: u32,
+        end: u32,
+        /// The hole's expression (spans index into the whole template).
+        root: ?*Node = null,
+    };
+};
+
+/// Like `parseTemplate`, but never stops: a stray `}` stays text, an
+/// unclosed `{` runs to the end, and problems are collected.
+pub fn parseTemplateTolerant(arena: Allocator, src: []const u8, max: usize) Allocator.Error!TemplateParsed {
+    var diags: Diags = .{ .arena = arena, .max = max };
+    var pieces: std.ArrayList(TemplateParsed.Piece) = .empty;
+    var lit_start: ?usize = null;
+    var i: usize = 0;
+    const flush = struct {
+        fn f(a: Allocator, list: *std.ArrayList(TemplateParsed.Piece), from: *?usize, to: usize) Allocator.Error!void {
+            if (from.*) |st| try list.append(a, .{ .kind = .lit, .start = @intCast(st), .end = @intCast(to) });
+            from.* = null;
+        }
+    }.f;
+    while (i < src.len) {
+        const ch = src[i];
+        if ((ch == '{' or ch == '}') and i + 1 < src.len and src[i + 1] == ch) {
+            try flush(arena, &pieces, &lit_start, i);
+            try pieces.append(arena, .{ .kind = .escape, .start = @intCast(i), .end = @intCast(i + 2) });
+            i += 2;
+            continue;
+        }
+        if (ch != '{') {
+            if (ch == '}') try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(i + 1), .message = "stray '}' in text", .hint = "write '}}' for a literal brace" });
+            if (lit_start == null) lit_start = i;
+            i += 1;
+            continue;
+        }
+        try flush(arena, &pieces, &lit_start, i);
+        var j = i + 1;
+        var quote: u8 = 0;
+        while (j < src.len) : (j += 1) {
+            const c = src[j];
+            if (quote != 0) {
+                if (c == '\\') j += 1 else if (c == quote) quote = 0;
+            } else if (c == '\'' or c == '"') {
+                quote = c;
+            } else if (c == '}') break;
+        }
+        const close = @min(j, src.len);
+        if (j >= src.len) try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(src.len), .message = "unclosed '{' in text", .hint = "write '{{' for a literal brace" });
+        const inner = src[i + 1 .. close];
+        var root: ?*Node = null;
+        if (std.mem.trim(u8, inner, " ").len == 0) {
+            try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(@min(close + 1, src.len)), .message = "empty '{}' in text", .hint = "write '{{}}' for literal braces" });
+        } else {
+            const parsed = try parseTolerant(arena, inner, @intCast(i + 1), max);
+            for (parsed.problems) |pr| try diags.add(pr);
+            if (parsed.truncated) diags.truncated = true;
+            root = parsed.root;
+        }
+        const end = @min(close + 1, src.len);
+        try pieces.append(arena, .{ .kind = .hole, .start = @intCast(i), .end = @intCast(end), .root = root });
+        i = end;
+    }
+    try flush(arena, &pieces, &lit_start, src.len);
+    return .{ .pieces = pieces.items, .problems = diags.list.items, .truncated = diags.truncated };
+}
+
 // ------------------------------------------------------------------ checker
 
 pub const Symbol = struct {
@@ -605,6 +850,17 @@ pub const LayerSymbol = struct {
     repeated: bool,
     /// Repeated groups around the layer (outermost first).
     rgroups: []const usize = &.{},
+
+    /// Repeat levels of the layer that a layer inside `rgroups` is not
+    /// inside: 0 means one position, 1 means an `[index]` picks one, more
+    /// means it cannot be referenced.
+    pub fn unshared(l: LayerSymbol, rgroups: []const usize) usize {
+        var n: usize = if (l.repeated) 1 else 0;
+        for (l.rgroups) |g| {
+            if (std.mem.indexOfScalar(usize, rgroups, g) == null) n += 1;
+        }
+        return n;
+    }
 };
 
 pub const Scope = struct {
@@ -651,15 +907,14 @@ pub const Checker = struct {
         }
     }
 
-    /// Turns `n` into a key lookup on a list: by its first text field, giving
-    /// the other field for two-field (key/value) items, else the item.
-    fn keyLookup(c: *Checker, n: *Node, obj: *Node, key: *Node, def: *const value.ItemDef) Error!Type {
+    /// A key lookup on a list: by its first text field, giving the other
+    /// field for two-field (key/value) items, else the item.
+    fn keyLookup(c: *Checker, n: *Node, def: *const value.ItemDef) Error!struct { Node.KeyLookup, Type } {
         const kf = keyField(def) orelse {
             return c.fail(3003, n, "this list has no text field to look items up by", "use a position instead, e.g. list[0]");
         };
         const vf = valueField(def, kf);
-        n.data = .{ .lookup = .{ .obj = obj, .key = key, .key_field = kf, .value_field = vf } };
-        return if (vf) |v| def.types[v].toType() else .{ .item = def };
+        return .{ .{ .key_field = kf, .value_field = vf }, if (vf) |v| def.types[v].toType() else .{ .item = def } };
     }
 
     fn infer(c: *Checker, n: *Node) Error!Type {
@@ -680,7 +935,9 @@ pub const Checker = struct {
                 if (!s.allow_builtins) return c.fail(3002, n, "canvas, card and render are not available here", null);
                 return b.ty();
             },
-            .name => |name| {
+            .name => |*nm| {
+                const name = nm.text;
+                nm.konst = null;
                 var i = s.locals.len;
                 while (i > 0) {
                     i -= 1;
@@ -688,7 +945,7 @@ pub const Checker = struct {
                 }
                 for (s.params) |p| if (std.mem.eql(u8, p.name, name)) return p.ty;
                 for (s.consts, 0..) |k, ki| if (std.mem.eql(u8, k.name, name)) {
-                    n.data = .{ .konst = ki };
+                    nm.konst = ki;
                     return k.ty;
                 };
                 var names: std.ArrayList([]const u8) = .empty;
@@ -707,12 +964,7 @@ pub const Checker = struct {
                 const layers = s.layers orelse return c.fail(3002, n, "layer references are not allowed here", null);
                 for (layers) |l| {
                     if (!std.mem.eql(u8, l.id, r.id)) continue;
-                    // Repeat levels of the target that the referencing layer
-                    // is not inside: an index picks the iteration of one.
-                    var unshared: usize = if (l.repeated) 1 else 0;
-                    for (l.rgroups) |g| {
-                        if (std.mem.indexOfScalar(usize, s.rgroups, g) == null) unshared += 1;
-                    }
+                    const unshared = l.unshared(s.rgroups);
                     if (r.index) |ix| {
                         if (unshared == 0) return c.fail(3003, n, try c.print("layer '{s}' is not repeated here; remove the [index]", .{r.id}), null);
                         if (unshared > 1) return c.fail(3005, n, try c.print("layer '{s}' is inside nested repeats and cannot be referenced from here", .{r.id}), null);
@@ -732,12 +984,13 @@ pub const Checker = struct {
             },
             .field => |*f| {
                 const t = try c.check(f.obj);
+                f.key = null;
                 switch (t) {
                     .list => |def| {
                         // stats.Speed: the item whose key is "Speed".
-                        const key = try s.arena.create(Node);
-                        key.* = .{ .start = n.start, .end = n.end, .ty = .text, .data = .{ .string = f.name } };
-                        return c.keyLookup(n, f.obj, key, def);
+                        const r = try c.keyLookup(n, def);
+                        f.key = r[0];
+                        return r[1];
                     },
                     .item => |def| {
                         f.index = def.find(f.name) orelse {
@@ -748,25 +1001,24 @@ pub const Checker = struct {
                     else => return c.fail(3003, n, try c.print("'.{s}' on a {s}", .{ f.name, t.name() }), null),
                 }
             },
-            .index => |ix| {
+            .index => |*ix| {
                 const t = try c.check(ix.obj);
+                ix.key = null;
                 const def = switch (t) {
                     .list => |d| d,
                     else => return c.fail(3003, n, try c.print("cannot index a {s}", .{t.name()}), null),
                 };
                 const it = try c.check(ix.idx);
-                if (it == .text) return c.keyLookup(n, ix.obj, ix.idx, def);
+                if (it == .text) {
+                    const r = try c.keyLookup(n, def);
+                    ix.key = r[0];
+                    return r[1];
+                }
                 if (it != .number) return c.fail(3003, ix.idx, try c.print("a list index needs a number (position) or text (key), got a {s}", .{it.name()}), null);
                 return .{ .item = def };
             },
-            .lookup => |lk| {
-                const t = try c.check(lk.obj);
-                _ = try c.check(lk.key);
-                return switch (t) {
-                    .list => |def| if (lk.value_field) |v| def.types[v].toType() else .{ .item = def },
-                    else => unreachable,
-                };
-            },
+            .paren => |inner| return c.check(inner),
+            .err => return c.fail(3001, n, "this part does not parse", null),
             .neg => |o| {
                 try c.expectType(o, .number, "'-'");
                 return .number;
@@ -832,7 +1084,6 @@ pub const Checker = struct {
                 for (s.functions) |f| try names.append(s.arena, f.name);
                 return c.fail(3002, n, try c.print("unknown function '{s}'", .{uc.name}), diag.suggest(s.arena, uc.name, names.items));
             },
-            .konst => |ki| return s.consts[ki].ty,
         }
     }
 
@@ -865,25 +1116,7 @@ pub const Checker = struct {
 
     fn checkCall(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
         if (func == .match) return c.checkMatch(n, args);
-        const Sig = struct { min: usize, max: usize, args: []const ?Type, ret: Type };
-        const num: ?Type = .number;
-        const txt: ?Type = .text;
-        const col: ?Type = .color;
-        const sig: Sig = switch (func) {
-            .min, .max => .{ .min = 2, .max = 64, .args = &.{num}, .ret = .number },
-            .clamp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
-            .abs, .floor, .ceil => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
-            .round => .{ .min = 1, .max = 2, .args = &.{ num, num }, .ret = .number },
-            .len => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .number },
-            .upper, .lower, .trim => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
-            .fmt => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .text },
-            .avg_color => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .color },
-            .mix => .{ .min = 3, .max = 3, .args = &.{ col, col, num }, .ret = .color },
-            .with_alpha => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
-            .rgb => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
-            .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
-            .match => unreachable, // checked by checkMatch
-        };
+        const sig = funcSig(func);
         if (args.len < sig.min or args.len > sig.max) {
             const msg = if (sig.min == sig.max)
                 try c.print("{s}() takes {d} argument{s}, got {d}", .{ @tagName(func), sig.min, if (sig.min == 1) "" else "s", args.len })
@@ -902,9 +1135,36 @@ pub const Checker = struct {
                 else => unreachable,
             }
         }
-        return sig.ret;
+        return sig.ret.?;
     }
 };
+
+/// A built-in function's argument count and types. `args` repeats its last
+/// entry for further arguments; null is checked by the function itself
+/// (`len`: list or text; `avg_color`: image; `match`: see checkMatch).
+pub const FuncSig = struct { min: usize, max: usize, args: []const ?Type, ret: ?Type };
+
+pub fn funcSig(func: Func) FuncSig {
+    const num: ?Type = .number;
+    const txt: ?Type = .text;
+    const col: ?Type = .color;
+    return switch (func) {
+        .min, .max => .{ .min = 2, .max = 64, .args = &.{num}, .ret = .number },
+        .clamp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
+        .abs, .floor, .ceil => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
+        .round => .{ .min = 1, .max = 2, .args = &.{ num, num }, .ret = .number },
+        .len => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .number },
+        .upper, .lower, .trim => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
+        .fmt => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .text },
+        .avg_color => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .color },
+        .mix => .{ .min = 3, .max = 3, .args = &.{ col, col, num }, .ret = .color },
+        .with_alpha => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
+        .rgb => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
+        .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
+        // Value, key/result pairs, default; the result type is the results'.
+        .match => .{ .min = 4, .max = 64, .args = &.{null}, .ret = null },
+    };
+}
 
 pub fn opText(op: BinOp) []const u8 {
     return switch (op) {
@@ -1000,6 +1260,63 @@ pub fn checkTemplate(t: Template, scope: *const Scope, problem: *?Problem) Error
 
 pub const EvalError = error{ Eval, OutOfMemory };
 
+/// The children of a node, in the order editors number them (pre-order,
+/// see `exprjson.writeNode`).
+pub fn children(arena: Allocator, n: *const Node) Allocator.Error![]const *Node {
+    var out: std.ArrayList(*Node) = .empty;
+    switch (n.data) {
+        .number, .unit, .string, .boolean, .color, .name, .builtin => {},
+        .layer_ref => |r| if (r.index) |ix| try out.append(arena, ix),
+        .field => |f| try out.append(arena, f.obj),
+        .index => |ix| try out.appendSlice(arena, &.{ ix.obj, ix.idx }),
+        .call => |c| try out.appendSlice(arena, c.args),
+        .ucall => |c| try out.appendSlice(arena, c.args),
+        .neg, .not, .paren => |x| try out.append(arena, x),
+        .binary => |b| try out.appendSlice(arena, &.{ b.l, b.r }),
+        .cond => |c| try out.appendSlice(arena, &.{ c.c, c.a, c.b }),
+        .in_list => |il| {
+            try out.append(arena, il.v);
+            try out.appendSlice(arena, il.items);
+        },
+        .err => |x| if (x) |c| try out.append(arena, c),
+    }
+    return out.items;
+}
+
+/// Values of the nodes of one expression, recorded while it is evaluated
+/// (for an editor's live values). Nodes that were not evaluated (the other
+/// branch of `? :`) stay null.
+pub const Trace = struct {
+    /// Holds the values: they are copied, so they outlive the evaluation.
+    arena: Allocator,
+    ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
+    values: []?Value = &.{},
+
+    /// Numbers the nodes of `roots` in pre-order, continuing across roots
+    /// (template holes), like `exprjson.writeNode`.
+    pub fn init(arena: Allocator, roots: []const *const Node) Allocator.Error!Trace {
+        var t: Trace = .{ .arena = arena };
+        var next: u32 = 0;
+        for (roots) |r| try t.number(arena, r, &next);
+        t.values = try arena.alloc(?Value, next);
+        @memset(t.values, null);
+        return t;
+    }
+
+    fn number(t: *Trace, arena: Allocator, n: *const Node, next: *u32) Allocator.Error!void {
+        try t.ids.put(arena, n, next.*);
+        next.* += 1;
+        for (try children(arena, n)) |c| try t.number(arena, c, next);
+    }
+
+    fn record(t: *Trace, n: *const Node, v: Value) Allocator.Error!void {
+        // The first value wins: a loop or function evaluates it again.
+        if (t.ids.get(n)) |id| if (t.values[id] == null) {
+            t.values[id] = try v.dupe(t.arena);
+        };
+    }
+};
+
 pub const Env = struct {
     arena: Allocator,
     canvas_w: f64,
@@ -1017,6 +1334,8 @@ pub const Env = struct {
     constValue: ?*const fn (ctx: *anyopaque, index: usize) EvalError!Value = null,
     callUser: ?*const fn (ctx: *anyopaque, index: usize, args: []const Value) EvalError!Value = null,
     problem: ?Problem = null,
+    /// When set, records the value of every node evaluated.
+    trace: ?*Trace = null,
 
     fn fail(env: *Env, code: u16, n: *const Node, msg: []const u8) EvalError {
         env.problem = .{ .code = code, .start = n.start, .end = n.end, .message = msg };
@@ -1024,6 +1343,12 @@ pub const Env = struct {
     }
 
     pub fn eval(env: *Env, n: *const Node) EvalError!Value {
+        const v = try env.evalNode(n);
+        if (env.trace) |t| try t.record(n, v);
+        return v;
+    }
+
+    fn evalNode(env: *Env, n: *const Node) EvalError!Value {
         switch (n.data) {
             .number => |x| return .{ .number = x },
             .unit => |u| return .{ .number = u.value / 100 * switch (u.unit) {
@@ -1045,31 +1370,19 @@ pub const Env = struct {
                 .render_index => .{ .number = env.render_index },
                 .render_date => .{ .text = env.render_date },
             },
-            .name => |name| return env.lookup(env.ctx, name) orelse env.fail(3002, n, "unknown name"),
+            .name => |nm| {
+                if (nm.konst) |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki);
+                return env.lookup(env.ctx, nm.text) orelse env.fail(3002, n, "unknown name");
+            },
             .layer_ref => |r| return env.layerRef(env.ctx, r.id, r.path, if (r.index) |ix| (try env.eval(ix)).number else null),
             .field => |f| {
                 const obj = try env.eval(f.obj);
+                if (f.key) |lk| return env.keyLookup(n, obj.list, f.name, lk);
                 return obj.item[f.index];
-            },
-            .lookup => |lk| {
-                const list = (try env.eval(lk.obj)).list;
-                const key = (try env.eval(lk.key)).text;
-                for (list) |it| {
-                    if (std.mem.eql(u8, it[lk.key_field].text, key)) return if (lk.value_field) |v| it[v] else .{ .item = it };
-                }
-                var keys: std.ArrayList([]const u8) = .empty;
-                for (list) |it| try keys.append(env.arena, it[lk.key_field].text);
-                const hint = diag.suggest(env.arena, key, keys.items);
-                const known = try std.mem.join(env.arena, ", ", keys.items);
-                return env.fail(3104, n, try std.fmt.allocPrint(env.arena, "no item with key '{s}' in this list{s}{s}{s}", .{
-                    key,
-                    if (hint) |h| try std.fmt.allocPrint(env.arena, " ({s})", .{h}) else "",
-                    if (keys.items.len > 0) "; keys: " else " (the list is empty)",
-                    known,
-                }));
             },
             .index => |ix| {
                 const list = (try env.eval(ix.obj)).list;
+                if (ix.key) |lk| return env.keyLookup(n, list, (try env.eval(ix.idx)).text, lk);
                 const idx = (try env.eval(ix.idx)).number;
                 const i = @floor(idx);
                 if (!(i >= 0 and i < @as(f64, @floatFromInt(list.len)))) {
@@ -1077,6 +1390,8 @@ pub const Env = struct {
                 }
                 return .{ .item = list[@intFromFloat(i)] };
             },
+            .paren => |inner| return env.eval(inner),
+            .err => return env.fail(3001, n, "this part does not parse"),
             .neg => |o| return .{ .number = -(try env.eval(o)).number },
             .not => |o| return .{ .bool = !(try env.eval(o)).bool },
             .binary => |b| {
@@ -1111,7 +1426,6 @@ pub const Env = struct {
             },
             .cond => |cd| return if ((try env.eval(cd.c)).bool) env.eval(cd.a) else env.eval(cd.b),
             .call => |cl| return env.call(cl.func, cl.args),
-            .konst => |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki),
             .ucall => |uc| {
                 const f = env.callUser orelse return env.fail(3002, n, "functions are not available here");
                 const vals = try env.arena.alloc(Value, uc.args.len);
@@ -1119,6 +1433,22 @@ pub const Env = struct {
                 return f(env.ctx, uc.index, vals);
             },
         }
+    }
+
+    fn keyLookup(env: *Env, n: *const Node, list: []const []const Value, key: []const u8, lk: Node.KeyLookup) EvalError!Value {
+        for (list) |it| {
+            if (std.mem.eql(u8, it[lk.key_field].text, key)) return if (lk.value_field) |v| it[v] else .{ .item = it };
+        }
+        var keys: std.ArrayList([]const u8) = .empty;
+        for (list) |it| try keys.append(env.arena, it[lk.key_field].text);
+        const hint = diag.suggest(env.arena, key, keys.items);
+        const known = try std.mem.join(env.arena, ", ", keys.items);
+        return env.fail(3104, n, try std.fmt.allocPrint(env.arena, "no item with key '{s}' in this list{s}{s}{s}", .{
+            key,
+            if (hint) |h| try std.fmt.allocPrint(env.arena, " ({s})", .{h}) else "",
+            if (keys.items.len > 0) "; keys: " else " (the list is empty)",
+            known,
+        }));
     }
 
     fn num(env: *Env, n: *const Node) EvalError!f64 {
@@ -1366,4 +1696,97 @@ test "evaluate" {
     try testing.expectEqual(@as(f64, 40), (try env.eval(try parse(a, "match(level, 1, 10, 4, 40, 0)", 0, &problem))).number);
     try testing.expectEqual(@as(f64, 0), (try env.eval(try parse(a, "match(level, 1, 10, 0)", 0, &problem))).number);
     try testing.expectEqual(@as(f64, 1), (try env.eval(try parse(a, "match(level, 4, 1, 1 / (level - 4))", 0, &problem))).number);
+}
+
+fn expectTolerant(arena: Allocator, src: []const u8, n_problems: usize, root_kind: std.meta.Tag(Node.Data)) !Parsed {
+    const r = try parseTolerant(arena, src, 0, 8);
+    testing.expectEqual(n_problems, r.problems.len) catch |e| {
+        for (r.problems) |pr| std.debug.print("{s}: {d}..{d} {s}\n", .{ src, pr.start, pr.end, pr.message });
+        return e;
+    };
+    try testing.expectEqual(root_kind, std.meta.activeTag(r.root.data));
+    return r;
+}
+
+test "tolerant parse" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    // Valid input: same tree as the strict parser, no problems.
+    _ = try expectTolerant(a, "1 + 2 * x", 0, .binary);
+    _ = try expectTolerant(a, "(a)", 0, .paren);
+
+    // Missing operand: the binary node is kept, its right side is an error.
+    var r = try expectTolerant(a, "a + ", 1, .binary);
+    try testing.expect(r.root.data.binary.r.data == .err);
+    // Missing ')' is reported, the call is kept.
+    r = try expectTolerant(a, "max(a, b", 1, .call);
+    try testing.expectEqual(@as(usize, 2), r.root.data.call.args.len);
+    // An empty argument does not swallow the ')'.
+    r = try expectTolerant(a, "max(a, )", 1, .call);
+    // Several problems are all reported.
+    r = try expectTolerant(a, "a + ! + #zz", 2, .binary);
+    // Text after a complete expression: one error node keeping the tree.
+    r = try expectTolerant(a, "a b c", 1, .err);
+    try testing.expect(r.root.data.err.?.data == .name);
+    try testing.expectEqual(@as(u32, 5), r.root.end);
+    // Cond missing its else branch.
+    r = try expectTolerant(a, "x ? 1", 1, .cond);
+    // Bad 'in' list keeps the left side.
+    r = try expectTolerant(a, "k in 3", 1, .err);
+    // Lexer problems become error tokens.
+    r = try expectTolerant(a, "'open", 1, .err);
+    r = try expectTolerant(a, "", 1, .err);
+    r = try expectTolerant(a, ")", 1, .err);
+
+    // Deep nesting is an error, not a crash.
+    const deep = try a.alloc(u8, 600);
+    @memset(deep[0..300], '(');
+    @memset(deep[300..], ')');
+    r = try parseTolerant(a, deep, 0, 8);
+    try testing.expect(r.problems.len >= 1);
+    var problem: ?Problem = null;
+    try testing.expectError(error.Invalid, parse(a, deep, 0, &problem));
+
+    // The problem list is capped.
+    r = try parseTolerant(a, "! ! ! ! ! ! ! ! ! ! ! !", 0, 3);
+    try testing.expectEqual(@as(usize, 3), r.problems.len);
+    try testing.expect(r.truncated);
+
+    // Every prefix of a real expression parses without failing.
+    const src = "match(t.kind, 'back', with_alpha(c_ink, 0.5), 'forward', @tile[i - 1].bounds.cx > 2 ? #FF0000 : rgb(1, 2, 3), c_plain)";
+    for (0..src.len + 1) |k| _ = try parseTolerant(a, src[0..k], 0, 8);
+}
+
+test "tolerant template parse" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var t = try parseTemplateTolerant(a, "Lv {level + 1} {{x}}", 8);
+    try testing.expectEqual(@as(usize, 0), t.problems.len);
+    try testing.expectEqual(@as(usize, 6), t.pieces.len);
+    try testing.expect(t.pieces[1].kind == .hole);
+    try testing.expectEqual(@as(u32, 4), t.pieces[1].root.?.start);
+    t = try parseTemplateTolerant(a, "a } b {c + ", 8);
+    try testing.expectEqual(@as(usize, 3), t.problems.len);
+    t = try parseTemplateTolerant(a, "{}", 8);
+    try testing.expectEqual(@as(usize, 1), t.problems.len);
+}
+
+test "tolerant parse never fails on random input" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const chars = "ab1.%#@()[],?:+-*/<>=!'\"{} \\_inotv";
+    var prng = std.Random.DefaultPrng.init(42);
+    const rnd = prng.random();
+    var buf: [24]u8 = undefined;
+    for (0..20000) |_| {
+        const len = rnd.uintLessThan(usize, buf.len);
+        for (buf[0..len]) |*ch| ch.* = chars[rnd.uintLessThan(usize, chars.len)];
+        const r = try parseTolerant(a, buf[0..len], 0, 8);
+        try testing.expect(r.root.end <= len);
+        _ = try parseTemplateTolerant(a, buf[0..len], 8);
+    }
 }

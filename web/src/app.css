@@ -23,6 +23,9 @@
 	--warn-text: light-dark(#96620a, #f0b429);
 	--check-a: light-dark(#ebe5d8, #2a2621);
 	--check-b: light-dark(#f7f3ea, #322d27);
+	/* Behind color swatches: the same in both themes, so a see-through color looks the same too. */
+	--swatch-a: #d9d9d9;
+	--swatch-b: #ffffff;
 	/* yoshida logo (branding/yoshida-logo): the three cards and the "y" on the front one. */
 	--logo-card-1: light-dark(#3b6cf6, #6e93ff);
 	--logo-card-2: light-dark(#9db5fb, #3f5597);

@@ -43,6 +43,15 @@ type Msg = { id: number } & (
 	| { op: "render"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
 	| { op: "checkCards"; set: string; date: string }
+	| { op: "scope"; set: string; path: string }
+	| {
+			op: "eval";
+			set: string;
+			path: string;
+			src: string;
+			card: number;
+			date: string;
+	  }
 	| {
 			op: "pdf";
 			set: string;
@@ -171,6 +180,11 @@ async function handle(
 				result: request({ op: "check_cards", set: msg.set, date: msg.date })
 					.json,
 			};
+		case "scope":
+		case "eval": {
+			const { id: _, ...req } = msg;
+			return { result: request(req).json };
+		}
 		case "pdf": {
 			// One page per request, so the page can show real progress.
 			request({ op: "pdf_begin" });
