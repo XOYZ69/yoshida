@@ -8,12 +8,15 @@ pub const json = @import("json.zig");
 pub const diag = @import("diag.zig");
 pub const value = @import("value.zig");
 pub const expr = @import("expr.zig");
+pub const exprprint = @import("exprprint.zig");
+pub const exprjson = @import("exprjson.zig");
 pub const design = @import("design.zig");
 pub const project = @import("project.zig");
 pub const raster = @import("raster.zig");
 pub const text = @import("text.zig");
 pub const render = @import("render.zig");
 pub const api = @import("api.zig");
+pub const exprapi = @import("exprapi.zig");
 pub const fmt = @import("fmt.zig");
 pub const pdf = @import("pdf.zig");
 
