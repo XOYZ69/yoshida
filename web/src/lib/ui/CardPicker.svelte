@@ -2,6 +2,7 @@
 // "Card 3 of 120" with previous/next buttons and a searchable list.
 import type { CardInfo, Param } from "../engine";
 import CardList from "./CardList.svelte";
+import Icon from "./Icon.svelte";
 import { placeNear } from "./overlay.svelte";
 
 let {
@@ -47,11 +48,11 @@ function pick(i: number) {
   }} />
 
 <div class="picker" class:open role="group" aria-label="Card shown in the preview">
+  <span class="cap" aria-hidden="true">Card</span>
   <button class="step" title="Previous card" disabled={disabled || index <= 0} onclick={() => onpick(index - 1)}>‹</button>
   <button bind:this={button} class="current" {disabled} aria-haspopup="listbox" aria-expanded={open} title="Choose the card to preview" onclick={() => (open ? (open = false) : show())}>
-    <span class="cap">Card</span>
-    <span class="id">{current?.id ?? '—'}</span>
     <span class="of">{cards.length ? `${index + 1} / ${cards.length}` : 'no cards'}</span>
+    <span class="id">{current?.id ?? '—'}</span>
     <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
   </button>
   <button class="step" title="Next card" disabled={disabled || index >= cards.length - 1} onclick={() => onpick(index + 1)}>›</button>
@@ -63,13 +64,13 @@ function pick(i: number) {
       <CardList {cards} {params} {index} height={0} onpick={pick} autofocus onclose={() => (open = false)} />
     </div>
     {#if onbrowse}
-      <button class="browse" onclick={() => ((open = false), onbrowse?.())}>⤢ Browse all cards…</button>
+      <button class="browse" onclick={() => ((open = false), onbrowse?.())}><Icon name="expand" /> Browse all cards…</button>
     {/if}
   </div>
 {/if}
 
 <style>
-  /* One joined control: previous | card ▾ | next. */
+  /* One joined control: CARD | previous | position name ▾ | next. */
   .picker {
     display: inline-flex;
     align-items: stretch;
@@ -112,36 +113,44 @@ function pick(i: number) {
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line);
   }
+  /* The caption leads the group, like the Design picker's caption. */
   .cap {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding: 0 8px 0 10px;
+    border-right: 1px solid var(--line);
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--muted);
-    padding-right: 8px;
-    border-right: 1px solid var(--line);
-    align-self: stretch;
-    display: flex;
-    align-items: center;
+    background: var(--bg);
+  }
+  /* Position sits right after the caption and never shrinks out of view;
+     the card name takes the remaining room and truncates. */
+  .of {
+    flex: none;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .id {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 140px;
     font-family: var(--mono);
     font-size: 12px;
-    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .of {
-    flex: 1;
-    text-align: right;
-    font-size: 11px;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
   svg {
+    flex: none;
     width: 10px;
     height: 6px;
+    margin-left: auto;
     color: var(--muted);
     transition: transform 0.15s;
   }
@@ -162,6 +171,13 @@ function pick(i: number) {
     background: var(--bg-bar);
     font-size: 12px;
     padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .browse :global(svg) {
+    margin: 0;
   }
   /* The corner grip resizes the list (CSS resize, themed by the browser). */
   .pop {

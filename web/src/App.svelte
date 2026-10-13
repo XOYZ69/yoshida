@@ -130,6 +130,8 @@
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import {
+		type DragPreview,
+		dragLabels,
 		type PreviewQuality,
 		previewScale,
 		qualityLabels,
@@ -137,7 +139,7 @@
 	} from "./lib/quality";
 	import { loadPref, savePref } from "./lib/ui/drag";
 	import FileBrowser from "./lib/ui/FileBrowser.svelte";
-	import Icon from "./lib/ui/Icon.svelte";
+	import Icon, { layerIcon } from "./lib/ui/Icon.svelte";
 	import MenuHost from "./lib/ui/MenuHost.svelte";
 	import {
 		askText,
@@ -146,7 +148,12 @@
 		openMenu,
 	} from "./lib/ui/overlay.svelte";
 	import ProgressHost from "./lib/ui/ProgressHost.svelte";
-	import { formatBytes, formatMs, Run } from "./lib/ui/progress.svelte";
+	import {
+		formatBytes,
+		formatMs,
+		progress,
+		Run,
+	} from "./lib/ui/progress.svelte";
 	import Select from "./lib/ui/Select.svelte";
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
@@ -254,6 +261,19 @@
 	function setPreviewQuality(q: PreviewQuality) {
 		previewQuality = q;
 		savePref(qualityKey, { quality: q });
+	}
+
+	// What the stage shows while a layer is dragged (see Stage's drag preview).
+	const dragKey = "yoshida.dragPreview";
+	let dragPreview = $state<DragPreview>(
+		loadPref(dragKey, { mode: "live" as string }).mode === "fast"
+			? "fast"
+			: "live",
+	);
+
+	function setDragPreview(m: DragPreview) {
+		dragPreview = m;
+		savePref(dragKey, { mode: m });
 	}
 
 	const today = new Date().toISOString().slice(0, 10);
@@ -710,7 +730,7 @@
 		for (const p of myProjects)
 			items.push({
 				label: p.name,
-				icon: p.id === projectId ? "check" : "",
+				icon: p.id === projectId ? "check" : undefined,
 				detail: `${formatAge(p.updated)} · ${formatSize(p.size)}`,
 				action: () =>
 					p.id === projectId ? undefined : openSaved(p.id),
@@ -719,7 +739,7 @@
 		for (const ex of examples)
 			items.push({
 				label: ex.title,
-				icon: !projectId && ex.name === projectName ? "check" : "",
+				icon: !projectId && ex.name === projectName ? "check" : undefined,
 				detail: "opens a fresh copy",
 				action: () => openExample(ex.name),
 			});
@@ -1108,6 +1128,28 @@
 		}
 	}
 
+	/** Puts a rendered picture (drawn at `scale`) on the stage; returns the canvas size. */
+	function showPicture(r: RenderResult, scale: number) {
+		shownScale = scale;
+		const size = {
+			w: r.canvas_width || r.width,
+			h: r.canvas_height || r.height,
+		};
+		imageSize = size;
+		image = new ImageData(
+			new Uint8ClampedArray(
+				r.bin.buffer as ArrayBuffer,
+				r.bin.byteOffset,
+				r.bin.byteLength,
+			),
+			r.width,
+			r.height,
+		);
+		layout = r.layout ?? [];
+		stale = false;
+		return size;
+	}
+
 	async function renderPreview() {
 		if (!currentSet?.cards.length) {
 			lastRender = null;
@@ -1126,11 +1168,7 @@
 			return;
 		}
 		const t0 = performance.now();
-		// Resizing and rotating render on every move: at half the pixels.
-		const scale =
-			gestureBase !== null
-				? Math.max(wantedScale / 2, 1 / 64)
-				: wantedScale;
+		const scale = wantedScale;
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
@@ -1143,26 +1181,17 @@
 		renderMs = Math.round(performance.now() - t0);
 		renderScale = scale;
 		lastRender = r;
+		if (gestureBase !== null) {
+			// A drag started while this render ran: its picture and layout are
+			// older than what the stage shows. The release renders again.
+			previewSkipped = true;
+			return;
+		}
 		if (r.width) {
-			shownScale = scale;
-			imageSize = {
-				w: r.canvas_width || r.width,
-				h: r.canvas_height || r.height,
-			};
-			image = new ImageData(
-				new Uint8ClampedArray(
-					r.bin.buffer as ArrayBuffer,
-					r.bin.byteOffset,
-					r.bin.byteLength,
-				),
-				r.width,
-				r.height,
-			);
-			layout = r.layout ?? [];
-			stale = false;
+			const size = showPicture(r, scale);
 			dragSprite = null;
 			status =
-				`${imageSize.w} × ${imageSize.h} px` +
+				`${size.w} × ${size.h} px` +
 				(scale < 1 ? ` (preview at ${r.width} × ${r.height})` : "") +
 				`, rendered in ${renderMs} ms`;
 		} else {
@@ -1623,20 +1652,20 @@
 			});
 			for (const t of layerTypes)
 				items.push({
-					label: typeLabels[t].replace(/^\S+\s/, ""),
-					icon: typeLabels[t].split(" ")[0],
+					label: typeLabels[t],
+					icon: layerIcon(t),
 					action: () => addLayer(t),
 				});
 			items.push(
 				{
 					label: "Group",
-					icon: "▤",
+					icon: "group",
 					detail: "empty",
 					action: () => addContainer("group"),
 				},
 				{
 					label: "Divider…",
-					icon: "―",
+					icon: "divider",
 					detail: "only in this list",
 					action: () => addContainer("divider"),
 				},
@@ -1645,12 +1674,14 @@
 			items.push(
 				{
 					label: "Paste",
+					icon: "paste",
 					shortcut: "Ctrl+V",
 					disabled: !clipboard.length,
 					action: () => pasteFromMemory(),
 				},
 				{
 					label: "Select all",
+					icon: "select-all",
 					shortcut: "Ctrl+A",
 					action: () =>
 						(selectedLayers = layersOf(doc!)
@@ -1664,18 +1695,19 @@
 		if (one)
 			items.push({
 				label: "Rename…",
-				icon: "✎",
+				icon: "pencil",
 				action: () => renameAsk(one),
 			});
 		if (one && isDivider(l))
 			items.push({
 				label: "Edit title…",
+				icon: "pencil",
 				action: () => editDividerLabel(one),
 			});
 		if (one)
 			items.push({
 				label: "Add above",
-				icon: "＋",
+				icon: "plus",
 				detail: "layer, group or divider",
 				action: () => {
 					selectedLayers = [one];
@@ -1691,17 +1723,19 @@
 		items.push(
 			{
 				label: "Duplicate",
-				icon: "⧉",
+				icon: "copy",
 				shortcut: "Ctrl+D",
 				action: () => duplicateMany(ids),
 			},
 			{
 				label: "Copy",
+				icon: "clipboard",
 				shortcut: "Ctrl+C",
 				action: () => copyToMemory(ids),
 			},
 			{
 				label: "Cut",
+				icon: "scissors",
 				shortcut: "Ctrl+X",
 				action: () => {
 					copyToMemory(ids);
@@ -1710,6 +1744,7 @@
 			},
 			{
 				label: "Paste above",
+				icon: "paste",
 				shortcut: "Ctrl+V",
 				disabled: !clipboard.length,
 				action: () => pasteFromMemory(),
@@ -1717,12 +1752,13 @@
 			{ separator: true },
 			{
 				label: "Group",
-				icon: "▤",
+				icon: "group",
 				shortcut: "Ctrl+G",
 				action: groupSelected,
 			},
 			{
 				label: "Ungroup",
+				icon: "ungroup",
 				shortcut: "Ctrl+Shift+G",
 				disabled: !anyGroup,
 				action: ungroupSelected,
@@ -1733,11 +1769,13 @@
 			items.push(
 				{
 					label: "Bring forward",
+					icon: "up",
 					shortcut: "Ctrl+↑",
 					action: () => editDoc((d) => stepLayer(d, one, 1)),
 				},
 				{
 					label: "Send backward",
+					icon: "down",
 					shortcut: "Ctrl+↓",
 					action: () => editDoc((d) => stepLayer(d, one, -1)),
 				},
@@ -1745,6 +1783,7 @@
 			if (at)
 				items.push({
 					label: `Move out of '${at}'`,
+					icon: "move-out",
 					action: () => editDoc((d) => reorderLayer(d, one, at)),
 				});
 		}
@@ -1753,19 +1792,19 @@
 			items.push(
 				{
 					label: l.visible === false ? "Show" : "Hide",
-					icon: l.visible === false ? "◉" : "○",
+					icon: l.visible === false ? "eye" : "eye-off",
 					action: () => toggleVisible(one!),
 				},
 				{
 					label: locked.has(one!) ? "Unlock" : "Lock",
-					icon: "🔒",
+					icon: locked.has(one!) ? "lock" : "unlock",
 					action: () => toggleLock(one!),
 				},
 			);
 		}
 		items.push({
 			label: ids.length > 1 ? `Delete ${ids.length} layers` : "Delete",
-			icon: "🗑",
+			icon: "trash",
 			shortcut: "Del",
 			danger: true,
 			action: () => removeLayers(ids),
@@ -1935,13 +1974,76 @@
 	// started, so every move recomputes from the same base.
 	let gestureBase: string | null = null;
 
-	// Moving layers does not render while the pointer moves: at the start the
-	// card is rendered once without the moved layers and once with only them,
-	// and the stage slides the second picture over the first. The real render
+	function applyGesture(d: Obj, g: Gesture) {
+		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
+		else if (g.mode === "resize")
+			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
+		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
+		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+	}
+
+	// Moving layers, Fast drag preview: at the start the card is rendered as
+	// three pictures, the layers below the moved ones (with the card), the moved
+	// ones alone, and the layers above them alone. The stage slides the moved
+	// picture over the first and draws the last over it. The real render
 	// follows on release. (Layers that depend on the moved ones by expression
-	// catch up then.)
+	// do not follow until then.)
 	let dragSprite = $state.raw<Sprite | null>(null);
 	let spriteToken: object | null = null;
+
+	/**
+	 * Layers drawn above the layers `ids` (in card order), at every level, not
+	 * including them. A later sibling inside a group is listed as it is (the
+	 * render filter takes nested ids); a group listed covers its children, so
+	 * only the outermost of those are listed.
+	 */
+	function layersAbove(ids: string[]): string[] {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return [];
+		const order = layersOf(d).map((l) => String(l.id));
+		const cut = Math.max(-1, ...ids.map((id) => order.indexOf(id)));
+		if (cut < 0) return [];
+		const moved = new Set(ids);
+		const out: string[] = [];
+		const listed = new Set<string>();
+		for (const id of order.slice(cut + 1)) {
+			// Inside a moved layer (it moves with the layer) or inside a listed group.
+			if (ancestorsOf(d, id).some((a) => moved.has(a) || listed.has(a))) continue;
+			out.push(id);
+			listed.add(id);
+		}
+		return out;
+	}
+
+	/**
+	 * Whether Fast cannot draw the moved layers exactly, so the gesture uses
+	 * Live: an ancestor group with a repeat, effects, opacity below 1 or a
+	 * rotation (rendered through a scratch bitmap, or once per iteration), or a
+	 * layer that is not moved lying between moved layers in card order.
+	 */
+	function needsLive(ids: string[]): boolean {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return true;
+		const all = layersOf(d);
+		const byId = new Map(all.map((l) => [String(l.id), l]));
+		const moved = new Set(ids);
+		const composites = (g: Obj) =>
+			g.repeat != null ||
+			(Array.isArray(g.effects) ? g.effects.length > 0 : g.effects != null) ||
+			(typeof g.opacity === "number" ? g.opacity < 1 : g.opacity != null) ||
+			(typeof g.rotate === "number" ? g.rotate !== 0 : g.rotate != null);
+		for (const id of ids)
+			for (const a of ancestorsOf(d, id))
+				if (byId.has(a) && composites(byId.get(a)!)) return true;
+		const pos = ids.map((id) => all.findIndex((l) => String(l.id) === id));
+		if (pos.some((i) => i < 0)) return true;
+		for (let i = Math.min(...pos) + 1; i < Math.max(...pos); i++) {
+			const id = String(all[i].id);
+			if (!moved.has(id) && !ancestorsOf(d, id).some((a) => moved.has(a)))
+				return true;
+		}
+		return false;
+	}
 
 	async function prepareSprite(ids: string[]) {
 		const token = {};
@@ -1952,15 +2054,20 @@
 			date: today,
 			preview: true,
 			format: "rgba" as const,
-			scale: shownScale,
+			scale: wantedScale,
 		};
+		const above = layersAbove(ids);
 		try {
-			const [bg, fg] = await Promise.all([
-				engine.render({ ...args, except: ids }),
+			const [bg, fg, top] = await Promise.all([
+				engine.render({ ...args, except: [...ids, ...above] }),
 				engine.render({ ...args, only: ids }),
+				above.length
+					? engine.render({ ...args, only: above })
+					: Promise.resolve(null),
 			]);
 			if (spriteToken !== token || !bg.width || !fg.width) return;
-			const bitmap = (r: RenderResult) =>
+			// async: a throw here becomes a rejection, so the others are still closed.
+			const bitmap = async (r: RenderResult) =>
 				createImageBitmap(
 					new ImageData(
 						new Uint8ClampedArray(
@@ -1972,18 +2079,82 @@
 						r.height,
 					),
 				);
-			const [b, f] = await Promise.all([bitmap(bg), bitmap(fg)]);
-			if (spriteToken !== token) {
-				b.close();
-				f.close();
+			const settled = await Promise.allSettled([
+				bitmap(bg),
+				bitmap(fg),
+				top?.width ? bitmap(top) : Promise.resolve(null),
+			]);
+			// Close the bitmaps that were made, also when a later one failed.
+			const made: ImageBitmap[] = [];
+			for (const s of settled)
+				if (s.status === "fulfilled" && s.value) made.push(s.value);
+			if (
+				settled.some((s) => s.status === "rejected") ||
+				spriteToken !== token
+			) {
+				for (const m of made) m.close();
 				return;
 			}
-			dragSprite = { bg: b, fg: f, dx: spriteMove.dx, dy: spriteMove.dy };
+			const [b, f, t] = settled.map((s) =>
+				s.status === "fulfilled" ? s.value : null,
+			) as [ImageBitmap, ImageBitmap, ImageBitmap | null];
+			dragSprite = {
+				bg: b,
+				fg: f,
+				top: t,
+				dx: spriteMove.dx,
+				dy: spriteMove.dy,
+			};
 		} catch {
 			// No sprite: the boxes still follow the pointer, the render comes on release.
 		}
 	}
 	let spriteMove = { dx: 0, dy: 0 };
+
+	// Live gesture preview (moving in Live mode, resizing, rotating, moving a
+	// point): the whole card is re-rendered with the gesture applied, without
+	// checking the project or touching the open files. One render runs at a
+	// time; gestures that arrive meanwhile are skipped, the latest is rendered next.
+	let liveToken: object | null = null;
+	let liveWant: Gesture | null = null;
+	let liveRunning = false;
+	/** A preview render finished during a gesture and was not shown. */
+	let previewSkipped = false;
+
+	async function liveRender(token: object) {
+		if (liveRunning) return;
+		liveRunning = true;
+		try {
+			while (liveWant && liveToken === token) {
+				const want = liveWant;
+				liveWant = null;
+				const d = JSON.parse(gestureBase!) as Obj;
+				applyGesture(d, want);
+				// The worker reads the design from its file system: put the candidate there.
+				await engine.put(designPath!, bytesOf(formatJson(d)));
+				if (liveToken !== token) break;
+				const scale = wantedScale;
+				const r = await engine.render({
+					set: setName,
+					card: cardIndex,
+					date: today,
+					preview: true,
+					format: "rgba",
+					layout: true,
+					scale,
+				});
+				if (liveToken !== token) break;
+				if (r.width) showPicture(r, scale);
+			}
+		} catch (err) {
+			// The last picture stays; the release renders again.
+			status = `Live preview failed: ${err instanceof Error ? err.message : err}`;
+		} finally {
+			liveRunning = false;
+			// A newer gesture may have asked for a render while this one ran.
+			if (liveWant && liveToken) void liveRender(liveToken);
+		}
+	}
 
 	$effect(() => {
 		const sp = dragSprite;
@@ -1992,6 +2163,7 @@
 			if (sp && dragSprite?.bg !== sp.bg) {
 				sp.bg.close();
 				sp.fg.close();
+				sp.top?.close();
 			}
 		};
 	});
@@ -2000,37 +2172,52 @@
 		if (!designPath) return;
 		if (phase === "start") {
 			gestureBase = designText;
+			previewSkipped = false;
 			spriteMove = { dx: 0, dy: 0 };
-			// A plain copy: the ids may be reactive state, which cannot be posted.
-			if (g.mode === "move") prepareSprite([...g.ids]);
+			if (g.mode === "move" && dragPreview === "fast" && !needsLive(g.ids)) {
+				// A plain copy: the ids may be reactive state, which cannot be posted.
+				prepareSprite([...g.ids]);
+			} else {
+				liveToken = {};
+				liveWant = null;
+			}
 			return;
 		}
 		if (gestureBase === null) return;
-		if (g.mode === "move" && phase === "move") {
-			spriteMove = { dx: g.dx, dy: g.dy };
-			if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+		if (phase === "move") {
+			if (liveToken) {
+				// A plain copy, for the same reason.
+				liveWant = $state.snapshot(g) as Gesture;
+				void liveRender(liveToken);
+			} else if (g.mode === "move") {
+				spriteMove = { dx: g.dx, dy: g.dy };
+				if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+			}
 			return;
 		}
-		if (phase === "end") spriteToken = null;
+		// phase "end"
+		const live = liveToken !== null;
+		spriteToken = null;
+		liveToken = null;
+		liveWant = null;
 		let d: Obj;
 		try {
 			d = JSON.parse(gestureBase);
 		} catch {
 			return;
 		}
-		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
-		else if (g.mode === "resize")
-			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
-		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
-		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+		applyGesture(d, g);
 		const text = formatJson(d);
-		if (phase === "end") {
-			if (text !== gestureBase) record(designPath, gestureBase);
-			lastKey = "";
-			gestureBase = null;
-		}
+		if (text !== gestureBase) record(designPath, gestureBase);
+		lastKey = "";
+		gestureBase = null;
 		if (text !== designText) updateFile(designPath, text, true);
-		else if (phase === "end") dragSprite = null;
+		else {
+			dragSprite = null;
+			// A live preview left the changed card in the worker: put the card back.
+			if (live) engine.put(designPath, bytesOf(designText));
+			if (live || previewSkipped) refresh();
+		}
 	}
 
 	function nudge(ids: string[], dx: number, dy: number) {
@@ -2395,6 +2582,7 @@
 		if (!currentSet) return;
 		const n = currentSet.cards.length;
 		const run = new Run(`Checking ${n} card${n === 1 ? "" : "s"}`, []);
+		const doneTitle = `Checked ${n} card${n === 1 ? "" : "s"}`;
 		busy = "Checking every card…";
 		try {
 			run.log(`Evaluating every card of '${currentSet.design_name}'`);
@@ -2403,9 +2591,18 @@
 			const warns = r.diagnostics.filter(
 				(d) => d.severity === "warning",
 			).length;
+			const hints = r.diagnostics.filter(
+				(d) => d.severity === "hint",
+			).length;
+			const plural = (k: number, word: string) =>
+				`${k} ${word}${k === 1 ? "" : "s"}`;
 			status = `Checked ${n} card(s): ${errs} error(s), ${warns} warning(s)`;
 			showDiagnostics(r.diagnostics);
-			run.finish(status);
+			run.finish(
+				status,
+				`Checked ${plural(n, "card")}: ${plural(errs, "error")}, ${plural(warns, "warning")}, ${plural(hints, "hint")}.`,
+			);
+			if (run.live && progress.task) progress.task.title = doneTitle;
 		} catch (e) {
 			run.fail(`Could not check the cards: ${(e as Error).message}`);
 		} finally {
@@ -2671,44 +2868,38 @@
 			}}
 		/>
 	</span>
-	<span class="exports">
-		<span class="btn-group" role="group" aria-label="Export">
-			<span class="group-cap" aria-hidden="true"
-				><Icon name="download" /> Export</span
+	<span class="edit">
+		<div class="btn-group mode" role="tablist" aria-label="View">
+			<button
+				role="tab"
+				aria-selected={mode === "build"}
+				class:active={mode === "build"}
+				onclick={() => (mode = "build")}
+				title="Build the design visually">Builder</button
 			>
 			<button
-				onclick={exportPng}
-				title="Export the card shown ({currentCard?.id ??
-					'none'}) as a PNG image, rendered in this browser"
-				disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+				role="tab"
+				aria-selected={mode === "code"}
+				class:active={mode === "code"}
+				onclick={() => (mode = "code")}
+				title="Raw files, for everything the builder does not cover"
+				>Advanced (JSON)</button
+			>
+		</div>
+		<div class="btn-group history" role="group" aria-label="History">
+			<button
+				onclick={undo}
+				disabled={!undoStack.length}
+				aria-label="Undo"
+				title="Undo (Ctrl+Z)"><Icon name="undo" /></button
 			>
 			<button
-				onclick={exportZip}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design as PNG images in one ZIP{onServer
-					? ', rendered on the server'
-					: ''}">ZIP</button
+				onclick={redo}
+				disabled={!redoStack.length}
+				aria-label="Redo"
+				title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
 			>
-			<button
-				onclick={exportPdf}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
-					? ', rendered on the server'
-					: ''}">PDF</button
-			>
-		</span>
-		{#if server?.render}
-			<label
-				class="switch server"
-				title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
-			>
-				<input type="checkbox" role="switch" bind:checked={useServer} />
-				<Icon name="cloud" />
-				<span>Render on server</span>
-			</label>
-		{/if}
+		</div>
 	</span>
 {/snippet}
 
@@ -2773,7 +2964,7 @@
 					class="mini"
 					onclick={() => (browsing = true)}
 					title="Browse all cards in a big window, as a table or as pictures"
-					>⤢ Browse</button
+					><Icon name="expand" /> Browse</button
 				>
 			</div>
 			<CardList
@@ -2923,48 +3114,59 @@
 				class="saved {saveState}"
 				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
-				{saveState === "saving"
-					? "Saving…"
-					: saveState === "saved"
-						? "✓ Saved in this browser"
-						: saveState === "unsaved"
-							? "● Unsaved"
-							: saveState === "error"
-								? "⚠ Not saved"
-								: "Example (saved once you change it)"}
+				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
+				<span class="text"
+					>{saveState === "saving"
+						? "Saving…"
+						: saveState === "saved"
+							? "Saved in this browser"
+							: saveState === "unsaved"
+								? "Unsaved"
+								: saveState === "error"
+									? "Not saved"
+									: "Example (saved once you change it)"}</span
+				>
 			</span>
 			<span class="spacer"></span>
-			<div class="btn-group mode" role="tablist" aria-label="View">
-				<button
-					role="tab"
-					aria-selected={mode === "build"}
-					class:active={mode === "build"}
-					onclick={() => (mode = "build")}
-					title="Build the design visually">Builder</button
-				>
-				<button
-					role="tab"
-					aria-selected={mode === "code"}
-					class:active={mode === "code"}
-					onclick={() => (mode = "code")}
-					title="Raw files, for everything the builder does not cover"
-					>Advanced (JSON)</button
-				>
-			</div>
-			<div class="btn-group history" role="group" aria-label="History">
-				<button
-					onclick={undo}
-					disabled={!undoStack.length}
-					aria-label="Undo"
-					title="Undo (Ctrl+Z)"><Icon name="undo" /></button
-				>
-				<button
-					onclick={redo}
-					disabled={!redoStack.length}
-					aria-label="Redo"
-					title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
-				>
-			</div>
+			<span class="exports">
+				<span class="btn-group" role="group" aria-label="Export">
+					<span class="group-cap" aria-hidden="true"
+						><Icon name="download" /> Export</span
+					>
+					<button
+						onclick={exportPng}
+						title="Export the card shown ({currentCard?.id ??
+							'none'}) as a PNG image, rendered in this browser"
+						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+					>
+					<button
+						onclick={exportZip}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design as PNG images in one ZIP{onServer
+							? ', rendered on the server'
+							: ''}">ZIP</button
+					>
+					<button
+						onclick={exportPdf}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
+							? ', rendered on the server'
+							: ''}">PDF</button
+					>
+				</span>
+				{#if server?.render}
+					<label
+						class="switch server"
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+					>
+						<input type="checkbox" role="switch" bind:checked={useServer} />
+						<Icon name="cloud" />
+						<span>Render on server</span>
+					</label>
+				{/if}
+			</span>
 			{#if dirHandle}
 				<button
 					class="save-btn"
@@ -3074,19 +3276,22 @@
 			<main class="center">
 				<div class="toolbar">
 					<span class="adds">
-						<span class="caption">Add</span>
 						<span
 							class="btn-group group"
 							role="group"
 							aria-label="Add layer"
 						>
+							<span class="group-cap" aria-hidden="true"
+								><Icon name="plus" /> Add</span
+							>
 							{#each layerTypes as t}
+								{@const ic = layerIcon(t)}
 								<button
 									disabled={!doc}
 									onclick={() => addLayer(t)}
 									aria-label="Add a {t} layer"
 									title="Add a {t} layer"
-									><Icon name={t} /><span
+									>{#if ic}<Icon name={ic} />{/if}<span
 										class="lbl"
 										aria-hidden="true">{typeLabels[t]}</span
 									></button
@@ -3126,6 +3331,18 @@
 							Object.keys(qualityLabels) as PreviewQuality[]
 						).map((q) => ({ value: q, label: qualityLabels[q] }))}
 						onchange={(v) => setPreviewQuality(v as PreviewQuality)}
+					/>
+					<Select
+						compact
+						caption="Drag"
+						label="Drag preview"
+						title="What the picture shows while layers are dragged. Live re-renders the whole card at the pointer, so layers above and below and layers that depend on the moved ones are right. Fast keeps the card still and moves only the dragged layers, drawn in their place in the stack; layers that depend on them follow on release. Fast switches to Live automatically for layers inside repeated or effect groups."
+						value={dragPreview}
+						options={(Object.keys(dragLabels) as DragPreview[]).map((m) => ({
+							value: m,
+							label: dragLabels[m],
+						}))}
+						onchange={(v) => setDragPreview(v as DragPreview)}
 					/>
 				</div>
 			</main>
@@ -3406,6 +3623,9 @@
 	.cards-head .mini {
 		padding: 1px 8px;
 		font-size: 12px;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
 	.cards-head {
 		align-items: center;
@@ -3461,7 +3681,7 @@
 		min-width: 0;
 	}
 	.top > button,
-	.top > .btn-group {
+	.top .btn-group {
 		flex: none;
 		white-space: nowrap;
 		height: var(--ctl-h);
@@ -3511,12 +3731,26 @@
 		color: var(--muted);
 	}
 	.saved {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 12px;
 		color: var(--muted);
 		white-space: nowrap;
 		overflow: hidden;
-		text-overflow: ellipsis;
 		max-width: 16em;
+	}
+	.saved .text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.saved .dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: currentColor;
+		flex: none;
 	}
 	.saved.unsaved {
 		color: var(--warn);
@@ -3556,19 +3790,23 @@
 		overflow: hidden;
 		container-type: inline-size;
 	}
-	/* Toolbars wrap whole groups, never single buttons; the export group
-	   stays on the right. */
+	/* Toolbars wrap whole groups, never single buttons; the editing
+	   switch and undo/redo stay on the right. Same height as the tab
+	   strip beside them (.tabbar). */
 	.toolbar,
 	.pane-title.row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
 		align-items: center;
+		min-height: var(--bar-h);
+		box-sizing: border-box;
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--line);
 	}
 	.adds,
 	.pick,
+	.edit,
 	.exports {
 		display: flex;
 		gap: 8px;
@@ -3586,8 +3824,10 @@
 		flex-wrap: wrap;
 		min-width: 0;
 	}
-	.exports {
+	.edit {
 		margin-left: auto;
+	}
+	.exports {
 		gap: 12px;
 	}
 	/* Every button in a group has the same padding, icon box and gap. */

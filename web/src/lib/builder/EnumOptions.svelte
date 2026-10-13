@@ -3,6 +3,7 @@
 // several lines adds several options, rows can be dragged to reorder.
 // Renaming an option also renames it in the default and in card data (the
 // parent does that through `onrename`).
+import Icon from "../ui/Icon.svelte";
 import { confirmAction } from "../ui/overlay.svelte";
 
 let {
@@ -137,7 +138,7 @@ function sortAz() {
             dragFrom = i;
             e.dataTransfer?.setData('text/x-yoshida-option', o);
           }}
-          ondragend={() => (dragFrom = dropAt = null)}>⋮⋮</span>
+          ondragend={() => (dragFrom = dropAt = null)}><Icon name="grip" /></span>
         <input
           class="mono"
           value={o}
@@ -219,10 +220,9 @@ function sortAz() {
     padding: 2px 6px;
   }
   .grip {
+    display: flex;
     cursor: grab;
     color: var(--muted);
-    font-size: 11px;
-    letter-spacing: -2px;
     padding: 0 2px;
     user-select: none;
   }

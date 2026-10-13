@@ -7,6 +7,7 @@ import { cardLabel, nameParam } from "../cards";
 import type { CardInfo, Param } from "../engine";
 import { loadPref, savePref } from "./drag";
 import { type MenuItem, openMenu } from "./overlay.svelte";
+import Icon from "./Icon.svelte";
 
 let {
 	cards,
@@ -99,7 +100,7 @@ function columnMenu(e: MouseEvent) {
 	for (const p of params)
 		items.push({
 			label: p.label ?? p.name,
-			icon: hidden.has(p.name) ? "" : "✓",
+			icon: hidden.has(p.name) ? undefined : "check",
 			detail: p.type,
 			action: () => {
 				const next = new Set(hidden);
@@ -200,7 +201,7 @@ $effect(() => {
     {#if query}<span class="muted">{rows.length} shown</span>{/if}
     <span class="spacer"></span>
     {#if view === 'table'}
-      <button onclick={columnMenu} title="Choose the columns">Columns ▾</button>
+      <button onclick={columnMenu} title="Choose the columns">Columns <Icon name="chevron-down" /></button>
     {:else}
       <label class="zoom" title="Tile size">
         <span class="muted">Size</span>
@@ -216,10 +217,10 @@ $effect(() => {
   <div class="scroll" bind:this={scroller} onscroll={() => (scrollTop = scroller!.scrollTop)}>
     {#if view === 'table'}
       <div class="thead" style:min-width="{tableW}px" style:grid-template-columns="48px minmax(120px, 1.2fr) {columns.map(() => 'minmax(80px, 1fr)').join(' ')}">
-        <button onclick={() => sort('#')}>#{sortBy === '#' ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</button>
-        <button onclick={() => sort('id')}>id{sortBy === 'id' ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</button>
+        <button onclick={() => sort('#')}><span>#</span>{#if sortBy === '#'}<Icon name={sortDir > 0 ? 'chevron-up' : 'chevron-down'} />{/if}</button>
+        <button onclick={() => sort('id')}><span>id</span>{#if sortBy === 'id'}<Icon name={sortDir > 0 ? 'chevron-up' : 'chevron-down'} />{/if}</button>
         {#each columns as p (p.name)}
-          <button onclick={() => sort(p.name)} title={p.note ?? p.name}>{p.label ?? p.name}{sortBy === p.name ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</button>
+          <button onclick={() => sort(p.name)} title={p.note ?? p.name}><span>{p.label ?? p.name}</span>{#if sortBy === p.name}<Icon name={sortDir > 0 ? 'chevron-up' : 'chevron-down'} />{/if}</button>
         {/each}
       </div>
     {/if}
@@ -312,8 +313,27 @@ $effect(() => {
     border-bottom: 1px solid var(--line);
     background: var(--bg-bar);
   }
+  .thead button :global(svg) {
+    width: 10px;
+    height: 10px;
+    margin: 0;
+  }
+  .thead button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .bar > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .thead button {
     all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 6px 0;
     font-size: 11px;
     font-weight: 600;
@@ -321,6 +341,7 @@ $effect(() => {
     letter-spacing: 0.03em;
     color: var(--muted);
     cursor: pointer;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

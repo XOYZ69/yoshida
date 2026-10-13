@@ -40,12 +40,59 @@ export const icons = {
 	"align-bottom": "M2.5 13.5h11M5 3v8M11 6v5",
 	"distribute-x": "M2.5 2.5v11M13.5 2.5v11M6.5 5h3v6h-3z",
 	"distribute-y": "M2.5 2.5h11M2.5 13.5h11M5 6.5h6v3H5z",
+	group: "M2.5 5.5 8 2.5l5.5 3L8 8.5zM2.5 8.5 8 11.5l5.5-3",
+	divider: "M2.5 8h3.5M10 8h3.5",
+	eye: "M1.5 8s2.3-4 6.5-4 6.5 4 6.5 4-2.3 4-6.5 4S1.5 8 1.5 8ZM6.25 8a1.75 1.75 0 1 0 3.5 0 1.75 1.75 0 1 0-3.5 0",
+	"eye-off": "M1.5 8s2.3-4 6.5-4 6.5 4 6.5 4-2.3 4-6.5 4S1.5 8 1.5 8ZM2.5 2.5l11 11",
+	lock: "M3.5 7.5h9v6h-9zM5.5 7.5V5.25a2.5 2.5 0 0 1 5 0V7.5",
+	unlock: "M3.5 7.5h9v6h-9zM5.5 7.5V5.25a2.5 2.5 0 0 1 4.7-1.2",
+	more: "M3.25 8h.01M8 8h.01M12.75 8h.01",
+	grip: "M6 4.5h.01M10 4.5h.01M6 8h.01M10 8h.01M6 11.5h.01M10 11.5h.01",
+	repeat: "M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5",
+	effects: "M8 2.5l1.3 3.2 3.2 1.3-3.2 1.3L8 11.5 6.7 8.3 3.5 7l3.2-1.3Z",
+	extends: "M4 3v5a2 2 0 0 0 2 2h6M9.5 7.5 12 10l-2.5 2.5",
+	table: "M2.5 3.5h11v9h-11zM2.5 6.5h11M6.5 6.5v6M10 6.5v6",
+	"folder-open":
+		"M2 12.5V4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V7.5M2 12.5l1.6-5h10.4l-1.6 5a.5.5 0 0 1-.5.5H2.5a.5.5 0 0 1-.5-.5Z",
+	"select-all":
+		"M2.5 2.5h2M7 2.5h2M11.5 2.5h2M2.5 13.5h2M7 13.5h2M11.5 13.5h2M2.5 2.5v2M2.5 7v2M2.5 11.5v2M13.5 2.5v2M13.5 7v2M13.5 11.5v2M5.5 5.5h5v5h-5z",
+	ungroup: "M2.5 2.5h4.5v4.5h-4.5zM9 9h4.5v4.5H9z",
+	"move-out":
+		"M7 3.5H3.5a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1H7M6 8h7M10.5 5.5 13 8l-2.5 2.5",
+	paste:
+		"M5.5 3.5h-1a1 1 0 0 0-1 1V12a1 1 0 0 0 1 1h3.5M10.5 3.5h1a1 1 0 0 1 1 1V7M5.5 2.5h5v2h-5zM11.5 9v4M9.75 11.5l1.75 1.75 1.75-1.75",
+	expand: "M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9",
+	alert: "M8 2.75l5.75 10.5H2.25ZM8 6.5v3M8 11.25h.01",
+	info: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 1 0 0-11ZM8 7.5v3.5M8 5.25h.01",
+	"chevron-right": "M6 3.5 10.5 8 6 12.5",
+	"chevron-down": "M3.5 6 8 10.5 12.5 6",
+	"chevron-up": "M3.5 10 8 5.5l4.5 4.5",
+	clipboard:
+		"M5.5 3.5h-1a1 1 0 0 0-1 1v8.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V4.5a1 1 0 0 0-1-1h-1M5.5 2.5h5v2h-5z",
+	scissors:
+		"M4.5 6.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5ZM4.5 9.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5ZM6 5.5 13 12M6 10.5 13 4",
 } as const;
 
 export type IconName = keyof typeof icons;
 
 export const isIcon = (s: string | undefined): s is IconName =>
 	!!s && s in icons;
+
+/** The icon of each layer kind. The Add bar, the layer list and the menus
+ * all take their icon from here. */
+const layerIcons: Record<string, IconName> = {
+	rect: "rect",
+	ellipse: "ellipse",
+	polygon: "polygon",
+	text: "text",
+	image: "image",
+	group: "group",
+	divider: "divider",
+};
+
+/** Undefined for a type the editor does not know. */
+export const layerIcon = (type: string): IconName | undefined =>
+	layerIcons[type];
 </script>
 
 <script lang="ts">

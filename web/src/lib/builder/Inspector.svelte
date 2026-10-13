@@ -499,9 +499,9 @@ let newFunction = $state("");
         <div class="effect-head">
           <strong>{fx.type}</strong>
           <span class="spacer"></span>
-          <button class="mini" disabled={i === 0} onclick={() => editEffects((l) => l.splice(i - 1, 0, ...l.splice(i, 1)))}>↑</button>
-          <button class="mini" disabled={i === effects.length - 1} onclick={() => editEffects((l) => l.splice(i + 1, 0, ...l.splice(i, 1)))}>↓</button>
-          <button class="mini" onclick={() => editEffects((l) => l.splice(i, 1))}>×</button>
+          <button class="mini" aria-label="Move effect up" title="Move up" disabled={i === 0} onclick={() => editEffects((l) => l.splice(i - 1, 0, ...l.splice(i, 1)))}><Icon name="up" /></button>
+          <button class="mini" aria-label="Move effect down" title="Move down" disabled={i === effects.length - 1} onclick={() => editEffects((l) => l.splice(i + 1, 0, ...l.splice(i, 1)))}><Icon name="down" /></button>
+          <button class="mini" aria-label="Remove effect" title="Remove" onclick={() => editEffects((l) => l.splice(i, 1))}><Icon name="close" /></button>
         </div>
         {#if fx.type === 'fade' || fx.type === 'crop'}
           <Field label="side" kind="enum" value={fx.side} options={['top', 'bottom', 'left', 'right']} onchange={(v) => editEffects((l) => (l[i].side = v ?? 'bottom'))} />
@@ -547,8 +547,8 @@ let newFunction = $state("");
 {#snippet problemChip()}
   {#if errorCount || warnCount}
     <button class="probs" class:has-err={errorCount > 0} onclick={() => onproblems(id)} title="Show in the problems panel">
-      {#if errorCount}<span class="e">● {errorCount} error{errorCount > 1 ? 's' : ''}</span>{/if}
-      {#if warnCount}<span class="w">▲ {warnCount} warning{warnCount > 1 ? 's' : ''}</span>{/if}
+      {#if errorCount}<span class="e"><Icon name="close" />{errorCount} error{errorCount > 1 ? 's' : ''}</span>{/if}
+      {#if warnCount}<span class="w"><Icon name="alert" />{warnCount} warning{warnCount > 1 ? 's' : ''}</span>{/if}
       <span class="go">show ›</span>
     </button>
   {/if}
@@ -704,7 +704,7 @@ let newFunction = $state("");
           <Field label="wrap" kind="number" optional value={ownVal(['wrap'])} fallback={effVal(['wrap'])} placeholder="no wrapping" bindings={numberParams} error={errorAt(['wrap'])} onchange={(v) => set(['wrap'], v)} />
         {/if}
       {/if}
-      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons: their centre)" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
+      <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={effVal(['rotate']) ?? 0} title="Degrees clockwise around the anchor point (polygons with a point list and groups: their centre)" bindings={numberParams} error={errorAt(['rotate'])} onchange={(v) => set(['rotate'], v)} />
     </section>
 
     <section>
@@ -963,13 +963,18 @@ let newFunction = $state("");
     border-color: color-mix(in srgb, var(--err) 50%, var(--line));
     background: color-mix(in srgb, var(--err) 9%, var(--bg));
   }
+  .probs .e,
+  .probs .w {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+  }
   .probs .e {
     color: var(--err);
-    font-weight: 600;
   }
   .probs .w {
     color: var(--warn-text);
-    font-weight: 600;
   }
   .probs .go {
     color: var(--muted);

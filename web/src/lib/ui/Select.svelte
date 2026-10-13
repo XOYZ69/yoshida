@@ -9,6 +9,7 @@ export type Option = {
 
 <script lang="ts">
   // Themed dropdown (replaces <select>). Long lists get a filter box.
+  import Icon from './Icon.svelte';
   import { placeNear } from './overlay.svelte';
 
   let {
@@ -156,7 +157,7 @@ export type Option = {
           onpointerdown={(e) => e.preventDefault()}
           onclick={() => pick(o)}
           onkeydown={() => {}}>
-          <span class="check">{o.value === value ? '✓' : ''}</span>
+          <span class="check">{#if o.value === value}<Icon name="check" />{/if}</span>
           <span class="lbl">{o.label ?? o.value}</span>
           {#if o.detail}<span class="detail">{o.detail}</span>{/if}
         </li>
