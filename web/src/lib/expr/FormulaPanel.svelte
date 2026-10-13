@@ -7,10 +7,13 @@
 // step: a cell edit rewrites the text through edit.ts, and it is kept only
 // when the result parses. Apply (or closing the panel) hands the text to the
 // field; Escape closes it. With the editor's live context the values of
-// each part show next to it, for the card on the stage.
+// each part show next to it, for the card on the stage. "Extract to" moves
+// a part into a new design constant or function, after a name is asked for.
 
 import { getContext, onMount, untrack } from "svelte";
 import type { ScopeResult } from "../engine";
+import Icon from "../ui/Icon.svelte";
+import { askText, overlay } from "../ui/overlay.svelte";
 import { exprCoreReady, formatExpr, type Node, parseExpr } from "./core";
 import {
 	addChip,
@@ -33,13 +36,18 @@ import {
 	type LiveValue,
 } from "./live";
 import {
+	type Arg,
+	BUILTIN_NAMES,
 	type Core,
 	canExtract,
 	condChainToMatch,
 	extractConst,
 	extractFunction,
+	FUNCTION_NAMES,
 	freeNames,
+	hasLayerRef,
 	matchToCondChain,
+	RESERVED,
 } from "./rewrite";
 
 let {
@@ -82,6 +90,8 @@ const mv = $derived(sel ? matchView(sel, draft) : null);
 const cc = $derived(sel ? condChain(sel, draft) : null);
 const lv = $derived(sel ? listView(sel, draft) : null);
 const dirty = $derived(draft !== base);
+/** The selected part is a table, a chain or a list, not one plain field. */
+const projected = $derived(!!(mv || lv || (cc && cc.rows.length > 0)));
 
 // Live values: only those of the current draft, since node ids change with it.
 const liveTrace = $derived(
@@ -140,9 +150,6 @@ $effect(() => {
 	if (!live || !path) return;
 	live.scope(path).then((r) => (scope = r));
 });
-/** The extract form: which kind is being named, and the name typed so far. */
-let extracting = $state<"const" | "function" | null>(null);
-let newName = $state("");
 
 /** The design section and entry the field is in, when it is a constant or function body. */
 const home = $derived.by(() => {
@@ -151,12 +158,58 @@ const home = $derived.by(() => {
 		? { key: m[1], name: m[2].replace(/~1/g, "/").replace(/~0/g, "~") }
 		: null;
 });
+const inConst = $derived(home?.key === "consts");
 const toMatch = $derived(
 	sel && cc && cc.rows.length > 1 ? condChainToMatch(core, draft, sel) : null,
 );
 const toChain = $derived(sel && mv ? matchToCondChain(core, draft, sel) : null);
-const canPull = $derived(
-	!!live && !!path && !!scope && !!sel && canExtract(sel),
+
+const ARG_TYPES = ["number", "text", "bool", "color"];
+const localNames = $derived(scope ? scope.locals.map((l) => l.name) : []);
+/** The repeat names and function arguments the selected part uses, in order. */
+const used = $derived(sel ? freeNames(sel, localNames) : []);
+const usedArgs = $derived<Arg[]>(
+	used.map((n) => ({
+		name: n,
+		type: scope?.locals.find((l) => l.name === n)?.type ?? "",
+	})),
+);
+const usesLayer = $derived(!!sel && hasLayerRef(sel));
+
+const NO_DESIGN =
+	"Only a field of a design can extract parts into it. Open the field from the editor.";
+const TOO_SMALL =
+	"A single value or name is already as small as it gets: select a larger part.";
+
+/** Why the selected part cannot become a constant; "" when it can. */
+const constWhy = $derived.by(() => {
+	if (!live || !path || !scope || !sel) return NO_DESIGN;
+	if (!canExtract(sel)) return TOO_SMALL;
+	if (usesLayer) return "It refers to a layer, which a constant cannot do.";
+	if (used.length)
+		return `It uses ${used.join(", ")}, which only a function can take. Extract a function instead.`;
+	return "";
+});
+
+/** Why the selected part cannot become a function; "" when it can. */
+const fnWhy = $derived.by(() => {
+	if (!live || !path || !scope || !sel) return NO_DESIGN;
+	if (!canExtract(sel)) return TOO_SMALL;
+	if (usesLayer) return "It refers to a layer, which a function cannot do.";
+	if (inConst)
+		return "This field is the value of a constant, and a function cannot be added from here.";
+	const bad = usedArgs.find((a) => !ARG_TYPES.includes(a.type));
+	if (bad)
+		return `'${bad.name}' is a ${bad.type || "value"}; function arguments can only be numbers, text, bools or colors.`;
+	return "";
+});
+
+const CONST_HELP =
+	"Move the selected part into a new design constant and use its name here. Constants are shared by every field of the design.";
+
+/** The function's help, with the arguments the part uses. */
+const fnHelp = $derived(
+	`Move the selected part into a new design function. Repeat names and arguments it uses become the function's arguments (here: ${used.length ? used.join(", ") : "none"}), and the call takes its place.`,
 );
 
 function convert(r: { text: string; note?: string } | null) {
@@ -166,40 +219,93 @@ function convert(r: { text: string; note?: string } | null) {
 	}
 }
 
-/** Moves the selected part into a new constant or function of the design. */
-function extract() {
+/** Why a name cannot be a new constant or function here; "" when it can. */
+function nameProblem(name: string): string {
+	if (!name) return "";
+	if (!/^[a-z][a-z0-9_]*$/.test(name))
+		return "Use lowercase letters, digits and _, starting with a letter.";
+	if (
+		RESERVED.includes(name) ||
+		FUNCTION_NAMES.includes(name) ||
+		BUILTIN_NAMES.includes(name)
+	)
+		return `'${name}' is a word of the expression language.`;
+	if (localNames.includes(name))
+		return `'${name}' is a repeat name or argument of this field.`;
 	const d = live?.design();
-	if (!live || !path || !scope || !sel || !d || !extracting) return;
-	const name = newName.trim();
-	const locals = scope.locals.map((l) => l.name);
+	for (const [section, what] of [
+		["params", "parameter"],
+		["consts", "constant"],
+		["functions", "function"],
+	] as const) {
+		const s = d?.[section];
+		if (s && typeof s === "object" && Object.hasOwn(s, name))
+			return `'${name}' is already a ${what} of the design.`;
+	}
+	return "";
+}
+
+/** The name a new constant or function starts with: the field label, when that is a valid name. */
+function defaultName(): string {
+	const base = label
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^[^a-z]+/, "")
+		.replace(/_+$/, "");
+	return nameProblem(base) ? "" : base;
+}
+
+/** Asks for a name, then moves the selected part into a new constant or function. */
+async function startExtract(kind: "const" | "function") {
+	if (!sel) return;
+	const part = draft
+		.slice(sel.span[0], sel.span[1])
+		.replace(/\s+/g, " ")
+		.trim();
+	const shown = part.length > 60 ? `${part.slice(0, 59)}…` : part;
+	const message =
+		kind === "const"
+			? `"${shown}" moves into a new constant. This field will use the constant's name instead.`
+			: `"${shown}" moves into a new function${used.length === 0 ? " with no arguments" : used.length === 1 ? `, which takes the argument ${used[0]}` : `, which takes the arguments ${used.join(", ")}`}. This field will call the function in its place.`;
+	const name = await askText({
+		title: kind === "const" ? "Extract to constant" : "Extract to function",
+		message,
+		value: defaultName(),
+		placeholder: kind === "const" ? "constant name" : "function name",
+		confirm: "Extract",
+		validate: nameProblem,
+	});
+	if (name !== null) extract(kind, name.trim());
+}
+
+/** Moves the selected part into a new constant or function of the design. */
+function extract(kind: "const" | "function", name: string) {
+	const d = live?.design();
+	if (!live || !path || !scope || !sel || !d) return;
+	const why = kind === "const" ? constWhy : fnWhy;
+	if (why) {
+		note = why;
+		return;
+	}
 	const before =
-		home && home.key === (extracting === "const" ? "consts" : "functions")
+		home && home.key === (kind === "const" ? "consts" : "functions")
 			? home.name
 			: undefined;
-	let r: { text: string; design: Record<string, unknown> } | null;
-	if (extracting === "const") {
-		if (freeNames(sel, locals).length > 0) {
-			note =
-				"A constant cannot use repeat names or function arguments; extract a function instead.";
-			return;
-		}
-		r = extractConst(core, draft, sel, name, locals, d, before);
-	} else {
-		const args = freeNames(sel, locals).map((n) => ({
-			name: n,
-			type: scope?.locals.find((l) => l.name === n)?.type ?? "",
-		}));
-		const bad = args.find(
-			(a) => !["number", "text", "bool", "color"].includes(a.type),
-		);
-		if (bad) {
-			note = `'${bad.name}' is a ${bad.type || "value"}; function arguments can only be numbers, text, bools or colors.`;
-			return;
-		}
-		r = extractFunction(core, draft, sel, name, locals, args, d, before);
-	}
+	const r =
+		kind === "const"
+			? extractConst(core, draft, sel, name, localNames, d, before)
+			: extractFunction(
+					core,
+					draft,
+					sel,
+					name,
+					localNames,
+					usedArgs,
+					d,
+					before,
+				);
 	if (!r) {
-		note = `Cannot extract as '${name}': the name is taken or not valid, or the part refers to a layer.`;
+		note = `Cannot extract as '${name}': the name is taken or not valid.`;
 		return;
 	}
 	live.extract(r.design, path, r.text);
@@ -207,8 +313,6 @@ function extract() {
 	draft = r.text;
 	bad = {};
 	selPath = [];
-	extracting = null;
-	newName = "";
 	note = "";
 }
 
@@ -278,7 +382,7 @@ function close() {
 
 /** Formats a live value: numbers to 3 decimals, text quoted, lists in brackets. */
 function fmt(v: LiveValue | null | undefined): string {
-	if (v === undefined || v === null) return "–";
+	if (v === undefined || v === null) return "";
 	if (typeof v === "number") return String(Number(v.toFixed(3)));
 	if (typeof v === "boolean") return v ? "true" : "false";
 	if (typeof v === "string") return isHex(v) ? v : `'${v}'`;
@@ -289,7 +393,23 @@ function isHex(v: string): boolean {
 	return /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v);
 }
 
+/** Ids of literal nodes: their value is their text, so no value is shown next to them. */
+const literals = $derived.by(() => {
+	const ids = new Set<number>();
+	const walk = (n: Node) => {
+		if (n.k === "paren" && n.x) walk(n.x);
+		else if (["number", "unit", "string", "boolean", "color"].includes(n.k))
+			ids.add(n.id);
+		for (const c of [n.obj, n.idx, n.x, n.l, n.r, n.c, n.a, n.b, n.value])
+			if (c && n.k !== "paren") walk(c);
+		for (const c of [...(n.args ?? []), ...(n.items ?? [])]) walk(c);
+	};
+	if (root) walk(root);
+	return ids;
+});
+
 function liveOf(id: number): LiveValue | null {
+	if (literals.has(id)) return null;
 	return liveTrace?.[id] ?? null;
 }
 
@@ -298,6 +418,9 @@ function samePath(a: number[], b: number[]): boolean {
 }
 
 function onKey(e: KeyboardEvent) {
+	// A dialog (askText) is open, or it has just taken this Escape: it closes
+	// first, and the panel stays.
+	if (e.defaultPrevented || overlay.dialog !== null) return;
 	if (e.key === "Escape") {
 		e.preventDefault();
 		e.stopPropagation();
@@ -317,11 +440,9 @@ onMount(() => {
 </script>
 
 {#snippet val(id: number)}
-	{#if liveTrace}
+	{#if liveOf(id) !== null}
 		{@const v = liveOf(id)}
-		<span class="lv" class:none={v === null}>
-			{#if typeof v === "string" && isHex(v)}<span class="sw" style:background={v}></span>{/if}{fmt(v)}
-		</span>
+		<span class="lv">{#if typeof v === "string" && isHex(v)}<span class="sw" style:background={v}></span>{/if}{fmt(v)}</span>
 	{/if}
 {/snippet}
 
@@ -357,8 +478,12 @@ onMount(() => {
 		{#if live && live.card()}
 			<span class="card">values for: {live.card()}</span>
 		{/if}
-		<button class="close" onclick={close} aria-label="Close formula panel" title="Close (Escape)">×</button>
+		<button class="x" onclick={close} aria-label="Close formula panel" title="Close (Escape)"><Icon name="close" /></button>
 	</header>
+
+	{#if root && !projected}
+		<p class="hint">Pick a part in the outline to edit its rows. The text below is the whole expression.</p>
+	{/if}
 
 	<div class="split">
 		<nav class="outline" aria-label="Outline">
@@ -371,37 +496,32 @@ onMount(() => {
 					<b>{it.label}</b> <span>{it.text}</span>
 				</button>
 			{:else}
-				<p class="empty">Nothing to outline.</p>
+				<p class="empty">{root ? "Nothing to outline: a literal or a name has no parts." : "Fix the text to see its parts."}</p>
 			{/each}
 		</nav>
 
 		<div class="main">
-			{#if hits === 0}
-				<p class="nohit">not evaluated for this card</p>
-			{/if}
-			{#if toMatch || toChain || canPull}
+			{#if toMatch || toChain || sel}
 				<div class="actions">
-					{#if toMatch}<button class="btn" onclick={() => convert(toMatch)}>Convert to match</button>{/if}
-					{#if toChain}<button class="btn" onclick={() => convert(toChain)}>Convert to ?: chain</button>{/if}
-					{#if canPull}
-						<button class="btn" class:on={extracting === "const"} onclick={() => (extracting = extracting === "const" ? null : "const")}>Extract constant</button>
-						{#if home?.key !== "consts"}
-							<button class="btn" class:on={extracting === "function"} onclick={() => (extracting = extracting === "function" ? null : "function")}>Extract function</button>
-						{/if}
+					{#if toMatch}<button title="Rewrite this ?: chain as one match(), with the same subject, keys and results." onclick={() => convert(toMatch)}>Convert to match</button>{/if}
+					{#if toChain}<button title="Rewrite this match as a ?: chain: one when per key. A subject that is not a plain name is repeated in each when." onclick={() => convert(toChain)}>Convert to ?: chain</button>{/if}
+					{#if sel}
+						<span class="btn-group extract" role="group" aria-label="Extract">
+							<span class="group-cap" aria-hidden="true"><Icon name="ungroup" /> Extract to</span>
+							<button disabled={!!constWhy} title={constWhy || CONST_HELP} onclick={() => startExtract("const")}>Constant</button>
+							<button disabled={!!fnWhy} title={fnWhy || fnHelp} onclick={() => startExtract("function")}>Function</button>
+						</span>
 					{/if}
 				</div>
-				{#if extracting}
-					<form class="actions" onsubmit={(e) => { e.preventDefault(); extract(); }}>
-						<input class="in" aria-label="New {extracting} name" placeholder="{extracting} name" spellcheck="false" bind:value={newName} />
-						<button class="btn primary" type="submit" disabled={!newName.trim()}>Extract</button>
-					</form>
-				{/if}
+			{/if}
+			{#if hits === 0}
+				<p class="nohit">Not evaluated for this card.</p>
 			{/if}
 
 			{#if !root}
-				<p class="empty">The expression does not parse yet.</p>
+				<p class="empty">The expression does not parse yet. Fix the text below.</p>
 			{:else if mv && sel}
-				<h3>match on <code>{mv.subject.text}</code> {#if liveTrace}{@render val(mv.subject.id)}{/if}</h3>
+				<h3>Match on <code>{mv.subject.text}</code> {@render val(mv.subject.id)}</h3>
 				<table>
 					<thead>
 						<tr><th>key</th><th>result</th><th></th></tr>
@@ -426,37 +546,23 @@ onMount(() => {
 						</tr>
 					</tbody>
 				</table>
-				<button class="btn" onclick={() => take(addMatchRow(draft, sel, formatExpr))}>+ row</button>
-			{:else if cc && cc.rows.length > 1}
+				<button class="add-row" title="Add a key and a result before the default" onclick={() => take(addMatchRow(draft, sel, formatExpr))}>+ row</button>
+			{:else if cc && cc.rows[0]}
+				<h3>Conditions</h3>
 				<ol class="chain">
 					{#each cc.rows as r, i}
 						<li class:hit={taken.row === i}>
 							<span class="kw">when</span>
 							{@render cell(r.when, `when ${i + 1}`)}
-							<span class="kw">→</span>
+							<span class="kw">then</span>
 							{@render cell(r.result, `then ${i + 1}`)}
 						</li>
 					{/each}
-					<li class:hit={taken.fallback}>
+					<li class="else" class:hit={taken.fallback}>
 						<span class="kw">else</span>
 						{@render cell(cc.fallback, "else")}
 					</li>
 				</ol>
-			{:else if cc && cc.rows[0]}
-				<div class="card-cond">
-					<div class:hit={taken.row === 0}>
-						<span class="kw">when</span>
-						{@render cell(cc.rows[0].when, "when")}
-					</div>
-					<div class:hit={taken.row === 0}>
-						<span class="kw">then</span>
-						{@render cell(cc.rows[0].result, "then")}
-					</div>
-					<div class:hit={taken.fallback}>
-						<span class="kw">else</span>
-						{@render cell(cc.fallback, "else")}
-					</div>
-				</div>
 			{:else if lv && sel}
 				<div class="list">
 					<div class="lrow">
@@ -515,7 +621,7 @@ onMount(() => {
 		{/if}
 		<footer>
 			<span class="note">{note}</span>
-			<button class="btn primary" disabled={!dirty} onclick={apply}>Apply</button>
+			<button class="primary" disabled={!dirty} onclick={apply} title="Hand the text to the field (Ctrl+Enter)">Apply</button>
 		</footer>
 	</section>
 </div>
@@ -534,21 +640,23 @@ onMount(() => {
     background: var(--bg);
     color: var(--fg);
     border-left: 1px solid var(--line);
-    box-shadow: -8px 0 24px rgb(0 0 0 / 0.16);
-    font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    box-shadow: var(--shadow-pop);
+    font-size: 13px;
     outline: none;
   }
+  /* The title bar of a window (Window.svelte). */
   header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 8px 8px 14px;
+    gap: 8px;
+    padding: 5px 8px 5px 14px;
     background: var(--bg-bar);
     border-bottom: 1px solid var(--line);
   }
   h2 {
+    flex: 0 1 auto;
     margin: 0;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     min-width: 0;
     overflow: hidden;
@@ -564,65 +672,62 @@ onMount(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  header .card:only-of-type {
+  .x {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 24px;
     margin-left: auto;
-  }
-  .close {
-    margin-left: auto;
-    width: 28px;
-    height: 28px;
-    border: none;
+    padding: 0;
+    border: 0;
     border-radius: 4px;
     background: none;
     color: var(--muted);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
   }
-  .close:hover {
+  .x:hover {
     background: var(--hover);
     color: var(--fg);
   }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
-  .actions .in {
-    flex: 1;
-    min-width: 120px;
-  }
-  .btn.on {
-    border-color: var(--accent);
+  .hint {
+    margin: 0;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
   }
   .split {
     flex: 1;
     min-height: 0;
     display: flex;
   }
+  /* The outline: rows like the layer tree (hover and selection tints). */
   .outline {
     flex: none;
-    width: 180px;
+    width: 150px;
     overflow: auto;
     border-right: 1px solid var(--line);
-    background: var(--bg-code);
-    padding: 6px 0;
+    background: var(--bg-bar);
+    padding: 4px 0;
   }
   .ol {
     display: block;
     width: 100%;
     box-sizing: border-box;
+    min-height: 24px;
     padding: 3px 8px;
-    border: none;
+    border: 0;
+    border-radius: 0;
     background: none;
     color: var(--fg);
     text-align: left;
-    font: 12px/1.4 var(--mono);
+    font: 12px/1.5 var(--mono);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: pointer;
+  }
+  .ol b {
+    font-weight: 600;
   }
   .ol span {
     color: var(--muted);
@@ -637,93 +742,149 @@ onMount(() => {
     flex: 1;
     min-width: 0;
     overflow: auto;
-    padding: 10px 14px;
+    padding: 12px 14px;
   }
-  .main h3 {
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .actions > button {
+    height: var(--ctl-h);
+  }
+  .extract {
+    height: var(--ctl-h);
+    margin-left: auto;
+  }
+  .extract > button {
+    padding: 0 10px;
+    font-weight: 500;
+  }
+  /* The caption cell of a group (as in the top bar's Export group). */
+  .group-cap {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px 0 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    background: var(--bg-bar);
+  }
+  /* Section captions, as the Inspector's. */
+  h3 {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 8px;
-    font-size: 13px;
+    margin: 0 0 6px;
+    font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
-  .main code {
+  h3 code {
+    font: 12px var(--mono);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg);
+  }
+  code {
     font-family: var(--mono);
-    font-weight: 400;
   }
   .empty,
   .nohit {
     margin: 0 0 8px;
     color: var(--muted);
+    font-size: 12px;
   }
   table {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   th {
+    padding: 0 4px 4px;
     text-align: left;
     font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--muted);
-    padding: 0 4px 4px;
   }
   td {
     min-width: 0;
     padding: 3px 4px;
     vertical-align: middle;
   }
+  th:first-child {
+    width: 30%;
+  }
+  th:last-child,
   td:last-child {
     width: 28px;
   }
-  td > .cell {
-    width: 100%;
+  tr.hit td {
+    background: var(--sel);
   }
-  tr.hit {
+  tr.hit td:first-child {
     box-shadow: inset 3px 0 0 var(--accent);
   }
+  .add-row {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
   .kw {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
-    font-family: var(--mono);
   }
   .cell {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
   }
-  .in {
+  /* Expression cells: the look of an Inspector field (ExprInput). */
+  .formula .in {
     flex: 1;
     width: 100%;
-    min-width: 0;
+    min-width: 56px;
+    height: 26px;
     box-sizing: border-box;
-    padding: 4px 6px;
+    padding: 3px 6px;
     background: var(--bg-code);
     color: var(--fg);
     border: 1px solid var(--line);
-    border-radius: 3px;
+    border-radius: 4px;
     font: 12px var(--mono);
   }
-  .in:focus {
+  .formula .in:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
-  .in.invalid {
+  .formula .in.invalid {
     border-color: var(--err);
   }
+  /* The live value of a part: a small muted pill after its cell. */
   .lv {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     flex: none;
-    font: 11px var(--mono);
-    color: var(--fg);
-    white-space: nowrap;
-  }
-  .lv.none {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--bg-bar);
     color: var(--muted);
+    font: 11px var(--mono);
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
   }
   .sw {
     display: inline-block;
@@ -734,100 +895,44 @@ onMount(() => {
     border-radius: 3px;
     vertical-align: middle;
   }
-  .x {
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 4px;
-    background: none;
-    color: var(--muted);
-    font-size: 15px;
-    cursor: pointer;
-  }
-  .x:hover {
-    background: var(--hover);
-    color: var(--err);
-  }
-  .btn {
-    padding: 4px 10px;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--bg-bar);
-    color: var(--fg);
-    font: inherit;
-    cursor: pointer;
-  }
-  .btn:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-  }
   .chain {
+    display: grid;
+    gap: 4px;
     margin: 0 0 8px;
     padding: 0;
     list-style: none;
   }
   .chain li {
-    display: flex;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 34px minmax(0, 1fr);
     align-items: center;
     gap: 6px;
-    margin-bottom: 6px;
-    padding: 4px 6px;
+    padding: 4px 8px 4px 5px;
+    border-left: 3px solid transparent;
     border-radius: 4px;
   }
+  .chain li.else {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
   .chain li.hit {
-    box-shadow: inset 3px 0 0 var(--accent);
-    background: var(--hover);
-  }
-  .chain li > .kw {
-    flex: none;
-    width: 40px;
-  }
-  .card-cond {
-    display: grid;
-    gap: 6px;
-  }
-  .card-cond > div {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--bg-code);
-  }
-  .card-cond > div.hit {
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
-  .card-cond > div > .kw {
-    flex: none;
-    width: 40px;
+    background: var(--sel);
+    border-left-color: var(--accent);
   }
   .list .lrow {
-    display: flex;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 8px;
-  }
-  .list .lrow > .kw {
-    flex: none;
-    width: 40px;
   }
   .chips {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
     margin: 0;
     padding: 0;
     list-style: none;
-    align-items: center;
   }
   .chip {
     display: inline-flex;
@@ -835,11 +940,10 @@ onMount(() => {
     gap: 5px;
     padding: 2px 4px 2px 8px;
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: 999px;
     background: var(--bg-code);
   }
   .chip code {
-    font-family: var(--mono);
     font-size: 12px;
   }
   .chips .in.add {
@@ -851,7 +955,7 @@ onMount(() => {
   }
   .text {
     flex: none;
-    padding: 8px 14px 10px;
+    padding: 10px 14px;
     border-top: 1px solid var(--line);
     background: var(--bg-bar);
   }
@@ -871,6 +975,7 @@ onMount(() => {
   textarea:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .prob {
     margin: 4px 0 0;
@@ -888,5 +993,12 @@ onMount(() => {
     min-width: 0;
     font-size: 12px;
     color: var(--muted);
+  }
+  /* The primary button of a dialog (DialogHost). */
+  .primary {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--on-accent);
+    font-weight: 600;
   }
 </style>

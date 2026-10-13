@@ -237,7 +237,8 @@ export function freeNames(node: Node, locals: string[]): string[] {
 	return out;
 }
 
-function hasLayerRef(node: Node): boolean {
+/** True when the node refers to a layer (`@layer`), which constants and functions cannot. */
+export function hasLayerRef(node: Node): boolean {
 	let found = false;
 	walk(node, (n) => {
 		if (n.k === "layer_ref") found = true;

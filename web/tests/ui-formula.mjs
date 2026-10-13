@@ -110,10 +110,16 @@ ok(
 await p.waitForTimeout(500);
 ok(
 	"live values show the value of the taken row",
-	(await drawer.locator("tr.hit").innerText().catch(() => "")).includes(
-		"default",
-	),
-	await drawer.locator("tr.hit").innerText().catch(() => "none"),
+	(
+		await drawer
+			.locator("tr.hit")
+			.innerText()
+			.catch(() => "")
+	).includes("default"),
+	await drawer
+		.locator("tr.hit")
+		.innerText()
+		.catch(() => "none"),
 );
 
 // Quick action: the match becomes a ?: chain and back.
@@ -123,6 +129,22 @@ ok(
 	(await text.inputValue()).startsWith("'x' == 'a' ?"),
 	await text.inputValue(),
 );
+// The chain rows read "when … then …": no arrows, and no "–" placeholder for
+// a value that is not there.
+ok(
+	"chain rows have no arrows or dash placeholders",
+	!(
+		await drawer
+			.locator(".chain")
+			.innerText()
+			.catch(() => "")
+	).match(/[→–]/) &&
+		(await drawer.getByText("–", { exact: true }).count()) === 0,
+	await drawer
+		.locator(".chain")
+		.innerText()
+		.catch(() => "no chain"),
+);
 await drawer.getByRole("button", { name: "Convert to match" }).click();
 ok(
 	"convert to match restores it",
@@ -130,11 +152,101 @@ ok(
 	await text.inputValue(),
 );
 
-// Extract a constant: the field uses its name, the design gets the constant.
-await drawer.getByRole("button", { name: "Extract constant" }).click();
-await drawer.getByLabel("New const name").fill("paper_fill");
-await drawer.getByRole("button", { name: "Extract", exact: true }).click();
+// Extract to a constant: the part moves into a new design constant and its
+// name takes its place. The name is asked for in the app's text dialog.
+const extract = drawer.getByRole("group", { name: "Extract" });
+ok(
+	"the Extract group offers Constant and Function",
+	(await extract
+		.getByRole("button", { name: "Constant", exact: true })
+		.count()) === 1 &&
+		(await extract
+			.getByRole("button", { name: "Function", exact: true })
+			.count()) === 1,
+);
+// The dialog is found by its title; it is not inside the panel.
+const dialog = (title) => p.getByRole("dialog", { name: title, exact: true });
+const dialogConfirm = (title) =>
+	dialog(title).getByRole("button", { name: "Extract", exact: true });
+
+// First opening: an invalid name and a taken name keep the dialog open.
+await extract.getByRole("button", { name: "Constant", exact: true }).click();
+const constDialog = dialog("Extract to constant");
+await constDialog.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+ok(
+	"Constant opens the dialog 'Extract to constant'",
+	await constDialog.isVisible().catch(() => false),
+);
+ok(
+	"the dialog message says what moves",
+	(
+		await constDialog
+			.locator("p.msg")
+			.innerText()
+			.catch(() => "")
+	).includes("match"),
+	await constDialog
+		.locator("p.msg")
+		.innerText()
+		.catch(() => "none"),
+);
+await constDialog.locator("input").fill("Bad Name");
+await dialogConfirm("Extract to constant").click();
+await p.waitForTimeout(100);
+ok(
+	"an invalid name shows a validation error and keeps the dialog open",
+	(
+		await constDialog
+			.locator(".err")
+			.innerText()
+			.catch(() => "")
+	).length > 0 && (await constDialog.isVisible().catch(() => false)),
+	await constDialog
+		.locator(".err")
+		.innerText()
+		.catch(() => "no error"),
+);
+await constDialog.locator("input").fill("tile");
+await dialogConfirm("Extract to constant").click();
+await p.waitForTimeout(100);
+ok(
+	"a taken name shows a validation error and keeps the dialog open",
+	(
+		await constDialog
+			.locator(".err")
+			.innerText()
+			.catch(() => "")
+	).length > 0 && (await constDialog.isVisible().catch(() => false)),
+	await constDialog
+		.locator(".err")
+		.innerText()
+		.catch(() => "no error"),
+);
+await constDialog.getByRole("button", { name: "Cancel" }).click();
+await p.waitForTimeout(100);
+
+// Second opening: Escape closes only the dialog, the panel stays.
+await extract.getByRole("button", { name: "Constant", exact: true }).click();
+await constDialog.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+ok(
+	"the dialog opens a second time",
+	await constDialog.isVisible().catch(() => false),
+);
+await p.keyboard.press("Escape");
+await p.waitForTimeout(100);
+ok("Escape closes the dialog", (await constDialog.count()) === 0);
+ok(
+	"Escape in the dialog keeps the panel open",
+	await drawer.isVisible().catch(() => false),
+);
+
+// Third opening: a valid name extracts the match.
+await extract.getByRole("button", { name: "Constant", exact: true }).click();
+await constDialog.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+await constDialog.locator("input").fill("paper_fill");
+await dialogConfirm("Extract to constant").click();
 await p.waitForTimeout(300);
+ok("a valid name closes the dialog", (await constDialog.count()) === 0);
 ok(
 	"extract constant puts the name in the field",
 	(await text.inputValue()) === "paper_fill" &&
