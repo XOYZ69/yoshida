@@ -61,7 +61,7 @@ You need [Zig 0.16.0](https://ziglang.org/download/) (or `pip install ziglang==0
 ```sh
 zig build test                        # unit tests
 zig build -Doptimize=ReleaseFast      # zig-out/bin/yoshida and zig-out/bin/yoshida-server
-zig build wasm                        # zig-out/web/yoshida.wasm
+zig build wasm                        # zig-out/web/yoshida.wasm and expr.wasm
 
 cd web && npm install
 npm run wasm && npm run examples && npm run dev    # editor on http://localhost:5173
