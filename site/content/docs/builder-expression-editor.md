@@ -57,20 +57,37 @@ The **ƒ** button in a field opens a reference of everything available there: re
 The **⤢** button in a field (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>) opens the field in a panel at the right edge of the window. The outline on the left lists the calls and conditions of the expression; the main area shows the selected part by its shape:
 
 - a `match(...)` as a table of key and result rows, with **+ row** and a delete button per row,
-- a chain of `?:` conditions as *when → then* rows and an *else* row,
+- a chain of `?:` conditions as *when … then …* rows and an *else* row,
 - a single `?:` as *when*, *then* and *else*,
 - an `in [...]` test as chips you can add and remove,
 - anything else as one text box.
 
 Colors show a swatch. The whole expression stays editable as text at the bottom, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits from the panel rewrite the expression in its canonical layout.
 
-**Live values.** For the card shown on the stage, every part shows its value, and the row of a `match` or `?:` chain that was taken is marked. Values come from a real render of the card, so repeat names, function arguments and `@layer` positions are the actual ones. A field that the card never evaluates (a hidden layer, an unused constant) says so.
+**Live values.** For the card shown on the stage, a part shows its value when the card has one, and the row of a `match` or `?:` chain that was taken is marked. A value that is not there is left out, not shown as a dash. Values come from a real render of the card, so repeat names, function arguments and `@layer` positions are the actual ones. A field that the card never evaluates (a hidden layer, an unused constant) says so.
 
 **Quick actions.**
 
-- *Convert to match* turns a `?:` chain that tests one value (`k == 'a' ? … : k == 'b' ? … : …`, also with `k in [...]`) into a `match`, and *Convert to ?: chain* turns it back.
-- *Extract constant* moves the selected part into a new design constant and puts its name in its place. It is offered for parts that use no repeat names, function arguments or layer references.
-- *Extract function* moves it into a new design function whose arguments are the repeat names and arguments it uses, and puts the call in its place.
+- *Convert to match* turns a `?:` chain that tests one value (`k == 'a' ? … : k == 'b' ? … : …`, also with `k in [...]`) into a `match`. *Convert to ?: chain* turns a `match` back into a chain of `?:` conditions.
+- **Extract to** moves the part you select out of the expression, into the design, and leaves its name in its place. The two buttons are *Constant* and *Function*. Each one shows why it is unavailable in its tooltip.
+
+A **constant** is a named value of the design, such as a size or a color, that any field can use by name. A **function** is a named formula with arguments, which any field can call. See [Constants and functions](@/docs/expressions-constants-and-functions.md) for both.
+
+*Constant* asks for a name in a dialog and moves the part into a new constant. For example, a field holds `canvas.w / 2 - 40`. Select `canvas.w / 2`, extract it to the constant `half_w`, and the design gets:
+
+- constant: `half_w = canvas.w / 2`
+- field: `half_w - 40`
+
+A constant is the same everywhere, so *Constant* is not offered for a part that uses a repeat name, a function argument or a `@layer` reference. Those only have a value in one place.
+
+*Function* also asks for a name. The arguments of the new function are the repeat names and arguments the part uses, so the call takes their place. For example, a field inside a repeat with the index `i` holds `65 + i * 170`. Extract it to the function `tile_x`:
+
+- function: `tile_x(i) = 65 + i * 170`
+- field: `tile_x(i)`
+
+A repeat over a list gives a name for each item, such as `t`. An item is not a number, so a part that uses it cannot become an argument, and *Function* is not offered for it. A part that uses a `@layer` reference cannot be a function either.
+
+Each extraction is one undo step. <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings back the expression and removes the new name in one go.
 
 **Apply** (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the text) writes the expression to the field. Closing the panel applies pending changes too.
 
