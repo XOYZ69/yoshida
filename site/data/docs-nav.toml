@@ -124,6 +124,9 @@ path = "docs/builder-layers.md"
 title = "Inspector"
 path = "docs/builder-inspector.md"
 [[group.item]]
+title = "Fonts"
+path = "docs/builder-fonts.md"
+[[group.item]]
 title = "Params"
 path = "docs/builder-params.md"
 [[group.item]]

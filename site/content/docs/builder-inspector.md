@@ -11,7 +11,7 @@ Fields are grouped as:
 
 1. **Layer**: id, type, note, visible, opacity, anchor and so on.
 2. **Position and size**, with align-to-canvas buttons and `rotate`.
-3. **Appearance**: fill, stroke, radius, font, size, color... For text this includes auto-shrink (`max_width`, `max_height`, `min_size`, `shrink_group`) and the **outline** (`stroke`). Strokes of rects, ellipses and polygons take a **dash** pattern (type `12, 6`); open polygons an **arrow** (start, end, both). Ellipses have an **arc** switch with start, end and pie.
+3. **Appearance**: fill, stroke, radius, font (with an **Aa** button that opens the [Fonts](@/docs/builder-fonts.md) window), size, color... For text this includes auto-shrink (`max_width`, `max_height`, `min_size`, `shrink_group`) and the **outline** (`stroke`). Strokes of rects, ellipses and polygons take a **dash** pattern (type `12, 6`); open polygons an **arrow** (start, end, both). Ellipses have an **arc** switch with start, end and pie.
 4. **Repeat** and **Effects**.
 
 A polygon has **drawn from**: *points* (your own corners, listed with + point) or *shape* (a preset star, polygon, triangle, diamond, arrow, cross or chevron in a box, with `count` and `inner`). Switching to a shape keeps the polygon's area as the box.
@@ -39,7 +39,7 @@ Expression fields of layers inside a repeated group suggest the group's loop nam
 - name
 - canvas width and height (expressions allowed, for example `421 * scale`), background, **dpi** and **bleed** (see [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md#sizing-a-card-for-print))
 - **constants** and **functions**: add one with a name, change its expression, arguments (`i: number, kind: text`) and body, or remove it. See [Constants and functions](@/docs/expressions-constants-and-functions.md)
-- fonts: add a font name and choose a font file from the project; a missing font file is marked
+- fonts: one row per font name, with a preview, the font file and its license. **Browse fonts…** and **Upload…** add fonts; a missing font file is marked. See [Fonts](@/docs/builder-fonts.md)
 - a link to the JSON editor for anything the builder does not cover
 
 <img class="only-light" src="../images/editor-design-settings-light.png" alt="The design settings" width="1500" height="950">

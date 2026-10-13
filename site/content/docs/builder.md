@@ -49,6 +49,7 @@ Hovering a button or a field shows what it does in a tooltip drawn like the expr
 - [Canvas](@/docs/builder-canvas.md): selecting, moving, resizing, rotating, snapping, zoom and pan
 - [Layers](@/docs/builder-layers.md): the layer tree, groups, dividers, the layer menu
 - [Inspector](@/docs/builder-inspector.md): fields, align and distribute, design settings
+- [Fonts](@/docs/builder-fonts.md): finding, previewing and importing fonts, and their licenses
 - [Params](@/docs/builder-params.md): editing params, groups, enum options
 - [Card data](@/docs/builder-card-data.md): the card list, the form, the browser
 - [Files](@/docs/builder-files.md): the project's files, uploads, renames

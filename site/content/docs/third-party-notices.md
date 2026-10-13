@@ -35,4 +35,4 @@ The GitHub Pages build copies the examples with `npm run examples -- --public`, 
 
 ## Your own fonts and images
 
-yoshida does not check licenses. If you add fonts or images to a project, make sure you may use them and, before you share a project or export, that you may redistribute them.
+The [Fonts window](@/docs/builder-fonts.md) shows the license of each font and warns about missing or restrictive ones, but that is not legal advice. If you add fonts or images to a project, make sure you may use them and, before you share a project or export, that you may redistribute them.
