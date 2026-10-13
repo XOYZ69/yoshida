@@ -27,7 +27,7 @@ Used by the projects in `examples/`. They are not part of yoshida itself, and al
 | --- | --- | --- |
 | DM Serif Display (Colophon Foundry, based on Source Serif by Adobe) | poker | SIL Open Font License 1.1, `examples/poker/assets/fonts/DMSerifDisplay-Regular-license.txt` |
 | Cinzel Decorative Bold (Natanael Gama) | poker | SIL Open Font License 1.1, `examples/poker/assets/fonts/CinzelDecorative-Bold-license.txt` |
-| Bebas Regular (Dharma Type) | board-game | Free font EULA (commercial and non-commercial use, no sale), `examples/board-game/assets/fonts/Bebas-Regular-license.txt` |
+| Bebas Neue (Dharma Type) | board-game | SIL Open Font License 1.1, `examples/board-game/assets/fonts/BebasNeue-Regular-license.txt` |
 
 The suit symbols on the poker cards come from the bundled Noto Sans Symbols 2 subset listed above.
 

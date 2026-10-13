@@ -1,7 +1,7 @@
 # One expression per line from the example designs (JSON strings and {} holes). Backslash is written as \\ and newline as \n; lines that do not parse are skipped.
 Party board game
 Canvas is A3 landscape at 300 dpi (4961 x 3508 px, 420 x 297 mm, print at 100 %). The ring is 13 x 9 tiles = 40 tiles; change the consts to resize it.
-assets/fonts/Bebas-Regular.ttf
+assets/fonts/BebasNeue-Regular.ttf
 text
 Road Trip Rally
 Texts

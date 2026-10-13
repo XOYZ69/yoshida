@@ -21,7 +21,7 @@ yoshida render examples/board-game --out out --date 2026-10-09
 board-game/
   designs/board.design.json
   cards/boards.cards.json     (set "boards": road-trip, moon-base, beach-party)
-  assets/fonts/Bebas-Regular.ttf
+  assets/fonts/BebasNeue-Regular.ttf
 ```
 
 There is no `yoshida.json`: the JSON card file names its design, and the set is named after the file (`boards`). See [Command Line](@/docs/command-line.md#where-the-files-go).
@@ -44,6 +44,6 @@ The design is 585 lines after `yoshida fmt` and can be edited by hand or in the 
 ## Ideas to take it further
 
 - **Links between tiles.** A shortcut tile can draw an arrow to its target with an [indexed reference](@/docs/repeat.md#reading-one-iteration) and an open polygon with `"arrow": "end"`: `[["@tile_bg[i].bounds.cx", "@tile_bg[i].bounds.bottom"], ["@tile_bg[t.n - 1].bounds.cx", "@tile_bg[t.n - 1].bounds.top"]]`, dashed with `"dash": [10, 6]`. The example does not, because the arrows would cross the rules panel.
-- **Symbol glyphs instead of polygons.** Arrows, stars and dice faces now come from the bundled symbol font when the layer font lacks them, so `"text": "★"` works with Bebas.
+- **Symbol glyphs instead of polygons.** Arrows, stars and dice faces now come from the bundled symbol font when the layer font lacks them, so `"text": "★"` works with Bebas Neue.
 - **Boards that share a layout.** Give `tiles` a default list and let each card change only some tiles: `"tiles": { "11": { "kind": "safe" } }`. See [Params](@/docs/params.md#changing-single-items-of-the-default).
 - **Layer budget.** A tile draws 6 to 8 visible layers (the tile group, shadow, background, number, text, the icon group and the icon or number on special tiles), about 330 per card. The limit is 500 visible layers per card; `yoshida check` reports cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
