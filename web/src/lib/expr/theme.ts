@@ -69,7 +69,7 @@ export const exprTheme = EditorView.theme({
 		verticalAlign: "-1px",
 		borderRadius: "2px",
 		background:
-			"linear-gradient(var(--c), var(--c)), repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 6px 6px",
+			"linear-gradient(var(--c), var(--c)), repeating-conic-gradient(var(--swatch-a) 0 25%, var(--swatch-b) 0 50%) 0 0 / 6px 6px",
 		boxShadow: "inset 0 0 0 1px rgba(127, 127, 127, 0.45)",
 	},
 

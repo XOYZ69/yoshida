@@ -1,6 +1,7 @@
-// End-to-end checks for the formula panel: a match in an expression field
-// opens the panel from the ⤢ button, a result cell is edited, Apply writes
-// the new text into the field, and Escape closes the panel.
+// End-to-end checks for the formula editor: a match in an expression field
+// opens the editor window from the ⤢ button, a result cell is edited, Apply
+// writes the new text into the field, Escape closes the window, and the
+// breadcrumb drills into a part and back.
 //
 //   node tests/ui-formula.mjs [http://localhost:4173/]
 import { mkdir } from "node:fs/promises";
@@ -47,7 +48,8 @@ const formulaButton = (label) =>
 			'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " expr ")][1]',
 		)
 		.locator('button[aria-label="Formula panel"]');
-const drawer = p.locator('[role="dialog"][aria-label="Formula panel"]');
+// The editor is a floating window (Window.svelte): its title starts "Formula".
+const drawer = p.locator('[role="dialog"][aria-label^="Formula"]');
 
 await p.goto(base);
 await rendered();
@@ -70,7 +72,34 @@ await rendered();
 await fill.click();
 await formulaButton("fill").click();
 await drawer.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-ok("the formula panel opens from ⤢", await drawer.isVisible());
+ok("the formula editor opens from ⤢", await drawer.isVisible());
+ok(
+	"the window is titled after the field",
+	((await drawer.getAttribute("aria-label")) ?? "").startsWith("Formula"),
+	await drawer.getAttribute("aria-label"),
+);
+ok(
+	"no outline column",
+	(await drawer.locator('nav[aria-label="Outline"]').count()) === 0,
+);
+ok(
+	"the breadcrumb starts with the root: whole",
+	(await drawer.getByRole("button", { name: "whole", exact: true }).count()) ===
+		1,
+);
+{
+	// Convert and Extract share one row of the toolbar.
+	const a = await drawer
+		.locator(".toolbar .convert > button")
+		.first()
+		.boundingBox();
+	const b = await drawer.locator(".toolbar .extract").boundingBox();
+	ok(
+		"the convert button and the Extract group share one row",
+		!!a && !!b && Math.abs(a.y - b.y) < 6,
+		`${a?.y} / ${b?.y}`,
+	);
+}
 await p.screenshot({ path: `${shots}/formula-open.png` });
 
 // The first result is a cell of the table: change it and press Enter.
@@ -123,7 +152,7 @@ ok(
 );
 
 // Quick action: the match becomes a ?: chain and back.
-await drawer.getByRole("button", { name: "Convert to ?: chain" }).click();
+await drawer.getByRole("button", { name: "To ?: chain" }).click();
 ok(
 	"convert to ?: chain rewrites the text",
 	(await text.inputValue()).startsWith("'x' == 'a' ?"),
@@ -145,9 +174,46 @@ ok(
 		.innerText()
 		.catch(() => "no chain"),
 );
-await drawer.getByRole("button", { name: "Convert to match" }).click();
+await drawer.getByRole("button", { name: "To match" }).click();
 ok(
 	"convert to match restores it",
+	(await text.inputValue()).startsWith("match('x', 'a', #00ff00"),
+	await text.inputValue(),
+);
+
+// Drill in: a call in a result cell opens as the selection, with the
+// breadcrumb "whole > result 1"; the root crumb goes back to the match.
+await cell.fill("abs(-1)");
+await cell.press("Enter");
+await p.waitForTimeout(100);
+const open = drawer.getByRole("button", { name: "Open this part" });
+ok("a call in a cell has an open button", (await open.count()) === 1);
+await open.click();
+await p.waitForTimeout(100);
+ok(
+	"open selects the call: its breadcrumb step is result 1",
+	(await drawer
+		.getByRole("button", { name: "result 1", exact: true })
+		.count()) === 1 && (await drawer.locator("table").count()) === 0,
+	await drawer
+		.locator("nav.trail")
+		.innerText()
+		.catch(() => ""),
+);
+await drawer.getByRole("button", { name: "whole", exact: true }).click();
+await p.waitForTimeout(100);
+ok(
+	"the root crumb goes back to the match",
+	(await drawer.locator("table").count()) === 1 &&
+		(await drawer
+			.getByRole("button", { name: "result 1", exact: true })
+			.count()) === 0,
+);
+await cell.fill("#00ff00");
+await cell.press("Enter");
+await p.waitForTimeout(100);
+ok(
+	"the match text is restored after the drill",
 	(await text.inputValue()).startsWith("match('x', 'a', #00ff00"),
 	await text.inputValue(),
 );
@@ -260,7 +326,18 @@ ok(
 	await p.locator(".status").innerText(),
 );
 
-// Escape closes the panel.
+// Escape only acts in the window: with the focus in the field, the window
+// stays open.
+await fill.click();
+await p.keyboard.press("Escape");
+await p.waitForTimeout(100);
+ok(
+	"Escape with the focus outside the window keeps it open",
+	await drawer.isVisible().catch(() => false),
+);
+await drawer.locator(".formula").focus();
+
+// Escape closes the window.
 await p.keyboard.press("Escape");
 await p.waitForTimeout(100);
 ok("Escape closes the panel", (await drawer.count()) === 0);

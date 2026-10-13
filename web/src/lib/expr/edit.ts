@@ -43,15 +43,6 @@ export type CondChain = {
 
 export type ListView = { value: Slot; items: Slot[] };
 
-export type OutlineItem = {
-	/** Child indexes from the root (see `children`). */
-	path: number[];
-	depth: number;
-	label: string;
-	kind: NodeKind;
-	text: string;
-};
-
 export function slot(n: Node, text: string): Slot {
 	return {
 		id: n.id,
@@ -234,23 +225,6 @@ export function removeChip(
 	return rewriteList(text, n, value, items, format);
 }
 
-/** Nodes worth a line in the outline: calls, `?:` chains, `and`/`or`, `in` tests. */
-function interesting(n: Node, tail: boolean): boolean {
-	switch (n.k) {
-		case "call":
-		case "ucall":
-		case "in_list":
-			return true;
-		case "cond":
-			// The else branch of a chain is part of the chain's first line.
-			return !tail;
-		case "binary":
-			return n.op === "and" || n.op === "or";
-		default:
-			return false;
-	}
-}
-
 function labelOf(n: Node): string {
 	switch (n.k) {
 		case "call":
@@ -265,27 +239,75 @@ function labelOf(n: Node): string {
 	}
 }
 
-/** The outline of a tree: its interesting nodes in source order, indented by depth. */
-export function outline(root: Node, text: string): OutlineItem[] {
-	const out: OutlineItem[] = [];
-	const visit = (n: Node, depth: number, path: number[], tail: boolean) => {
-		let d = depth;
-		if (interesting(n, tail)) {
-			out.push({
-				path,
-				depth,
-				label: labelOf(n),
-				kind: n.k,
-				text: text.slice(n.span[0], n.span[1]),
-			});
-			d = depth + 1;
+/** Kinds with parts of their own: a part of one of these can be opened in the panel. */
+const STRUCTURE: ReadonlySet<NodeKind> = new Set([
+	"call",
+	"ucall",
+	"cond",
+	"in_list",
+]);
+
+/** The child indexes from `root` to the node with this id; null when there is none. */
+export function pathTo(root: Node, id: number): number[] | null {
+	if (root.id === id) return [];
+	const cs = children(root);
+	for (let i = 0; i < cs.length; i++) {
+		const rest = pathTo(cs[i], id);
+		if (rest) return [i, ...rest];
+	}
+	return null;
+}
+
+/** The path of a part that can be opened (a call, a `?:` chain or an `in` test, also through parentheses); null for other parts. */
+export function openPath(root: Node, id: number): number[] | null {
+	let path = pathTo(root, id);
+	if (!path) return null;
+	let n = nodeAt(root, path);
+	while (n && n.k === "paren" && n.x) {
+		path = [...path, 0];
+		n = n.x;
+	}
+	return n && STRUCTURE.has(n.k) ? path : null;
+}
+
+/** One step of a breadcrumb: its label and the path it selects. */
+export type TrailStep = { label: string; path: number[] };
+
+/** The role of a part in its parent: "result 2" in a match, "when" in a chain, else the part's own name. */
+function partLabel(parent: Node, n: Node): string {
+	if (parent.k === "call" && parent.fn === "match" && parent.args) {
+		const args = parent.args;
+		const i = args.indexOf(n);
+		if (i === 0) return "value";
+		if (i > 0 && i === args.length - 1) return "default";
+		if (i > 0) {
+			const k = Math.floor((i - 1) / 2) + 1;
+			return (i - 1) % 2 === 0 ? `key ${k}` : `result ${k}`;
 		}
-		children(n).forEach((c, i) => {
-			// The else branch of a cond, also through parentheses.
-			const next = (n.k === "cond" && c === n.b) || (n.k === "paren" && tail);
-			visit(c, d, [...path, i], next);
-		});
-	};
-	visit(root, 0, [], false);
+	}
+	if (parent.k === "cond") {
+		if (n === parent.c) return "when";
+		if (n === parent.a) return "then";
+		if (n === parent.b) return "else";
+	}
+	if (parent.k === "in_list") {
+		if (n === parent.value) return "value";
+		const j = (parent.items ?? []).indexOf(n);
+		if (j >= 0) return `item ${j + 1}`;
+	}
+	return labelOf(n);
+}
+
+/** The breadcrumb from the root ("whole") down to the path. Parentheses add no step. */
+export function partTrail(root: Node, path: number[]): TrailStep[] {
+	const out: TrailStep[] = [{ label: "whole", path: [] }];
+	let cur = root;
+	for (let i = 0; i < path.length; i++) {
+		const next = children(cur)[path[i]];
+		if (!next) break;
+		if (next.k !== "paren")
+			out.push({ label: partLabel(cur, next), path: path.slice(0, i + 1) });
+		cur = next;
+	}
 	return out;
 }

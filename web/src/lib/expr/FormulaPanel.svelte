@@ -1,28 +1,33 @@
 <script lang="ts">
-// The formula panel: a drawer at the right edge that shows an expression by
-// its parts. A match is a table of key and result rows, a ?: chain a list of
+// The formula editor: a floating window that shows an expression by its
+// parts. A match is a table of key and result rows, a ?: chain a list of
 // when and then rows, an `in` test a list of chips; anything else is one
-// field with its source. The outline lists the calls and conditions of the
-// tree, and the text at the bottom is the whole expression. Both stay in
+// field with its source. A breadcrumb shows the path to the selected part,
+// and the open buttons of the cells drill into the calls, chains and tests
+// inside it. The text below the parts is the whole expression. Both stay in
 // step: a cell edit rewrites the text through edit.ts, and it is kept only
-// when the result parses. Apply (or closing the panel) hands the text to the
-// field; Escape closes it. With the editor's live context the values of
-// each part show next to it, for the card on the stage. "Extract to" moves
-// a part into a new design constant or function, after a name is asked for.
+// when the result parses. Apply (or closing the window) hands the text to
+// the field; Escape closes it while the focus is in the window. With the
+// editor's live context the values of each part show next to it, for the
+// card on the stage. "Extract to" moves a part into a new design constant or
+// function, after a name is asked for.
 
 import { getContext, onMount, untrack } from "svelte";
 import type { ScopeResult } from "../engine";
 import Icon from "../ui/Icon.svelte";
 import { askText, overlay } from "../ui/overlay.svelte";
+import Window from "../ui/Window.svelte";
 import { exprCoreReady, formatExpr, type Node, parseExpr } from "./core";
 import {
 	addChip,
 	addMatchRow,
+	children,
 	condChain,
 	listView,
 	matchView,
 	nodeAt,
-	outline,
+	openPath,
+	partTrail,
 	removeChip,
 	removeMatchRow,
 	replaceSlot,
@@ -57,9 +62,9 @@ let {
 	onapply,
 	onclose,
 }: {
-	/** The field's text when the panel opened. */
+	/** The field's text when the editor opened. */
 	text: string;
-	/** The field's label, for the header. */
+	/** The field's label, for the window title. */
 	label?: string;
 	/** JSON pointer of the field in the design: enables live values. */
 	path?: string;
@@ -79,19 +84,24 @@ let selPath = $state<number[]>([]);
 let bad = $state<Record<string, string>>({});
 let note = $state("");
 let result = $state<{ src: string; r: EvalResult } | null>(null);
-let panel: HTMLElement | undefined = $state();
+/** The window's body: its focus is what Escape acts on. */
+let body: HTMLElement | undefined = $state();
 
 const parsed = $derived(exprCoreReady() ? parseExpr(draft, false) : null);
 const root = $derived(parsed?.root ?? null);
-const items = $derived(root ? outline(root, draft) : []);
-const sel = $derived(root ? (nodeAt(root, selPath) ?? root) : null);
+/** The selected path, or the root when the text changed under it. */
+const activePath = $derived(root && nodeAt(root, selPath) ? selPath : []);
+const sel = $derived(root ? (nodeAt(root, activePath) ?? root) : null);
 const selSlot = $derived(sel ? slot(sel, draft) : null);
 const mv = $derived(sel ? matchView(sel, draft) : null);
 const cc = $derived(sel ? condChain(sel, draft) : null);
 const lv = $derived(sel ? listView(sel, draft) : null);
+/** The selected part has no parts of its own: a literal or a name. */
+const leaf = $derived(!!sel && children(sel).length === 0);
+const trail = $derived(root ? partTrail(root, activePath) : []);
 const dirty = $derived(draft !== base);
-/** The selected part is a table, a chain or a list, not one plain field. */
-const projected = $derived(!!(mv || lv || (cc && cc.rows.length > 0)));
+/** Rows of the text area: one per line, at least 2, then it scrolls. */
+const textRows = $derived(Math.min(8, Math.max(2, draft.split("\n").length)));
 
 // Live values: only those of the current draft, since node ids change with it.
 const liveTrace = $derived(
@@ -117,7 +127,7 @@ const taken = $derived.by(() => {
 	return none;
 });
 
-// Evaluate the field on the live card: at once when the panel opens, then
+// Evaluate the field on the live card: at once when the editor opens, then
 // 200 ms after the last change of the text.
 let seq = 0;
 let first = true;
@@ -316,11 +326,6 @@ function extract(kind: "const" | "function", name: string) {
 	note = "";
 }
 
-/** Moves the drawer to document.body, so no ancestor's stacking or clipping covers it. */
-function portal(node: HTMLElement) {
-	document.body.appendChild(node);
-}
-
 function keyOf(s: Slot): string {
 	return `${s.span[0]}:${s.span[1]}`;
 }
@@ -367,6 +372,20 @@ function setText(v: string) {
 	draft = v;
 	bad = {};
 	note = "";
+}
+
+/** Selects a part of the expression: the breadcrumb and the open buttons. */
+function select(p: number[]) {
+	selPath = p;
+	bad = {};
+	note = "";
+}
+
+/** The path an open button of a cell selects: a structure, other than the selection. */
+function openTo(s: Slot): number[] | null {
+	if (!root) return null;
+	const p = openPath(root, s.id);
+	return p && !samePath(p, activePath) ? p : null;
 }
 
 function apply() {
@@ -417,10 +436,16 @@ function samePath(a: number[], b: number[]): boolean {
 	return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
+/** Escape acts only when the focus is in this window (its title bar or body). */
+function inWindow(e: KeyboardEvent): boolean {
+	const win = body?.closest('[role="dialog"]');
+	return !!win && e.target instanceof Node && win.contains(e.target);
+}
+
 function onKey(e: KeyboardEvent) {
 	// A dialog (askText) is open, or it has just taken this Escape: it closes
-	// first, and the panel stays.
-	if (e.defaultPrevented || overlay.dialog !== null) return;
+	// first, and the window stays.
+	if (e.defaultPrevented || overlay.dialog !== null || !inWindow(e)) return;
 	if (e.key === "Escape") {
 		e.preventDefault();
 		e.stopPropagation();
@@ -431,10 +456,19 @@ function onKey(e: KeyboardEvent) {
 	}
 }
 
+// When a dialog of this window closes, the focus goes back to the window, so
+// that Escape keeps working.
+let inDialog = false;
+$effect(() => {
+	const open = overlay.dialog !== null;
+	if (inDialog && !open) body?.focus();
+	inDialog = open;
+});
+
 onMount(() => {
-	// Capture, so Escape closes the panel and not the editor under it.
+	// Capture, so Escape closes the window and not the editor under it.
 	window.addEventListener("keydown", onKey, true);
-	panel?.focus();
+	body?.focus();
 	return () => window.removeEventListener("keydown", onKey, true);
 });
 </script>
@@ -443,6 +477,13 @@ onMount(() => {
 	{#if liveOf(id) !== null}
 		{@const v = liveOf(id)}
 		<span class="lv">{#if typeof v === "string" && isHex(v)}<span class="sw" style:background={v}></span>{/if}{fmt(v)}</span>
+	{/if}
+{/snippet}
+
+{#snippet opener(s: Slot)}
+	{@const p = openTo(s)}
+	{#if p}
+		<button class="open" title="Open this part" aria-label="Open this part" onclick={() => select(p)}><Icon name="chevron-right" /></button>
 	{/if}
 {/snippet}
 
@@ -463,150 +504,140 @@ onMount(() => {
 				}
 			}} />
 		{@render val(s.id)}
+		{@render opener(s)}
 	</span>
 {/snippet}
 
-<div
-	class="formula"
-	role="dialog"
-	use:portal
-	bind:this={panel}
-	tabindex="-1"
-	aria-label="Formula panel">
-	<header>
-		<h2 title={label}>{label || "Formula"}</h2>
-		{#if live && live.card()}
-			<span class="card">values for: {live.card()}</span>
-		{/if}
-		<button class="x" onclick={close} aria-label="Close formula panel" title="Close (Escape)"><Icon name="close" /></button>
-	</header>
-
-	{#if root && !projected}
-		<p class="hint">Pick a part in the outline to edit its rows. The text below is the whole expression.</p>
-	{/if}
-
-	<div class="split">
-		<nav class="outline" aria-label="Outline">
-			{#each items as it}
+<Window
+	key="formula"
+	title={label ? `Formula: ${label}` : "Formula"}
+	width={540}
+	minWidth={380}
+	fit
+	onclose={close}>
+	<div class="formula" bind:this={body} tabindex="-1">
+		<nav class="trail" aria-label="Path">
+			{#each trail as c, i}
+				{#if i > 0}<span class="sep" aria-hidden="true">›</span>{/if}
 				<button
-					class="ol"
-					class:on={samePath(it.path, sel ? selPath : [])}
-					style:padding-left="{8 + it.depth * 12}px"
-					onclick={() => (selPath = it.path)}>
-					<b>{it.label}</b> <span>{it.text}</span>
-				</button>
-			{:else}
-				<p class="empty">{root ? "Nothing to outline: a literal or a name has no parts." : "Fix the text to see its parts."}</p>
+					class="crumb"
+					aria-current={i === trail.length - 1 ? "step" : undefined}
+					onclick={() => select(c.path)}>{c.label}</button>
 			{/each}
+			{#if live && live.card()}
+				<span class="card">values for: {live.card()}</span>
+			{/if}
 		</nav>
 
-		<div class="main">
-			{#if toMatch || toChain || sel}
-				<div class="actions">
-					{#if toMatch}<button title="Rewrite this ?: chain as one match(), with the same subject, keys and results." onclick={() => convert(toMatch)}>Convert to match</button>{/if}
-					{#if toChain}<button title="Rewrite this match as a ?: chain: one when per key. A subject that is not a plain name is repeated in each when." onclick={() => convert(toChain)}>Convert to ?: chain</button>{/if}
-					{#if sel}
-						<span class="btn-group extract" role="group" aria-label="Extract">
-							<span class="group-cap" aria-hidden="true"><Icon name="ungroup" /> Extract to</span>
-							<button disabled={!!constWhy} title={constWhy || CONST_HELP} onclick={() => startExtract("const")}>Constant</button>
-							<button disabled={!!fnWhy} title={fnWhy || fnHelp} onclick={() => startExtract("function")}>Function</button>
-						</span>
-					{/if}
+		{#if sel}
+			<div class="toolbar">
+				<div class="convert">
+					{#if toMatch}<button title="Rewrite this ?: chain as one match(), with the same subject, keys and results." onclick={() => convert(toMatch)}>To match</button>{/if}
+					{#if toChain}<button title="Rewrite this match as a ?: chain: one when per key. A subject that is not a plain name is repeated in each when." onclick={() => convert(toChain)}>To ?: chain</button>{/if}
 				</div>
-			{/if}
-			{#if hits === 0}
-				<p class="nohit">Not evaluated for this card.</p>
-			{/if}
+				<span class="btn-group extract" role="group" aria-label="Extract">
+					<span class="group-cap" aria-hidden="true"><Icon name="ungroup" /> Extract to</span>
+					<button disabled={!!constWhy} title={constWhy || CONST_HELP} onclick={() => startExtract("const")}>Constant</button>
+					<button disabled={!!fnWhy} title={fnWhy || fnHelp} onclick={() => startExtract("function")}>Function</button>
+				</span>
+			</div>
+		{/if}
 
-			{#if !root}
-				<p class="empty">The expression does not parse yet. Fix the text below.</p>
-			{:else if mv && sel}
-				<h3>Match on <code>{mv.subject.text}</code> {@render val(mv.subject.id)}</h3>
-				<table>
-					<thead>
-						<tr><th>key</th><th>result</th><th></th></tr>
-					</thead>
-					<tbody>
-						{#each mv.rows as r, i}
-							<tr class:hit={taken.row === i}>
-								<td>{@render cell(r.key, `key ${i + 1}`)}</td>
-								<td>{@render cell(r.result, `result ${i + 1}`)}</td>
-								<td>
-									{#if mv.rows.length > 1}
-										<button class="x" aria-label="Delete row {i + 1}" title="Delete row"
-											onclick={() => take(removeMatchRow(draft, sel, i, formatExpr))}>×</button>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-						<tr class:hit={taken.fallback}>
-							<td><span class="kw">default</span></td>
-							<td>{@render cell(mv.fallback, "default")}</td>
-							<td></td>
+		{#if hits === 0}
+			<p class="hint">Not evaluated for this card.</p>
+		{/if}
+
+		{#if !root}
+			<p class="hint">The expression does not parse yet. Fix the text below.</p>
+		{:else if mv && sel}
+			<h3>Match on <code>{mv.subject.text}</code> {@render val(mv.subject.id)} {@render opener(mv.subject)}</h3>
+			<table>
+				<thead>
+					<tr><th>key</th><th>result</th><th></th></tr>
+				</thead>
+				<tbody>
+					{#each mv.rows as r, i}
+						<tr class:hit={taken.row === i}>
+							<td>{@render cell(r.key, `key ${i + 1}`)}</td>
+							<td>{@render cell(r.result, `result ${i + 1}`)}</td>
+							<td>
+								{#if mv.rows.length > 1}
+									<button class="x" aria-label="Delete row {i + 1}" title="Delete row"
+										onclick={() => take(removeMatchRow(draft, sel, i, formatExpr))}>×</button>
+								{/if}
+							</td>
 						</tr>
-					</tbody>
-				</table>
-				<button class="add-row" title="Add a key and a result before the default" onclick={() => take(addMatchRow(draft, sel, formatExpr))}>+ row</button>
-			{:else if cc && cc.rows[0]}
-				<h3>Conditions</h3>
-				<ol class="chain">
-					{#each cc.rows as r, i}
-						<li class:hit={taken.row === i}>
-							<span class="kw">when</span>
-							{@render cell(r.when, `when ${i + 1}`)}
-							<span class="kw">then</span>
-							{@render cell(r.result, `then ${i + 1}`)}
+					{/each}
+					<tr class:hit={taken.fallback}>
+						<td><span class="kw">default</span></td>
+						<td>{@render cell(mv.fallback, "default")}</td>
+						<td></td>
+					</tr>
+				</tbody>
+			</table>
+			<button class="add-row" title="Add a key and a result before the default" onclick={() => take(addMatchRow(draft, sel, formatExpr))}>+ row</button>
+		{:else if cc && cc.rows[0]}
+			<h3>Conditions</h3>
+			<ol class="chain">
+				{#each cc.rows as r, i}
+					<li class:hit={taken.row === i}>
+						<span class="kw">when</span>
+						{@render cell(r.when, `when ${i + 1}`)}
+						<span class="kw">then</span>
+						{@render cell(r.result, `then ${i + 1}`)}
+					</li>
+				{/each}
+				<li class="else" class:hit={taken.fallback}>
+					<span class="kw">else</span>
+					{@render cell(cc.fallback, "else")}
+				</li>
+			</ol>
+		{:else if lv && sel}
+			<div class="list">
+				<div class="lrow">
+					<span class="kw">value</span>
+					{@render cell(lv.value, "value")}
+				</div>
+				<ul class="chips">
+					{#each lv.items as it, i}
+						<li class="chip">
+							{#if it.kind === "color"}<span class="sw" style:background={it.text}></span>{/if}
+							<code>{it.text}</code>
+							{#if lv.items.length > 1}
+								<button class="x" aria-label="Remove {it.text}" title="Remove"
+									onclick={() => take(removeChip(draft, sel, i, formatExpr))}>×</button>
+							{/if}
 						</li>
 					{/each}
-					<li class="else" class:hit={taken.fallback}>
-						<span class="kw">else</span>
-						{@render cell(cc.fallback, "else")}
+					<li>
+						<input
+							class="in add"
+							aria-label="New item"
+							placeholder="add item"
+							spellcheck="false"
+							onkeydown={(e) => {
+								if (e.key !== "Enter") return;
+								e.preventDefault();
+								const input = e.currentTarget;
+								if (take(addChip(draft, sel, input.value, formatExpr)))
+									input.value = "";
+							}} />
 					</li>
-				</ol>
-			{:else if lv && sel}
-				<div class="list">
-					<div class="lrow">
-						<span class="kw">value</span>
-						{@render cell(lv.value, "value")}
-					</div>
-					<ul class="chips">
-						{#each lv.items as it, i}
-							<li class="chip">
-								{#if it.kind === "color"}<span class="sw" style:background={it.text}></span>{/if}
-								<code>{it.text}</code>
-								{#if lv.items.length > 1}
-									<button class="x" aria-label="Remove {it.text}" title="Remove"
-										onclick={() => take(removeChip(draft, sel, i, formatExpr))}>×</button>
-								{/if}
-							</li>
-						{/each}
-						<li>
-							<input
-								class="in add"
-								aria-label="New item"
-								placeholder="add item"
-								spellcheck="false"
-								onkeydown={(e) => {
-									if (e.key !== "Enter") return;
-									e.preventDefault();
-									const input = e.currentTarget;
-									if (take(addChip(draft, sel, input.value, formatExpr)))
-										input.value = "";
-								}} />
-						</li>
-					</ul>
-				</div>
-			{:else if selSlot}
-				<div class="one">
-					{@render cell(selSlot, "expression")}
-				</div>
-			{/if}
-		</div>
-	</div>
+				</ul>
+			</div>
+		{:else if leaf}
+			<p class="hint">A literal or a name has no parts. Edit it here or in the text below.</p>
+			{#if selSlot}<div class="one">{@render cell(selSlot, "expression")}</div>{/if}
+		{:else if selSlot}
+			<div class="one">
+				{@render cell(selSlot, "expression")}
+			</div>
+		{/if}
 
-	<section class="text">
 		<textarea
+			class="text"
 			aria-label="Expression text"
+			rows={textRows}
 			spellcheck="false"
 			value={draft}
 			oninput={(e) => setText(e.currentTarget.value)}
@@ -616,150 +647,102 @@ onMount(() => {
 					apply();
 				}
 			}}></textarea>
-		{#if parsed && parsed.problems.length}
-			<p class="prob">{parsed.problems[0].message}</p>
-		{/if}
+
 		<footer>
-			<span class="note">{note}</span>
+			<div class="status-line">
+				{#if parsed && parsed.problems.length}
+					<p class="prob">{parsed.problems[0].message}</p>
+				{/if}
+				{#if note}
+					<p class="note">{note}</p>
+				{/if}
+			</div>
 			<button class="primary" disabled={!dirty} onclick={apply} title="Hand the text to the field (Ctrl+Enter)">Apply</button>
 		</footer>
-	</section>
-</div>
+	</div>
+</Window>
 
 <style>
+  /* The body of the window: the parts, the text and the footer, one under the other. */
   .formula {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 800;
-    width: min(560px, 90vw);
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px;
     background: var(--bg);
     color: var(--fg);
-    border-left: 1px solid var(--line);
-    box-shadow: var(--shadow-pop);
     font-size: 13px;
     outline: none;
   }
-  /* The title bar of a window (Window.svelte). */
-  header {
+  /* The path to the selected part: one small button per step. */
+  .trail {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 5px 8px 5px 14px;
-    background: var(--bg-bar);
-    border-bottom: 1px solid var(--line);
-  }
-  h2 {
-    flex: 0 1 auto;
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .card {
-    flex: 1;
-    min-width: 0;
-    color: var(--muted);
+    gap: 2px;
+    min-height: 24px;
     font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .x {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 26px;
+  .crumb {
     height: 24px;
-    margin-left: auto;
-    padding: 0;
+    padding: 0 6px;
     border: 0;
     border-radius: 4px;
     background: none;
     color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
   }
-  .x:hover {
+  .crumb:hover {
     background: var(--hover);
     color: var(--fg);
   }
-  .hint {
-    margin: 0;
-    padding: 6px 14px;
-    border-bottom: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .split {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-  }
-  /* The outline: rows like the layer tree (hover and selection tints). */
-  .outline {
-    flex: none;
-    width: 150px;
-    overflow: auto;
-    border-right: 1px solid var(--line);
-    background: var(--bg-bar);
-    padding: 4px 0;
-  }
-  .ol {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 24px;
-    padding: 3px 8px;
-    border: 0;
-    border-radius: 0;
-    background: none;
+  .crumb[aria-current="step"] {
     color: var(--fg);
-    text-align: left;
-    font: 12px/1.5 var(--mono);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .ol b {
     font-weight: 600;
   }
-  .ol span {
+  .sep {
     color: var(--muted);
   }
-  .ol:hover {
-    background: var(--hover);
-  }
-  .ol.on {
-    background: var(--sel);
-  }
-  .main {
-    flex: 1;
+  .trail .card {
+    max-width: 100%;
     min-width: 0;
-    overflow: auto;
-    padding: 12px 14px;
+    margin-left: auto;
+    padding-left: 8px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .actions {
+  /* The conversions on the left, the Extract group on the right: one row. */
+  .toolbar {
     display: flex;
-    flex-wrap: wrap;
+    justify-content: space-between;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 12px;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
-  .actions > button {
+  .convert {
+    flex: none;
+    display: flex;
+    gap: 6px;
+  }
+  .convert > button {
     height: var(--ctl-h);
+    white-space: nowrap;
   }
   .extract {
+    flex: none;
     height: var(--ctl-h);
     margin-left: auto;
   }
   .extract > button {
-    padding: 0 10px;
+    padding: 0 8px;
     font-weight: 500;
   }
   /* The caption cell of a group (as in the top bar's Export group). */
@@ -767,7 +750,7 @@ onMount(() => {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 0 9px 0 8px;
+    padding: 0 7px 0 6px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -779,7 +762,7 @@ onMount(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 6px;
+    margin: 0;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -795,9 +778,10 @@ onMount(() => {
   code {
     font-family: var(--mono);
   }
-  .empty,
-  .nohit {
-    margin: 0 0 8px;
+  /* A line of muted text where the parts would be: its own padding. */
+  .hint {
+    margin: 0;
+    padding: 8px 0;
     color: var(--muted);
     font-size: 12px;
   }
@@ -805,7 +789,6 @@ onMount(() => {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
-    margin-bottom: 6px;
   }
   th {
     padding: 0 4px 4px;
@@ -835,6 +818,7 @@ onMount(() => {
     box-shadow: inset 3px 0 0 var(--accent);
   }
   .add-row {
+    align-self: flex-start;
     height: 24px;
     padding: 0 8px;
     font-size: 12px;
@@ -871,6 +855,40 @@ onMount(() => {
   .formula .in.invalid {
     border-color: var(--err);
   }
+  /* Delete buttons of the rows and chips. */
+  .x {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+  }
+  .x:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  /* The open button of a part: opens it as the selection, at the cell's right edge. */
+  .open {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+  }
+  .open:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
   /* The live value of a part: a small muted pill after its cell. */
   .lv {
     display: inline-flex;
@@ -898,7 +916,7 @@ onMount(() => {
   .chain {
     display: grid;
     gap: 4px;
-    margin: 0 0 8px;
+    margin: 0;
     padding: 0;
     list-style: none;
   }
@@ -953,16 +971,11 @@ onMount(() => {
   .one {
     max-width: 100%;
   }
-  .text {
-    flex: none;
-    padding: 10px 14px;
-    border-top: 1px solid var(--line);
-    background: var(--bg-bar);
-  }
+  /* The whole expression: as many rows as its lines, at least 2, then it scrolls. */
   textarea {
     display: block;
+    flex: none;
     width: 100%;
-    height: 110px;
     box-sizing: border-box;
     resize: vertical;
     padding: 6px 8px;
@@ -977,21 +990,24 @@ onMount(() => {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
-  .prob {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--err);
-  }
   footer {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 8px;
   }
-  .note {
+  .status-line {
     flex: 1;
     min-width: 0;
+  }
+  .prob,
+  .note {
+    margin: 0;
     font-size: 12px;
+  }
+  .prob {
+    color: var(--err);
+  }
+  .note {
     color: var(--muted);
   }
   /* The primary button of a dialog (DialogHost). */

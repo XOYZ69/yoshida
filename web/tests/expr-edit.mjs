@@ -11,7 +11,6 @@ import {
 	condChain,
 	listView,
 	matchView,
-	outline,
 	removeChip,
 	removeMatchRow,
 	replaceSlot,
@@ -165,29 +164,6 @@ ok(
 	ok(
 		"removing the last chip is refused (an empty list does not parse)",
 		removeChip("x in [1]", rootOf("x in [1]"), 0, format) === null,
-	);
-}
-
-// The outline: calls, and/or and the top of a chain; a chain's else branch
-// is not a line of its own, and the depth follows the tree.
-{
-	const text = "max(a, 1) and (b ? 1 : c ? 2 : 3)";
-	const items = outline(rootOf(text), text);
-	const got = items.map((i) => `${i.depth}:${i.label}`);
-	ok(
-		"outline lists and, the call and the chain, indented by depth",
-		JSON.stringify(got) === JSON.stringify(["0:and", "1:max", "1:? :"]),
-		JSON.stringify(got),
-	);
-	ok(
-		"a chain is one outline line",
-		items.filter((i) => i.label === "? :").length === 1,
-	);
-	ok(
-		"an outline item's path selects its node",
-		JSON.stringify(items[1].path) === JSON.stringify([0]) &&
-			items[1].text === "max(a, 1)",
-		JSON.stringify(items[1]),
 	);
 }
 

@@ -1,6 +1,8 @@
 <script lang="ts">
 // A floating window: drag the title bar to move it, the corner to resize
-// it. Its place and size are remembered per `key` in this browser.
+// it. Its place and size are remembered per `key` in this browser. With
+// `fit`, its height follows its content (up to the window's bottom edge)
+// and the corner only changes the width.
 import type { Snippet } from "svelte";
 import { dragFrom, loadPref, savePref } from "./drag";
 
@@ -11,6 +13,7 @@ let {
 	height = 520,
 	minWidth = 320,
 	minHeight = 200,
+	fit = false,
 	onclose,
 	actions,
 	children,
@@ -21,6 +24,8 @@ let {
 	height?: number;
 	minWidth?: number;
 	minHeight?: number;
+	/** Height follows the content instead of `height`. */
+	fit?: boolean;
 	onclose: () => void;
 	actions?: Snippet;
 	children: Snippet;
@@ -89,7 +94,7 @@ function resize(e: PointerEvent) {
 		e,
 		(dx, dy) => {
 			w = w0 + dx;
-			h = h0 + dy;
+			if (!fit) h = h0 + dy;
 			clamp();
 		},
 		remember,
@@ -115,7 +120,7 @@ function maximize() {
 
 <svelte:window onresize={clamp} />
 
-<div class="win" role="dialog" aria-label={title} style:left="{x}px" style:top="{y}px" style:width="{w}px" style:height="{h}px">
+<div class="win" role="dialog" aria-label={title} style:left="{x}px" style:top="{y}px" style:width="{w}px" style:height={fit ? undefined : `${h}px`} style:max-height={fit ? `calc(100vh - ${y + 8}px)` : undefined}>
   <div class="title" role="presentation" onpointerdown={move} ondblclick={maximize}>
     <span class="name">{title}</span>
     {@render actions?.()}

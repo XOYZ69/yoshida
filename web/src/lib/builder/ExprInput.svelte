@@ -8,7 +8,9 @@
 // Hovering a name shows what it is; Ctrl/Cmd+click (or F12) shows where it
 // is defined, through the `yoshida-goto` context.
 // Enter (or leaving the field, or Ctrl+Enter) commits; Shift+Enter starts a
-// new line. Long text wraps. Templates: Enter starts a new line and Ctrl+Enter
+// new line. A single-line field does not wrap: a long expression scrolls
+// sideways, and wraps only once its text has a newline. Templates always
+// wrap. Templates: Enter starts a new line and Ctrl+Enter
 // commits. Shift+Alt+F (or Ctrl+Shift+F) reformats an expression. Escape
 // reverts the draft. Under the text, a breadcrumb shows where the caret is in
 // the syntax tree. One EditorView per instance.
@@ -27,6 +29,7 @@ import {
 	insertNewline,
 } from "@codemirror/commands";
 import {
+	Compartment,
 	EditorSelection,
 	EditorState,
 	type Extension,
@@ -42,7 +45,7 @@ import {
 import { getContext, onMount } from "svelte";
 import type { Expect } from "../expr/catalog";
 import { exprCompletion, kindBadge, optionClass } from "../expr/completion";
-import { exprCoreReady, formatExpr } from "../expr/core";
+import { exprCoreReady, formatExpr, parseExpr } from "../expr/core";
 import { crumbPath } from "../expr/crumbs";
 import FormulaPanel from "../expr/FormulaPanel.svelte";
 import { exprHighlight, refreshNames } from "../expr/highlight";
@@ -105,11 +108,35 @@ let formulaOpen = $state(false);
 let formulaText = $state("");
 /** The breadcrumb under the text: the path to the caret in the syntax tree. */
 let crumbs: string[] = $state([]);
+/** The text as the editor has it now (for the ⤢ button). */
+let draft = $state("");
+/** Line wrapping: on for templates and multiline fields, else only with a newline. */
+const wrap = new Compartment();
 
 // Read through getters so the long-lived editor sees current props.
 const getCtx = () => ctxFn?.() ?? null;
 const getExpect = () => expect;
 const highlighted = $derived(suggest || template);
+/** ⤢ only for a real expression: not empty, a literal or a single name. */
+const formulaable = $derived(canOpenFormula(draft));
+
+const plainKinds = new Set([
+	"number",
+	"unit",
+	"string",
+	"boolean",
+	"color",
+	"name",
+]);
+
+function canOpenFormula(t: string): boolean {
+	if (!t.trim()) return false;
+	if (!exprCoreReady()) return true;
+	let root = parseExpr(t, false).root;
+	// `-5` and `-10%` are literals too.
+	if (root?.k === "neg" && root.x) root = root.x;
+	return !root || !plainKinds.has(root.k);
+}
 
 function names(): Names | null {
 	const c = getCtx();
@@ -216,6 +243,7 @@ function extensions(): Extension[] {
 		}),
 		EditorView.updateListener.of((u) => {
 			if (u.docChanged && !syncing) editing = true;
+			if (u.docChanged) draft = u.state.doc.toString();
 			if (u.docChanged || u.selectionSet || u.focusChanged)
 				refreshCrumbs(u.view);
 		}),
@@ -229,7 +257,18 @@ function extensions(): Extension[] {
 			},
 		}),
 	];
-	ext.push(EditorView.lineWrapping);
+	// Wrapping follows the text: see `wrap`. The same transaction switches it.
+	let wrapOn = multiline || template || value.includes("\n");
+	ext.push(
+		wrap.of(wrapOn ? EditorView.lineWrapping : []),
+		EditorState.transactionExtender.of((tr) => {
+			if (!tr.docChanged) return null;
+			const on = multiline || template || tr.newDoc.lines > 1;
+			if (on === wrapOn) return null;
+			wrapOn = on;
+			return { effects: wrap.reconfigure(on ? EditorView.lineWrapping : []) };
+		}),
+	);
 	if (placeholder) ext.push(cmPlaceholder(placeholder));
 	if (highlighted) ext.push(exprHighlight(template, names));
 	if (suggest && ctxFn) {
@@ -264,6 +303,7 @@ onMount(() => {
 		state: EditorState.create({ doc: value, extensions: extensions() }),
 		parent: host!,
 	});
+	draft = value;
 	ready = true;
 	return () => {
 		view?.destroy();
@@ -370,7 +410,7 @@ function insertRef(t: string, reopen: boolean) {
           onmousedown={(e) => e.preventDefault()}
           onclick={toggleRef}>ƒ</button>
       {/if}
-      {#if !template}
+      {#if !template && formulaable}
         <button
           class="fx fe"
           tabindex="-1"
