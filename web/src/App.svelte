@@ -79,7 +79,7 @@
 		keepName,
 		pathsUnder,
 		rewriteRefs,
-		useCounts,
+		usedBy,
 	} from "./lib/paths";
 	import {
 		blankCards,
@@ -951,7 +951,10 @@
 	let uploadFolder = $state("");
 	let filesSelected: string | null = $state(null);
 	let filesHighlight: string | null = $state(null);
-	const fileUses = $derived(useCounts(files));
+	const fileUsedBy = $derived(usedBy(files));
+	const fileUses = $derived(
+		new Map([...fileUsedBy].map(([p, by]) => [p, by.length])),
+	);
 
 	async function uploadTo(folder: string) {
 		const list = await pickFiles("", { multiple: true });
@@ -3041,6 +3044,7 @@
 		{files}
 		{dirty}
 		uses={fileUses}
+		usedBy={fileUsedBy}
 		bind:selected={filesSelected}
 		bind:folder={uploadFolder}
 		highlight={filesHighlight}

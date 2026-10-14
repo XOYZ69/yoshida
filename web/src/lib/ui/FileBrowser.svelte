@@ -18,6 +18,7 @@ let {
 	highlight = null,
 	dirty,
 	uses,
+	usedBy,
 	onopen,
 	onrename,
 	ondelete,
@@ -37,6 +38,8 @@ let {
 	dirty: Set<string>;
 	/** How many files refer to each path. */
 	uses: Map<string, number>;
+	/** The files that refer to each path, sorted. */
+	usedBy: Map<string, string[]>;
 	onopen: (path: string) => void;
 	onrename: (from: string, to: string) => void;
 	ondelete: (path: string) => void;
@@ -280,6 +283,8 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     ondrop={(e) => dropOn(e, null)}>
     {#each rows as r (r.node.path)}
       {@const n = r.node}
+      {@const count = uses.get(n.path) ?? 0}
+      {@const by = usedBy.get(n.path) ?? []}
       <li
         role="treeitem"
         aria-selected={n.dir ? folder === n.path && !selected : selected === n.path}
@@ -302,15 +307,15 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
         ondragover={(e) => over(e, n)}
         ondrop={(e) => dropOn(e, n)}
         oncontextmenu={(e) => menu(e, n)}>
-        <button class="row" onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)} title={n.path}>
+        <button class="row" onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)}>
           {#if !n.dir && thumbs.has(n.path)}
             <img class="thumb" src={thumbs.get(n.path)} alt="" loading="lazy" />
           {:else}
             {@const ic = icon(n)}
             <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
           {/if}
-          <span class="name">{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
-          {#if !n.dir && (uses.get(n.path) ?? 0) > 0}<span class="uses" title="Referred to by {uses.get(n.path)} file(s)">{uses.get(n.path)}↩</span>{/if}
+          <span class="name" title={n.path}>{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
+          <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
           <span class="size">{n.dir ? `${n.children.length}` : formatSize(n.size)}</span>
         </button>
       </li>
@@ -391,9 +396,10 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     all: unset;
     box-sizing: border-box;
     width: 100%;
-    display: flex;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 3em 4.75em;
     align-items: center;
-    gap: 6px;
+    column-gap: 6px;
     padding: 3px 12px;
     cursor: pointer;
     font-size: 13px;
@@ -420,7 +426,6 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     border-radius: 2px;
   }
   .name {
-    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -429,11 +434,15 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
   .uses {
     font-size: 10px;
     color: var(--accent);
+    text-align: right;
+    white-space: nowrap;
   }
   .size {
     font-size: 11px;
     color: var(--muted);
+    text-align: right;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .empty {
     padding: 8px 12px;
