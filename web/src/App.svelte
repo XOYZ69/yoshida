@@ -64,6 +64,7 @@
 		type CheckResult,
 		type Diagnostic,
 		Engine,
+		type Param,
 		type RenderResult,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
@@ -79,7 +80,7 @@
 		keepName,
 		pathsUnder,
 		rewriteRefs,
-		useCounts,
+		usedBy,
 	} from "./lib/paths";
 	import {
 		blankCards,
@@ -429,9 +430,37 @@
 		}
 		return out;
 	});
-	const diagnostics: Diagnostic[] = $derived(
-		lastRender?.diagnostics ?? check?.diagnostics ?? [],
-	);
+	/** Same identity as the Problems list uses to show a problem once. */
+	const diagnosticKey = (d: Diagnostic) =>
+		[d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join("\u0000");
+	// The project check covers every file; the preview render adds what the
+	// current card reports on top of it.
+	const diagnostics: Diagnostic[] = $derived.by(() => {
+		const seen = new Set<string>();
+		const out: Diagnostic[] = [];
+		for (const d of [
+			...(check?.diagnostics ?? []),
+			...(lastRender?.diagnostics ?? []),
+		]) {
+			const key = diagnosticKey(d);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			out.push(d);
+		}
+		return out;
+	});
+	/** Errors and warnings per file, for the Files tab. Hints do not count. */
+	const fileProblems = $derived.by(() => {
+		const m = new Map<string, { errors: number; warnings: number }>();
+		for (const d of diagnostics) {
+			if (!d.file || d.severity === "hint") continue;
+			const c = m.get(d.file) ?? { errors: 0, warnings: 0 };
+			if (d.severity === "error") c.errors++;
+			else c.warnings++;
+			m.set(d.file, c);
+		}
+		return m;
+	});
 	const fileDiagnostics = $derived(
 		diagnostics.filter((d) => d.file === selected),
 	);
@@ -875,6 +904,9 @@
 		});
 	}
 
+	/** Value of the "New design…" command row in the DESIGN picker. */
+	const newDesignOption = "\u0000new-design";
+
 	/** Adds a blank design with its own card file to the open project. */
 	async function newDesign() {
 		const name = (
@@ -903,6 +935,111 @@
 		}
 		mode = "build";
 		leftTab = "layers";
+	}
+
+	/** The design's own defaults, keyed by param name (params without one are left out). */
+	function sampleCard(params: Param[]): Record<string, unknown> {
+		const card: Record<string, unknown> = {};
+		for (const p of params)
+			if (p.default !== undefined) card[p.name] = p.default;
+		return card;
+	}
+
+	/**
+	 * Adds a card file for a design to the open project and switches to it.
+	 * Without a design, a menu asks which design it is for.
+	 */
+	async function newCardFile(
+		design?: string,
+		at?: { x: number; y: number },
+	) {
+		const named = new Map<string, string>();
+		for (const s of sets)
+			if (!named.has(s.design))
+				named.set(s.design, s.design_name || baseOf(s.design));
+		if (!named.size) return;
+		if (!design) {
+			const pos = at ?? {
+				x: window.innerWidth / 2,
+				y: window.innerHeight / 3,
+			};
+			const items: MenuItem[] = [{ heading: "Design" }];
+			for (const [path, label] of named)
+				items.push({
+					label,
+					icon: "design",
+					detail: path,
+					action: () => newCardFile(path),
+				});
+			openMenu(pos.x, pos.y, items);
+			return;
+		}
+		if (!files.has(design)) return;
+		const label = named.get(design) ?? baseOf(design);
+		const name = (
+			await askText({
+				title: "New card file",
+				message: `Adds a card file for ${label}.`,
+				value: `${label} cards`,
+				confirm: "Add card file",
+				validate: needName,
+			})
+		)?.trim();
+		if (!name) return;
+		let stem = slug(name);
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${slug(name)}-${n}`;
+		const cards = `cards/${stem}.cards.json`;
+		const params = sets.find((x) => x.design === design)?.params ?? [];
+		await updateFile(cards, blankCards(design, name, sampleCard(params)));
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
+	}
+
+	/**
+	 * Stem for a new card file of a design: the design's file name without
+	 * ".design.json", kept as is when it is plain, else slugged; a number is
+	 * added when the name is taken.
+	 */
+	function sampleStem(design: string): string {
+		const base = baseOf(design).replace(/\.design\.json$/i, "");
+		const first = /^[a-z0-9_-]+$/i.test(base) ? base : slug(base);
+		let stem = first;
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${first}-${n}`;
+		return stem;
+	}
+
+	/** Where "Create card file" writes for the open design, when it has no card file. */
+	const sampleCardsPath = $derived(
+		currentSet && !currentSet.cards_file
+			? `cards/${sampleStem(currentSet.design)}.cards.json`
+			: undefined,
+	);
+
+	/** Writes one sample card (the design's defaults) for the open design, without a dialog. */
+	async function createSampleCards() {
+		const set = currentSet;
+		if (!set || set.cards_file) return;
+		const stem = sampleStem(set.design);
+		const cards = `cards/${stem}.cards.json`;
+		await updateFile(
+			cards,
+			blankCards(set.design, set.design_name || stem, sampleCard(set.params)),
+		);
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
+		status = `Created ${cards} with one sample card.`;
 	}
 
 	/**
@@ -951,7 +1088,10 @@
 	let uploadFolder = $state("");
 	let filesSelected: string | null = $state(null);
 	let filesHighlight: string | null = $state(null);
-	const fileUses = $derived(useCounts(files));
+	const fileUsedBy = $derived(usedBy(files));
+	const fileUses = $derived(
+		new Map([...fileUsedBy].map(([p, by]) => [p, by.length])),
+	);
 
 	async function uploadTo(folder: string) {
 		const list = await pickFiles("", { multiple: true });
@@ -2976,12 +3116,25 @@
 			caption="Design"
 			label="Design file"
 			title="The design (card layout) being edited, with its card set"
-			options={sets.map((s) => ({
-				value: s.name,
-				label: s.design_name,
-				detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
-			}))}
+			options={[
+				...sets.map((s) => ({
+					value: s.name,
+					label: s.design_name,
+					detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
+				})),
+				{
+					value: newDesignOption,
+					label: "New design…",
+					detail: "with its own card file",
+					action: true,
+					divider: true,
+				},
+			]}
 			onchange={(v) => {
+				if (v === newDesignOption) {
+					newDesign();
+					return;
+				}
 				setName = v;
 				cardIndex = 0;
 				selectedLayers = [];
@@ -3040,7 +3193,10 @@
 	<FileBrowser
 		{files}
 		{dirty}
+		saveTarget={dirHandle?.name ?? null}
 		uses={fileUses}
+		usedBy={fileUsedBy}
+		problems={fileProblems}
 		bind:selected={filesSelected}
 		bind:folder={uploadFolder}
 		highlight={filesHighlight}
@@ -3050,6 +3206,8 @@
 		onmove={(paths, folder) =>
 			movePaths(paths.map((p) => [p, join(folder, baseOf(p))]))}
 		onnewfolder={newFolder}
+		onnewdesign={newDesign}
+		onnewcards={newCardFile}
 		onupload={uploadTo}
 		onduplicate={duplicateFile}
 		ondropfiles={(list, folder) => importFiles(list, folder)}
@@ -3390,6 +3548,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>
@@ -3556,6 +3716,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>

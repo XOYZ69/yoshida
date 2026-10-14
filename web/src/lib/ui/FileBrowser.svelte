@@ -17,12 +17,17 @@ let {
 	folder = $bindable(""),
 	highlight = null,
 	dirty,
+	saveTarget = null,
 	uses,
+	usedBy,
+	problems,
 	onopen,
 	onrename,
 	ondelete,
 	onmove,
 	onnewfolder,
+	onnewdesign,
+	onnewcards,
 	onupload,
 	onduplicate,
 	ondropfiles,
@@ -35,19 +40,66 @@ let {
 	/** A file to scroll to and flash, such as one just added. */
 	highlight?: string | null;
 	dirty: Set<string>;
+	/** Name of the connected folder that Save writes to; the unsaved marker only shows with one. */
+	saveTarget?: string | null;
 	/** How many files refer to each path. */
 	uses: Map<string, number>;
+	/** The files that refer to each path, sorted. */
+	usedBy: Map<string, string[]>;
+	/** Errors and warnings per file path; hints are not counted. */
+	problems: Map<string, { errors: number; warnings: number }>;
 	onopen: (path: string) => void;
 	onrename: (from: string, to: string) => void;
 	ondelete: (path: string) => void;
 	onmove: (paths: string[], folder: string) => void;
 	onnewfolder: (parent: string, name: string) => void;
+	/** Adds a design with its own card file. Left out: no design items. */
+	onnewdesign?: () => void;
+	/** Adds a card file for the design at this path, or asks which design (in a menu at `at`) when none is given. */
+	onnewcards?: (design?: string, at?: { x: number; y: number }) => void;
 	onupload: (folder: string) => void;
 	onduplicate: (path: string) => void;
 	ondropfiles: (list: File[], folder: string) => void;
 } = $props();
 
 const tree = $derived(buildTree(files));
+/** Files under a folder, counted recursively. */
+function fileCount(n: TreeNode): number {
+	return n.children.reduce((t, c) => t + (c.dir ? fileCount(c) : 1), 0);
+}
+const totalFiles = $derived(fileCount(tree));
+
+type Problems = { errors: number; warnings: number };
+const noProblems: Problems = { errors: 0, warnings: 0 };
+/** Problems of every node: a folder adds up the files under it. */
+const nodeProblems = $derived.by(() => {
+	const m = new Map<string, Problems>();
+	const sum = (n: TreeNode): Problems => {
+		if (!n.dir) {
+			const p = problems.get(n.path) ?? noProblems;
+			m.set(n.path, p);
+			return p;
+		}
+		const t = { errors: 0, warnings: 0 };
+		for (const c of n.children) {
+			const p = sum(c);
+			t.errors += p.errors;
+			t.warnings += p.warnings;
+		}
+		m.set(n.path, t);
+		return t;
+	};
+	sum(tree);
+	return m;
+});
+/** Tooltip of the problem icon, e.g. "2 errors, 1 warning in this folder". */
+function problemText(p: Problems, dir: boolean): string {
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+	const parts: string[] = [];
+	if (p.errors) parts.push(plural(p.errors, "error"));
+	if (p.warnings) parts.push(plural(p.warnings, "warning"));
+	return parts.join(", ") + (dir ? " in this folder" : "");
+}
 let folded = $state(new Set<string>());
 let query = $state("");
 
@@ -179,17 +231,69 @@ async function newFolder(parent: string) {
 	}
 }
 
+/** The design and card file items of the New button. */
+function newItems(at: { x: number; y: number }): MenuItem[] {
+	const out: MenuItem[] = [];
+	if (onnewdesign)
+		out.push({
+			label: "Design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
+	if (onnewcards)
+		out.push({
+			label: "Card file…",
+			icon: "table",
+			detail: "for an existing design",
+			action: () => onnewcards(undefined, at),
+		});
+	return out;
+}
+
+function newMenu(e: MouseEvent) {
+	const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+	const items = newItems({ x: r.left, y: r.bottom + 4 });
+	if (items.length) items.push({ separator: true });
+	items.push({
+		label: "Folder…",
+		icon: "folder-plus",
+		detail: folder ? `in ${folder}/` : "at the project root",
+		action: () => newFolder(folder),
+	});
+	openMenu(r.left, r.bottom + 4, items);
+}
+
 function menu(e: MouseEvent, n: TreeNode | null) {
 	e.preventDefault();
 	e.stopPropagation();
 	const target = n ? (n.dir ? n.path : dirOf(n.path)) : "";
 	const items: MenuItem[] = [];
+	if (n?.dir && n.path === "designs" && onnewdesign)
+		items.push({
+			label: "New design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
+	if (n?.dir && n.path === "cards" && onnewcards)
+		items.push({
+			label: "New card file…",
+			icon: "table",
+			action: () => onnewcards(undefined, { x: e.clientX, y: e.clientY }),
+		});
 	if (n && !n.dir) {
 		items.push({ label: "Open", action: () => click(n) });
 		items.push(
 			{ label: "Rename…", icon: "pencil", action: () => rename(n) },
 			{ label: "Duplicate", icon: "copy", action: () => onduplicate(n.path) },
 		);
+		if (onnewcards && /\.design\.json$/i.test(n.name))
+			items.push({
+				label: "New card file for this design…",
+				icon: "table",
+				action: () => onnewcards(n.path),
+			});
 	}
 	if (n?.dir)
 		items.push({ label: "Rename folder…", icon: "pencil", action: () => rename(n) });
@@ -207,6 +311,13 @@ function menu(e: MouseEvent, n: TreeNode | null) {
 			action: () => newFolder(target),
 		},
 	);
+	if (!n && onnewdesign)
+		items.push({
+			label: "New design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
 	if (n) {
 		const uses_ = n.dir ? 0 : (uses.get(n.path) ?? 0);
 		items.push(
@@ -259,6 +370,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
 <div class="browser">
   <div class="bar">
     <input type="search" placeholder="Find a file…" bind:value={query} aria-label="Find a file" />
+    <button title="New design, card file or folder" aria-label="New" onclick={newMenu}><Icon name="plus" /></button>
     <button title="Upload files to {folder ? `${folder}/` : 'the project root'}" aria-label="Upload files" onclick={() => onupload(folder)}><Icon name="upload" /></button>
     <button title="New folder in {folder ? `${folder}/` : 'the project root'}" aria-label="New folder" onclick={() => newFolder(folder)}><Icon name="folder-plus" /></button>
   </div>
@@ -280,6 +392,10 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     ondrop={(e) => dropOn(e, null)}>
     {#each rows as r (r.node.path)}
       {@const n = r.node}
+      {@const count = uses.get(n.path) ?? 0}
+      {@const by = usedBy.get(n.path) ?? []}
+      {@const pr = nodeProblems.get(n.path) ?? noProblems}
+      {@const worst = pr.errors ? 'err' : pr.warnings ? 'warn' : ''}
       <li
         role="treeitem"
         aria-selected={n.dir ? folder === n.path && !selected : selected === n.path}
@@ -302,21 +418,24 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
         ondragover={(e) => over(e, n)}
         ondrop={(e) => dropOn(e, n)}
         oncontextmenu={(e) => menu(e, n)}>
-        <button class="row" onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)} title={n.path}>
+        <button class="row" onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)}>
           {#if !n.dir && thumbs.has(n.path)}
             <img class="thumb" src={thumbs.get(n.path)} alt="" loading="lazy" />
           {:else}
             {@const ic = icon(n)}
             <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
           {/if}
-          <span class="name">{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
-          {#if !n.dir && (uses.get(n.path) ?? 0) > 0}<span class="uses" title="Referred to by {uses.get(n.path)} file(s)">{uses.get(n.path)}↩</span>{/if}
-          <span class="size">{n.dir ? `${n.children.length}` : formatSize(n.size)}</span>
+          <span class="name" class:err={worst === 'err'} class:warn={worst === 'warn'} title={n.path}><span class="label">{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>{#if worst}<span class="problem" title={problemText(pr, n.dir)} role="img" aria-label={problemText(pr, n.dir)}><Icon name={pr.errors ? 'close' : 'alert'} /></span>{/if}</span>
+          <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
+          <span class="size" title={n.dir ? `${fileCount(n)} file${fileCount(n) === 1 ? '' : 's'}` : undefined}>{formatSize(n.size)}</span>
         </button>
       </li>
     {/each}
     {#if !rows.length}<li class="empty">{query ? 'No file matches.' : 'No files yet.'}</li>{/if}
   </ul>
+  {#if totalFiles}
+    <div class="total">{totalFiles} file{totalFiles === 1 ? '' : 's'} · {formatSize(tree.size)}</div>
+  {/if}
 </div>
 
 <style>
@@ -391,9 +510,10 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     all: unset;
     box-sizing: border-box;
     width: 100%;
-    display: flex;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 3em 4.75em;
     align-items: center;
-    gap: 6px;
+    column-gap: 6px;
     padding: 3px 12px;
     cursor: pointer;
     font-size: 13px;
@@ -420,20 +540,68 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     border-radius: 2px;
   }
   .name {
-    flex: 1;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .name.err {
+    color: var(--err);
+  }
+  .name.warn {
+    color: var(--warn-text);
+  }
+  /* On the selected row the fill is light; the icon carries the state there. */
+  li.sel .name.err,
+  li.sel .name.warn {
+    color: inherit;
+  }
+  .problem {
+    flex: none;
+    display: inline-flex;
+    margin-left: 4px;
+  }
+  .problem :global(svg) {
+    width: 12px;
+    height: 12px;
+  }
+  .unsaved {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: middle;
+  }
   .uses {
     font-size: 10px;
     color: var(--accent);
+    text-align: right;
+    white-space: nowrap;
   }
   .size {
     font-size: 11px;
     color: var(--muted);
+    text-align: right;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .total {
+    flex: none;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    padding: 6px 12px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   .empty {
     padding: 8px 12px;

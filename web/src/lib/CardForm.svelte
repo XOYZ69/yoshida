@@ -16,6 +16,8 @@ let {
 	imageFiles,
 	upload,
 	onchange,
+	oncreate,
+	createPath,
 }: {
 	params: Param[];
 	card: CardInfo | undefined;
@@ -23,6 +25,10 @@ let {
 	imageFiles: string[];
 	upload: () => Promise<string | null>;
 	onchange: (param: string, value: unknown) => void;
+	/** Creates the card file for this design; the note shows a button when given. */
+	oncreate?: () => void;
+	/** The card file that oncreate writes, shown in the hint. */
+	createPath?: string;
 } = $props();
 
 // Params with a `group` are shown in foldable sections, ungrouped first.
@@ -157,7 +163,13 @@ function removeItem(p: Param, index: number) {
 
 <div class="form">
   {#if !editable}
-    <p class="note">This design has no card data file, so values cannot be saved. Add a <code>*.cards.json</code> file that names this design.</p>
+    {#if oncreate}
+      <p class="note">This design has no card data file, so values cannot be saved.</p>
+      <button class="create" onclick={oncreate}><Icon name="plus" /> Create card file</button>
+      <p class="hint">Creates {createPath ?? "a card file"} with one card holding the defaults.</p>
+    {:else}
+      <p class="note">This design has no card data file, so values cannot be saved. Add a <code>*.cards.json</code> file that names this design.</p>
+    {/if}
   {/if}
   {#each sections as sec (sec.group)}
     {#if sec.group}
@@ -416,6 +428,21 @@ function removeItem(p: Param, index: number) {
     font-size: 12px;
   }
   .note {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0;
+  }
+  .create {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .create :global(svg) {
+    margin: 0;
+  }
+  .hint {
     font-size: 12px;
     color: var(--muted);
     margin: 0;

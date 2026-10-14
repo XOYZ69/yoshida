@@ -183,6 +183,15 @@ export function useCounts(files: Files): Map<string, number> {
 	return new Map(paths.map((p) => [p, refs.get(p)!.files.size]));
 }
 
+/** The files that refer to each path, sorted, for the whole project. */
+export function usedBy(files: Files): Map<string, string[]> {
+	const paths = [...files.keys()].filter((p) => !isKeep(p));
+	const refs = findRefs(files, paths);
+	return new Map(
+		paths.map((p) => [p, [...refs.get(p)!.files.keys()].sort()]),
+	);
+}
+
 function mapStrings(v: unknown, fn: (s: string) => string): unknown {
 	if (typeof v === "string") return fn(v);
 	if (Array.isArray(v)) return v.map((x) => mapStrings(x, fn));
