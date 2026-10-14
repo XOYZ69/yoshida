@@ -20,6 +20,7 @@ let {
 	saveTarget = null,
 	uses,
 	usedBy,
+	problems,
 	onopen,
 	onrename,
 	ondelete,
@@ -43,6 +44,8 @@ let {
 	uses: Map<string, number>;
 	/** The files that refer to each path, sorted. */
 	usedBy: Map<string, string[]>;
+	/** Errors and warnings per file path; hints are not counted. */
+	problems: Map<string, { errors: number; warnings: number }>;
 	onopen: (path: string) => void;
 	onrename: (from: string, to: string) => void;
 	ondelete: (path: string) => void;
@@ -59,6 +62,38 @@ function fileCount(n: TreeNode): number {
 	return n.children.reduce((t, c) => t + (c.dir ? fileCount(c) : 1), 0);
 }
 const totalFiles = $derived(fileCount(tree));
+
+type Problems = { errors: number; warnings: number };
+const noProblems: Problems = { errors: 0, warnings: 0 };
+/** Problems of every node: a folder adds up the files under it. */
+const nodeProblems = $derived.by(() => {
+	const m = new Map<string, Problems>();
+	const sum = (n: TreeNode): Problems => {
+		if (!n.dir) {
+			const p = problems.get(n.path) ?? noProblems;
+			m.set(n.path, p);
+			return p;
+		}
+		const t = { errors: 0, warnings: 0 };
+		for (const c of n.children) {
+			const p = sum(c);
+			t.errors += p.errors;
+			t.warnings += p.warnings;
+		}
+		m.set(n.path, t);
+		return t;
+	};
+	sum(tree);
+	return m;
+});
+/** Tooltip of the problem icon, e.g. "2 errors, 1 warning in this folder". */
+function problemText(p: Problems, dir: boolean): string {
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+	const parts: string[] = [];
+	if (p.errors) parts.push(plural(p.errors, "error"));
+	if (p.warnings) parts.push(plural(p.warnings, "warning"));
+	return parts.join(", ") + (dir ? " in this folder" : "");
+}
 let folded = $state(new Set<string>());
 let query = $state("");
 
@@ -293,6 +328,8 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
       {@const n = r.node}
       {@const count = uses.get(n.path) ?? 0}
       {@const by = usedBy.get(n.path) ?? []}
+      {@const pr = nodeProblems.get(n.path) ?? noProblems}
+      {@const worst = pr.errors ? 'err' : pr.warnings ? 'warn' : ''}
       <li
         role="treeitem"
         aria-selected={n.dir ? folder === n.path && !selected : selected === n.path}
@@ -322,7 +359,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
             {@const ic = icon(n)}
             <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
           {/if}
-          <span class="name" title={n.path}>{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>
+          <span class="name" class:err={worst === 'err'} class:warn={worst === 'warn'} title={n.path}><span class="label">{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>{#if worst}<span class="problem" title={problemText(pr, n.dir)} role="img" aria-label={problemText(pr, n.dir)}><Icon name={pr.errors ? 'close' : 'alert'} /></span>{/if}</span>
           <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
           <span class="size" title={n.dir ? `${fileCount(n)} file${fileCount(n) === 1 ? '' : 's'}` : undefined}>{formatSize(n.size)}</span>
         </button>
@@ -437,10 +474,35 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     border-radius: 2px;
   }
   .name {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .name.err {
+    color: var(--err);
+  }
+  .name.warn {
+    color: var(--warn-text);
+  }
+  /* On the selected row the fill is light; the icon carries the state there. */
+  li.sel .name.err,
+  li.sel .name.warn {
+    color: inherit;
+  }
+  .problem {
+    flex: none;
+    display: inline-flex;
+    margin-left: 4px;
+  }
+  .problem :global(svg) {
+    width: 12px;
+    height: 12px;
   }
   .unsaved {
     display: inline-block;

@@ -429,9 +429,37 @@
 		}
 		return out;
 	});
-	const diagnostics: Diagnostic[] = $derived(
-		lastRender?.diagnostics ?? check?.diagnostics ?? [],
-	);
+	/** Same identity as the Problems list uses to show a problem once. */
+	const diagnosticKey = (d: Diagnostic) =>
+		[d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join("\u0000");
+	// The project check covers every file; the preview render adds what the
+	// current card reports on top of it.
+	const diagnostics: Diagnostic[] = $derived.by(() => {
+		const seen = new Set<string>();
+		const out: Diagnostic[] = [];
+		for (const d of [
+			...(check?.diagnostics ?? []),
+			...(lastRender?.diagnostics ?? []),
+		]) {
+			const key = diagnosticKey(d);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			out.push(d);
+		}
+		return out;
+	});
+	/** Errors and warnings per file, for the Files tab. Hints do not count. */
+	const fileProblems = $derived.by(() => {
+		const m = new Map<string, { errors: number; warnings: number }>();
+		for (const d of diagnostics) {
+			if (!d.file || d.severity === "hint") continue;
+			const c = m.get(d.file) ?? { errors: 0, warnings: 0 };
+			if (d.severity === "error") c.errors++;
+			else c.warnings++;
+			m.set(d.file, c);
+		}
+		return m;
+	});
 	const fileDiagnostics = $derived(
 		diagnostics.filter((d) => d.file === selected),
 	);
@@ -3046,6 +3074,7 @@
 		saveTarget={dirHandle?.name ?? null}
 		uses={fileUses}
 		usedBy={fileUsedBy}
+		problems={fileProblems}
 		bind:selected={filesSelected}
 		bind:folder={uploadFolder}
 		highlight={filesHighlight}
