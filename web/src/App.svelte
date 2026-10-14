@@ -903,6 +903,9 @@
 		});
 	}
 
+	/** Value of the "New design…" command row in the DESIGN picker. */
+	const newDesignOption = "\u0000new-design";
+
 	/** Adds a blank design with its own card file to the open project. */
 	async function newDesign() {
 		const name = (
@@ -931,6 +934,61 @@
 		}
 		mode = "build";
 		leftTab = "layers";
+	}
+
+	/**
+	 * Adds a card file for a design to the open project and switches to it.
+	 * Without a design, a menu asks which design it is for.
+	 */
+	async function newCardFile(
+		design?: string,
+		at?: { x: number; y: number },
+	) {
+		const named = new Map<string, string>();
+		for (const s of sets)
+			if (!named.has(s.design))
+				named.set(s.design, s.design_name || baseOf(s.design));
+		if (!named.size) return;
+		if (!design) {
+			const pos = at ?? {
+				x: window.innerWidth / 2,
+				y: window.innerHeight / 3,
+			};
+			const items: MenuItem[] = [{ heading: "Design" }];
+			for (const [path, label] of named)
+				items.push({
+					label,
+					icon: "design",
+					detail: path,
+					action: () => newCardFile(path),
+				});
+			openMenu(pos.x, pos.y, items);
+			return;
+		}
+		if (!files.has(design)) return;
+		const label = named.get(design) ?? baseOf(design);
+		const name = (
+			await askText({
+				title: "New card file",
+				message: `Adds a card file for ${label}.`,
+				value: `${label} cards`,
+				confirm: "Add card file",
+				validate: needName,
+			})
+		)?.trim();
+		if (!name) return;
+		let stem = slug(name);
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${slug(name)}-${n}`;
+		const cards = `cards/${stem}.cards.json`;
+		await updateFile(cards, blankCards(design, name));
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
 	}
 
 	/**
@@ -3007,12 +3065,25 @@
 			caption="Design"
 			label="Design file"
 			title="The design (card layout) being edited, with its card set"
-			options={sets.map((s) => ({
-				value: s.name,
-				label: s.design_name,
-				detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
-			}))}
+			options={[
+				...sets.map((s) => ({
+					value: s.name,
+					label: s.design_name,
+					detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
+				})),
+				{
+					value: newDesignOption,
+					label: "New design…",
+					detail: "with its own card file",
+					action: true,
+					divider: true,
+				},
+			]}
 			onchange={(v) => {
+				if (v === newDesignOption) {
+					newDesign();
+					return;
+				}
 				setName = v;
 				cardIndex = 0;
 				selectedLayers = [];
@@ -3084,6 +3155,8 @@
 		onmove={(paths, folder) =>
 			movePaths(paths.map((p) => [p, join(folder, baseOf(p))]))}
 		onnewfolder={newFolder}
+		onnewdesign={newDesign}
+		onnewcards={newCardFile}
 		onupload={uploadTo}
 		onduplicate={duplicateFile}
 		ondropfiles={(list, folder) => importFiles(list, folder)}

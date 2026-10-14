@@ -26,6 +26,8 @@ let {
 	ondelete,
 	onmove,
 	onnewfolder,
+	onnewdesign,
+	onnewcards,
 	onupload,
 	onduplicate,
 	ondropfiles,
@@ -51,6 +53,10 @@ let {
 	ondelete: (path: string) => void;
 	onmove: (paths: string[], folder: string) => void;
 	onnewfolder: (parent: string, name: string) => void;
+	/** Adds a design with its own card file. Left out: no design items. */
+	onnewdesign?: () => void;
+	/** Adds a card file for the design at this path, or asks which design (in a menu at `at`) when none is given. */
+	onnewcards?: (design?: string, at?: { x: number; y: number }) => void;
 	onupload: (folder: string) => void;
 	onduplicate: (path: string) => void;
 	ondropfiles: (list: File[], folder: string) => void;
@@ -225,17 +231,69 @@ async function newFolder(parent: string) {
 	}
 }
 
+/** The design and card file items of the New button. */
+function newItems(at: { x: number; y: number }): MenuItem[] {
+	const out: MenuItem[] = [];
+	if (onnewdesign)
+		out.push({
+			label: "Design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
+	if (onnewcards)
+		out.push({
+			label: "Card file…",
+			icon: "table",
+			detail: "for an existing design",
+			action: () => onnewcards(undefined, at),
+		});
+	return out;
+}
+
+function newMenu(e: MouseEvent) {
+	const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+	const items = newItems({ x: r.left, y: r.bottom + 4 });
+	if (items.length) items.push({ separator: true });
+	items.push({
+		label: "Folder…",
+		icon: "folder-plus",
+		detail: folder ? `in ${folder}/` : "at the project root",
+		action: () => newFolder(folder),
+	});
+	openMenu(r.left, r.bottom + 4, items);
+}
+
 function menu(e: MouseEvent, n: TreeNode | null) {
 	e.preventDefault();
 	e.stopPropagation();
 	const target = n ? (n.dir ? n.path : dirOf(n.path)) : "";
 	const items: MenuItem[] = [];
+	if (n?.dir && n.path === "designs" && onnewdesign)
+		items.push({
+			label: "New design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
+	if (n?.dir && n.path === "cards" && onnewcards)
+		items.push({
+			label: "New card file…",
+			icon: "table",
+			action: () => onnewcards(undefined, { x: e.clientX, y: e.clientY }),
+		});
 	if (n && !n.dir) {
 		items.push({ label: "Open", action: () => click(n) });
 		items.push(
 			{ label: "Rename…", icon: "pencil", action: () => rename(n) },
 			{ label: "Duplicate", icon: "copy", action: () => onduplicate(n.path) },
 		);
+		if (onnewcards && /\.design\.json$/i.test(n.name))
+			items.push({
+				label: "New card file for this design…",
+				icon: "table",
+				action: () => onnewcards(n.path),
+			});
 	}
 	if (n?.dir)
 		items.push({ label: "Rename folder…", icon: "pencil", action: () => rename(n) });
@@ -253,6 +311,13 @@ function menu(e: MouseEvent, n: TreeNode | null) {
 			action: () => newFolder(target),
 		},
 	);
+	if (!n && onnewdesign)
+		items.push({
+			label: "New design…",
+			icon: "design",
+			detail: "with its own card file",
+			action: () => onnewdesign(),
+		});
 	if (n) {
 		const uses_ = n.dir ? 0 : (uses.get(n.path) ?? 0);
 		items.push(
@@ -305,6 +370,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
 <div class="browser">
   <div class="bar">
     <input type="search" placeholder="Find a file…" bind:value={query} aria-label="Find a file" />
+    <button title="New design, card file or folder" aria-label="New" onclick={newMenu}><Icon name="plus" /></button>
     <button title="Upload files to {folder ? `${folder}/` : 'the project root'}" aria-label="Upload files" onclick={() => onupload(folder)}><Icon name="upload" /></button>
     <button title="New folder in {folder ? `${folder}/` : 'the project root'}" aria-label="New folder" onclick={() => newFolder(folder)}><Icon name="folder-plus" /></button>
   </div>
