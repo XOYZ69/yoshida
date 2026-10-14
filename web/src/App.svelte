@@ -4194,16 +4194,26 @@
 	.editor-pane > :global(.editor) {
 		flex: 1;
 	}
+	/* Same height as the tab strips beside it, so the lines under them meet. */
 	.pane-title {
-		padding: 6px 12px;
-		font: 12px var(--mono);
+		flex: none;
+		height: var(--bar-h);
+		box-sizing: border-box;
+		padding: 0 12px;
+		font: 12px/calc(var(--bar-h) - 1px) var(--mono);
 		border-bottom: 1px solid var(--line);
 		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.pane-title.row {
+		height: auto;
 		font: inherit;
 		color: inherit;
 		padding: 6px 12px;
+		white-space: normal;
+		overflow: visible;
 	}
 	.image-view {
 		overflow: auto;
