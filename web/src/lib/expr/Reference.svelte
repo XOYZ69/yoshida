@@ -17,6 +17,7 @@ import {
 	typeLabel,
 	valueType,
 } from "./catalog";
+import { openFunctions } from "./functionsRef.svelte";
 
 let {
 	ctx,
@@ -195,6 +196,10 @@ function keep(e: MouseEvent) {
       {/each}
     {/each}
   </section>
+
+  <footer class="more">
+    <button onmousedown={keep} onclick={() => { openFunctions(); onclose(); }}>All functions…</button>
+  </footer>
 </div>
 
 <style>
@@ -379,5 +384,19 @@ function keep(e: MouseEvent) {
   .crow code {
     color: var(--fg);
     font-size: 11.5px;
+  }
+  .more {
+    padding: 6px 12px 0;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+  }
+  .more button {
+    all: unset;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .more button:hover {
+    text-decoration: underline;
   }
 </style>

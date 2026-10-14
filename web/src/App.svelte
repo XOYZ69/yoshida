@@ -161,6 +161,12 @@
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
 	import Window from "./lib/ui/Window.svelte";
+	import FunctionsWindow from "./lib/expr/FunctionsWindow.svelte";
+	import {
+		closeFunctions,
+		functionsRef,
+		openFunctions,
+	} from "./lib/expr/functionsRef.svelte";
 	import FontsWindow, {
 		type FontAdd,
 		type FontsTarget,
@@ -1237,6 +1243,22 @@
 	// ---------------------------------------------------------------- fonts window
 
 	let fontsTarget = $state<FontsTarget | null>(null);
+
+	/** The design's own functions, for the Functions window. */
+	const designFunctions = $derived.by(() => {
+		const fns = doc && isObj(doc.functions) ? doc.functions : {};
+		return Object.entries(fns)
+			.filter(([, f]) => isObj(f))
+			.map(([name, f]) => {
+				const fn = f as { args?: unknown; expr?: unknown };
+				const args = isObj(fn.args)
+					? Object.entries(fn.args)
+							.map(([a, t]) => `${a}: ${t}`)
+							.join(", ")
+					: "";
+				return { name, args, expr: String(fn.expr ?? "") };
+			});
+	});
 
 	/** The selected text layer, for the Fonts window's preview and "use". */
 	const fontLayer = $derived.by(() => {
@@ -2514,6 +2536,12 @@
 		);
 		const mod = e.ctrlKey || e.metaKey;
 		const k = e.key.toLowerCase();
+		if (k === "f1" && !mod && !e.shiftKey && !e.altKey) {
+			e.preventDefault();
+			if (functionsRef.open) closeFunctions();
+			else openFunctions();
+			return;
+		}
 		if (mod && !typing && (k === "z" || k === "y")) {
 			e.preventDefault();
 			if (k === "y" || e.shiftKey) redo();
@@ -3476,6 +3504,14 @@
 						: ""}</button
 				>
 			{/if}
+			<button
+				class="fn-btn"
+				onclick={() =>
+					functionsRef.open ? closeFunctions() : openFunctions()}
+				aria-pressed={functionsRef.open}
+				title="Function reference: every function with a short example (F1)"
+				><span class="fn-mark" aria-hidden="true">ƒ</span> Functions</button
+			>
 			<ThemeToggle />
 		</header>
 
@@ -3869,6 +3905,16 @@
 	{/key}
 {/if}
 
+{#if functionsRef.open}
+	{#key functionsRef.nonce}
+		<FunctionsWindow
+			query={functionsRef.query}
+			userFunctions={designFunctions}
+			onclose={closeFunctions}
+		/>
+	{/key}
+{/if}
+
 <DialogHost />
 <MenuHost />
 <ProgressHost />
@@ -4048,6 +4094,22 @@
 		border-radius: 4px;
 		background: var(--hover);
 		color: var(--muted);
+	}
+	.fn-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: var(--ctl-h);
+		box-sizing: border-box;
+		font-size: 12px;
+	}
+	.fn-btn[aria-pressed="true"] {
+		border-color: var(--accent);
+		background: var(--sel);
+	}
+	.fn-mark {
+		font: italic 600 14px var(--mono);
+		color: var(--accent);
 	}
 	.saved {
 		display: inline-flex;
