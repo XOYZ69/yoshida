@@ -64,6 +64,7 @@
 		type CheckResult,
 		type Diagnostic,
 		Engine,
+		type Param,
 		type RenderResult,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
@@ -936,6 +937,14 @@
 		leftTab = "layers";
 	}
 
+	/** The design's own defaults, keyed by param name (params without one are left out). */
+	function sampleCard(params: Param[]): Record<string, unknown> {
+		const card: Record<string, unknown> = {};
+		for (const p of params)
+			if (p.default !== undefined) card[p.name] = p.default;
+		return card;
+	}
+
 	/**
 	 * Adds a card file for a design to the open project and switches to it.
 	 * Without a design, a menu asks which design it is for.
@@ -981,7 +990,8 @@
 		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
 			stem = `${slug(name)}-${n}`;
 		const cards = `cards/${stem}.cards.json`;
-		await updateFile(cards, blankCards(design, name));
+		const params = sets.find((x) => x.design === design)?.params ?? [];
+		await updateFile(cards, blankCards(design, name, sampleCard(params)));
 		await refresh();
 		const s = sets.find((x) => x.cards_file === cards);
 		if (s) {
@@ -989,6 +999,47 @@
 			cardIndex = 0;
 			await renderPreview();
 		}
+	}
+
+	/**
+	 * Stem for a new card file of a design: the design's file name without
+	 * ".design.json", kept as is when it is plain, else slugged; a number is
+	 * added when the name is taken.
+	 */
+	function sampleStem(design: string): string {
+		const base = baseOf(design).replace(/\.design\.json$/i, "");
+		const first = /^[a-z0-9_-]+$/i.test(base) ? base : slug(base);
+		let stem = first;
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${first}-${n}`;
+		return stem;
+	}
+
+	/** Where "Create card file" writes for the open design, when it has no card file. */
+	const sampleCardsPath = $derived(
+		currentSet && !currentSet.cards_file
+			? `cards/${sampleStem(currentSet.design)}.cards.json`
+			: undefined,
+	);
+
+	/** Writes one sample card (the design's defaults) for the open design, without a dialog. */
+	async function createSampleCards() {
+		const set = currentSet;
+		if (!set || set.cards_file) return;
+		const stem = sampleStem(set.design);
+		const cards = `cards/${stem}.cards.json`;
+		await updateFile(
+			cards,
+			blankCards(set.design, set.design_name || stem, sampleCard(set.params)),
+		);
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
+		status = `Created ${cards} with one sample card.`;
 	}
 
 	/**
@@ -3497,6 +3548,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>
@@ -3663,6 +3716,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>

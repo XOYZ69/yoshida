@@ -425,12 +425,17 @@ export function blankDesign(name: string): string {
 	});
 }
 
-export function blankCards(design: string, name: string): string {
+/** A card file with one card: its values are `card`, or a title when none is given. */
+export function blankCards(
+	design: string,
+	name: string,
+	card?: Record<string, unknown>,
+): string {
 	return formatJson({
 		format: 1,
 		design,
 		name,
-		cards: [{ id: "001", title: "First card" }],
+		cards: [{ id: "001", ...(card ?? { title: "First card" }) }],
 	});
 }
 
