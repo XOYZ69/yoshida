@@ -3043,6 +3043,7 @@
 	<FileBrowser
 		{files}
 		{dirty}
+		saveTarget={dirHandle?.name ?? null}
 		uses={fileUses}
 		usedBy={fileUsedBy}
 		bind:selected={filesSelected}

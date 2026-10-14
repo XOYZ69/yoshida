@@ -17,6 +17,7 @@ let {
 	folder = $bindable(""),
 	highlight = null,
 	dirty,
+	saveTarget = null,
 	uses,
 	usedBy,
 	onopen,
@@ -36,6 +37,8 @@ let {
 	/** A file to scroll to and flash, such as one just added. */
 	highlight?: string | null;
 	dirty: Set<string>;
+	/** Name of the connected folder that Save writes to; the unsaved marker only shows with one. */
+	saveTarget?: string | null;
 	/** How many files refer to each path. */
 	uses: Map<string, number>;
 	/** The files that refer to each path, sorted. */
@@ -319,7 +322,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
             {@const ic = icon(n)}
             <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
           {/if}
-          <span class="name" title={n.path}>{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
+          <span class="name" title={n.path}>{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>
           <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
           <span class="size" title={n.dir ? `${fileCount(n)} file${fileCount(n) === 1 ? '' : 's'}` : undefined}>{formatSize(n.size)}</span>
         </button>
@@ -438,6 +441,15 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .unsaved {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: middle;
   }
   .uses {
     font-size: 10px;
