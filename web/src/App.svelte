@@ -2148,13 +2148,20 @@
 	let clipboard: Obj[] = [];
 
 	function canUseClipboard(e: ClipboardEvent) {
+		// A text field handled it (CodeMirror cuts the whole line when
+		// nothing is selected, which also removes the event's target from
+		// the page, so the target alone cannot tell).
+		if (e.defaultPrevented) return false;
+		const editable =
+			"input, textarea, select, [contenteditable], .cm-editor";
 		const t = e.target as HTMLElement | null;
+		const focused = document.activeElement as HTMLElement | null;
 		return (
 			mode === "build" &&
 			!!doc &&
-			!t?.closest(
-				"input, textarea, select, [contenteditable], .cm-editor",
-			)
+			!!t?.isConnected &&
+			!t.closest(editable) &&
+			!focused?.closest(editable)
 		);
 	}
 
