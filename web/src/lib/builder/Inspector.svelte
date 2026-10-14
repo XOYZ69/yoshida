@@ -28,9 +28,11 @@ import {
 	textAnchors,
 } from "../design";
 import type { Diagnostic } from "../engine";
+import { layersUsing, removeFont, renameFont } from "../fonts/project";
 import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
+import { confirmAction } from "../ui/overlay.svelte";
 import type { CompletionContext } from "./complete";
 import Field from "./Field.svelte";
 import Scope from "./Scope.svelte";
@@ -517,6 +519,39 @@ const sampleOf = (name: string) => {
 	const family = faceOf(name);
 	return family ? { family, text: fontSampleText } : undefined;
 };
+let fontError = $state({ name: "", msg: "" });
+function renameFontTo(from: string, input: HTMLInputElement) {
+	const to = input.value.trim();
+	if (to === from) {
+		fontError = { name: "", msg: "" };
+		input.value = from;
+		return;
+	}
+	const fail = (msg: string) => {
+		fontError = { name: from, msg };
+	};
+	if (!identRe.test(to))
+		return fail("Letters, digits and _ only, not starting with a digit");
+	if (to === "default") return fail("'default' is the built-in font");
+	if (fontEntries.some(([n]) => n === to))
+		return fail(`There is already a font '${to}'`);
+	fontError = { name: "", msg: "" };
+	editDoc((d) => renameFont(d, from, to));
+}
+async function askRemoveFont(name: string) {
+	const users = layersUsing(doc, name);
+	const n = users.length;
+	const more = n > 5 ? `, and ${n - 5} more` : "";
+	const ok = await confirmAction({
+		title: `Remove font '${name}'?`,
+		message: n
+			? `${n} ${n === 1 ? "layer uses" : "layers use"} it: ${users.slice(0, 5).join(", ")}${more}. ${n === 1 ? "It" : "They"} will use the default font. The font file stays in the project.`
+			: "No layer uses it. The font file stays in the project.",
+		confirm: "Remove",
+		danger: true,
+	});
+	if (ok) editDoc((d) => removeFont(d, name));
+}
 const BROWSE = "\u0001browse";
 const UPLOAD = "\u0001upload";
 const fontOptions = $derived([
@@ -884,21 +919,24 @@ let newFunction = $state("");
       {#each fontEntries as [name, path]}
         {@const face = fontFaces[String(path)]}
         {@const lic = fontLicenses[String(path)]}
-        <div class="field-like font-row">
-          <span class="lbl mono">{name}</span>
-          <button class="font-sample" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
-          <div class="row">
-            <Select
-              value={String(path)}
-              mono
-              label="Font file for {name}"
-              options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
-              onchange={(v) => setDoc(['fonts', name], v)} />
-            {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>
-            {:else if lic}<span class="lic" title="License file next to the font">{lic}</span>
-            {:else}<span class="missing" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">?</span>{/if}
-            <button class="mini" title="Remove" onclick={() => setDoc(['fonts', name], undefined)}>×</button>
+        <div class="font-entry">
+          <div class="field-like font-row">
+            <input class="mono font-name" value={name} aria-label="Font name" title="Renaming also updates the layers that use this font" onchange={(e) => renameFontTo(name, e.currentTarget)} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+            <button class="font-sample" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
+            <div class="row">
+              <Select
+                value={String(path)}
+                mono
+                label="Font file for {name}"
+                options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
+                onchange={(v) => setDoc(['fonts', name], v)} />
+              {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>
+              {:else if lic}<span class="lic" title="License file next to the font">{lic}</span>
+              {:else}<span class="missing" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">?</span>{/if}
+              <button class="mini" title="Remove" onclick={() => askRemoveFont(name)}>×</button>
+            </div>
           </div>
+          {#if fontError.name === name}<div class="err">{fontError.msg}</div>{/if}
         </div>
       {/each}
       <div class="row font-actions">
@@ -1010,6 +1048,13 @@ let newFunction = $state("");
     border-radius: 4px;
     font-size: 11px;
     color: var(--muted);
+  }
+  .font-row > .row {
+    grid-column: 2;
+  }
+  .font-name {
+    grid-row: span 2;
+    min-width: 0;
   }
   .font-actions > button {
     flex: 1;

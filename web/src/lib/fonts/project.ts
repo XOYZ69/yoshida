@@ -188,3 +188,52 @@ export function layersUsing(doc: unknown, name: string): string[] {
 	walk((doc as Record<string, unknown> | null)?.layers);
 	return out;
 }
+
+/**
+ * Renames font `from` to `to` in a design, in place (for use inside editDoc):
+ * the entry keeps its place in `fonts`, and every layer (also in groups)
+ * that uses it by name is updated.
+ */
+export function renameFont(
+	doc: Record<string, unknown>,
+	from: string,
+	to: string,
+) {
+	const fonts = doc.fonts as Record<string, unknown> | undefined;
+	if (fonts && typeof fonts === "object") {
+		const entries = Object.entries(fonts).map(
+			([n, p]) => [n === from ? to : n, p] as const,
+		);
+		for (const n of Object.keys(fonts)) delete fonts[n];
+		for (const [n, p] of entries) fonts[n] = p;
+	}
+	const walk = (layers: unknown) => {
+		if (!Array.isArray(layers)) return;
+		for (const l of layers) {
+			if (!l || typeof l !== "object") continue;
+			const o = l as Record<string, unknown>;
+			if (o.font === from) o.font = to;
+			walk(o.layers);
+		}
+	};
+	walk(doc.layers);
+}
+
+/**
+ * Removes font `name` from a design, in place (for use inside editDoc):
+ * layers that used it lose their `font`, so they draw with the default font.
+ */
+export function removeFont(doc: Record<string, unknown>, name: string) {
+	const fonts = doc.fonts as Record<string, unknown> | undefined;
+	if (fonts && typeof fonts === "object") delete fonts[name];
+	const walk = (layers: unknown) => {
+		if (!Array.isArray(layers)) return;
+		for (const l of layers) {
+			if (!l || typeof l !== "object") continue;
+			const o = l as Record<string, unknown>;
+			if (o.font === name) delete o.font;
+			walk(o.layers);
+		}
+	};
+	walk(doc.layers);
+}
