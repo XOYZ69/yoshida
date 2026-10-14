@@ -37,6 +37,7 @@ import {
 import { tags } from "@lezer/highlight";
 import { onMount } from "svelte";
 import type { Diagnostic } from "./engine";
+import { searchPanel } from "./searchPanel";
 
 let {
 	text,
@@ -67,6 +68,7 @@ const highlight = HighlightStyle.define([
 	{ tag: tags.punctuation, color: "var(--muted)" },
 ]);
 
+const searchRoot = ".cm-panel.cm-search.ys-search";
 const theme = EditorView.theme({
 	"&": {
 		height: "100%",
@@ -92,99 +94,96 @@ const theme = EditorView.theme({
 		border: "1px solid var(--line)",
 	},
 	".cm-panels": { backgroundColor: "var(--bg-bar)", color: "var(--fg)" },
-	// The search panel (Ctrl+F): app-styled fields, buttons and option chips.
-	".cm-panel.cm-search": { padding: "6px 8px", fontSize: "12px" },
-	".cm-panel.cm-search .cm-textfield": {
-		backgroundColor: "var(--bg)",
-		color: "var(--fg)",
-		border: "1px solid var(--line)",
-		borderRadius: "6px",
-		padding: "3px 8px",
+	// The search panel (Ctrl+F), built in searchPanel.ts.
+	[searchRoot]: {
+		display: "flex",
+		flexDirection: "column",
+		gap: "6px",
+		padding: "6px 8px",
 		fontSize: "12px",
-		verticalAlign: "middle",
-	},
-	".cm-panel.cm-search .cm-textfield:focus": {
-		outline: "none",
-		borderColor: "var(--accent)",
-	},
-	".cm-panel.cm-search .cm-button": {
-		font: "inherit",
-		fontSize: "12px",
-		backgroundImage: "none",
-		backgroundColor: "var(--bg)",
+		backgroundColor: "var(--bg-bar)",
 		color: "var(--fg)",
-		border: "1px solid var(--line)",
-		borderRadius: "6px",
-		padding: "3px 10px",
-		verticalAlign: "middle",
-		cursor: "pointer",
 	},
-	".cm-panel.cm-search .cm-button:hover": { backgroundColor: "var(--hover)" },
-	".cm-panel.cm-search .cm-button:active": { backgroundImage: "none" },
-	// Option checkboxes: the native box stays focusable and labelled but is hidden; the label is the chip.
-	".cm-panel.cm-search label:has(input)": {
-		position: "relative",
-		display: "inline-block",
+	[`${searchRoot} .ys-row`]: { display: "flex", alignItems: "center", gap: "6px" },
+	[`${searchRoot} .ys-field`]: {
+		flex: "1",
+		minWidth: "0",
+		maxWidth: "420px",
+		height: "26px",
 		boxSizing: "border-box",
-		margin: "2px 6px 2px 0",
-		padding: "3px 10px",
+		display: "flex",
+		alignItems: "center",
+		gap: "2px",
+		padding: "0 3px 0 8px",
+		backgroundColor: "var(--bg)",
 		border: "1px solid var(--line)",
 		borderRadius: "6px",
-		backgroundColor: "var(--bg)",
-		color: "var(--fg)",
-		fontSize: "12px",
-		lineHeight: "1.4",
-		cursor: "pointer",
 	},
-	".cm-panel.cm-search label input[type=checkbox]": {
-		appearance: "none",
-		position: "absolute",
-		inset: "0",
-		width: "100%",
+	[`${searchRoot} .ys-field:focus-within`]: { borderColor: "var(--accent)" },
+	[`${searchRoot} .ys-field.ys-invalid`]: { borderColor: "var(--err)" },
+	[`${searchRoot} .ys-input`]: {
+		flex: "1",
+		minWidth: "0",
 		height: "100%",
 		margin: "0",
-		opacity: "0",
-		cursor: "pointer",
-	},
-	".cm-panel.cm-search label:has(input):hover": { backgroundColor: "var(--hover)" },
-	".cm-panel.cm-search label:has(input:focus-visible)": {
-		outline: "2px solid var(--accent)",
-		outlineOffset: "1px",
-	},
-	".cm-panel.cm-search label:has(input:checked)": {
-		backgroundColor: "var(--accent-strong)",
-		borderColor: "var(--accent-strong)",
-		color: "var(--on-accent)",
-	},
-	".cm-panel.cm-search button[name=close]": {
-		position: "absolute",
-		top: "4px",
-		right: "6px",
-		margin: "0",
-		padding: "0 4px",
-		border: "0",
-		backgroundColor: "transparent",
-		boxShadow: "none",
-		color: "var(--muted)",
+		padding: "0",
+		border: "none",
+		outline: "none",
+		background: "transparent",
+		color: "var(--fg)",
 		font: "inherit",
-		fontSize: "16px",
+		fontSize: "12px",
+	},
+	[`${searchRoot} .ys-toggles`]: { display: "flex", flex: "none", gap: "2px" },
+	[`${searchRoot} .ys-toggle`]: {
+		display: "inline-flex",
+		alignItems: "center",
+		justifyContent: "center",
+		flex: "none",
+		minWidth: "22px",
+		height: "20px",
+		margin: "0",
+		padding: "0 3px",
+		border: "none",
+		borderRadius: "4px",
+		background: "transparent",
+		color: "var(--muted)",
+		cursor: "pointer",
+		font: "inherit",
+		fontSize: "12px",
+		fontWeight: "600",
 		lineHeight: "1",
 	},
-	".cm-panel.cm-search button[name=close]:hover": { color: "var(--fg)" },
-});
-
-// Labels of the search panel, capitalised like the rest of the app's buttons.
-// Keys are the ones @codemirror/search passes to state.phrase(). "Find" and
-// "Replace" (placeholders) are already capitalised, so they are not listed.
-const searchPhrases = EditorState.phrases.of({
-	next: "Next",
-	previous: "Previous",
-	all: "All",
-	"match case": "Match case",
-	regexp: "Regexp",
-	"by word": "By word",
-	replace: "Replace",
-	"replace all": "Replace all",
+	[`${searchRoot} .ys-toggle-word`]: { textDecoration: "underline", textUnderlineOffset: "2px" },
+	[`${searchRoot} .ys-toggle:hover`]: { background: "var(--hover)", color: "var(--fg)" },
+	[`${searchRoot} .ys-toggle[aria-pressed="true"]`]: {
+		background: "color-mix(in srgb, var(--accent) 16%, transparent)",
+		color: "var(--accent)",
+	},
+	[`${searchRoot} .ys-btn`]: {
+		display: "inline-flex",
+		alignItems: "center",
+		justifyContent: "center",
+		flex: "none",
+		width: "24px",
+		height: "24px",
+		margin: "0",
+		padding: "0",
+		border: "none",
+		borderRadius: "4px",
+		background: "transparent",
+		color: "var(--muted)",
+		cursor: "pointer",
+	},
+	[`${searchRoot} .ys-btn:hover`]: { background: "var(--hover)", color: "var(--fg)" },
+	[`${searchRoot} .ys-count`]: {
+		flex: "none",
+		minWidth: "3.5em",
+		textAlign: "center",
+		whiteSpace: "nowrap",
+		fontVariantNumeric: "tabular-nums",
+		color: "var(--muted)",
+	},
 });
 
 function language(p: string): Extension[] {
@@ -218,7 +217,7 @@ function makeState(doc: string) {
 			EditorState.tabSize.of(2),
 			EditorState.readOnly.of(readonly),
 			theme,
-			searchPhrases,
+			searchPanel(),
 			language(path),
 			EditorView.updateListener.of((u) => {
 				if (!u.docChanged) return;
