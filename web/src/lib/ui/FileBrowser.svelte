@@ -51,6 +51,11 @@ let {
 } = $props();
 
 const tree = $derived(buildTree(files));
+/** Files under a folder, counted recursively. */
+function fileCount(n: TreeNode): number {
+	return n.children.reduce((t, c) => t + (c.dir ? fileCount(c) : 1), 0);
+}
+const totalFiles = $derived(fileCount(tree));
 let folded = $state(new Set<string>());
 let query = $state("");
 
@@ -316,12 +321,15 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
           {/if}
           <span class="name" title={n.path}>{n.name}{dirty.has(n.path) ? ' •' : ''}</span>
           <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
-          <span class="size">{n.dir ? `${n.children.length}` : formatSize(n.size)}</span>
+          <span class="size" title={n.dir ? `${fileCount(n)} file${fileCount(n) === 1 ? '' : 's'}` : undefined}>{formatSize(n.size)}</span>
         </button>
       </li>
     {/each}
     {#if !rows.length}<li class="empty">{query ? 'No file matches.' : 'No files yet.'}</li>{/if}
   </ul>
+  {#if totalFiles}
+    <div class="total">{totalFiles} file{totalFiles === 1 ? '' : 's'} · {formatSize(tree.size)}</div>
+  {/if}
 </div>
 
 <style>
@@ -442,6 +450,17 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     color: var(--muted);
     text-align: right;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .total {
+    flex: none;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    padding: 6px 12px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
   .empty {
