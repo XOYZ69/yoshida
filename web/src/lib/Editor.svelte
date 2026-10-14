@@ -92,6 +92,99 @@ const theme = EditorView.theme({
 		border: "1px solid var(--line)",
 	},
 	".cm-panels": { backgroundColor: "var(--bg-bar)", color: "var(--fg)" },
+	// The search panel (Ctrl+F): app-styled fields, buttons and option chips.
+	".cm-panel.cm-search": { padding: "6px 8px", fontSize: "12px" },
+	".cm-panel.cm-search .cm-textfield": {
+		backgroundColor: "var(--bg)",
+		color: "var(--fg)",
+		border: "1px solid var(--line)",
+		borderRadius: "6px",
+		padding: "3px 8px",
+		fontSize: "12px",
+		verticalAlign: "middle",
+	},
+	".cm-panel.cm-search .cm-textfield:focus": {
+		outline: "none",
+		borderColor: "var(--accent)",
+	},
+	".cm-panel.cm-search .cm-button": {
+		font: "inherit",
+		fontSize: "12px",
+		backgroundImage: "none",
+		backgroundColor: "var(--bg)",
+		color: "var(--fg)",
+		border: "1px solid var(--line)",
+		borderRadius: "6px",
+		padding: "3px 10px",
+		verticalAlign: "middle",
+		cursor: "pointer",
+	},
+	".cm-panel.cm-search .cm-button:hover": { backgroundColor: "var(--hover)" },
+	".cm-panel.cm-search .cm-button:active": { backgroundImage: "none" },
+	// Option checkboxes: the native box stays focusable and labelled but is hidden; the label is the chip.
+	".cm-panel.cm-search label:has(input)": {
+		position: "relative",
+		display: "inline-block",
+		boxSizing: "border-box",
+		margin: "2px 6px 2px 0",
+		padding: "3px 10px",
+		border: "1px solid var(--line)",
+		borderRadius: "6px",
+		backgroundColor: "var(--bg)",
+		color: "var(--fg)",
+		fontSize: "12px",
+		lineHeight: "1.4",
+		cursor: "pointer",
+	},
+	".cm-panel.cm-search label input[type=checkbox]": {
+		appearance: "none",
+		position: "absolute",
+		inset: "0",
+		width: "100%",
+		height: "100%",
+		margin: "0",
+		opacity: "0",
+		cursor: "pointer",
+	},
+	".cm-panel.cm-search label:has(input):hover": { backgroundColor: "var(--hover)" },
+	".cm-panel.cm-search label:has(input:focus-visible)": {
+		outline: "2px solid var(--accent)",
+		outlineOffset: "1px",
+	},
+	".cm-panel.cm-search label:has(input:checked)": {
+		backgroundColor: "var(--accent-strong)",
+		borderColor: "var(--accent-strong)",
+		color: "var(--on-accent)",
+	},
+	".cm-panel.cm-search button[name=close]": {
+		position: "absolute",
+		top: "4px",
+		right: "6px",
+		margin: "0",
+		padding: "0 4px",
+		border: "0",
+		backgroundColor: "transparent",
+		boxShadow: "none",
+		color: "var(--muted)",
+		font: "inherit",
+		fontSize: "16px",
+		lineHeight: "1",
+	},
+	".cm-panel.cm-search button[name=close]:hover": { color: "var(--fg)" },
+});
+
+// Labels of the search panel, capitalised like the rest of the app's buttons.
+// Keys are the ones @codemirror/search passes to state.phrase(). "Find" and
+// "Replace" (placeholders) are already capitalised, so they are not listed.
+const searchPhrases = EditorState.phrases.of({
+	next: "Next",
+	previous: "Previous",
+	all: "All",
+	"match case": "Match case",
+	regexp: "Regexp",
+	"by word": "By word",
+	replace: "Replace",
+	"replace all": "Replace all",
 });
 
 function language(p: string): Extension[] {
@@ -125,6 +218,7 @@ function makeState(doc: string) {
 			EditorState.tabSize.of(2),
 			EditorState.readOnly.of(readonly),
 			theme,
+			searchPhrases,
 			language(path),
 			EditorView.updateListener.of((u) => {
 				if (!u.docChanged) return;
