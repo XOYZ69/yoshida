@@ -3,7 +3,7 @@
   "name": "Party board game",
   "note": "Canvas is A3 landscape at 300 dpi (4961 x 3508 px, 420 x 297 mm, print at 100 %). The ring is 13 x 9 tiles = 40 tiles; change the consts to resize it.",
   "canvas": { "width": 4961, "height": 3508, "dpi": 300, "bleed": 35 },
-  "fonts": { "bebas": "assets/fonts/Bebas-Regular.ttf" },
+  "fonts": { "bebas": "assets/fonts/BebasNeue-Regular.ttf" },
   "params": {
     "title": { "type": "text", "default": "Road Trip Rally", "max_length": 28, "group": "Texts" },
     "subtitle": {

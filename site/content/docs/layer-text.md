@@ -87,7 +87,7 @@ Text that needs more lines than `max_lines` is cut after that many lines and the
 
 ## Fonts
 
-`font` names an entry in the design's `fonts`. See [Designs](@/docs/designs.md#fonts). Characters the font has no glyph for are drawn with the bundled default font (Lato), then with the bundled symbol font (a subset of Noto Sans Symbols 2: arrows, geometric shapes, stars ★, check marks ✓, dice faces ⚀ to ⚅, card suits, dingbats). So `"GO → ★"` works with a font that only has letters. Characters none of the three has (emoji, for example) are drawn as boxes and warning 4003 is reported.
+`font` names an entry in the design's `fonts`. See [Designs](@/docs/designs.md#fonts). In the editor, the [Fonts window](@/docs/builder-fonts.md) finds and imports fonts and sets them on the layer. Characters the font has no glyph for are drawn with the bundled default font (Lato), then with the bundled symbol font (a subset of Noto Sans Symbols 2: arrows, geometric shapes, stars ★, check marks ✓, dice faces ⚀ to ⚅, card suits, dingbats). So `"GO → ★"` works with a font that only has letters. Characters none of the three has (emoji, for example) are drawn as boxes and warning 4003 is reported.
 
 ## Text in templates
 
