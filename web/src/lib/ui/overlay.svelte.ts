@@ -20,8 +20,10 @@ export type DialogRequest =
 			title: string;
 			message?: string;
 			confirm: string;
+			/** A second choice next to `confirm`. */
+			alt?: string;
 			danger: boolean;
-			resolve: (ok: boolean) => void;
+			resolve: (ok: boolean | "alt") => void;
 	  };
 
 export type MenuItem =
@@ -78,7 +80,24 @@ export function confirmAction(opts: {
 			confirm: "OK",
 			danger: false,
 			...opts,
-			resolve,
+			resolve: (ok) => resolve(ok === true),
+		};
+	});
+}
+
+/** Asks a question with two answers: "confirm", "alt", or null when cancelled. */
+export function chooseAction(opts: {
+	title: string;
+	message?: string;
+	confirm: string;
+	alt: string;
+}): Promise<"confirm" | "alt" | null> {
+	return new Promise((resolve) => {
+		overlay.dialog = {
+			kind: "confirm",
+			danger: false,
+			...opts,
+			resolve: (ok) => resolve(ok === "alt" ? "alt" : ok ? "confirm" : null),
 		};
 	});
 }

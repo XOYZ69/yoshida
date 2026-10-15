@@ -1060,16 +1060,17 @@ function renameInLayerValue(
 }
 
 /**
- * Renames a param in the design: its declaration (keeping the order) and
- * every use in layer fields and the canvas, except inside layers whose
- * repeat names shadow it.
+ * Renames identifier `from` in every expression of a design: the canvas,
+ * constants, function bodies and layer fields. A function argument or a
+ * repeat name of the same name hides it; so does `keep`, the names of
+ * functions whose bodies cannot see it.
  */
-export function renameParam(doc: Obj, from: string, to: string) {
-	if (isObj(doc.params)) {
-		doc.params = Object.fromEntries(
-			Object.entries(doc.params).map(([k, v]) => [k === from ? to : k, v]),
-		);
-	}
+function renameInDesign(
+	doc: Obj,
+	from: string,
+	to: string,
+	keep: Set<string> = new Set(),
+) {
 	if (isObj(doc.canvas)) {
 		for (const k of ["width", "height", "background", "dpi", "bleed"]) {
 			const v = doc.canvas[k];
@@ -1080,9 +1081,8 @@ export function renameParam(doc: Obj, from: string, to: string) {
 		for (const [k, v] of Object.entries(doc.consts))
 			if (typeof v === "string") doc.consts[k] = renameInExpr(v, from, to);
 	if (isObj(doc.functions))
-		for (const f of Object.values(doc.functions)) {
-			if (!isObj(f) || typeof f.expr !== "string") continue;
-			// An argument of the same name hides the param.
+		for (const [name, f] of Object.entries(doc.functions)) {
+			if (keep.has(name) || !isObj(f) || typeof f.expr !== "string") continue;
 			const args = isObj(f.args)
 				? Object.keys(f.args)
 				: Array.isArray(f.args)
@@ -1111,6 +1111,77 @@ export function renameParam(doc: Obj, from: string, to: string) {
 			return out;
 		});
 	doc.layers = walk(doc.layers as Json[]);
+}
+
+/** Renames key `from` of an object to `to`, keeping the order. */
+function renameKey(o: Obj, from: string, to: string): Obj {
+	return Object.fromEntries(
+		Object.entries(o).map(([k, v]) => [k === from ? to : k, v]),
+	);
+}
+
+/**
+ * Renames a param in the design: its declaration (keeping the order) and
+ * every use in layer fields and the canvas, except inside layers whose
+ * repeat names shadow it.
+ */
+export function renameParam(doc: Obj, from: string, to: string) {
+	if (isObj(doc.params)) doc.params = renameKey(doc.params, from, to);
+	renameInDesign(doc, from, to);
+}
+
+/** The function `name` and the functions above it: their bodies see the built-in of that name, not it. */
+function functionsBefore(doc: Obj, name: string): Set<string> {
+	const names = isObj(doc.functions) ? Object.keys(doc.functions) : [];
+	const at = names.indexOf(name);
+	return new Set(at < 0 ? [] : names.slice(0, at + 1));
+}
+
+/**
+ * Renames a design function: its declaration (keeping the order) and, with
+ * `updateUses`, every call to it. Bodies of the function itself and of the
+ * functions above it are left alone, since they cannot call it.
+ */
+export function renameFunction(
+	doc: Obj,
+	from: string,
+	to: string,
+	updateUses = true,
+) {
+	const keep = functionsBefore(doc, from);
+	if (isObj(doc.functions)) doc.functions = renameKey(doc.functions, from, to);
+	if (updateUses) renameInDesign(doc, from, to, keep);
+}
+
+/**
+ * Where a design function is used, as labels such as "layer title",
+ * "constant gap" or "function side_t".
+ */
+export function functionUses(doc: Obj, name: string): string[] {
+	const probe = clone(doc);
+	renameInDesign(probe, name, "\u0000", functionsBefore(doc, name));
+	const out: string[] = [];
+	if (JSON.stringify(probe.canvas) !== JSON.stringify(doc.canvas))
+		out.push("canvas");
+	for (const [part, label] of [
+		["consts", "constant"],
+		["functions", "function"],
+	] as const) {
+		const was = isObj(doc[part]) ? (doc[part] as Obj) : {};
+		const now = isObj(probe[part]) ? (probe[part] as Obj) : {};
+		for (const k of Object.keys(was))
+			if (JSON.stringify(was[k]) !== JSON.stringify(now[k]))
+				out.push(`${label} ${k}`);
+	}
+	const before = layersOf(doc);
+	const after = layersOf(probe);
+	before.forEach((l, i) => {
+		if (
+			JSON.stringify(ownFields(l)) !== JSON.stringify(ownFields(after[i]))
+		)
+			out.push(`layer ${String(l.id)}`);
+	});
+	return out;
 }
 
 /** Same rename in card data: JSON keys or the CSV header. */
