@@ -72,6 +72,7 @@ function nameKind(
 	if (!names || names.locals.has(w)) return { kind: "local" };
 	if (names.params.has(w)) return { kind: "param" };
 	if (names.consts?.has(w)) return { kind: "param", note: "Constant" };
+	if (w === "pi") return { kind: "builtin", note: "The built-in constant pi" };
 	// A bare name never calls a function, so a function name here is not a value.
 	if (FN_BY_NAME.has(w))
 		return {

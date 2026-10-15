@@ -1,6 +1,8 @@
 // Editing a design document as data: the visual builder changes the parsed
 // JSON with these helpers and writes it back through the formatter.
 
+import { HEX_COLOR } from "./hexcolor";
+
 export type Json =
 	| null
 	| boolean
@@ -941,10 +943,7 @@ export function paramsOf(doc: Obj): [string, Obj][] {
 
 /** Literal for a color field, or null when it is an expression. */
 export function hexOf(v: Json | undefined): string | null {
-	return typeof v === "string" &&
-		/^#([0-9a-f]{6}|[0-9a-f]{8}|[0-9a-f]{12}|[0-9a-f]{16})$/i.test(v.trim())
-		? v.trim()
-		: null;
+	return typeof v === "string" && HEX_COLOR.test(v.trim()) ? v.trim() : null;
 }
 
 // ---------------------------------------------------------------- param rename

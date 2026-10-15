@@ -10,7 +10,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test:unit": "node --experimental-strip-types tests/progress-math.mjs && node tests/expr-core.mjs && node --experimental-strip-types tests/expr-rewrite.mjs && node --experimental-strip-types tests/expr-edit.mjs && node --experimental-strip-types tests/fonts.mjs",
+		"test:unit": "node --experimental-strip-types tests/progress-math.mjs && node tests/expr-core.mjs && node --experimental-strip-types tests/expr-rewrite.mjs && node --experimental-strip-types tests/expr-edit.mjs && node --experimental-strip-types tests/fonts.mjs && node --experimental-strip-types tests/hexcolor.mjs",
 		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs && node tests/ui-hover.mjs && node tests/ui-review.mjs && node tests/ui-perf.mjs && node tests/ui-expr.mjs && node tests/ui-paths.mjs && node tests/ui-formula.mjs && node tests/ui-fonts.mjs",
 		"docs:screenshots": "node scripts/docs-screenshots/run.mjs"
 	},

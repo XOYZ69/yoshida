@@ -24,6 +24,7 @@ import {
 import type { CompletionContext, GotoTarget } from "../builder/complete";
 import {
 	BUILTINS,
+	CONSTANTS,
 	FN_BY_NAME,
 	KEYWORDS,
 	keyField,
@@ -31,6 +32,7 @@ import {
 	lookupType,
 	typeLabel,
 } from "./catalog";
+import { HEX_COLOR } from "../hexcolor";
 import { info, signatureNode } from "./completion";
 import { exprAt, inString } from "./scan";
 
@@ -110,7 +112,7 @@ export function preview(v: unknown): string {
 	const s =
 		typeof v !== "string"
 			? JSON.stringify(v)
-			: /^#[0-9a-f]{6,16}$/i.test(v)
+			: HEX_COLOR.test(v)
 				? v
 				: `'${v}'`;
 	return s.length > 60 ? `${s.slice(0, 57)}…` : s;
@@ -291,6 +293,9 @@ export function describe(
 	const f = FN_BY_NAME.get(head);
 	if (f)
 		return { head: signatureNode(f), body: f.doc, extra: `e.g. ${f.example}` };
+
+	const k = CONSTANTS.find((x) => x.name === head);
+	if (k && ref.index === 0) return { head: `${k.name}: ${k.type}`, body: k.doc };
 
 	if (ref.index > 0) return null;
 	return { head, body: "", warn: `Unknown name '${head}'.` };

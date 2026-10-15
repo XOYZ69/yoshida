@@ -9,6 +9,7 @@ import Window from "../ui/Window.svelte";
 import {
 	BUILTINS,
 	CHEATSHEET,
+	CONSTANTS,
 	FUNCTIONS,
 	type FnDoc,
 	fnSignature,
@@ -47,7 +48,7 @@ const GROUPS: [title: string, names: string[]][] = [
 			"wrap",
 		],
 	],
-	["Trigonometry", ["sin", "cos", "tan", "asin", "acos", "atan2"]],
+	["Trigonometry", ["sin", "cos", "tan", "asin", "acos", "atan2", "deg", "rad"]],
 	[
 		"Text",
 		[
@@ -174,6 +175,10 @@ const refs = $derived.by((): { title: string; rows: Row[] }[] => {
 				doc: f.doc,
 			})),
 		]),
+	);
+	add(
+		"Constants",
+		CONSTANTS.map((k) => ({ code: k.name, meta: k.type, doc: k.doc })),
 	);
 	add(
 		"Keywords",

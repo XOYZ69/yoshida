@@ -9,6 +9,7 @@ import type { CompletionContext } from "../builder/complete";
 import {
 	BUILTINS,
 	CHEATSHEET,
+	CONSTANTS,
 	type Expect,
 	FUNCTIONS,
 	fit,
@@ -169,6 +170,16 @@ function keep(e: MouseEvent) {
           <span class="d">{f.doc}</span>
         </button>
       {/each}
+    {/each}
+  </section>
+
+  <section>
+    <h4>Constants</h4>
+    {#each CONSTANTS as k}
+      <button class="row" class:dim={dim(k.type)} onmousedown={keep} onclick={() => oninsert(k.name, false)}>
+        <code class="n">{k.name}</code><span class="t">{k.type}</span>
+        <span class="d">{k.doc}</span>
+      </button>
     {/each}
   </section>
 

@@ -16,6 +16,7 @@ import type { EditorView } from "@codemirror/view";
 import type { CompletionContext } from "../builder/complete";
 import {
 	BUILTINS,
+	CONSTANTS,
 	type Expect,
 	type FnDoc,
 	FUNCTIONS,
@@ -188,6 +189,28 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 					section: S.params,
 					fitness: 1,
 					info: info(k.name, "A design constant (consts)."),
+				},
+				expect,
+				1,
+			),
+		);
+	}
+	for (const k of CONSTANTS) {
+		// A local, param or design const with this name takes its place.
+		const shadowed =
+			ctx.locals.some((x) => x.name === k.name) ||
+			ctx.params.some((x) => x.name === k.name) ||
+			(ctx.consts ?? []).some((x) => x.name === k.name);
+		if (shadowed) continue;
+		out.push(
+			opt(
+				{
+					label: k.name,
+					kind: "builtin",
+					detail: k.type,
+					section: S.builtins,
+					fitness: fit(k.type, expect),
+					info: info(k.name, k.doc),
 				},
 				expect,
 				1,

@@ -8,6 +8,7 @@
 
 import {
 	BUILTINS,
+	CONSTANTS,
 	FUNCTIONS,
 	fnSignature,
 	LAYER_FIELDS,
@@ -143,6 +144,14 @@ export function complete(
 		for (const k of ctx.consts ?? [])
 			if (k.name.startsWith(word))
 				items.push({ label: k.name, insert: k.name, detail: "constant" });
+		for (const k of CONSTANTS)
+			if (
+				k.name.startsWith(word) &&
+				!ctx.locals.some((l) => l.name === k.name) &&
+				!ctx.params.some((p) => p.name === k.name) &&
+				!(ctx.consts ?? []).some((c) => c.name === k.name)
+			)
+				items.push({ label: k.name, insert: k.name, detail: "built-in constant" });
 		for (const f of ctx.functions ?? [])
 			if (f.name.startsWith(word))
 				items.push({

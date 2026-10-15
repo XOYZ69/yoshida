@@ -51,7 +51,7 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "clamp",
 		args: [n("value"), n("lo"), n("hi")],
 		ret: "number",
-		doc: "Limits value to the range lo to hi.",
+		doc: "The middle of the three numbers, so clamp(value, lo, hi) and the CSS order clamp(lo, value, hi) both limit value to the range lo to hi. Not an error when lo is above hi.",
 		example: "clamp(level * 10, 0, 100)",
 	},
 	{
@@ -79,7 +79,7 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "round",
 		args: [n("n"), { name: "digits", type: "number", optional: "0" }],
 		ret: "number",
-		doc: "Rounds to the nearest number with `digits` decimals (default 0).",
+		doc: "Rounds to `digits` decimals (default 0); halves go away from zero: round(1.005, 2) is 1.01, round(2.5) is 3. digits may be negative: round(1234, -2) is 1200.",
 		example: "round(scale * 1.5, 1)",
 	},
 	{
@@ -132,45 +132,59 @@ export const FUNCTIONS: FnDoc[] = [
 	},
 	{
 		name: "sin",
-		args: [n("deg")],
+		args: [n("rad")],
 		ret: "number",
-		doc: "Sine of an angle in degrees.",
-		example: "sin(i * 30) * radius",
+		doc: "Sine of an angle in radians; sin(pi) is 0. For degrees, use sin(rad(deg)). rotate, arc angles and hsl hue take degrees.",
+		example: "sin(i * pi / 6) * radius",
 	},
 	{
 		name: "cos",
-		args: [n("deg")],
+		args: [n("rad")],
 		ret: "number",
-		doc: "Cosine of an angle in degrees.",
+		doc: "Cosine of an angle in radians. For degrees, use cos(rad(deg)).",
 		example: "cx + cos(angle) * radius",
 	},
 	{
 		name: "tan",
-		args: [n("deg")],
+		args: [n("rad")],
 		ret: "number",
-		doc: "Tangent of an angle in degrees. An error at 90, 270 and every 180 more.",
+		doc: "Tangent of an angle in radians. For degrees, use tan(rad(deg)).",
 		example: "tan(slope) * run",
 	},
 	{
 		name: "asin",
 		args: [n("x")],
 		ret: "number",
-		doc: "The angle in degrees whose sine is x (x from -1 to 1).",
-		example: "asin(ratio)",
+		doc: "The angle in radians whose sine is x (x from -1 to 1). For degrees, wrap it in deg().",
+		example: "deg(asin(ratio))",
 	},
 	{
 		name: "acos",
 		args: [n("x")],
 		ret: "number",
-		doc: "The angle in degrees whose cosine is x (x from -1 to 1).",
-		example: "acos(dot)",
+		doc: "The angle in radians whose cosine is x (x from -1 to 1). For degrees, wrap it in deg().",
+		example: "deg(acos(dot))",
 	},
 	{
 		name: "atan2",
 		args: [n("y"), n("x")],
 		ret: "number",
-		doc: "The angle in degrees from the x axis to the point (x, y), from -180 to 180.",
-		example: "atan2(dy, dx)",
+		doc: "The angle in radians from the x axis to the point (x, y), in (-pi, pi]. rotate takes degrees, so: rotate: deg(atan2(dy, dx)).",
+		example: "deg(atan2(dy, dx))",
+	},
+	{
+		name: "deg",
+		args: [n("rad")],
+		ret: "number",
+		doc: "Converts an angle from radians to degrees: deg(pi) is 180.",
+		example: "deg(atan2(dy, dx))",
+	},
+	{
+		name: "rad",
+		args: [n("deg")],
+		ret: "number",
+		doc: "Converts an angle from degrees to radians: rad(180) is pi.",
+		example: "sin(rad(i * 30)) * radius",
 	},
 	{
 		name: "upper",
@@ -195,9 +209,9 @@ export const FUNCTIONS: FnDoc[] = [
 	},
 	{
 		name: "fmt",
-		args: [n("n"), n("decimals")],
+		args: [n("n"), n("digits")],
 		ret: "text",
-		doc: "Formats a number with a fixed number of decimals.",
+		doc: "Formats a number with a fixed number of decimals, rounded as round(n, digits) does. A value that rounds to zero prints without a minus sign.",
 		example: "fmt(0.5, 2)  → '0.50'",
 	},
 	{
@@ -260,7 +274,7 @@ export const FUNCTIONS: FnDoc[] = [
 			{ name: "fill", type: "text", optional: "' '" },
 		],
 		ret: "text",
-		doc: "Pads text on the left with fill up to width characters.",
+		doc: "Pads text on the left up to width characters. fill is repeated as a whole, like JavaScript's padStart: pad_start('7', 3, 'ab') is 'ab7'. A number is written with fmt(n, 0) first.",
 		example: "pad_start(card.id, 3, '0')",
 	},
 	{
@@ -277,8 +291,8 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "title_case",
 		args: [{ name: "text", type: "text" }],
 		ret: "text",
-		doc: "Upper-cases the first letter of each word and leaves the rest as they are.",
-		example: "title_case(name)",
+		doc: "Upper-cases the first letter of each word and keeps the rest of each word as it is. For all-caps input, lower it first: title_case(lower(name)) gives 'Hello' from 'HELLO'.",
+		example: "title_case(lower(name))",
 	},
 	{
 		name: "roman",
@@ -444,7 +458,7 @@ export const FUNCTIONS: FnDoc[] = [
 			{ name: "pattern", type: "text" },
 		],
 		ret: "text",
-		doc: "Formats a date, time or date-time with a pattern such as 'D MMM YYYY' or 'HH:mm'. Text in [brackets] is kept as it is.",
+		doc: "Formats a date, time or date-time with a pattern such as 'D MMM YYYY' or 'HH:mm'. Tokens: YYYY (2026), YY (26); MMMM (March), MMM (Mar), MM (03), M (3) for the month; DD (05), D (5) for the day; dddd (Thursday), ddd (Thu); HH (00–23), H (0–23) for the hour; hh (01–12), h (1–12) for the 12-hour clock; mm for minutes; ss for seconds; A (AM/PM), a (am/pm). Text in [brackets] is literal: [week] ddd. MM is the month, mm the minutes.",
 		example: "date_fmt(render.date, 'D MMM YYYY')",
 	},
 	{
@@ -544,8 +558,8 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "luminance",
 		args: [{ name: "c", type: "color" }],
 		ret: "number",
-		doc: "Relative brightness of a color, from 0 (black) to 1 (white). Alpha is ignored.",
-		example: "luminance(c_panel) > 0.5",
+		doc: "Relative brightness of a color, from 0 (black) to 1 (white). Alpha is ignored. Mid-grey #808080 is about 0.22, so pick a text colour with readable() or a threshold near 0.18.",
+		example: "luminance(c_panel) > 0.18 ? #000000 : #FFFFFF",
 	},
 	{
 		name: "readable",
@@ -662,6 +676,18 @@ export const BUILTINS: Record<string, { doc: string; fields: FieldDoc[] }> = {
 	},
 };
 
+/**
+ * Built-in constants: bare names that are numbers, not objects with fields.
+ * A design param, const or local with the same name takes its place.
+ */
+export const CONSTANTS: FieldDoc[] = [
+	{
+		name: "pi",
+		type: "number",
+		doc: "The number pi, 3.14159…, for angles in radians: sin(pi / 2) is 1. A design param, const or local named pi takes its place.",
+	},
+];
+
 const bounds: FieldDoc[] = [
 	["left", "Left edge in pixels, after anchor and layout."],
 	["top", "Top edge in pixels."],
@@ -760,14 +786,16 @@ export const CHEATSHEET: { title: string; rows: [string, string][] }[] = [
 		title: "Literals",
 		rows: [
 			["'text'", "text in single (or double) quotes"],
-			["#RRGGBB", "color, also #RRGGBBAA"],
+			["#RGB #RGBA", "color, short forms"],
+			["#RRGGBB #RRGGBBAA", "color, with alpha in the last pair"],
 			["true false", "bools"],
 		],
 	},
 	{
 		title: "Operators",
 		rows: [
-			["+ - * / %", "arithmetic on numbers (a % b needs spaces)"],
+			["+ - * / %", "arithmetic on numbers; % is floored, -7 % 3 is 2"],
+			["a % b", "put spaces around % (7%3 reads as 7 percent)"],
 			["< <= > >= == !=", "comparisons, give a bool"],
 			["v in [a, b]", "true if v equals one of the items"],
 			["and or not", "logic on bools"],
@@ -781,6 +809,7 @@ export const CHEATSHEET: { title: string; rows: [string, string][] }[] = [
 export const TEMPLATE_HELP: [string, string][] = [
 	["Hello {name}", "literal text with {expression} holes"],
 	["{{ }}", "literal braces"],
+	["{1 / 3}", "a number prints with at most 12 significant digits"],
 ];
 
 /** Param types as the expression language sees them. */

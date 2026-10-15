@@ -3,6 +3,7 @@
 // a saturation/value square, hue and alpha sliders and a hex field.
 // `value` is #RRGGBB or #RRGGBBAA; changes are reported when a drag ends.
 import { placeNear } from "./overlay.svelte";
+import { expandHex } from "../hexcolor";
 
 let {
 	value,
@@ -24,7 +25,7 @@ type Hsva = { h: number; s: number; v: number; a: number };
  * those are reduced to 8 bits per channel. Null for anything else.
  */
 function css8(hex: string): string | null {
-	const t = hex.trim().replace(/^#/, "");
+	const t = expandHex(hex).replace(/^#/, "");
 	if (!/^[0-9a-f]+$/i.test(t)) return null;
 	if (t.length === 6 || t.length === 8) return `#${t}`;
 	if (t.length === 12 || t.length === 16) {
@@ -128,8 +129,8 @@ function track(e: PointerEvent, apply: (x: number, y: number) => void) {
 
 function typedHex() {
 	const t = hexText.trim();
-	if (/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t)) {
-		c = parse(t.startsWith("#") ? t : `#${t}`);
+	if (/^#?(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t)) {
+		c = parse(expandHex(t.startsWith("#") ? t : `#${t}`));
 		commit();
 	} else hexText = format(c);
 }
