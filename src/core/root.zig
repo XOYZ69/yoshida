@@ -32,4 +32,10 @@ comptime {
 
 test {
     std.testing.refAllDecls(@This());
+    _ = @import("builtins/math.zig");
+    _ = @import("builtins/text.zig");
+    _ = @import("builtins/list.zig");
+    _ = @import("builtins/date.zig");
+    _ = @import("builtins/color.zig");
+    _ = @import("builtins/rand.zig");
 }
