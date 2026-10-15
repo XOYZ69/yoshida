@@ -89,6 +89,7 @@ const reserved = new Set([
 	"and",
 	"or",
 	"not",
+	"in",
 ]);
 
 let open: string | null = $state(null);

@@ -153,8 +153,10 @@ export function complete(
 		for (const [f, d] of functions)
 			if (f.startsWith(word))
 				items.push({ label: `${f}()`, insert: `${f}(`, detail: d });
+		// A design function with a built-in's name hides the built-in.
+		const own = new Set((ctx.functions ?? []).map((f) => f.name));
 		for (const b of Object.keys(builtins))
-			if (b.startsWith(word))
+			if (b.startsWith(word) && !own.has(b))
 				items.push({ label: `${b}.`, insert: `${b}.`, detail: "built-in" });
 	}
 	const exact = items.length === 1 && items[0].insert === word;

@@ -9,6 +9,7 @@ import {
 	StateField,
 } from "@codemirror/state";
 import { EditorView, showTooltip, type Tooltip } from "@codemirror/view";
+import type { CompletionContext } from "../builder/complete";
 import { FN_BY_NAME, type FnDoc } from "./catalog";
 import { signatureNode } from "./completion";
 import { callAt, exprAt } from "./scan";
@@ -25,6 +26,23 @@ const focusField = StateField.define<boolean>({
 
 type Help = { key: string; tip: Tooltip | null };
 
+/** A design function (`functions`) as a signature; a built-in of the same name is hidden. */
+function designFnDoc(
+	f: NonNullable<CompletionContext["functions"]>[number],
+): FnDoc {
+	const names = f.args
+		.split(",")
+		.map((a) => a.trim())
+		.filter(Boolean);
+	return {
+		name: f.name,
+		args: names.map((name) => ({ name, type: "any" })),
+		ret: "any",
+		doc: f.note || "A design function.",
+		example: f.expr ?? "",
+	};
+}
+
 function tooltip(f: FnDoc, pos: number, arg: number): Tooltip {
 	return {
 		pos,
@@ -40,14 +58,21 @@ function tooltip(f: FnDoc, pos: number, arg: number): Tooltip {
 			const a = f.args[Math.min(arg, f.args.length - 1)];
 			doc.textContent =
 				f.doc +
-				(a && !a.rest && f.args.length > 1 ? `  ·  ${a.name}: ${a.type}` : "");
+				(a && !a.rest && !f.alt && f.args.length > 1
+					? `  ·  ${a.name}: ${a.type}`
+					: "");
 			dom.appendChild(doc);
 			return { dom };
 		},
 	};
 }
 
-function compute(state: EditorState, template: boolean, prev: Help): Help {
+function compute(
+	state: EditorState,
+	template: boolean,
+	prev: Help,
+	getCtx: () => CompletionContext | null,
+): Help {
 	const none = { key: "", tip: null };
 	if (!state.field(focusField)) return none;
 	const sel = state.selection.main;
@@ -55,15 +80,20 @@ function compute(state: EditorState, template: boolean, prev: Help): Help {
 	const text = state.doc.toString();
 	const range = exprAt(text, sel.head, template);
 	const call = range && callAt(text, range.from, sel.head);
-	const f = call && FN_BY_NAME.get(call.name);
-	if (!call || !f) return none;
+	if (!call) return none;
+	const own = getCtx()?.functions?.find((x) => x.name === call.name);
+	const f = own ? designFnDoc(own) : FN_BY_NAME.get(call.name);
+	if (!f) return none;
 	const pos = call.open - call.name.length;
 	const key = `${pos}:${call.name}:${call.arg}`;
 	// Same call and argument: keep the tooltip so it does not flicker.
 	return key === prev.key ? prev : { key, tip: tooltip(f, pos, call.arg) };
 }
 
-export function signatureHelp(template: boolean): Extension {
+export function signatureHelp(
+	template: boolean,
+	getCtx: () => CompletionContext | null,
+): Extension {
 	const field = StateField.define<Help>({
 		create: () => ({ key: "", tip: null }),
 		update(v, tr) {
@@ -73,7 +103,7 @@ export function signatureHelp(template: boolean): Extension {
 				!tr.effects.some((e) => e.is(focusEffect))
 			)
 				return v;
-			return compute(tr.state, template, v);
+			return compute(tr.state, template, v, getCtx);
 		},
 		provide: (f) => showTooltip.compute([f], (s) => s.field(f).tip),
 	});

@@ -267,7 +267,7 @@ const DESIGN = {
 		fileURLToPath(new URL("../src/lib/expr/catalog.ts", import.meta.url)),
 		"utf8",
 	);
-	const fns = [...catalog.matchAll(/name: "([a-z_]+)",\n\t\targs:/g)].map(
+	const fns = [...catalog.matchAll(/name: "([a-z][a-z0-9_]*)",\n\t\targs:/g)].map(
 		(m) => m[1],
 	);
 	const builtins = [...catalog.matchAll(/^\t([a-z_]+): \{\n\t\tdoc:/gm)].map(

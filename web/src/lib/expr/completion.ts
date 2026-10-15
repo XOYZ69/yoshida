@@ -72,12 +72,17 @@ export function info(
 	};
 }
 
+/** The signature, one line per accepted form (`alt`, when the call has one). */
 export function signatureNode(f: FnDoc, active = -1) {
 	const s = el("span", "yx-sig");
-	for (const p of fnSignature(f, active).parts)
-		s.appendChild(
-			el("span", p.active ? "yx-sig-arg yx-sig-active" : "yx-sig-arg", p.text),
-		);
+	const forms = f.alt ? [f.args, f.alt] : [f.args];
+	forms.forEach((args, k) => {
+		if (k) s.appendChild(document.createElement("br"));
+		for (const p of fnSignature(f, active, args).parts)
+			s.appendChild(
+				el("span", p.active ? "yx-sig-arg yx-sig-active" : "yx-sig-arg", p.text),
+			);
+	});
 	return s;
 }
 
@@ -239,7 +244,10 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 			boost: 0,
 		});
 	}
+	// A design function with a built-in's name hides the built-in here.
+	const own = new Set((ctx.functions ?? []).map((f) => f.name));
 	for (const f of FUNCTIONS) {
+		if (own.has(f.name)) continue;
 		out.push(
 			opt(
 				{

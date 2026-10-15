@@ -79,10 +79,27 @@ export type RenderResult = {
 	bin: Uint8Array;
 };
 
+/**
+ * The render time: `now` is the UTC instant (`YYYY-MM-DDTHH:MM:SSZ`) and the
+ * core derives render.date and render.time from it, with the project's
+ * utc_offset. `date` is the local date of the same instant, for older cores.
+ */
+export type Clock = { date: string; now: string };
+
+/** The clock at `at` (default: now). Compute once per export, per preview render. */
+export function renderClock(at: Date = new Date()): Clock {
+	const p2 = (n: number) => String(n).padStart(2, "0");
+	const date = `${String(at.getFullYear()).padStart(4, "0")}-${p2(at.getMonth() + 1)}-${p2(at.getDate())}`;
+	// Seconds precision, no milliseconds.
+	const now = `${at.toISOString().slice(0, 19)}Z`;
+	return { date, now };
+}
+
 export type RenderArgs = {
 	set: string;
 	card: number;
 	date: string;
+	now: string;
 	preview: boolean;
 	format: "rgba" | "png" | "png16";
 	layout?: boolean;
@@ -215,11 +232,11 @@ export class Engine {
 	}
 
 	/** Every card of a set evaluated without drawing: errors that depend on card data. */
-	checkCards(set: string, date: string) {
+	checkCards(set: string, clock: Clock) {
 		return this.call<{ diagnostics: Diagnostic[] }>({
 			op: "checkCards",
 			set,
-			date,
+			...clock,
 		});
 	}
 
@@ -242,7 +259,7 @@ export class Engine {
 		path: string,
 		src: string,
 		card: number,
-		date: string,
+		clock: Clock,
 	): Promise<EvalResult | null> {
 		return this.call<EvalResult>({
 			op: "eval",
@@ -250,7 +267,7 @@ export class Engine {
 			path,
 			src,
 			card,
-			date,
+			...clock,
 		}).catch(() => null);
 	}
 
@@ -260,7 +277,7 @@ export class Engine {
 	 */
 	pdf(
 		set: string,
-		date: string,
+		clock: Clock,
 		cropMarks: boolean,
 		cards: number,
 		progress?: (done: number) => void,
@@ -273,7 +290,7 @@ export class Engine {
 			{
 				op: "pdf",
 				set,
-				date,
+				...clock,
 				crop_marks: cropMarks,
 				cards,
 			},

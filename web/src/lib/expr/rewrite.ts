@@ -4,6 +4,7 @@
 // function. The expression core is passed in (parse and format), so this
 // module runs under Node for the tests as well as in the editor.
 
+import { FUNCTIONS } from "./catalog.ts";
 import type { Node, Span } from "./core";
 
 /** The parse and format functions of the expression core (core.ts). */
@@ -27,29 +28,10 @@ const BODY_WIDTH = 1 << 16;
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 /** Words the expression language reserves. */
-export const RESERVED = ["and", "or", "not", "in", "true", "false", "match"];
+export const RESERVED = ["and", "or", "not", "in", "true", "false"];
 
-/** The functions of catalog.ts FUNCTIONS. tests/expr-rewrite.mjs checks the list. */
-export const FUNCTION_NAMES = [
-	"min",
-	"max",
-	"clamp",
-	"abs",
-	"floor",
-	"ceil",
-	"round",
-	"len",
-	"upper",
-	"lower",
-	"trim",
-	"fmt",
-	"avg_color",
-	"mix",
-	"with_alpha",
-	"rgb",
-	"rgba",
-	"match",
-];
+/** The functions of catalog.ts FUNCTIONS. */
+export const FUNCTION_NAMES = FUNCTIONS.map((f) => f.name);
 
 /** The builtin objects of catalog.ts BUILTINS. */
 export const BUILTIN_NAMES = ["canvas", "card", "render"];
@@ -246,7 +228,11 @@ export function hasLayerRef(node: Node): boolean {
 	return found;
 }
 
-/** A name a const or function may take: a plain identifier not used by the design or the language. */
+/**
+ * A name a const or function may take: a plain identifier not used by the design or the language.
+ * Built-in function names are legal for both, but a refactor never picks one: a function would
+ * hide the built-in and a const would read like a call.
+ */
 function nameFree(name: string, locals: string[], design: Design): boolean {
 	if (!NAME_RE.test(name)) return false;
 	if (RESERVED.includes(name) || FUNCTION_NAMES.includes(name)) return false;

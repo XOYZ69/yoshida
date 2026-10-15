@@ -42,7 +42,7 @@ type Msg = { id: number } & (
 	| { op: "check" }
 	| { op: "render"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
-	| { op: "checkCards"; set: string; date: string }
+	| { op: "checkCards"; set: string; date: string; now: string }
 	| { op: "scope"; set: string; path: string }
 	| {
 			op: "eval";
@@ -51,11 +51,13 @@ type Msg = { id: number } & (
 			src: string;
 			card: number;
 			date: string;
+			now: string;
 	  }
 	| {
 			op: "pdf";
 			set: string;
 			date: string;
+			now: string;
 			crop_marks: boolean;
 			cards: number;
 	  }
@@ -177,8 +179,12 @@ async function handle(
 		}
 		case "checkCards":
 			return {
-				result: request({ op: "check_cards", set: msg.set, date: msg.date })
-					.json,
+				result: request({
+					op: "check_cards",
+					set: msg.set,
+					date: msg.date,
+					now: msg.now,
+				}).json,
 			};
 		case "scope":
 		case "eval": {
@@ -196,6 +202,7 @@ async function handle(
 					set: msg.set,
 					card: i,
 					date: msg.date,
+					now: msg.now,
 					crop_marks: msg.crop_marks,
 				});
 				// Problems in the design come back with every page; keep one of each.

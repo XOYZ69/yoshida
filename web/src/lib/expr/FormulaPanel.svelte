@@ -48,7 +48,6 @@ import {
 	condChainToMatch,
 	extractConst,
 	extractFunction,
-	FUNCTION_NAMES,
 	freeNames,
 	hasLayerRef,
 	matchToCondChain,
@@ -236,7 +235,6 @@ function nameProblem(name: string): string {
 		return "Use lowercase letters, digits and _, starting with a letter.";
 	if (
 		RESERVED.includes(name) ||
-		FUNCTION_NAMES.includes(name) ||
 		BUILTIN_NAMES.includes(name)
 	)
 		return `'${name}' is a word of the expression language.`;
