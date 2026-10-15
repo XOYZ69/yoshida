@@ -97,7 +97,7 @@ Unknown top-level fields are [1101].
 
 ## 4. Params
 
-Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) [1106]. A built-in function name is allowed: a bare name is a value, not a call (6.8).
+Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) [1106]. A built-in function name is allowed: a bare name is a value, not a call (6.8). The built-in constant `pi` is allowed too; a param or constant named `pi` hides it.
 
 ```json
 "params": {
@@ -139,7 +139,7 @@ The editor builds its card form and card table from `params`: a color picker for
 | `note` | text literal | | Comment |
 | `visible` | bool | `true` | `false`: the layer is not drawn; its values can still be referenced |
 | `opacity` | number | `1` | 0 to 1, multiplies the layer's alpha |
-| `rotate` | number | `0` | Degrees clockwise. Box layers (`rect`, `ellipse`, `image`) turn around their anchor point (`box.x`, `box.y`), text around `at`, polygons around the centre of their bounds. Values are taken modulo 360 |
+| `rotate` | number | `0` | Degrees clockwise. Box layers (`rect`, `ellipse`, `image`) turn around their anchor point (`box.x`, `box.y`), text around `at`, polygons around the centre of their bounds. Values are taken modulo 360, and `@layer.rotate` reads back that reduced value (`rotate: 370` reads as `10`) |
 | `anchor` | enum | `top-left` | Which point of the layer `at` / `box.x,box.y` refers to: `top-left`, `top`, `top-right`, `left`, `center`, `right`, `bottom-left`, `bottom`, `bottom-right`; text layers also allow `baseline-left`, `baseline`, `baseline-right` |
 | `repeat` | object | | Section 5.7 |
 | `extends` | ident | | Section 5.8 |
@@ -166,7 +166,7 @@ Same fields as `rect` except `radius`. The ellipse fills `box`.
 
 | Field | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `arc` | `{ start: number, end: number, pie: bool literal }` | none | Draw only part of the ellipse, from `start` to `end` degrees, clockwise from the top (12 o'clock); defaults 0 and 360. `pie: true` (default) fills a slice through the centre and strokes its outline; `pie: false` draws only the curve with the stroke (no fill) |
+| `arc` | `{ start: number, end: number, pie: bool literal }` | none | Draw only part of the ellipse, from `start` to `end` degrees, clockwise from the top (12 o'clock); defaults 0 and 360. These are degrees, unlike the trigonometric functions (6.5), which take radians. `pie: true` (default) fills a slice through the centre and strokes its outline; `pie: false` draws only the curve with the stroke (no fill) |
 
 ### 5.4 `polygon`
 
@@ -303,7 +303,7 @@ A divider organises the layer list in the editor. It draws nothing and takes no 
 - Numbers: `12`, `0.5`, `.5` is invalid. Optional unit suffix: `%`, `vw`, `vh`.
 - Strings: `'single'` or `"double"` quotes, `\'` `\"` `\\` `\n` escapes. Single quotes avoid escaping inside JSON.
 - Booleans: `true`, `false`.
-- Colors: `#RRGGBB`, `#RRGGBBAA` (8-bit), `#RRRRGGGGBBBB`, `#RRRRGGGGBBBBAAAA` (16-bit). Hex digits are case-insensitive. Internally all colors are 16-bit RGBA; 8-bit values `v` become `v * 257`.
+- Colors: `#RRGGBB`, `#RRGGBBAA` (8-bit), `#RRRRGGGGBBBB`, `#RRRRGGGGBBBBAAAA` (16-bit). Hex digits are case-insensitive. The short forms `#RGB` and `#RGBA` are also accepted, each digit doubled (`#F80` is `#FF8800`), wherever a colour is parsed. Internally all colors are 16-bit RGBA; 8-bit values `v` become `v * 257`.
 
 ### 6.2 Units
 
@@ -312,7 +312,7 @@ A divider organises the layer list in the editor. It draws nothing and takes no 
 | `N%` | N percent of the canvas along the field's axis. Horizontal fields: `box.x`, `box.w`, `at.x`, a point's first value, `wrap`. Vertical fields: `box.y`, `box.h`, `at.y`, a point's second value. Anywhere else (`size`, `radius`, `stroke.width`...) `%` is [3006] |
 | `Nvw`, `Nvh` | N percent of canvas width / height, valid in any number field |
 
-`canvas.width` and `canvas.height` cannot use units (the canvas is being defined).
+`canvas.width` and `canvas.height` cannot use units (the canvas is being defined). `%`, `vw` and `vh` always refer to the canvas, also inside a group with `translate`.
 
 ### 6.3 Names
 
@@ -322,6 +322,7 @@ A divider organises the layer list in the editor. It draws nothing and takes no 
 | loop names | number / item | From `repeat`, the layer's own and those of the repeated groups around it |
 | a constant | constant's type | From `consts` (6.8) |
 | `canvas.w`, `canvas.h` | number | Canvas size |
+| `pi` | number | 3.14159…, unless a param or constant named `pi` is declared |
 | `card.id` | text | The card's id |
 | `render.index` | number | 0-based position of the card in its set |
 | `render.date` | text | ISO date `YYYY-MM-DD` in the `utc_offset` time zone, chosen once by whoever starts the render (`--date` or `--now`) |
@@ -358,7 +359,7 @@ Highest precedence first:
 | --- | --- | --- |
 | `( )`, `f(...)`, `a.b`, `a[n]` | | |
 | unary `-`, `not` | number / bool | |
-| `* / %` | number | number. Division by zero is [3103] |
+| `* / %` | number | number. Division by zero is [3103]. `%` is the floored modulo: the result has the sign of the right operand (`-7 % 3` is `2`, `7 % -3` is `-2`) |
 | `+ -` | number | number |
 | `< <= > >=` | number | bool |
 | `== !=` | same type on both sides | bool |
@@ -371,40 +372,41 @@ Highest precedence first:
 
 `? :` is right-associative, so a chain needs no brackets: `a ? x : b ? y : z` is `a ? x : (b ? y : z)`.
 
-`%` as an operator needs spaces or operands on both sides (`a % b`); `50%` directly after a number is the unit. There is no assignment, no string concatenation operator (use templates), and no implicit conversion: `'5' + 1` is [3003].
+`%` as an operator needs operands on both sides (`a % b`), and after a number literal a space: write `7 % 3`. `7%3` reads `7%` as a percent unit and is error 3001 with a hint. `50%` directly after a number is the unit. There is no assignment, no string concatenation operator (use templates), and no implicit conversion: `'5' + 1` is [3003].
 
 ### 6.5 Functions
 
-A call is `name(args)`. An unknown name is [3002]; a wrong argument count or type is [3003]. Angles are degrees everywhere. Design functions (6.8) are called the same way.
+A call is `name(args)`. An unknown name is [3002]; a wrong argument count or type is [3003]. Trigonometric functions take and return radians, as in ordinary maths, and `deg` and `rad` convert between the two. The angle fields `rotate`, `arc` start and end, and the hue of `hsl` are in degrees. Design functions (6.8) are called the same way.
 
 | Group | Function | Signature and rules |
 | --- | --- | --- |
 | Existing | `min`, `max` | `(number, ...) -> number`. With a list as first argument: list form (below) |
-| | `clamp` | `(value, lo, hi) -> number` |
+| | `clamp` | `(value, lo, hi) -> number`. The middle of the three values, so the CSS order `clamp(lo, value, hi)` gives the same result when `lo <= hi` |
 | | `abs`, `floor`, `ceil` | `(number) -> number` |
-| | `round` | `(number, digits = 0) -> number` |
+| | `round` | `(number, digits = 0) -> number`. Decimal rounding, halves away from zero: `round(1.005, 2)` is `1.01`, `round(2.5)` is `3`, `round(-2.5)` is `-3`. `digits` may be negative: `round(1234.5, -2)` is `1200`. Clamped to -15 to 15 |
 | | `len` | `(list or text) -> number` |
 | | `upper`, `lower`, `trim` | `(text) -> text`. `upper`/`lower` map the ASCII, Latin-1 Supplement, Latin Extended-A, Greek and Cyrillic basic blocks; other characters, including `ß`, are unchanged |
-| | `fmt` | `(number, decimals) -> text` |
+| | `fmt` | `(number, decimals) -> text`. The same rounding as `round`, `decimals` from 0 to 15. Never prints `-0.00` |
 | | `avg_color` | `(image) -> color`, average of opaque pixels |
 | | `mix` | `(color, color, t) -> color`, linear blend, `t` 0 to 1 |
 | | `with_alpha` | `(color, a) -> color`, `a` 0 to 1 |
-| | `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 |
+| | `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 stored on the 8-bit grid: `rgba(255, 0, 0, 0.5)` equals `#FF000080` |
 | | `match` | `(value, key, result, ..., default) -> result type`. Keys have the value's type; only the chosen result is evaluated. Even argument count, at least four, else [3003] |
 | Numbers | `sqrt(x)` | `-> number`; `x < 0` is [3103] |
 | | `pow(b, e)` | `-> number`; a non-finite result is [3103] |
 | | `sign(x)` | `-> number`, -1, 0 or 1; `sign(-0)` is 0 |
-| | `sin`, `cos`, `tan`, `asin`, `acos` | `(number) -> number`, degrees. Exact at multiples of 90. `tan` at 90 + k*180 is [3103]; asin and acos with `|x| > 1` are [3103] |
-| | `atan2(y, x)` | `-> number` in degrees, (-180, 180]; `atan2(0, 0)` is 0 |
+| | `sin`, `cos`, `tan`, `asin`, `acos` | `(number) -> number`, radians. `sin` and `cos` are exact at multiples of pi / 2 (`sin(pi)` is `0`), `tan` at multiples of pi / 4. `tan` at pi / 2 + k * pi is [3103]. `asin` gives values in [-pi / 2, pi / 2] and `acos` in [0, pi]; `|x| > 1` is [3103] |
+| | `atan2(y, x)` | `-> number` in radians, (-pi, pi]; `atan2(0, 0)` is 0 |
+| | `deg(x)`, `rad(x)` | `(number) -> number`. `deg` turns radians into degrees, `rad` degrees into radians |
 | | `lerp(a, b, t)` | `a + (b - a) * t`, not clamped |
 | | `remap(v, a, b, c, d)` | `c + (v - a) * (d - c) / (b - a)`, not clamped; `a == b` is [3103] |
 | | `wrap(v, n)` | `v - n * floor(v / n)`; `n == 0` is [3103]; in [0, n) for n > 0 |
 | Text | `contains(t, s)`, `starts_with(t, s)`, `ends_with(t, s)` | `-> bool`; exact (case-sensitive); empty `s` is true |
 | | `replace(t, old, new)` | every occurrence; empty `old` leaves `t` |
 | | `slice(t, start[, end])` | characters; indices floored and clamped; negative counts from the end; `end` omitted runs to the end; `end <= start` gives "" |
-| | `pad_start(t, width[, fill])` | pads on the left with the first character of `fill` (a space when omitted) up to `width`; empty `fill` or `t` already wide enough gives `t` |
+| | `pad_start(t, width[, fill])` | pads on the left by repeating the whole `fill` (as JavaScript's `padStart`), cut at `width`: `pad_start('7', 3, 'ab')` is `ab7`; a space when `fill` is omitted; empty `fill` or `t` already wide enough gives `t` |
 | | `repeat(t, n)` | `n` floored; `n <= 0` gives "" |
-| | `title_case(t)` | first letter of each word upper-cased; words split at white space and `-` |
+| | `title_case(t)` | first letter of each word upper-cased, the other letters kept (`title_case(lower(t))` turns `HELLO` into `Hello`); words split at white space and `-` |
 | | `roman(n)` | upper-case; `n` floored, 1 to 3999, else [3107] |
 | | `part(t, sep, n)` | piece `n`, 0-based, floored, negative from the end; out of range gives ""; empty `sep` is [3107] |
 | Lists | `has(list, key)` | `-> bool`. Key field: the first `text` field |
@@ -416,16 +418,16 @@ A call is `name(args)`. An unknown name is [3002]; a wrong argument count or typ
 | | `count(list, 'field', value)` | `-> number`; items whose field equals `value` |
 | | `join(list[, 'field'], sep)` | `-> text`; values printed as in templates; over 10 000 bytes is [3106] |
 | | `last(list)` | the last item; empty list is [3102] |
-| Dates | `date_fmt(t, pattern)` | `-> text`. Tokens `YYYY YY MMMM MMM MM M DD D dddd ddd HH H mm ss` (longest match first, case-sensitive); `[...]` is literal; English names; date tokens on a time-only value are [3105]; time tokens on a date-only value give 0 |
+| Dates | `date_fmt(t, pattern)` | `-> text`. Tokens `YYYY YY MMMM MMM MM M DD D dddd ddd HH hh H h mm ss A a` (longest match first, case-sensitive); `[...]` is literal; English names; date tokens on a time-only value are [3105]; a date-only value reads as midnight for time tokens |
 | | `year`, `month`, `day`, `weekday` | `(t) -> number`; `weekday` 1 = Monday (ISO); time-only is [3105] |
 | | `hour`, `minute` | `(t) -> number`; date-only gives 0 |
 | | `add_days(t, n)` | `-> text` in the input's form (date or date-time, `Z` kept); `n` floored; a result outside years 1 to 9999 is [3105] |
 | | `add_hours(t, h)` | `-> text`, `YYYY-MM-DDTHH:MM:SS` (`Z` kept); a date counts as midnight; fractional hours rounded to seconds; a result outside years 1 to 9999 is [3105] |
 | | `days_between(a, b)` | `-> number`, `b - a` in whole days of the date parts |
 | | date text | `YYYY-MM-DD`, `HH:MM` or `HH:MM:SS`, or `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` with optional `Z`; years 1 to 9999; anything else is [3105] |
-| Colors | `hsl(h, s, l)`, `hsla(h, s, l, a)` | `-> color`. `h` in degrees, wrapped; `s`, `l` 0 to 100 and `a` 0 to 1, clamped |
+| Colors | `hsl(h, s, l)`, `hsla(h, s, l, a)` | `-> color`. `h` in degrees, wrapped; `s`, `l` 0 to 100 as in CSS and `a` 0 to 1, clamped; `a` on the 8-bit grid |
 | | `lighten(c, n)`, `darken(c, n)` | `-> color`. HSL lightness plus or minus `n` (0 to 100 scale), clamped; alpha kept |
-| | `luminance(c)` | `-> number`, WCAG 2 relative luminance 0 to 1; alpha ignored |
+| | `luminance(c)` | `-> number`, WCAG 2 relative luminance 0 to 1; alpha ignored. Mid-grey `#808080` is about 0.22, not 0.5 |
 | | `readable(bg[, light, dark])` | `-> color`. `light` when its contrast with `bg` is at least `dark`'s, else `dark`. Defaults `#FFFFFF` and `#000000` |
 | Random | `rand(seed, ...)` | `-> number` in [0, 1). One or more seeds of number, text, bool or color |
 | | `rand_int(lo, hi, seed, ...)` | `-> number`; `lo` and `hi` floored; both included; `lo > hi` is [3107] |
@@ -439,7 +441,7 @@ Errors while a function runs: [3103] math error, [3105] text is not a date, time
 
 ### 6.6 Templates (`text` and `path` fields)
 
-Literal text with `{expression}` holes. `{{` and `}}` produce literal braces. Values convert as: number → shortest round-trip decimal (`5`, `0.5`, never `5.0`); bool → `true`/`false`; text unchanged; color → `#RRGGBBAA` (8-bit); list or item → [3003].
+Literal text with `{expression}` holes. `{{` and `}}` produce literal braces. Values convert as: number → at most 12 significant digits, trailing zeros removed (`5`, `0.5`, `0.3` for `0.1 + 0.2`, `0.333333333333` for `1/3`), plain digits from 1e-7 up to 1e21 and exponent form outside (`1.5e-8`, `1e21`); the expression's own value is not rounded; bool → `true`/`false`; text unchanged; color → `#RRGGBBAA` (8-bit); list or item → [3003].
 
 ### 6.7 Determinism
 
@@ -500,7 +502,7 @@ A design can name values and formulas that several layers use:
 
 ## 9. Diagnostics
 
-Every problem is reported as `{ severity, code, file, path, span, message, hint, card }`. `path` is a JSON Pointer (`/layers/3/box/x`); `span` gives line and column in the file and, for expressions, the byte range inside the expression; `card` names the card for problems found while evaluating one. Loading and checking report all problems; rendering starts only with zero load errors. Codes are stable and never reused.
+Every problem is reported as `{ severity, code, file, path, span, message, hint, card }`. `path` is a JSON Pointer (`/layers/3/box/x`); `span` gives line and column in the file and, for expressions, the byte range inside the expression; `card` names the card for problems found while evaluating one. Loading and checking report all problems; rendering starts only with zero load errors. Codes are stable and never reused. A habit from another language gets a hint with its error: `&` and `&&` use `and`, `|` and `||` use `or`, `!` uses `not`, `^` and `**` use `pow(a, b)`, `=` uses `==`, `<>` uses `!=`, `1e3` is written out, `.5` gets a leading 0, `7%3` needs spaces around `%`, and `'a' + b` uses a template.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |

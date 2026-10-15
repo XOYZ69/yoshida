@@ -9,6 +9,7 @@ description = "Params, layer fields, canvas and card names, and reserved words."
 | loop names | number / item | From [`repeat`](@/docs/repeat.md): the index, and the current item with `each`; also those of the [repeated groups](@/docs/layer-group.md#repeat) around the layer |
 | a constant | the constant's type | From [`consts`](@/docs/expressions-constants-and-functions.md) |
 | `canvas.w`, `canvas.h` | number | Canvas size in pixels |
+| `pi` | number | The circle constant, 3.14159…. A param or constant named `pi` takes its place |
 | `card.id` | text | The card's id |
 | `render.index` | number | 0-based position of the card in its set |
 | `render.date` | text | ISO date `YYYY-MM-DD` in the project's time zone (`utc_offset`), chosen once by whoever starts the render (`--date` or `--now` on the CLI) |
@@ -66,7 +67,7 @@ These fields of a layer can be read (when the layer has them):
 | `radius`, `size`, `line_spacing`, `wrap`, `max_lines` | number (`wrap` and `max_lines` read 0 when unset) |
 | `text`, `src` | text |
 
-`@layer.size` is the font size actually used after auto-shrink. `@layer.rotate` is the angle (bounds ignore rotation). A hidden layer (`visible: false`) is not drawn, but its values can still be read.
+`@layer.size` is the font size actually used after auto-shrink. `@layer.rotate` is the angle taken modulo 360 (bounds ignore rotation). A hidden layer (`visible: false`) is not drawn, but its values can still be read.
 
 ## Params
 

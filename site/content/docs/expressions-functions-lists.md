@@ -75,7 +75,7 @@ When the first argument is a list, `min` and `max` take this form. With numbers 
 
 ### `join(list[, 'field'], sep)`
 
-`(list[, 'field'], text) -> text`. The values of a field, joined with `sep` between them. Each value is printed as in a [template](@/docs/expressions-templates.md): a number in its shortest form, `true` or `false` for a bool, text as it is, and a color as `#RRGGBBAA`. An empty list gives an empty text. A result over 10 000 bytes is error 3106.
+`(list[, 'field'], text) -> text`. The values of a field, joined with `sep` between them. Each value is printed as in a [template](@/docs/expressions-templates.md): a number with at most 12 significant digits, trailing zeros removed, `true` or `false` for a bool, text as it is, and a color as `#RRGGBBAA`. An empty list gives an empty text. A result over 10 000 bytes is error 3106.
 
 - `join(tags, ', ')` is `Fire, Flying` for a list of two tags with those values.
 

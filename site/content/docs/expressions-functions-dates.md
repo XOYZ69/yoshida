@@ -55,7 +55,7 @@ A project can set its time zone as a **fixed offset from UTC**, in hours, in `ut
 - `date_fmt('2026-10-08', 'dddd D MMM')` is `Thursday 8 Oct`.
 - `date_fmt(render.time, 'HH:mm')` is the time without seconds.
 - A text that is not a date, time or date-time is error 3105. A date token (such as `YYYY`) applied to a time-only text is also error 3105.
-- A time token (such as `HH`) on a date-only value gives `00` for hours and minutes, so `date_fmt('2026-10-08', 'HH:mm')` is `00:00`.
+- A date-only value reads as midnight for time tokens, so `date_fmt('2026-10-08', 'HH:mm')` is `00:00` and `date_fmt('2026-10-08', 'h A')` is `12 AM`. `H` gives `0`, `hh` and `h` give `12`, `A` gives `AM` and `a` gives `am`.
 
 Tokens (the pattern is shown with 8 October 2026, 14:05:09):
 
@@ -73,13 +73,18 @@ Tokens (the pattern is shown with 8 October 2026, 14:05:09):
 | `ddd` | short weekday name | `Thu` |
 | `HH` | hour, 00 to 23 | `14` |
 | `H` | hour, 0 to 23 | `14` (`9` for 09:00) |
+| `hh` | hour on a 12-hour clock, 01 to 12 | `02` |
+| `h` | hour on a 12-hour clock, 1 to 12 | `2` |
+| `A` | AM or PM | `PM` |
+| `a` | am or pm | `pm` |
 | `mm` | minute, two digits | `05` |
 | `ss` | second, two digits | `09` |
 
 Notes on the tokens:
 
 - The longest token wins, so `MMMM` is tried before `MMM` and `MM`.
-- Tokens are case-sensitive: `MM` is the month and `mm` the minute.
+- Tokens are case-sensitive: `MM` is the month and `mm` the minute. `HH`, `H`, `hh` and `h` are hours.
+- The single letters `M`, `D`, `H`, `h`, `A` and `a` are tokens, so they change any word they appear in. Put other words inside `[...]`: `date_fmt(t, '[at] h A')` gives `at 2 PM`, not `pm`.
 - Text inside square brackets is copied without the brackets, so `date_fmt(d, '[Day] D')` gives `Day 8`. Note that `D` inside the brackets is not a token.
 - A single `m` or `s` is not a token. Write `mm` or `ss`.
 - Only English month and weekday names are written. See [Known gaps](@/docs/known-gaps.md#dates-and-times).

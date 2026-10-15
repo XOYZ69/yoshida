@@ -10,7 +10,7 @@ The functions are grouped by what they work on. The table below lists every grou
 | Group | Functions | Page |
 | --- | --- | --- |
 | Existing | `min` `max` `clamp` `abs` `floor` `ceil` `round` `len` `upper` `lower` `trim` `fmt` `avg_color` `mix` `with_alpha` `rgb` `rgba` `match` | this page |
-| Numbers and trigonometry | `sqrt` `pow` `sign` `sin` `cos` `tan` `asin` `acos` `atan2` `lerp` `remap` `wrap` | [Numbers](@/docs/expressions-functions-numbers.md) |
+| Numbers and trigonometry | `sqrt` `pow` `sign` `sin` `cos` `tan` `asin` `acos` `atan2` `deg` `rad` `lerp` `remap` `wrap` | [Numbers](@/docs/expressions-functions-numbers.md) |
 | Text | `contains` `starts_with` `ends_with` `replace` `slice` `pad_start` `repeat` `title_case` `roman` `part` | [Text](@/docs/expressions-functions-text.md) |
 | Lists | `has` `get` `index_of` `sum` `avg` `min` `max` `count` `join` `last` | [Lists](@/docs/expressions-functions-lists.md) |
 | Dates and times | `date_fmt` `year` `month` `day` `weekday` `hour` `minute` `add_days` `add_hours` `days_between` | [Dates and times](@/docs/expressions-functions-dates.md) |
@@ -22,16 +22,16 @@ The functions are grouped by what they work on. The table below lists every grou
 | Function | Signature | Notes |
 | --- | --- | --- |
 | `min`, `max` | `(number, number, ...) -> number` | Any number of arguments. When the first argument is a list, see [Lists](@/docs/expressions-functions-lists.md) |
-| `clamp` | `(value, lo, hi) -> number` | |
+| `clamp` | `(value, lo, hi) -> number` | The middle of the three values; the CSS order `clamp(lo, value, hi)` also works |
 | `abs`, `floor`, `ceil` | `(number) -> number` | |
-| `round` | `(number, digits = 0) -> number` | |
+| `round` | `(number, digits = 0) -> number` | Halves away from zero, on the decimal digits: `round(1.005, 2)` is `1.01`. `digits` may be negative: `round(1234.5, -2)` is `1200` |
 | `len` | `(list or text) -> number` | Items in a list, characters in text |
 | `upper`, `lower`, `trim` | `(text) -> text` | See below for `upper` and `lower` |
-| `fmt` | `(number, decimals) -> text` | `fmt(0.5, 2)` is `0.50` |
+| `fmt` | `(number, decimals) -> text` | `fmt(0.5, 2)` is `0.50`. Rounds as `round` does, and never prints `-0.00` |
 | `avg_color` | `(image) -> color` | Average of the opaque pixels of an image param |
 | `mix` | `(color, color, t) -> color` | Linear blend, `t` from 0 to 1 |
 | `with_alpha` | `(color, a) -> color` | `a` from 0 (transparent) to 1 |
-| `rgb`, `rgba` | `(r, g, b[, a]) -> color` | Channels 0 to 255, `a` from 0 to 1 |
+| `rgb`, `rgba` | `(r, g, b[, a]) -> color` | Channels 0 to 255, `a` from 0 to 1, stored on the 8-bit grid: `rgba(255, 0, 0, 0.5)` is `#FF000080` |
 | `match` | `(value, key, result, ..., default) -> result type` | Result of the first key equal to `value`, else `default`. See below |
 
 `upper` and `lower` change the case of letters in the ASCII, Latin-1 Supplement, Latin Extended-A, Greek and Cyrillic blocks. Other characters are unchanged, and so is `ß`: `upper('ß')` is `ß`.

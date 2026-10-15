@@ -61,10 +61,11 @@ Example: a rating of 5 stars, with the empty stars drawn in another colour:
 
 ### `pad_start(text, width[, fill])`
 
-`(text, number[, text]) -> text`. Pads `text` on the left with the first character of `fill` until it is `width` characters long. `width` is floored. When `fill` is left out, a space is used.
+`(text, number[, text]) -> text`. Pads `text` on the left by repeating the whole `fill`, as JavaScript's `padStart` does, until it is `width` characters long; the last copy is cut where the width is reached. `width` is floored. When `fill` is left out, a space is used.
 
 - `pad_start('7', 3, '0')` is `007`.
 - `pad_start('12', 4)` is `  12`.
+- `pad_start('7', 3, 'ab')` is `ab7`.
 - An empty `fill`, or a `text` already `width` characters or longer, gives `text` unchanged.
 - A result over 10 000 bytes is error 3106.
 
@@ -93,6 +94,7 @@ Example: the initials of a name, for a small badge:
 `(text) -> text`. Upper-cases the first letter of each word and leaves the other letters as they are. Words are separated by white space and by `-`. The case mapping is the one used by `upper`.
 
 - `title_case('fire-breathing dragon')` is `Fire-Breathing Dragon`.
+- `title_case('HELLO')` is `HELLO`. To get `Hello`, lower-case first: `title_case(lower(t))`.
 
 ### `roman(n)`
 

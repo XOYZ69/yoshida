@@ -13,13 +13,13 @@ Out-of-range values are clamped or wrapped, as described for each function, so t
 
 ### `hsl(h, s, l)`
 
-`(number, number, number) -> color`. An opaque color. `h` is an angle in degrees and wraps around, so 370 is the same as 10. `s` and `l` go from 0 to 100 and are clamped to that range.
+`(number, number, number) -> color`. An opaque color. `h` is an angle in degrees and wraps around, so 370 is the same as 10. `s` and `l` go from 0 to 100, as in CSS, and are clamped to that range.
 
 - `hsl(0, 100, 50)` is `#FF0000`, and `hsl(120, 100, 50)` is `#00FF00`.
 
 ### `hsla(h, s, l, a)`
 
-`(number, number, number, number) -> color`. As `hsl`, with alpha `a` from 0 (transparent) to 1 (opaque), clamped.
+`(number, number, number, number) -> color`. As `hsl`, with alpha `a` from 0 (transparent) to 1 (opaque), clamped. The alpha is stored on the 8-bit grid, as in `rgba`.
 
 - `hsla(0, 100, 50, 0.5)` is half-transparent red.
 
@@ -41,6 +41,7 @@ Example: a border a little darker than the theme colour:
 `(color) -> number`. The relative luminance of `c` as defined by WCAG 2: 0 for black, 1 for white. The alpha is ignored.
 
 - `luminance(#FFFFFF)` is `1`. `luminance(#000000)` is `0`.
+- Mid-grey `#808080` is about `0.22`, not `0.5`, so `luminance(c) > 0.5` is not a test for light colours. Use `readable` to choose a text colour.
 
 ### `readable(bg[, light, dark])`
 

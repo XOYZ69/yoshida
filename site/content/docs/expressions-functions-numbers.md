@@ -1,9 +1,9 @@
 +++
 title = "Expressions: Numbers"
-description = "Roots, powers, trigonometry in degrees, and interpolation between ranges."
+description = "Roots, powers, trigonometry in radians, and interpolation between ranges."
 +++
 
-Each function takes numbers and returns a number. Angles are in **degrees** everywhere, as in `rotate`: `sin(90)` is `1`.
+Each function takes numbers and returns a number. Trigonometry takes and returns **radians**, as in ordinary maths: `sin(pi / 2)` is `1`. The angle fields such as `rotate` take degrees; see [Trigonometry](#trigonometry).
 
 A math error is error 3103. It happens for division by zero, and for a result that is not a finite number, such as the square root of a negative number. Such a value never reaches a layer.
 
@@ -31,34 +31,48 @@ A math error is error 3103. It happens for division by zero, and for a result th
 
 ## Trigonometry
 
-Each angle is in degrees, and results are exact at the multiples of 90 degrees.
+Angles are in **radians**, as in ordinary mathematics: a full turn is `2 * pi`. `pi` is a built-in number, 3.14159…; a param or constant named `pi` takes its place. `deg(x)` and `rad(x)` convert between the two. The angle fields are the exception: `rotate`, the `arc` start and end, and the hue of `hsl` take degrees, so convert with `deg` where needed.
 
-### `sin(d)`, `cos(d)`, `tan(d)`
+### `sin(x)`, `cos(x)`, `tan(x)`
 
-`(number) -> number`. The sine, cosine and tangent of the angle `d`, in degrees. The angle is reduced modulo 360 first.
+`(number) -> number`. The sine, cosine and tangent of the angle `x`, in radians. `sin` and `cos` are exact at multiples of `pi / 2`, and `tan` at multiples of `pi / 4`.
 
-- `sin(180)` is `0`, `cos(90)` is `0` and `tan(45)` is `1`, exactly.
-- `tan` at 90 plus any multiple of 180, such as `tan(90)`, is error 3103.
+- `sin(pi)` is `0`, `cos(pi / 2)` is `0` and `tan(pi / 4)` is `1`, exactly.
+- `tan` at `pi / 2 + k * pi`, such as `tan(pi / 2)`, is error 3103.
 
 ### `asin(x)`, `acos(x)`
 
-`(number) -> number`. The inverse sine and cosine of `x`, as an angle in degrees.
+`(number) -> number`. The inverse sine and cosine of `x`, as an angle in radians. `asin` gives a value from `-pi / 2` to `pi / 2`, and `acos` a value from `0` to `pi`.
 
-- `asin(1)` is `90`. `acos(0)` is `90`.
+- `asin(1)` is `pi / 2`. `acos(-1)` is `pi`.
 - `|x| > 1` is error 3103.
 
 ### `atan2(y, x)`
 
-`(number, number) -> number`. The angle of the point `(x, y)` measured from the positive x axis, in degrees. The result is greater than -180 and at most 180. Note the order: `y` comes first.
+`(number, number) -> number`. The angle of the point `(x, y)` measured from the positive x axis, in radians. The result is greater than `-pi` and at most `pi`. Note the order: `y` comes first.
 
-- `atan2(1, 1)` is `45`. `atan2(-1, -1)` is `-135`.
+- `atan2(1, 1)` is `pi / 4`. `atan2(0, -1)` is `pi`.
 - `atan2(0, 0)` is `0`.
 
-Example: the points of a ring of pips, with 6 pips evenly spaced from the top:
+To use the angle as a `rotate` value, which takes degrees: `"rotate": "deg(atan2(dy, dx))"`.
+
+### `deg(x)`, `rad(x)`
+
+`(number) -> number`. `deg(x)` converts radians to degrees, and `rad(x)` converts degrees to radians.
+
+- `deg(pi)` is `180`. `rad(90)` is `pi / 2`.
+
+Example: the points of a ring of six pips, evenly spaced from the top. Neighbouring pips are a sixth of a turn apart, `pi / 3`:
 
 ```json
-"x": "50% + 200 * sin(i * 60)",
-"y": "50% - 200 * cos(i * 60)"
+"x": "50% + 200 * sin(i * pi / 3)",
+"y": "50% - 200 * cos(i * pi / 3)"
+```
+
+Example: a wave of circles, one full wave every 12 items (`pi / 6` per item):
+
+```json
+"box": { "x": "60 + i * 60", "y": "450 + sin(i * pi / 6) * 80", "w": 40, "h": 40 }
 ```
 
 ## Interpolation

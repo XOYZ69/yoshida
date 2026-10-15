@@ -56,7 +56,7 @@ Examples: a rect with `"anchor": "center"` and `box.x`, `box.y` set to `50%` is 
 
 ## `rotate`
 
-Degrees, clockwise.
+Degrees, clockwise. The value is taken modulo 360, and `@layer.rotate` reads back that reduced value: `rotate: 370` reads as `10`.
 
 - Box layers (`rect`, `ellipse`, `image`) turn around their anchor point (`box.x`, `box.y`).
 - Text turns around `at`.

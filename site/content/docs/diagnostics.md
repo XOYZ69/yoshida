@@ -25,6 +25,23 @@ designs/tour.design.json:41:17: error[3002]: unknown name 'levl'
 
 `file:line:column`, severity and code, the message (with `card <id>:` in front when it belongs to one card), the JSON pointer of the field, the byte range inside an expression when there is one, and a hint. Hints such as *did you mean 'color'?* come from a closest-name search over the valid names.
 
+### Habits from other languages
+
+Some operators and forms from other languages are not in yoshida. The error says what to write instead:
+
+| You write | Error | Hint |
+| --- | --- | --- |
+| `&`, `&&` | 3001 unexpected '&' | use 'and' |
+| `\|`, `\|\|` | 3001 unexpected '\|' | use 'or' |
+| `!` | 3001 unexpected '!' | use 'not' |
+| `^`, `**` | 3001 unexpected '^' or '**' | use pow(a, b) |
+| `=` | 3001 unexpected '=' | use '==' to compare |
+| `<>` | 3001 unexpected '<>' | use '!=' for not equal |
+| `1e3` | 3001 unknown unit after a number | exponent notation is not supported; write 1000 |
+| `.5` | 3001 unexpected '.' | write 0.5 |
+| `7%3` | 3001 | put spaces around % for the remainder: 7 % 3 |
+| `'a' + b` | 3003 'needs numbers' | join text with a template, e.g. "{a} {b}" |
+
 ## JSON shape
 
 `yoshida check --format json`, `yoshida render --format json`, the server's 422 response and the WebAssembly module all use this object per diagnostic:
