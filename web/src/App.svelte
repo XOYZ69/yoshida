@@ -178,6 +178,7 @@
 	} from "./lib/fonts/FontsWindow.svelte";
 	import {
 		findLicense,
+		fontEntryPath,
 		licenseKind,
 		previewFace,
 		previewTextOf,
@@ -1343,8 +1344,15 @@
 		const changes: Snapshot = add.map((a) => ({ path: a.path, data: a.data }));
 		if (designPath && doc && (Object.keys(declare).length || use)) {
 			const next = clone(doc);
-			if (Object.keys(declare).length)
-				next.fonts = { ...(isObj(next.fonts) ? next.fonts : {}), ...declare };
+			if (Object.keys(declare).length) {
+				const fonts: Record<string, Json> = isObj(next.fonts)
+					? next.fonts
+					: {};
+				// A name already declared for the same file keeps its note.
+				for (const [n, path] of Object.entries(declare))
+					if (fontEntryPath(fonts[n]) !== path) fonts[n] = path;
+				next.fonts = fonts;
+			}
 			if (use && selectedLayer) {
 				const l = findLayer(next, selectedLayer);
 				if (l) l.font = use;

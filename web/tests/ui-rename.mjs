@@ -30,6 +30,16 @@ const noteIn = fonts.locator('input[aria-label="Note for serif"]');
 await noteIn.fill("Titles and court names");
 await noteIn.press("Tab");
 await p.waitForTimeout(500);
+// The Fonts window reads a font with a note as its path.
+await fonts.locator("button.font-preview").first().click();
+const fw = p.locator('.win[aria-label^="Fonts"]');
+await fw.waitFor({ state: "visible", timeout: 5000 });
+const listText = await fw.innerText();
+ok("Fonts window has no [object Object]", !listText.includes("[object Object]"));
+ok("Fonts window lists the noted font as used", !/missing/.test(listText), listText.slice(0, 200));
+await p.keyboard.press("Escape");
+await fw.waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+ok("note survives the Fonts window", (await noteIn.inputValue()) === "Titles and court names");
 // font rename
 await fonts.locator('button[aria-label="Rename serif"]').click();
 const ri = fonts.locator('input[aria-label="New name for serif"]');
