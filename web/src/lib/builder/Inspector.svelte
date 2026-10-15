@@ -919,24 +919,31 @@ let newFunction = $state("");
       {#each fontEntries as [name, path]}
         {@const face = fontFaces[String(path)]}
         {@const lic = fontLicenses[String(path)]}
-        <div class="font-entry">
-          <div class="field-like font-row">
-            <input class="mono font-name" value={name} aria-label="Font name" title="Renaming also updates the layers that use this font" onchange={(e) => renameFontTo(name, e.currentTarget)} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
-            <button class="font-sample" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
-            <div class="row">
-              <Select
-                value={String(path)}
-                mono
-                label="Font file for {name}"
-                options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
-                onchange={(v) => setDoc(['fonts', name], v)} />
-              {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>
-              {:else if lic}<span class="lic" title="License file next to the font">{lic}</span>
-              {:else}<span class="missing" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">?</span>{/if}
-              <button class="mini" title="Remove" onclick={() => askRemoveFont(name)}>×</button>
-            </div>
+        {@const present = fontFiles.includes(String(path))}
+        <div class="effect font-card">
+          <div class="effect-head">
+            <strong class="mono">{name}</strong>
+            <span class="spacer"></span>
+            {#if !present}<span class="badge bad" title="This font file is not in the project; the default font is used">missing</span>
+            {:else if lic}<span class="badge" title="License file next to the font">{lic}</span>
+            {:else}<span class="badge warn" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">no license</span>{/if}
+            <button class="mini" title="Remove" aria-label="Remove font {name}" onclick={() => askRemoveFont(name)}>×</button>
+          </div>
+          <button class="font-preview" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
+          <div class="field-like">
+            <span class="lbl">name</span>
+            <input class="mono" value={name} aria-label="Font name" title="The name layers use in their font field; renaming also updates those layers" onchange={(e) => renameFontTo(name, e.currentTarget)} onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
           </div>
           {#if fontError.name === name}<div class="err">{fontError.msg}</div>{/if}
+          <div class="field-like">
+            <span class="lbl">file</span>
+            <Select
+              value={String(path)}
+              mono
+              label="Font file for {name}"
+              options={[...(present ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
+              onchange={(v) => setDoc(['fonts', name], v)} />
+          </div>
         </div>
       {/each}
       <div class="row font-actions">
@@ -1026,35 +1033,37 @@ let newFunction = $state("");
     display: flex;
     gap: 4px;
   }
-  .font-sample {
-    grid-column: 2;
-    justify-self: start;
-    max-width: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    font-size: 18px;
-    line-height: 1.2;
+  .font-preview {
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 22px;
+    line-height: 1.3;
+    text-align: left;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--fg);
     cursor: pointer;
   }
-  .lic {
-    align-self: center;
+  .font-preview:hover {
+    border-color: var(--accent);
+  }
+  .badge {
     padding: 0 5px;
     border: 1px solid var(--line);
     border-radius: 4px;
     font-size: 11px;
     color: var(--muted);
   }
-  .font-row > .row {
-    grid-column: 2;
+  .badge.warn {
+    border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
+    color: var(--warn-text);
   }
-  .font-name {
-    grid-row: span 2;
-    min-width: 0;
+  .badge.bad {
+    border-color: color-mix(in srgb, var(--err) 50%, var(--line));
+    color: var(--err);
   }
   .font-actions > button {
     flex: 1;
@@ -1101,17 +1110,6 @@ let newFunction = $state("");
   }
   .probs .go {
     color: var(--muted);
-  }
-  .missing {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    flex: none;
-    border-radius: 50%;
-    background: var(--warn);
-    color: #000;
-    font-weight: 700;
-    font-size: 12px;
   }
   .const {
     display: grid;
