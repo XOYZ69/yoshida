@@ -3,14 +3,30 @@ title = "Expressions: Functions"
 description = "Every built-in function, with arguments and return types."
 +++
 
+A function is called by its name, with its arguments in parentheses: `round(price, 1)`. Arguments and results have [types](@/docs/expressions.md#types); there is no conversion between them. Calling an unknown function is error 3002 (with a "did you mean" hint). A wrong number of arguments or a wrong argument type is error 3003.
+
+The functions are grouped by what they work on. The table below lists every group; the existing functions are described on this page, and the others on the pages linked from the table.
+
+| Group | Functions | Page |
+| --- | --- | --- |
+| Existing | `min` `max` `clamp` `abs` `floor` `ceil` `round` `len` `upper` `lower` `trim` `fmt` `avg_color` `mix` `with_alpha` `rgb` `rgba` `match` | this page |
+| Numbers and trigonometry | `sqrt` `pow` `sign` `sin` `cos` `tan` `asin` `acos` `atan2` `lerp` `remap` `wrap` | [Numbers](@/docs/expressions-functions-numbers.md) |
+| Text | `contains` `starts_with` `ends_with` `replace` `slice` `pad_start` `repeat` `title_case` `roman` `part` | [Text](@/docs/expressions-functions-text.md) |
+| Lists | `has` `get` `index_of` `sum` `avg` `min` `max` `count` `join` `last` | [Lists](@/docs/expressions-functions-lists.md) |
+| Dates and times | `date_fmt` `year` `month` `day` `weekday` `hour` `minute` `add_days` `add_hours` `days_between` | [Dates and times](@/docs/expressions-functions-dates.md) |
+| Colors | `hsl` `hsla` `lighten` `darken` `luminance` `readable` | [Colors and random](@/docs/expressions-functions-colors-and-random.md) |
+| Random | `rand` `rand_int` `pick` | [Colors and random](@/docs/expressions-functions-colors-and-random.md) |
+
+## Existing functions
+
 | Function | Signature | Notes |
 | --- | --- | --- |
-| `min`, `max` | `(number, number, ...) -> number` | Any number of arguments |
+| `min`, `max` | `(number, number, ...) -> number` | Any number of arguments. When the first argument is a list, see [Lists](@/docs/expressions-functions-lists.md) |
 | `clamp` | `(value, lo, hi) -> number` | |
 | `abs`, `floor`, `ceil` | `(number) -> number` | |
 | `round` | `(number, digits = 0) -> number` | |
 | `len` | `(list or text) -> number` | Items in a list, characters in text |
-| `upper`, `lower`, `trim` | `(text) -> text` | |
+| `upper`, `lower`, `trim` | `(text) -> text` | See below for `upper` and `lower` |
 | `fmt` | `(number, decimals) -> text` | `fmt(0.5, 2)` is `0.50` |
 | `avg_color` | `(image) -> color` | Average of the opaque pixels of an image param |
 | `mix` | `(color, color, t) -> color` | Linear blend, `t` from 0 to 1 |
@@ -18,9 +34,15 @@ description = "Every built-in function, with arguments and return types."
 | `rgb`, `rgba` | `(r, g, b[, a]) -> color` | Channels 0 to 255, `a` from 0 to 1 |
 | `match` | `(value, key, result, ..., default) -> result type` | Result of the first key equal to `value`, else `default`. See below |
 
-Calling an unknown function is error 3002 (with a "did you mean" hint). A wrong number of arguments or a wrong argument type is error 3003.
+`upper` and `lower` change the case of letters in the ASCII, Latin-1 Supplement, Latin Extended-A, Greek and Cyrillic blocks. Other characters are unchanged, and so is `ß`: `upper('ß')` is `ß`.
 
-Function names cannot be used as param names (error 1106).
+## Names of functions and other names
+
+A bare name never calls a function, and a call always has parentheses. So a param, constant, loop name or function argument may use the name of a built-in function. `min` as a param is a value, and `min(a, b)` still calls the built-in.
+
+A **design function** may also use a built-in's name, such as `round`. Inside that design the design function replaces the built-in: later calls to `round(...)` run the design's function, and the design gets warning 1113. The function's own body still sees the built-in, so a wrapper can call it (see [Constants and functions](@/docs/expressions-constants-and-functions.md)). Other designs are not affected.
+
+Reserved words (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) cannot be used for any name (error 1106).
 
 A design can add its own functions, such as `tile_x(i)`, and named constants: see [Constants and functions](@/docs/expressions-constants-and-functions.md).
 

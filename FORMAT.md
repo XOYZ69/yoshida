@@ -49,6 +49,8 @@ JSON Schemas for editor autocompletion live in `schema/` of the implementation: 
 
 `sets` pairs card files with designs. It is required for CSV card data (CSV cannot name its design) and optional for JSON card data, which names its own design.
 
+`utc_offset` (optional, default `0`) is a number of hours from UTC, from -14 to 14, fractions allowed (`5.5`). It applies to `render.date` and `render.time` only. It is a fixed offset: it does not follow daylight saving time, and named time zones are not part of the format. A value outside -14 to 14 is [1103].
+
 ## 2. Value kinds
 
 Every field in this spec has one of these kinds. The kind decides how a JSON string in that field is read.
@@ -95,7 +97,7 @@ Unknown top-level fields are [1101].
 
 ## 4. Params
 
-Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) or a function name [1106].
+Params are the inputs a card can set. Names follow `ident` and must not equal a reserved name (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) [1106]. A built-in function name is allowed: a bare name is a value, not a call (6.8).
 
 ```json
 "params": {
@@ -322,7 +324,9 @@ A divider organises the layer list in the editor. It draws nothing and takes no 
 | `canvas.w`, `canvas.h` | number | Canvas size |
 | `card.id` | text | The card's id |
 | `render.index` | number | 0-based position of the card in its set |
-| `render.date` | text | ISO date `YYYY-MM-DD`, chosen once by whoever starts the render |
+| `render.date` | text | ISO date `YYYY-MM-DD` in the `utc_offset` time zone, chosen once by whoever starts the render (`--date` or `--now`) |
+| `render.time` | text | `HH:MM:SS` in the same time zone |
+| `render.now` | text | The render's instant in UTC, `YYYY-MM-DDTHH:MM:SSZ` (`--now`); not changed by `utc_offset` |
 | `@<layer_id>.<field path>` | field's type | The other layer's evaluated field, e.g. `@title.at.y`, `@bg.box.w`, `@bg.fill` |
 | `@<layer_id>.bounds.<f>` | number | Final pixel bounds after anchor and layout: `left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy` |
 | `@<layer_id>[n].<field path>` | field's type | Iteration `n` of a repeated layer, or of the repeated group around it (5.7, 5.10) |
@@ -371,24 +375,67 @@ Highest precedence first:
 
 ### 6.5 Functions
 
-| Function | Signature |
-| --- | --- |
-| `min`, `max` | `(number, number, ...) -> number` |
-| `clamp` | `(value, lo, hi) -> number` |
-| `abs`, `floor`, `ceil` | `(number) -> number` |
-| `round` | `(number, digits = 0) -> number` |
-| `len` | `(list or text) -> number` |
-| `upper`, `lower`, `trim` | `(text) -> text` |
-| `fmt` | `(number, decimals) -> text`, e.g. `fmt(0.5, 2)` is `0.50` |
-| `avg_color` | `(image) -> color`, average of opaque pixels |
-| `mix` | `(color, color, t) -> color`, linear blend, `t` 0 to 1 |
-| `with_alpha` | `(color, a) -> color`, `a` 0 to 1 |
-| `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 |
-| `match` | `(value, key, result, ..., default) -> result type` |
+A call is `name(args)`. An unknown name is [3002]; a wrong argument count or type is [3003]. Angles are degrees everywhere. Design functions (6.8) are called the same way.
 
-`match` compares `value` with each `key` in order and gives the result of the first equal key, else `default`. Keys have the value's type (number, text, bool or color). All results and the default share one type, which is the return type. Only the chosen result is evaluated. It needs an even number of arguments, at least four: value, one or more key and result pairs, and the default ([3003] otherwise).
+| Group | Function | Signature and rules |
+| --- | --- | --- |
+| Existing | `min`, `max` | `(number, ...) -> number`. With a list as first argument: list form (below) |
+| | `clamp` | `(value, lo, hi) -> number` |
+| | `abs`, `floor`, `ceil` | `(number) -> number` |
+| | `round` | `(number, digits = 0) -> number` |
+| | `len` | `(list or text) -> number` |
+| | `upper`, `lower`, `trim` | `(text) -> text`. `upper`/`lower` map the ASCII, Latin-1 Supplement, Latin Extended-A, Greek and Cyrillic basic blocks; other characters, including `ß`, are unchanged |
+| | `fmt` | `(number, decimals) -> text` |
+| | `avg_color` | `(image) -> color`, average of opaque pixels |
+| | `mix` | `(color, color, t) -> color`, linear blend, `t` 0 to 1 |
+| | `with_alpha` | `(color, a) -> color`, `a` 0 to 1 |
+| | `rgb`, `rgba` | `(r, g, b[, a]) -> color`, channels 0 to 255, `a` 0 to 1 |
+| | `match` | `(value, key, result, ..., default) -> result type`. Keys have the value's type; only the chosen result is evaluated. Even argument count, at least four, else [3003] |
+| Numbers | `sqrt(x)` | `-> number`; `x < 0` is [3103] |
+| | `pow(b, e)` | `-> number`; a non-finite result is [3103] |
+| | `sign(x)` | `-> number`, -1, 0 or 1; `sign(-0)` is 0 |
+| | `sin`, `cos`, `tan`, `asin`, `acos` | `(number) -> number`, degrees. Exact at multiples of 90. `tan` at 90 + k*180 is [3103]; asin and acos with `|x| > 1` are [3103] |
+| | `atan2(y, x)` | `-> number` in degrees, (-180, 180]; `atan2(0, 0)` is 0 |
+| | `lerp(a, b, t)` | `a + (b - a) * t`, not clamped |
+| | `remap(v, a, b, c, d)` | `c + (v - a) * (d - c) / (b - a)`, not clamped; `a == b` is [3103] |
+| | `wrap(v, n)` | `v - n * floor(v / n)`; `n == 0` is [3103]; in [0, n) for n > 0 |
+| Text | `contains(t, s)`, `starts_with(t, s)`, `ends_with(t, s)` | `-> bool`; exact (case-sensitive); empty `s` is true |
+| | `replace(t, old, new)` | every occurrence; empty `old` leaves `t` |
+| | `slice(t, start[, end])` | characters; indices floored and clamped; negative counts from the end; `end` omitted runs to the end; `end <= start` gives "" |
+| | `pad_start(t, width[, fill])` | pads on the left with the first character of `fill` (a space when omitted) up to `width`; empty `fill` or `t` already wide enough gives `t` |
+| | `repeat(t, n)` | `n` floored; `n <= 0` gives "" |
+| | `title_case(t)` | first letter of each word upper-cased; words split at white space and `-` |
+| | `roman(n)` | upper-case; `n` floored, 1 to 3999, else [3107] |
+| | `part(t, sep, n)` | piece `n`, 0-based, floored, negative from the end; out of range gives ""; empty `sep` is [3107] |
+| Lists | `has(list, key)` | `-> bool`. Key field: the first `text` field |
+| | `get(list, key, fallback)` | value of a key/value list (value type); `fallback` of that type |
+| | `get(list, key, 'field', fallback)` | field type; `fallback` of that type |
+| | `index_of(list, key)` | `-> number`, 0-based, -1 when missing |
+| | `sum(list[, 'field'])` | `-> number`; empty list gives 0 |
+| | `avg`, `min`, `max` (`list[, 'field']`) | `-> number`; empty list is [3103] |
+| | `count(list, 'field', value)` | `-> number`; items whose field equals `value` |
+| | `join(list[, 'field'], sep)` | `-> text`; values printed as in templates; over 10 000 bytes is [3106] |
+| | `last(list)` | the last item; empty list is [3102] |
+| Dates | `date_fmt(t, pattern)` | `-> text`. Tokens `YYYY YY MMMM MMM MM M DD D dddd ddd HH H mm ss` (longest match first, case-sensitive); `[...]` is literal; English names; date tokens on a time-only value are [3105]; time tokens on a date-only value give 0 |
+| | `year`, `month`, `day`, `weekday` | `(t) -> number`; `weekday` 1 = Monday (ISO); time-only is [3105] |
+| | `hour`, `minute` | `(t) -> number`; date-only gives 0 |
+| | `add_days(t, n)` | `-> text` in the input's form (date or date-time, `Z` kept); `n` floored; a result outside years 1 to 9999 is [3105] |
+| | `add_hours(t, h)` | `-> text`, `YYYY-MM-DDTHH:MM:SS` (`Z` kept); a date counts as midnight; fractional hours rounded to seconds; a result outside years 1 to 9999 is [3105] |
+| | `days_between(a, b)` | `-> number`, `b - a` in whole days of the date parts |
+| | date text | `YYYY-MM-DD`, `HH:MM` or `HH:MM:SS`, or `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` with optional `Z`; years 1 to 9999; anything else is [3105] |
+| Colors | `hsl(h, s, l)`, `hsla(h, s, l, a)` | `-> color`. `h` in degrees, wrapped; `s`, `l` 0 to 100 and `a` 0 to 1, clamped |
+| | `lighten(c, n)`, `darken(c, n)` | `-> color`. HSL lightness plus or minus `n` (0 to 100 scale), clamped; alpha kept |
+| | `luminance(c)` | `-> number`, WCAG 2 relative luminance 0 to 1; alpha ignored |
+| | `readable(bg[, light, dark])` | `-> color`. `light` when its contrast with `bg` is at least `dark`'s, else `dark`. Defaults `#FFFFFF` and `#000000` |
+| Random | `rand(seed, ...)` | `-> number` in [0, 1). One or more seeds of number, text, bool or color |
+| | `rand_int(lo, hi, seed, ...)` | `-> number`; `lo` and `hi` floored; both included; `lo > hi` is [3107] |
+| | `pick(seed, a, b, ...)` | one seed; two or more choices of one type; `-> ` that type |
 
-Calling an unknown function is [3002]; wrong argument count or types is [3003]. Design functions (6.8) are called the same way.
+Seeded functions are pure: the same seeds give the same value in every build, and the mapping from seeds to values is fixed.
+
+Errors while a function runs: [3103] math error, [3105] text is not a date, time or date-time, [3106] text result over 10 000 bytes, [3107] argument out of range, [3102] empty `last`, list index out of range.
+
+**List arguments.** `'field'` must be a text literal naming a field of the list's item, checked when the design loads. When it is omitted, the value field is used: the item's only field, or for a key/value list (exactly two fields, a text key and a value) the field that is not the key. Otherwise the call is [3003].
 
 ### 6.6 Templates (`text` and `path` fields)
 
@@ -396,7 +443,7 @@ Literal text with `{expression}` holes. `{{` and `}}` produce literal braces. Va
 
 ### 6.7 Determinism
 
-The same project, card data and `render.date` always produce the same pixels in every build (WASM, CLI, server). There is no clock, randomness, network or file access inside expressions.
+The same project, card data, `render.now`, `utc_offset` and `render.date` always produce the same pixels in every build (WASM, CLI, server). Expressions have no clock: the instant is an input (`render.now`). Seeded random functions (6.5) are pure. There is no network or file access inside expressions.
 
 ### 6.8 Constants and functions
 
@@ -412,8 +459,9 @@ A design can name values and formulas that several layers use:
 
 - A constant is a number, `true`/`false`, or an expression string; its type is the expression's (not a list). It sees params, built-in names and the constants before it, and is evaluated once per card.
 - A function has `args` (an object of name → `number`, `text`, `bool` or `color`, or an array of names, all numbers) and an `expr`. The body sees its arguments, params, constants and the functions before it (so there is no recursion); not layers and not loop names (pass them as arguments). The return type is the body's type. Call it like a built-in: `tile_x(i)`.
-- Names follow `ident` and must not be a param, a reserved word, a built-in function or another constant or function [1106]. A loop name may hide a constant inside its layer.
+- Names follow `ident` and must not be a param, a reserved word (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) or another constant or function [1106]. A built-in function name is allowed for them. A design function with a built-in's name hides the built-in in this design [1113]. A loop name may hide a constant inside its layer.
 - An error inside a function body is reported at the body (`/functions/<name>/expr`).
+- A function's body sees only the functions above it. A function named like a built-in therefore calls the built-in inside its own body, while later expressions get the design's function [1113].
 
 ## 7. Card data
 
@@ -462,13 +510,14 @@ Every problem is reported as `{ severity, code, file, path, span, message, hint,
 | 1103 | err | Wrong JSON type for the field's kind |
 | 1104 | err | `format` missing |
 | 1105 | err | Unsupported `format` version |
-| 1106 | err | Param, constant or function name is invalid or collides with a reserved word, function or another name |
+| 1106 | err | Param, constant or function name is invalid, is a reserved word, or collides with another param, constant or function name |
 | 1107 | err | Param has neither `default` nor `required` |
 | 1108 | err | Duplicate or invalid layer id |
 | 1109 | err | Polygon has fewer than 3 points (2 for an open one) |
 | 1110 | err | Image `w` and `h` both `auto` |
 | 1111 | err | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape` |
 | 1112 | err | `extends` across different layer types (including a group), or of a divider |
+| 1113 | warning | A design function has the name of a built-in function; the design's function is used in this design |
 | 1201 | err | File not found |
 | 1202 | err | CSV syntax error |
 | 1203 | err | Path escapes the project root |
@@ -485,9 +534,12 @@ Every problem is reported as `{ severity, code, file, path, span, message, hint,
 | 3005 | err | Reference to a repeated layer without an iteration index, or into nested repeats |
 | 3006 | err | Unit not valid in this field |
 | 3101 | err | Negative width or height (at render time) |
-| 3102 | err | List index or iteration index out of range (at render time) |
-| 3103 | err | Division by zero (at render time) |
+| 3102 | err | List index or iteration index out of range, or `last()` of an empty list (at render time) |
+| 3103 | err | Math error: division by zero, empty list `avg`/`min`/`max`, result not a finite number, value outside a function's domain (at render time) |
 | 3104 | err | List lookup by a key no item has (at render time) |
+| 3105 | err | Text is not a valid date, time or date-time, or a date token is used on a time-only value (at render time) |
+| 3106 | err | Text result over 10 000 bytes (at render time) |
+| 3107 | err | Argument out of range: `roman` outside 1 to 3999, empty `part` separator, `rand_int` with `lo > hi` (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |

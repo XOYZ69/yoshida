@@ -52,6 +52,7 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `name` | no | Display name of the project |
 | `note` | no | Comment |
 | `sets` | no | Array of sets, below |
+| `utc_offset` | no | Hours from UTC for `render.date` and `render.time`: a number from -14 to 14, fractions allowed. Default `0`. See [Time zone](#time-zone) |
 
 | Set field | Required | Meaning |
 | --- | --- | --- |
@@ -60,6 +61,24 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `name` | no | Set name, used for the output folder and `--set`. Default: `set1`, `set2`, ... by position |
 
 Unknown manifest fields are error 1101 with a "did you mean" hint. A path that leaves the project is 1203; a missing file is 1201.
+
+## Time zone
+
+`utc_offset` sets the project's time zone for the expressions `render.date` and `render.time`, as a **fixed offset in hours** from UTC. `render.now` is not affected: it is always UTC.
+
+```json
+{
+  "format": 1,
+  "utc_offset": 5.5
+}
+```
+
+- The default is `0`, UTC. A value outside -14 to 14 is error 1103 when the project loads.
+- A fixed offset does not follow daylight saving time, and named zones such as `Europe/Berlin` are not supported. For a zone with summer time, change the number when the clocks change (for example `2` in summer and `1` in winter for Central European Time).
+- In the editor, the project settings show the offset with a **use my browser's offset** button, which fills in the offset of the browser's time zone. Previews use the current time, and an export uses the time it started.
+- On the command line, `--utc-offset HOURS` replaces the value for one run. See [Command Line](@/docs/command-line.md#yoshida-render).
+
+The functions that use the date and time are on [Dates and times](@/docs/expressions-functions-dates.md).
 
 ## Assets
 

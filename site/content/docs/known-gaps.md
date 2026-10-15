@@ -14,6 +14,7 @@ What does not work yet, so you do not have to find out the hard way.
 - A layer inside **two nested repeats** cannot be referenced from outside both (error 3005); an index picks one level only. See [Repeat](@/docs/repeat.md#reading-one-iteration).
 - **Functions** cannot read layers or loop names (pass them as arguments) and cannot call themselves. See [Constants and functions](@/docs/expressions-constants-and-functions.md).
 - A typo in a word compared with an **enum** value inside an expression (`t.kind == 'saef'`) is not reported; card values of enum params and enum item fields are checked.
+- Functions **cannot build lists**. There are no `map`, `filter` or `sort`; lists come only from list params and `repeat`. See [List functions](@/docs/expressions-functions-lists.md).
 
 ## Drawing
 
@@ -25,6 +26,11 @@ What does not work yet, so you do not have to find out the hard way.
 
 - PDF pages hold the card as an 8-bit image (no 16-bit, no vector output). Crop marks are drawn in a white margin; there are no color bars or registration marks.
 
+## Dates and times
+
+- **Named time zones** such as `Europe/Berlin` are not supported. A project has one fixed offset from UTC (`utc_offset`, in hours), and it does not follow daylight saving time. See [Time zone](@/docs/project-layout-and-manifest.md#time-zone).
+- **Month and day names are English only**: `MMMM`, `MMM`, `dddd` and `ddd` in `date_fmt` write English names, and there is no locale setting.
+
 ## Wishes
 
 Not planned or implemented yet:
@@ -34,6 +40,7 @@ Not planned or implemented yet:
 - Emoji and color font support.
 - Miter and bevel line joins.
 - Rich text and shared design parts.
+- Named time zones and month and day names in other languages.
 
 These are candidates for a later 1.x or 2 format. See [Limits and Versioning](@/docs/limits-and-versioning.md).
 

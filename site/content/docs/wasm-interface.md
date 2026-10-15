@@ -47,7 +47,9 @@ Returns `{ "diagnostics": [...], "project": {...} }`. The project summary lists 
 | --------- | -------------- | ---------------------------------------------------------------------------------- |
 | `set`     | `""`           | Set name (set it: an omitted or unknown name answers `{ "error": "unknown set" }`) |
 | `card`    | `0`            | 0-based card index in the set                                                      |
-| `date`    | `"1970-01-01"` | Value of `render.date`. The editor sends today's date                              |
+| `date`    | `"1970-01-01"` | Used when `now` is not given: `render.date` is this date, `render.time` is `00:00:00` and `render.now` is that date at midnight UTC. The editor sends today's date |
+| `now`     | none | UTC instant `YYYY-MM-DDTHH:MM:SSZ`: `render.now`. `render.date` and `render.time` are it shifted by the offset. Overrides `date`. An invalid value is ignored, so the render falls back to `date` at midnight |
+| `utc_offset` | project's | Hours from UTC, -14 to 14, replaces the project's `utc_offset`. Other values are ignored |
 | `preview` | `true`         | Missing or undecodable images become a placeholder and a warning                   |
 | `format`  | `"rgba"`       | `rgba` (raw 8-bit RGBA for a canvas), `png` or `png16`                             |
 | `layout`  | `false`        | Also return the resolved bounds of every layer                                     |

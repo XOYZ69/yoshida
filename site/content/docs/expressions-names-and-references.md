@@ -11,14 +11,16 @@ description = "Params, layer fields, canvas and card names, and reserved words."
 | `canvas.w`, `canvas.h` | number | Canvas size in pixels |
 | `card.id` | text | The card's id |
 | `render.index` | number | 0-based position of the card in its set |
-| `render.date` | text | ISO date `YYYY-MM-DD`, chosen once by whoever starts the render (`--date` on the CLI) |
+| `render.date` | text | ISO date `YYYY-MM-DD` in the project's time zone (`utc_offset`), chosen once by whoever starts the render (`--date` or `--now` on the CLI) |
+| `render.time` | text | Time `HH:MM:SS` in the same time zone |
+| `render.now` | text | The instant the render starts, in UTC, as `YYYY-MM-DDTHH:MM:SSZ` (`--now` on the CLI); not changed by `utc_offset` |
 | `@<layer_id>.<field>` | the field's type | Another layer's evaluated field |
 | `@<layer_id>.bounds.<f>` | number | The layer's final pixel bounds |
 | `@<layer_id>[n].<field>` | the field's type | Iteration `n` of a repeated layer (or of the repeated group around it) |
 | `list[n]`, `item.field` | | Indexing (0-based) and field access |
 | `list.Key`, `list["Key"]` | | [Lookup by key](@/docs/expressions-list-lookup.md) |
 
-Reserved names that cannot be params, constants or functions: `canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`, and every [built-in function name](@/docs/expressions-functions.md).
+Reserved words that cannot be used as param, constant, function or loop names: `canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in` (error 1106). Built-in function names are not reserved: a param or constant may use one, because a bare name is a value and not a call. A design function with a built-in's name hides the built-in in that design, with warning 1113. See [Functions](@/docs/expressions-functions.md#names-of-functions-and-other-names).
 
 ## Layer references
 
@@ -78,8 +80,12 @@ A param name used in an expression gives the card's value, or the param's defaul
 
 - `card.id`: the card's id as text (`001`, or whatever the card file says).
 - `render.index`: 0 for the first card of the set, 1 for the second, and so on.
-- `render.date`: for example `2026-10-08`. Use it for footers, and pass `--date` when you need identical output on different days.
+- `render.date`: for example `2026-10-08`, the local date in the project's time zone. Use it for footers, and pass `--now` (or `--date`) when you need identical output on different days.
+- `render.time`: for example `14:05:09`, the local time in the same zone.
+- `render.now`: for example `2026-10-08T12:05:09Z`, the UTC instant of the render. Pass `--now` to pin it.
 
 ```json
 "text": "#{card.id} · {render.date}"
 ```
+
+The date and time functions are on [Dates and times](@/docs/expressions-functions-dates.md), and the time zone is set with `utc_offset` in [Project Layout and Manifest](@/docs/project-layout-and-manifest.md#time-zone).

@@ -49,11 +49,14 @@ Layers use them like params and built-in functions:
 - Call a function like a built-in one: `tile_x(i)`. The number and types of the arguments are checked when the design loads (error 3003).
 - The return type is the type of `expr`.
 - The body cannot read layers or loop names; pass what it needs as arguments. A function cannot call itself or a function below it, so there is no recursion.
+- A function may take a built-in's name. Its body sees only the functions above it, so inside its own body the name is still the built-in. For example, `"round": { "args": { "v": "number" }, "expr": "round(v * 2) / 2" }` rounds to halves, and every later `round(...)` in the design calls this function. The loader gives warning 1113.
 - An error while a body is evaluated (such as a division by zero) is reported at the body, `/functions/<name>/expr`, with the card's id.
 
 ## Names
 
-Constant and function names follow the identifier rule `[a-z_][a-z0-9_]*` and must not be a param, a reserved word, a built-in function or another constant or function (error 1106). A loop name in a layer can hide a constant inside that layer.
+Constant and function names follow the identifier rule `[a-z_][a-z0-9_]*` and must not be a param, a reserved word, or another constant or function (error 1106). A loop name in a layer can hide a constant inside that layer.
+
+A name may equal a built-in function's name. A constant with such a name works, because a bare name is a value and calls of the built-in still work. A **function** with a built-in's name replaces that built-in in this design, and the design gets warning 1113: calls to it run the design's function. See [Functions](@/docs/expressions-functions.md#names-of-functions-and-other-names).
 
 ## In the editor
 
