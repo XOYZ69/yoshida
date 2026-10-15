@@ -460,7 +460,7 @@ A design can name values and formulas that several layers use:
 ```
 
 - A constant is a number, `true`/`false`, or an expression string; its type is the expression's (not a list). It sees params, built-in names and the constants before it, and is evaluated once per card.
-- A function has `args` (an object of name → `number`, `text`, `bool` or `color`, or an array of names, all numbers) and an `expr`. The body sees its arguments, params, constants and the functions before it (so there is no recursion); not layers and not loop names (pass them as arguments). The return type is the body's type. Call it like a built-in: `tile_x(i)`.
+- A function has `args` (an object of name → `number`, `text`, `bool` or `color`, or an array of names, all numbers) and an `expr`. The body sees its arguments, params, constants and the functions before it (so there is no recursion); not layers and not loop names (pass them as arguments). The return type is the body's type. Call it like a built-in: `tile_x(i)`. An optional `note` (text) describes the function; editors show it in completion and hover.
 - Names follow `ident` and must not be a param, a reserved word (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`) or another constant or function [1106]. A built-in function name is allowed for them. A design function with a built-in's name hides the built-in in this design [1113]. A loop name may hide a constant inside its layer.
 - An error inside a function body is reported at the body (`/functions/<name>/expr`).
 - A function's body sees only the functions above it. A function named like a built-in therefore calls the built-in inside its own body, while later expressions get the design's function [1113].

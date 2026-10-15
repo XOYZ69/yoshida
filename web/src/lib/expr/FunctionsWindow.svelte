@@ -25,7 +25,7 @@ let {
 	/** Filter text to start with. */
 	query?: string;
 	/** The functions this design defines: name, argument names and body. */
-	userFunctions?: { name: string; args: string; expr: string }[];
+	userFunctions?: { name: string; args: string; expr: string; note?: string }[];
 } = $props();
 
 /** Function groups in list order. Every function of FUNCTIONS is in one of them, or in OTHER. */
@@ -144,7 +144,9 @@ function matches(text: string): boolean {
 }
 
 const design = $derived(
-	userFunctions.filter((u) => matches(`${u.name} ${u.args} ${u.expr}`)),
+	userFunctions.filter((u) =>
+		matches(`${u.name} ${u.args} ${u.expr} ${u.note ?? ""}`),
+	),
 );
 
 const groups = $derived.by((): Group[] => {
@@ -302,6 +304,7 @@ onDestroy(() => clearTimeout(timer));
               {#each design as u}
                 <article class="entry">
                   <div class="sig"><code><span class="fname">{u.name}</span>({u.args})</code></div>
+                  {#if u.note}<p class="doc">{u.note}</p>{/if}
                   <div class="ex"><span class="eq">=</span><code>{#each highlight(u.expr) as s}<span class={s.k}>{s.t}</span>{/each}</code></div>
                 </article>
               {/each}

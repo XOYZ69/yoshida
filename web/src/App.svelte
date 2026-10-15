@@ -1259,13 +1259,14 @@
 		return Object.entries(fns)
 			.filter(([, f]) => isObj(f))
 			.map(([name, f]) => {
-				const fn = f as { args?: unknown; expr?: unknown };
+				const fn = f as { args?: unknown; expr?: unknown; note?: unknown };
 				const args = isObj(fn.args)
 					? Object.entries(fn.args)
 							.map(([a, t]) => `${a}: ${t}`)
 							.join(", ")
 					: "";
-				return { name, args, expr: String(fn.expr ?? "") };
+				const note = typeof fn.note === "string" ? fn.note : undefined;
+				return { name, args, expr: String(fn.expr ?? ""), note };
 			});
 	});
 

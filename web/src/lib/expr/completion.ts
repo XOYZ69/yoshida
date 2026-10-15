@@ -227,7 +227,10 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 					section: S.functions,
 					fitness: 1,
 					apply: insertThenComplete(`${f.name}(`),
-					info: info(`${f.name}(${f.args})`, "A design function (functions)."),
+					info: info(
+						`${f.name}(${f.args})`,
+						f.note || "A design function (functions).",
+					),
 				},
 				expect,
 				1,

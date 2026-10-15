@@ -903,6 +903,10 @@ let newFunction = $state("");
             <span class="lbl">args</span>
             <input class="mono" value={argsText(fn.args)} placeholder="i: number, kind: text" onchange={(e) => setDoc(['functions', name, 'args'], parseArgs(e.currentTarget.value))} />
           </div>
+          <div class="field-like">
+            <span class="lbl">note</span>
+            <input value={typeof fn.note === 'string' ? fn.note : ''} placeholder="What it does, shown on hover" title="Optional description, shown in completion and when you hover a call" onchange={(e) => setDoc(['functions', name, 'note'], e.currentTarget.value.trim() || undefined)} />
+          </div>
           <Scope context={() => functionScope(name, fn)}>
             <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} path={pathOf(['functions', name, 'expr'])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
           </Scope>
