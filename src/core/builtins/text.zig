@@ -188,24 +188,35 @@ pub fn slice(arena: Allocator, t: []const u8, start: f64, end: ?f64) Error![]con
     return t[byteOffset(t, a)..byteOffset(t, b)];
 }
 
-/// Pads `t` on the left with the first code point of `fill` up to `width`
-/// code points (floored). Returns `t` when `fill` is empty or `t` is already
-/// wide enough.
+/// Pads `t` on the left up to `width` code points (floored), as JavaScript
+/// `padStart` does: `fill` is repeated whole and cut to the number of code
+/// points needed, so `padStart("7", 3, "ab")` is "ab7". Returns `t` when
+/// `fill` is empty or `t` is already wide enough.
 pub fn padStart(arena: Allocator, t: []const u8, width: f64, fill: []const u8) Error![]const u8 {
     if (fill.len == 0) return t;
     const cur = cpCount(t);
     const w = @floor(width);
     if (!(w > @as(f64, @floatFromInt(cur)))) return t;
     if (w > max_len) return Error.TooLong;
-    const f = decodeAt(fill, 0);
-    const pad_unit = fill[0..f.len];
     const needed = @as(usize, @intFromFloat(w)) - cur;
-    const pad_bytes = std.math.mul(usize, needed, pad_unit.len) catch return Error.TooLong;
+    // Byte size of the padding: `needed` code points cycling through `fill`.
+    var pad_bytes: usize = 0;
+    var pos: usize = 0;
+    for (0..needed) |_| {
+        const n = decodeAt(fill, pos).len;
+        pad_bytes += n;
+        pos = if (pos + n >= fill.len) 0 else pos + n;
+    }
     const total = std.math.add(usize, t.len, pad_bytes) catch return Error.TooLong;
     if (total > max_len) return Error.TooLong;
     var list: std.ArrayList(u8) = .empty;
     try list.ensureTotalCapacity(arena, total);
-    for (0..needed) |_| list.appendSliceAssumeCapacity(pad_unit);
+    pos = 0;
+    for (0..needed) |_| {
+        const n = decodeAt(fill, pos).len;
+        list.appendSliceAssumeCapacity(fill[pos..][0..n]);
+        pos = if (pos + n >= fill.len) 0 else pos + n;
+    }
     list.appendSliceAssumeCapacity(t);
     return list.items;
 }
@@ -497,12 +508,16 @@ test "slice counts code points" {
     try std.testing.expectEqualStrings("\xff", try slice(arena, "a\xffb", 1, 2));
 }
 
-test "padStart pads with first code point of fill" {
+test "padStart repeats fill and truncates it" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     try std.testing.expectEqualStrings("007", try padStart(arena, "7", 3, "0"));
-    try std.testing.expectEqualStrings("aax", try padStart(arena, "x", 3, "ab"));
+    try std.testing.expectEqualStrings("abx", try padStart(arena, "x", 3, "ab"));
+    try std.testing.expectEqualStrings("ab7", try padStart(arena, "7", 3, "ab"));
+    try std.testing.expectEqualStrings("ababa7", try padStart(arena, "7", 6, "ab"));
+    try std.testing.expectEqualStrings("é😀é😀é😀7", try padStart(arena, "7", 7, "é😀"));
+    try std.testing.expectEqualStrings("\xffax", try padStart(arena, "x", 3, "\xffa"));
     try std.testing.expectEqualStrings("üüé", try padStart(arena, "é", 3, "ü"));
     try std.testing.expectEqualStrings("😀😀😀ab", try padStart(arena, "ab", 5, "😀"));
     try std.testing.expectEqualStrings("001", try padStart(arena, "1", 3.9, "0"));

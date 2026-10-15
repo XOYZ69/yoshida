@@ -127,7 +127,7 @@ fn append(w: *std.Io.Writer, s: []const u8) Error!void {
 
 fn writeValue(w: *std.Io.Writer, v: Value) Error!void {
     switch (v) {
-        .number => |x| value.writeNumber(w, x) catch return error.OutOfMemory,
+        .number => |x| value.writeDisplayNumber(w, x) catch return error.OutOfMemory,
         .bool => |b| try append(w, if (b) "true" else "false"),
         .text, .image => |s| try append(w, s),
         .color => |c| {

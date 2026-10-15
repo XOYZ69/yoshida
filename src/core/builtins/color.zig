@@ -56,7 +56,8 @@ pub fn hsl(h: f64, s: f64, l: f64, a: f64) Color {
         .r = chan8(c[0]),
         .g = chan8(c[1]),
         .b = chan8(c[2]),
-        .a = unit16(clampTo(a, 0, 1)),
+        // Alpha on the 8-bit grid like rgba(), so hsla(...) == #RRGGBBAA holds.
+        .a = @as(u16, @intFromFloat(@round(clampTo(a, 0, 1) * 255))) * 257,
     };
 }
 
@@ -191,7 +192,7 @@ test "hsl clamps and handles invalid numbers" {
 
 test "hsl alpha" {
     try testing.expectEqual(@as(u16, 65535), hsl(0, 100, 50, 1).a);
-    try testing.expectEqual(@as(u16, 32768), hsl(0, 100, 50, 0.5).a);
+    try testing.expectEqual(@as(u16, 32896), hsl(0, 100, 50, 0.5).a);
     try testing.expectEqual(@as(u16, 0), hsl(0, 100, 50, 0).a);
     try testing.expectEqual(@as(u16, 65535), hsl(0, 100, 50, 2).a);
     try testing.expectEqual(@as(u16, 0), hsl(0, 100, 50, -1).a);

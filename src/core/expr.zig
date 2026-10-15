@@ -39,6 +39,8 @@ pub const Builtin = enum {
 pub const Func = enum {
     min,
     max,
+    /// Median of three numbers: `clamp(value, lo, hi)`, which is also the
+    /// CSS order `clamp(lo, value, hi)`. Never an error when lo > hi.
     clamp,
     abs,
     floor,
@@ -65,6 +67,8 @@ pub const Func = enum {
     asin,
     acos,
     atan2,
+    deg,
+    rad,
     lerp,
     remap,
     wrap,
@@ -156,8 +160,9 @@ pub const Node = struct {
         boolean: bool,
         color: Color,
         /// A param, loop name, function argument or design constant; the
-        /// checker sets `konst` when the name is a constant.
-        name: struct { text: []const u8, konst: ?usize = null },
+        /// checker sets `konst` when the name is a constant, and `pi` when it is
+        /// the built-in constant `pi` (a design name called `pi` hides it).
+        name: struct { text: []const u8, konst: ?usize = null, pi: bool = false },
         builtin: Builtin,
         /// `@id.path` or `@id[index].path` (one iteration of a repeated layer).
         layer_ref: struct { id: []const u8, path: []const []const u8, index: ?*Node = null },
@@ -320,6 +325,11 @@ const Lexer = struct {
             if (lx.i < s.len and (std.ascii.isAlphabetic(s[lx.i]) or s[lx.i] == '_')) {
                 var e = lx.i;
                 while (e < s.len and std.ascii.isAlphanumeric(s[e])) e += 1;
+                if (exponentEnd(s, lx.i)) |end| {
+                    const num_value = std.fmt.parseFloat(f64, s[start..end]) catch 0;
+                    const hint = try std.fmt.allocPrint(lx.arena, "exponent notation is not supported; write {d}", .{num_value});
+                    return lx.fail(3001, start, end, "unknown unit after a number", hint);
+                }
                 return lx.fail(3001, start, e, "unknown unit after a number", "valid units are %, vw and vh");
             }
             var t = lx.tok(.number, start);
@@ -332,7 +342,7 @@ const Lexer = struct {
             while (lx.i < s.len and std.ascii.isAlphanumeric(s[lx.i])) lx.i += 1;
             const t = lx.tok(.color, start);
             if (Color.parseHex(t.text) == null) {
-                return lx.fail(3001, start, lx.i, "invalid color literal", "use #RRGGBB, #RRGGBBAA, #RRRRGGGGBBBB or #RRRRGGGGBBBBAAAA");
+                return lx.fail(3001, start, lx.i, "invalid color literal", "use #RGB, #RRGGBB, #RGBA, #RRGGBBAA, #RRRRGGGGBBBB or #RRRRGGGGBBBBAAAA");
             }
             return t;
         }
@@ -379,6 +389,8 @@ const Lexer = struct {
             }
             return t;
         }
+        if (std.mem.startsWith(u8, s[lx.i..], "**")) return lx.fail(3001, start, start + 2, "unexpected '**'", "use pow(a, b)");
+        if (std.mem.startsWith(u8, s[lx.i..], "<>")) return lx.fail(3001, start, start + 2, "unexpected '<>'", "use '!=' for not equal");
         const two = [_][]const u8{ "==", "!=", "<=", ">=" };
         for (two) |op| {
             if (std.mem.startsWith(u8, s[lx.i..], op)) {
@@ -391,8 +403,10 @@ const Lexer = struct {
             return lx.tok(.op, start);
         }
         if (ch == '=') return lx.fail(3001, start, start + 1, "unexpected '='", "use '==' to compare");
-        if (ch == '&' or ch == '|') return lx.fail(3001, start, start + 1, "unexpected character", "use 'and' / 'or'");
+        if (ch == '&') return lx.fail(3001, start, start + 1, "unexpected '&'", "use 'and'");
+        if (ch == '|') return lx.fail(3001, start, start + 1, "unexpected '|'", "use 'or'");
         if (ch == '!') return lx.fail(3001, start, start + 1, "unexpected '!'", "use 'not'");
+        if (ch == '^') return lx.fail(3001, start, start + 1, "unexpected '^'", "use pow(a, b)");
         return lx.fail(3001, start, start + 1, "unexpected character", null);
     }
 };
@@ -431,10 +445,10 @@ const Parser = struct {
                 try std.fmt.allocPrint(p.arena, "expected '{s}' but found '{s}'", .{ op, t.text });
             if (p.diags) |d| {
                 // Report it and go on as if it were there.
-                try d.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = msg });
+                try d.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = msg, .hint = percentHint(p.toks, p.i) });
                 return .{ .kind = .op, .start = t.start, .end = t.start, .text = op };
             }
-            return p.fail(3001, t, msg, null);
+            return p.fail(3001, t, msg, percentHint(p.toks, p.i));
         }
         p.i += 1;
         return t;
@@ -605,7 +619,7 @@ const Parser = struct {
                     const operand = try p.expr(7);
                     return p.node(t.start, operand.end, .{ .neg = operand });
                 }
-                if (isOp(t, ".")) return p.bad(3001, t, "unexpected '.'", "write numbers with a leading digit, e.g. 0.5", t.start, null);
+                if (isOp(t, ".")) return p.bad(3001, t, "unexpected '.'", "write 0.5", t.start, null);
                 return p.bad(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null, t.start, null);
             },
         }
@@ -677,7 +691,8 @@ pub fn parse(arena: Allocator, src: []const u8, base: u32, problem: *?Problem) E
     const n = try p.expr(0);
     const t = p.peek();
     if (t.kind != .end) {
-        return p.fail(3001, t, try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), if (Parser.isOp(t, "%")) "the '%' unit must follow a number directly; the '%' operator needs operands on both sides" else null);
+        const hint = if (Parser.isOp(t, "%")) "the '%' unit must follow a number directly; the '%' operator needs operands on both sides" else percentHint(p.toks, p.i);
+        return p.fail(3001, t, try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), hint);
     }
     return n;
 }
@@ -763,7 +778,7 @@ fn tolerantRoot(arena: Allocator, src: []const u8, base: u32, diags: *Diags) Err
     const t = p.peek();
     if (t.kind == .end) return n;
     // Text after a complete expression: one error node over all of it.
-    try diags.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}) });
+    try diags.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), .hint = percentHint(toks, p.i) });
     return p.node(n.start, toks[toks.len - 1].start, .{ .err = n });
 }
 
@@ -1016,6 +1031,7 @@ pub const Checker = struct {
             .name => |*nm| {
                 const name = nm.text;
                 nm.konst = null;
+                nm.pi = false;
                 var i = s.locals.len;
                 while (i > 0) {
                     i -= 1;
@@ -1026,6 +1042,10 @@ pub const Checker = struct {
                     nm.konst = ki;
                     return k.ty;
                 };
+                if (std.mem.eql(u8, name, "pi")) {
+                    nm.pi = true;
+                    return .number;
+                }
                 var names: std.ArrayList([]const u8) = .empty;
                 for (s.locals) |l| try names.append(s.arena, l.name);
                 for (s.params) |p| try names.append(s.arena, p.name);
@@ -1119,7 +1139,7 @@ pub const Checker = struct {
                     },
                     else => {
                         if (lt != .number or rt != .number) {
-                            const hint: ?[]const u8 = if (b.op == .add and (lt == .text or rt == .text)) "join text with a template, e.g. \"{a} {b}\"" else null;
+                            const hint: ?[]const u8 = if (b.op == .add and (lt == .text or rt == .text)) "build text in a text field with {holes}, e.g. 'Lv {level}'" else null;
                             return c.fail(3003, n, try c.print("'{s}' needs numbers, got {s} and {s}", .{ opText(b.op), lt.name(), rt.name() }), hint);
                         }
                         return switch (b.op) {
@@ -1383,7 +1403,7 @@ pub fn funcSig(func: Func) FuncSig {
         .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
         // Value, key/result pairs, default; the result type is the results'.
         .match => .{ .min = 4, .max = 64, .args = &.{null}, .ret = null },
-        .sqrt, .sign, .sin, .cos, .tan, .asin, .acos => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
+        .sqrt, .sign, .sin, .cos, .tan, .asin, .acos, .deg, .rad => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
         .pow, .atan2, .wrap => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .number },
         .lerp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
         .remap => .{ .min = 5, .max = 5, .args = &.{ num, num, num, num, num }, .ret = .number },
@@ -1630,6 +1650,7 @@ pub const Env = struct {
                 .render_now => .{ .text = env.render_now },
             },
             .name => |nm| {
+                if (nm.pi) return .{ .number = std.math.pi };
                 if (nm.konst) |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki);
                 return env.lookup(env.ctx, nm.text) orelse env.fail(3002, n, "unknown name");
             },
@@ -1672,7 +1693,7 @@ pub const Env = struct {
                     .sub => .{ .number = l - r },
                     .mul => .{ .number = l * r },
                     .div => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = l / r },
-                    .mod => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = @rem(l, r) },
+                    .mod => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = floorMod(l, r) },
                     else => unreachable,
                 };
             },
@@ -1728,10 +1749,10 @@ pub const Env = struct {
                 return .{ .number = acc };
             },
             .clamp => {
-                const v = try env.num(args[0]);
-                const lo = try env.num(args[1]);
-                const hi = try env.num(args[2]);
-                return .{ .number = @max(lo, @min(hi, v)) };
+                const a = try env.num(args[0]);
+                const b = try env.num(args[1]);
+                const c = try env.num(args[2]);
+                return .{ .number = median3(a, b, c) };
             },
             .abs => return .{ .number = @abs(try env.num(args[0])) },
             .floor => return .{ .number = @floor(try env.num(args[0])) },
@@ -1739,8 +1760,10 @@ pub const Env = struct {
             .round => {
                 const v = try env.num(args[0]);
                 const digits = if (args.len > 1) @round(try env.num(args[1])) else 0;
-                const f = std.math.pow(f64, 10, @max(-15, @min(15, digits)));
-                return .{ .number = @round(v * f) / f };
+                if (!std.math.isFinite(v)) return .{ .number = v };
+                const d: i32 = @intFromFloat(@max(-15, @min(15, digits)));
+                const rounded = try roundedDecimal(env.arena, v, d);
+                return .{ .number = std.fmt.parseFloat(f64, rounded) catch v };
             },
             .len => return switch (try env.eval(args[0])) {
                 .list => |l| .{ .number = @floatFromInt(l.len) },
@@ -1754,8 +1777,9 @@ pub const Env = struct {
             .trim => return .{ .text = std.mem.trim(u8, (try env.eval(args[0])).text, " \t\n\r") },
             .fmt => {
                 const v = try env.num(args[0]);
-                const d: usize = @intFromFloat(@max(0, @min(15, @round(try env.num(args[1])))));
-                return .{ .text = try std.fmt.allocPrint(env.arena, "{d:.[1]}", .{ v, d }) };
+                const d: i32 = @intFromFloat(@max(0, @min(15, @round(try env.num(args[1])))));
+                if (!std.math.isFinite(v)) return .{ .text = try std.fmt.allocPrint(env.arena, "{d}", .{v}) };
+                return .{ .text = try roundedDecimal(env.arena, v, d) };
             },
             .avg_color => {
                 const path = switch (try env.eval(args[0])) {
@@ -1777,7 +1801,7 @@ pub const Env = struct {
             },
             .with_alpha => {
                 var c = (try env.eval(args[0])).color;
-                c.a = unit16(try env.num(args[1]));
+                c.a = alpha16(try env.num(args[1]));
                 return .{ .color = c };
             },
             .rgb, .rgba => {
@@ -1787,7 +1811,7 @@ pub const Env = struct {
                     .b = chan16(try env.num(args[2])),
                     .a = 65535,
                 };
-                if (func == .rgba) c.a = unit16(try env.num(args[3]));
+                if (func == .rgba) c.a = alpha16(try env.num(args[3]));
                 return .{ .color = c };
             },
             .match => {
@@ -1799,7 +1823,7 @@ pub const Env = struct {
                 }
                 return env.eval(args[args.len - 1]);
             },
-            .sqrt, .sign, .sin, .cos, .tan, .asin, .acos => {
+            .sqrt, .sign, .sin, .cos, .tan, .asin, .acos, .deg, .rad => {
                 const x = try env.num(args[0]);
                 return env.number(n, func, switch (func) {
                     .sqrt => bmath.sqrt(x),
@@ -1809,6 +1833,8 @@ pub const Env = struct {
                     .tan => bmath.tan(x),
                     .asin => bmath.asin(x),
                     .acos => bmath.acos(x),
+                    .deg => bmath.deg(x),
+                    .rad => bmath.rad(x),
                     else => unreachable,
                 });
             },
@@ -1870,8 +1896,10 @@ pub const Env = struct {
                 const h = try env.num(args[0]);
                 const sat = try env.num(args[1]);
                 const l = try env.num(args[2]);
-                const a = if (func == .hsla) try env.num(args[3]) else 1;
-                return .{ .color = bcolor.hsl(h, sat, l, a) };
+                // hsl() is opaque here; the alpha goes on the 8-bit grid like rgba().
+                var c = bcolor.hsl(h, sat, l, 1);
+                if (func == .hsla) c.a = alpha16(try env.num(args[3]));
+                return .{ .color = c };
             },
             .lighten, .darken => {
                 const c = (try env.eval(args[0])).color;
@@ -1987,7 +2015,7 @@ pub const Env = struct {
                 .lit => |s| w.writeAll(s) catch return error.OutOfMemory,
                 .expr => |e| {
                     switch (try env.eval(e)) {
-                        .number => |x| value.writeNumber(w, x) catch return error.OutOfMemory,
+                        .number => |x| value.writeDisplayNumber(w, x) catch return error.OutOfMemory,
                         .bool => |b| w.writeAll(if (b) "true" else "false") catch return error.OutOfMemory,
                         .text, .image => |s| w.writeAll(s) catch return error.OutOfMemory,
                         .color => |c| {
@@ -2008,12 +2036,124 @@ fn lerp16(a: u16, b: u16, t: f64) u16 {
     return @intFromFloat(std.math.clamp(@round(v), 0, 65535));
 }
 
-fn unit16(x: f64) u16 {
-    return @intFromFloat(@round(std.math.clamp(x, 0, 1) * 65535));
+/// A channel (0 to 255) on the 8-bit grid: round(x) * 257.
+fn chan16(x: f64) u16 {
+    return @intFromFloat(@round(std.math.clamp(x, 0, 255)) * 257);
 }
 
-fn chan16(x: f64) u16 {
-    return @intFromFloat(@round(std.math.clamp(x, 0, 255) * 257));
+/// An alpha (0 to 1) on the 8-bit grid: round(a * 255) * 257, as `#RRGGBBAA` writes it.
+fn alpha16(x: f64) u16 {
+    return @intFromFloat(@round(std.math.clamp(x, 0, 1) * 255) * 257);
+}
+
+/// The median of three numbers.
+fn median3(a: f64, b: f64, c: f64) f64 {
+    return @max(@min(a, b), @min(@max(a, b), c));
+}
+
+/// `a % b` with the sign of `b`, as in maths and Excel MOD: -7 % 3 is 2.
+fn floorMod(a: f64, b: f64) f64 {
+    const m = @rem(a, b);
+    const r = if (m != 0 and (m < 0) != (b < 0)) m + b else m;
+    // `m + b` can round to `b` for a tiny `m`; the result must stay below |b|.
+    return if (r == 0 or r == b) 0 else r;
+}
+
+/// The end of an exponent (`e3`, `E-2`) starting at `i`, or null.
+fn exponentEnd(s: []const u8, i: usize) ?usize {
+    if (i >= s.len or (s[i] != 'e' and s[i] != 'E')) return null;
+    var j = i + 1;
+    if (j < s.len and (s[j] == '+' or s[j] == '-')) j += 1;
+    const digits = j;
+    while (j < s.len and std.ascii.isDigit(s[j])) j += 1;
+    return if (j == digits) null else j;
+}
+
+/// A hint for a number right after `7%` (`7%3`): the `%` is a unit there.
+fn percentHint(toks: []const Tok, i: usize) ?[]const u8 {
+    if (i == 0 or i >= toks.len) return null;
+    const t = toks[i];
+    const prev = toks[i - 1];
+    if (t.kind != .number or prev.kind != .number or prev.unit != .percent or prev.end != t.start) return null;
+    return "put spaces around % for the remainder: 7 % 3 (7% is a percent of the canvas)";
+}
+
+/// `v` rounded half away from zero to `d` decimals (`d` may be negative),
+/// as text with max(d, 0) decimals. Rounding works on the shortest decimal
+/// that reads back as `v`, so 1.005 gives 1.01. `round` and `fmt` both use
+/// it, so they always agree.
+fn roundedDecimal(arena: Allocator, v: f64, d: i32) Allocator.Error![]u8 {
+    // |v| as digits D and a point p: |v| = 0.D * 10^p.
+    const text = try std.fmt.allocPrint(arena, "{d}", .{@abs(v)});
+    var digits: std.ArrayList(u8) = .empty;
+    var point: i32 = -1;
+    for (text) |ch| {
+        if (ch == '.') {
+            point = @intCast(digits.items.len);
+        } else try digits.append(arena, ch);
+    }
+    if (point < 0) point = @intCast(digits.items.len);
+    // Leading zeros move the point left.
+    var lead: usize = 0;
+    while (lead < digits.items.len and digits.items[lead] == '0') lead += 1;
+    var kept = digits.items[lead..];
+    point -= @intCast(lead);
+    if (kept.len == 0) point = 0;
+
+    var out = kept;
+    var out_point = point;
+    const keep: i64 = @as(i64, point) + @as(i64, d);
+    if (keep < 0) {
+        out = kept[0..0];
+        out_point = 0;
+    } else if (keep < kept.len) {
+        const k: usize = @intCast(keep);
+        const up = kept[k] >= '5';
+        out = kept[0..k];
+        if (up) {
+            // One unit in the last kept place; a carry out of the top adds a leading 1.
+            const buf = try arena.dupe(u8, kept[0..k]);
+            var i = buf.len;
+            var carry = true;
+            while (carry and i > 0) {
+                i -= 1;
+                if (buf[i] == '9') {
+                    buf[i] = '0';
+                } else {
+                    buf[i] += 1;
+                    carry = false;
+                }
+            }
+            if (carry) {
+                out = try std.fmt.allocPrint(arena, "1{s}", .{buf});
+                out_point = point + 1;
+            } else {
+                out = buf;
+            }
+        }
+    }
+
+    var nonzero = false;
+    for (out) |ch| if (ch != '0') {
+        nonzero = true;
+        break;
+    };
+    const fd: usize = @intCast(@max(d, 0));
+    var aw: std.ArrayList(u8) = .empty;
+    if (v < 0 and nonzero) try aw.append(arena, '-');
+    if (out_point <= 0) {
+        try aw.append(arena, '0');
+    } else {
+        for (0..@intCast(out_point)) |k| try aw.append(arena, if (k < out.len) out[k] else '0');
+    }
+    if (fd > 0) {
+        try aw.append(arena, '.');
+        for (0..fd) |k| {
+            const j: i64 = @as(i64, out_point) + @as(i64, @intCast(k));
+            try aw.append(arena, if (j >= 0 and j < out.len) out[@intCast(j)] else '0');
+        }
+    }
+    return aw.items;
 }
 
 // ------------------------------------------------------------------ tests
@@ -2320,14 +2460,29 @@ fn builtinFixture(a: Allocator, dummy: *u8) BuiltinFixture {
     };
 }
 
+test "template numbers use the display rounding" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var dummy: u8 = 0;
+    var f = builtinFixture(a, &dummy);
+    var problem: ?Problem = null;
+    const t = try parseTemplate(a, "{0.1 + 0.2}|{1 / 3}", &problem);
+    try testing.expectEqualStrings("0.3|0.333333333333", try f.env.template(t));
+}
+
 test "built-in functions: numbers, text, dates, colours" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     var dummy: u8 = 0;
     var f = builtinFixture(arena_state.allocator(), &dummy);
 
-    try testing.expectEqual(@as(f64, 1), (try f.eval("sin(90)")).number);
-    try testing.expectEqual(@as(f64, 0), (try f.eval("cos(90)")).number);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("sin(pi / 2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("cos(pi / 2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("sin(pi)")).number);
+    try testing.expectApproxEqAbs(@as(f64, 0.8414709848078965), (try f.eval("sin(1)")).number, 1e-15);
+    try testing.expectApproxEqAbs(@as(f64, 180), (try f.eval("deg(pi)")).number, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 1), (try f.eval("sin(rad(90))")).number, 1e-15);
     try testing.expectEqual(@as(f64, 3), (try f.eval("sqrt(9)")).number);
     try testing.expectEqual(@as(f64, 8), (try f.eval("pow(2, 3)")).number);
     try testing.expectEqual(@as(f64, 50), (try f.eval("remap(5, 0, 10, 0, 100)")).number);
@@ -2417,4 +2572,163 @@ test "a design function hides a built-in of the same name" {
     };
     try testing.expect((try testCheck(a, "sign('x')", &scope)) == .text);
     try expectProblem(a, "sign(level)", &scope, 3003);
+}
+
+test "pi is a number unless the design names something pi" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const plain: Scope = .{ .arena = a, .params = &.{}, .layers = null };
+    try testing.expect((try testCheck(a, "pi * 2", &plain)) == .number);
+    const named: Scope = .{ .arena = a, .params = &.{.{ .name = "pi", .ty = .text }}, .layers = null };
+    try testing.expect((try testCheck(a, "pi", &named)) == .text);
+}
+
+test "round and fmt agree on ties" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var dummy: u8 = 0;
+    var f = builtinFixture(a, &dummy);
+
+    try testing.expectEqual(@as(f64, 1.01), (try f.eval("round(1.005, 2)")).number);
+    try testing.expectEqualStrings("1.01", (try f.eval("fmt(1.005, 2)")).text);
+    try testing.expectEqual(@as(f64, 0.29), (try f.eval("round(0.285, 2)")).number);
+    try testing.expectEqualStrings("0.29", (try f.eval("fmt(0.285, 2)")).text);
+    try testing.expectEqual(@as(f64, 1.26), (try f.eval("round(1.255, 2)")).number);
+    try testing.expectEqualStrings("1.26", (try f.eval("fmt(1.255, 2)")).text);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("round(2.5)")).number);
+    try testing.expectEqual(@as(f64, -3), (try f.eval("round(-2.5)")).number);
+    try testing.expectEqual(@as(f64, 0.13), (try f.eval("round(0.125, 2)")).number);
+    try testing.expectEqual(@as(f64, 1200), (try f.eval("round(1234.5678, -2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("round(0.004, 2)")).number);
+
+    // Every value and digit count: round(v, d) reads back as fmt(v, d).
+    const vals = [_][]const u8{ "1.005", "0.285", "1.255", "2.5", "-2.5", "0.125", "1234.5678", "-0.001", "0.1" };
+    for (vals) |v| {
+        for ([_]i32{ 0, 1, 2, 3 }) |d| {
+            const r = (try f.eval(try std.fmt.allocPrint(a, "round({s}, {d})", .{ v, d }))).number;
+            const s = (try f.eval(try std.fmt.allocPrint(a, "fmt({s}, {d})", .{ v, d }))).text;
+            testing.expectEqual(r, std.fmt.parseFloat(f64, s) catch unreachable) catch |e| {
+                std.debug.print("round/fmt of {s} to {d}: {s}\n", .{ v, d, s });
+                return e;
+            };
+        }
+    }
+    try testing.expectEqualStrings("1234.57", (try f.eval("fmt(1234.5678, 2)")).text);
+    try testing.expectEqualStrings("1235", (try f.eval("fmt(1234.5678, 0)")).text);
+    try testing.expectEqualStrings("-3", (try f.eval("fmt(-2.5, 0)")).text);
+    try testing.expectEqualStrings("0.10", (try f.eval("fmt(0.1, 2)")).text);
+}
+
+test "a value that rounds to zero prints without a minus sign" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqualStrings("0.00", (try f.eval("fmt(-0.001, 2)")).text);
+    try testing.expectEqualStrings("0", (try f.eval("fmt(-0.4, 0)")).text);
+    try testing.expectEqualStrings("-0.10", (try f.eval("fmt(-0.1, 2)")).text);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("round(-0.001, 2)")).number);
+}
+
+test "clamp is the median of its three numbers" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    // clamp(value, lo, hi).
+    try testing.expectEqual(@as(f64, 3), (try f.eval("clamp(5, 0, 3)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("clamp(-1, 0, 3)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("clamp(2, 0, 3)")).number);
+    // The CSS order clamp(lo, value, hi).
+    try testing.expectEqual(@as(f64, 5), (try f.eval("clamp(0, 5, 10)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("clamp(0, -3, 10)")).number);
+    try testing.expectEqual(@as(f64, 10), (try f.eval("clamp(0, 12, 10)")).number);
+}
+
+test "% is a floored modulo" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqual(@as(f64, 2), (try f.eval("-7 % 3")).number);
+    try testing.expectEqual(@as(f64, -2), (try f.eval("7 % -3")).number);
+    try testing.expectEqual(@as(f64, 1.5), (try f.eval("7.5 % 2")).number);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("7 % 3")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("-6 % 3")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("-0.00000000000000000001 % 3")).number);
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("7 % 0"));
+}
+
+test "colours: short hex forms" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("#F80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#f80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#F80F == #FF8800FF")).bool);
+    try testing.expect((try f.eval("#F808 == #FF880088")).bool);
+    try testing.expect((try f.eval("#F80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#FF8800 == #FF8800FF")).bool);
+    for ([_][]const u8{ "#FG0", "#FF80F" }) |bad| {
+        var problem: ?Problem = null;
+        try testing.expectError(error.Invalid, parse(f.scope.arena, bad, 0, &problem));
+        try testing.expectEqual(@as(u16, 3001), problem.?.code);
+    }
+}
+
+test "colours: alpha is on the 8-bit grid" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("rgba(255, 0, 0, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("with_alpha(#FF0000, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("hsla(0, 100, 50, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("rgba(0, 0, 0, 1) == #000000FF")).bool);
+    try testing.expect((try f.eval("with_alpha(#FF0000, 0) == #FF000000")).bool);
+    try testing.expect((try f.eval("hsl(0, 100, 50) == #FF0000FF")).bool);
+}
+
+test "error hints for habits from other languages" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    try expectHint(a, "a && b", "use 'and'");
+    try expectHint(a, "a || b", "use 'or'");
+    try expectHint(a, "!a", "use 'not'");
+    try expectHint(a, "a = 1", "use '==' to compare");
+    try expectHint(a, "a === 1", "use '==' to compare");
+    try expectHint(a, "a <> 1", "use '!=' for not equal");
+    try expectHint(a, "a ^ 2", "use pow(a, b)");
+    try expectHint(a, "a ** 2", "use pow(a, b)");
+    try expectHint(a, "'Lv ' + 1", "build text in a text field with {holes}, e.g. 'Lv {level}'");
+    try expectHint(a, "7%3", "put spaces around % for the remainder: 7 % 3 (7% is a percent of the canvas)");
+    try expectHint(a, "1e3", "exponent notation is not supported; write 1000");
+    try expectHint(a, "2.5e-3", "exponent notation is not supported; write 0.0025");
+    try expectHint(a, ".5", "write 0.5");
+}
+
+/// Expects `src` to fail with `want` as its hint, while parsing or checking.
+fn expectHint(arena: Allocator, src: []const u8, want: []const u8) !void {
+    const plain: Scope = .{ .arena = arena, .params = &.{}, .layers = null };
+    var problem: ?Problem = null;
+    const n = parse(arena, src, 0, &problem) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        return testing.expectEqualStrings(want, problem.?.hint orelse "");
+    };
+    var c: Checker = .{ .scope = &plain, .problem = &problem };
+    _ = c.check(n) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        return testing.expectEqualStrings(want, problem.?.hint orelse "");
+    };
+    return error.TestExpectedError;
 }

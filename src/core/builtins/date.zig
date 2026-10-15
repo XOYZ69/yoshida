@@ -33,7 +33,7 @@ const month_names = [_][]const u8{
 const day_names = [_][]const u8{ "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
 
 /// Format tokens, longest first so that the first match is the longest one.
-const Tok = enum { YYYY, MMMM, dddd, MMM, ddd, YY, MM, DD, HH, mm, ss, M, D, H };
+const Tok = enum { YYYY, MMMM, dddd, MMM, ddd, YY, MM, DD, HH, hh, mm, ss, M, D, H, h, A, a };
 
 /// Largest shift accepted by the arithmetic functions, in days or hours.
 const max_shift: f64 = 1e9;
@@ -185,9 +185,11 @@ pub fn minute(p: Parsed) f64 {
     return @floatFromInt(p.mi);
 }
 
-/// Renders `p` with a pattern. Tokens are matched longest first; text in
-/// `[...]` is copied without the brackets; any other byte is literal. Date
-/// tokens on a time-only value are BadDate; time tokens on a date give 00.
+/// Renders `p` with a pattern. Tokens: `YYYY YY MMMM MMM MM M DD D dddd ddd`
+/// (date), `HH hh H h mm ss A a` (time; `hh` and `h` are 12-hour, `A` gives
+/// AM/PM and `a` am/pm). Tokens are matched longest first; text in `[...]` is
+/// copied without the brackets; any other byte is literal. Date tokens on a
+/// time-only value are BadDate; time tokens on a date give 00 (so 12 and AM).
 /// Text over `max_len` bytes is TooLong.
 pub fn format(arena: Allocator, p0: Parsed, pattern: []const u8) Error![]const u8 {
     var p = p0;
@@ -244,7 +246,7 @@ fn token(s: []const u8) ?Tok {
 
 fn writeToken(arena: Allocator, out: *std.ArrayList(u8), p: Parsed, tok: Tok) Error!void {
     const is_time = switch (tok) {
-        .HH, .H, .mm, .ss => true,
+        .HH, .hh, .H, .h, .A, .a, .mm, .ss => true,
         else => false,
     };
     if (p.kind == .time and !is_time) return error.BadDate;
@@ -261,10 +263,20 @@ fn writeToken(arena: Allocator, out: *std.ArrayList(u8), p: Parsed, tok: Tok) Er
         .ddd => day_names[@intCast(isoWeekday(dayNumber(p)) - 1)][0..3],
         .HH => try std.fmt.allocPrint(arena, "{d:0>2}", .{p.h}),
         .H => try std.fmt.allocPrint(arena, "{d}", .{p.h}),
+        .hh => try std.fmt.allocPrint(arena, "{d:0>2}", .{hour12(p.h)}),
+        .h => try std.fmt.allocPrint(arena, "{d}", .{hour12(p.h)}),
+        .A => if (p.h < 12) "AM" else "PM",
+        .a => if (p.h < 12) "am" else "pm",
         .mm => try std.fmt.allocPrint(arena, "{d:0>2}", .{p.mi}),
         .ss => try std.fmt.allocPrint(arena, "{d:0>2}", .{p.s}),
     };
     try emit(arena, out, text);
+}
+
+/// Hour on a 12-hour clock: 0 and 12 give 12, 13 gives 1.
+fn hour12(h: u8) u8 {
+    const r = h % 12;
+    return if (r == 0) 12 else r;
 }
 
 /// Canonical text of a parsed value: date, time or date-time (`Z` kept).
@@ -395,6 +407,30 @@ test "format every token" {
         .{ "HH:mm", "09:05" },
     };
     for (cases) |c| try testing.expectEqualStrings(c[1], try format(arena, p, c[0]));
+}
+
+test "format 12-hour clock and AM/PM" {
+    var arena_state = testArena();
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const midnight = try parse("2026-10-15T00:05");
+    try testing.expectEqualStrings("12:05 AM", try format(arena, midnight, "h:mm A"));
+    try testing.expectEqualStrings("12:05 am", try format(arena, midnight, "hh:mm a"));
+    const pm = try parse("2026-10-15T13:30");
+    try testing.expectEqualStrings("01:30 pm", try format(arena, pm, "hh:mm a"));
+    try testing.expectEqualStrings("1:30 PM", try format(arena, pm, "h:mm A"));
+    const noon = try parse("2026-10-15T12:00");
+    try testing.expectEqualStrings("12 PM", try format(arena, noon, "h A"));
+    try testing.expectEqualStrings("12 pm", try format(arena, noon, "h a"));
+    const morning = try parse("09:05");
+    try testing.expectEqualStrings("09 AM", try format(arena, morning, "hh A"));
+    try testing.expectEqualStrings("9 am", try format(arena, morning, "h a"));
+    const date = try parse("2026-10-15");
+    try testing.expectEqualStrings("12 AM", try format(arena, date, "h A"));
+    try testing.expectEqualStrings("12:00 am", try format(arena, date, "hh:mm a"));
+    try testing.expectEqualStrings("[1] PM", try format(arena, pm, "[[]h] A"));
+    try testing.expectEqualStrings("h A at", try format(arena, pm, "[h A at]"));
+    try testing.expectEqualStrings("Am 15", try format(arena, pm, "[Am] D"));
 }
 
 test "format on time-only and date-only values" {

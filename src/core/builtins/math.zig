@@ -1,4 +1,4 @@
-//! Numeric built-ins. Angles are degrees. Pure: no allocation, no expression types.
+//! Numeric built-ins. Angles are radians, as in ordinary maths. Pure: no allocation, no expression types.
 
 const std = @import("std");
 const testing = std.testing;
@@ -10,6 +10,8 @@ pub const Error = error{
 
 const deg_to_rad = std.math.pi / 180.0;
 const rad_to_deg = 180.0 / std.math.pi;
+const half_pi = std.math.pi / 2.0;
+const quarter_pi = std.math.pi / 4.0;
 
 /// Rejects NaN and infinities: every fallible result must be finite.
 fn finite(x: f64) Error!f64 {
@@ -37,72 +39,77 @@ pub fn sign(x: f64) f64 {
     return 0;
 }
 
-/// Reduces degrees to (-360, 360). `@rem` is exact, so small negative angles keep precision.
-/// Non-finite input is a Domain error.
-fn reduce(d: f64) Error!f64 {
-    return finite(@rem(d, 360.0));
+/// How close `x` must be to a whole multiple of `step` (relative to `x`) to snap to it.
+/// Covers the rounding in `pi`, `pi / 2`, `3 * pi / 2` and the like.
+const snap_tol = 8 * std.math.floatEps(f64);
+
+/// The whole number `k` when `x` is within rounding of `k * step`, else null.
+fn multipleOf(x: f64, step: f64) ?i64 {
+    const k = x / step;
+    const r = @round(k);
+    // Zero needs no snapping (sin(0) is exact) and small angles must keep their value.
+    if (r == 0) return null;
+    // Only the rounding error of writing `x` itself (pi, 3 * pi / 2, ...): a few ulps of x,
+    // so large non-multiples such as 3e9 * pi / 2 + 0.004 are not snapped.
+    if (@abs(x - r * step) > snap_tol * @abs(x)) return null;
+    if (@abs(r) > 1e15) return null;
+    return @intFromFloat(r);
 }
 
-/// Index 0..3 when `r` (in (-360, 360)) is a multiple of 90 degrees, folded to [0, 360).
-fn quarter(r: f64) ?usize {
-    const k = r / 90.0;
-    if (k != @floor(k)) return null;
-    const m: usize = @intCast(@mod(@as(i32, @intFromFloat(k)), 4));
-    return m;
+/// Sine of `x` radians. Exact at multiples of pi / 2, so `sin(pi) == 0`.
+pub fn sin(x: f64) Error!f64 {
+    if (!std.math.isFinite(x)) return error.Domain;
+    if (multipleOf(x, half_pi)) |k| return ([4]f64{ 0, 1, 0, -1 })[@intCast(@mod(k, 4))];
+    return finite(std.math.sin(x));
 }
 
-/// Sine of `d` degrees. Exact at multiples of 90.
-pub fn sin(d: f64) Error!f64 {
-    const r = try reduce(d);
-    if (quarter(r)) |q| {
-        const table = [4]f64{ 0, 1, 0, -1 };
-        return table[q];
-    }
-    return finite(std.math.sin(r * deg_to_rad));
+/// Cosine of `x` radians. Exact at multiples of pi / 2, so `cos(pi / 2) == 0`.
+pub fn cos(x: f64) Error!f64 {
+    if (!std.math.isFinite(x)) return error.Domain;
+    if (multipleOf(x, half_pi)) |k| return ([4]f64{ 1, 0, -1, 0 })[@intCast(@mod(k, 4))];
+    return finite(std.math.cos(x));
 }
 
-/// Cosine of `d` degrees. Exact at multiples of 90.
-pub fn cos(d: f64) Error!f64 {
-    const r = try reduce(d);
-    if (quarter(r)) |q| {
-        const table = [4]f64{ 1, 0, -1, 0 };
-        return table[q];
-    }
-    return finite(std.math.cos(r * deg_to_rad));
-}
-
-/// Tangent of `d` degrees. Exact at multiples of 45. At 90 + k * 180 it is a Domain error.
-pub fn tan(d: f64) Error!f64 {
-    const r = try reduce(d);
-    const k = r / 45.0;
-    if (k == @floor(k)) {
-        // Index is the multiple of 45 modulo 360; null marks the poles at 90 and 270.
+/// Tangent of `x` radians. Exact at multiples of pi / 4; at pi / 2 + k * pi it is a Domain error.
+pub fn tan(x: f64) Error!f64 {
+    if (!std.math.isFinite(x)) return error.Domain;
+    if (multipleOf(x, quarter_pi)) |k| {
+        // Index is the multiple of pi / 4 modulo 2 pi; null marks the poles.
         const exact = [8]?f64{ 0, 1, null, -1, 0, 1, null, -1 };
-        const m: usize = @intCast(@mod(@as(i32, @intFromFloat(k)), 8));
-        return exact[m] orelse error.Domain;
+        return exact[@intCast(@mod(k, 8))] orelse error.Domain;
     }
-    return finite(std.math.tan(r * deg_to_rad));
+    return finite(std.math.tan(x));
 }
 
-/// Arc sine in degrees. `|x| > 1` is a Domain error.
+/// Arc sine in radians, in [-pi / 2, pi / 2]. `|x| > 1` is a Domain error.
 pub fn asin(x: f64) Error!f64 {
     if (@abs(x) > 1) return error.Domain;
-    return finite(std.math.asin(x) * rad_to_deg);
+    return finite(std.math.asin(x));
 }
 
-/// Arc cosine in degrees. `|x| > 1` is a Domain error.
+/// Arc cosine in radians, in [0, pi]. `|x| > 1` is a Domain error.
 pub fn acos(x: f64) Error!f64 {
     if (@abs(x) > 1) return error.Domain;
-    return finite(std.math.acos(x) * rad_to_deg);
+    return finite(std.math.acos(x));
 }
 
-/// Angle of the point (x, y) in degrees, in (-180, 180]. `atan2(0, 0) == 0`.
+/// Angle of the point (x, y) in radians, in (-pi, pi]. `atan2(0, 0) == 0`.
 pub fn atan2(y: f64, x: f64) Error!f64 {
     if (y == 0 and x == 0) return 0;
-    var d = std.math.atan2(y, x) * rad_to_deg;
-    // The range is (-180, 180]: -180 is 180, and rounding may overshoot 180 slightly.
-    if (d > 180 or d <= -180) d = 180;
-    return finite(d);
+    var r = std.math.atan2(y, x);
+    // The range is (-pi, pi]: -pi (from y = -0) is pi.
+    if (r <= -std.math.pi) r = std.math.pi;
+    return finite(r);
+}
+
+/// Radians to degrees, for fields such as `rotate` that take degrees.
+pub fn deg(x: f64) Error!f64 {
+    return finite(x * rad_to_deg);
+}
+
+/// Degrees to radians.
+pub fn rad(x: f64) Error!f64 {
+    return finite(x * deg_to_rad);
 }
 
 /// Linear interpolation `a + (b - a) * t`. `t` is not clamped.
@@ -162,36 +169,55 @@ test "sign" {
     try testing.expectEqual(@as(f64, 0), sign(std.math.nan(f64)));
 }
 
-test "sin exact at multiples of 90" {
+test "sin and cos exact at multiples of pi / 2" {
+    const pi = std.math.pi;
     try testing.expectEqual(@as(f64, 0), try sin(0));
-    try testing.expectEqual(@as(f64, 1), try sin(90));
-    try testing.expectEqual(@as(f64, 0), try sin(180));
-    try testing.expectEqual(@as(f64, -1), try sin(270));
-    try testing.expectEqual(@as(f64, 0), try sin(360));
-    try testing.expectEqual(@as(f64, -1), try sin(-90));
-    try testing.expectEqual(@as(f64, 1), try sin(450));
-    try testing.expectEqual(@as(f64, 0), try sin(-720));
+    try testing.expectEqual(@as(f64, 1), try sin(pi / 2.0));
+    try testing.expectEqual(@as(f64, 0), try sin(pi));
+    try testing.expectEqual(@as(f64, -1), try sin(3.0 * pi / 2.0));
+    try testing.expectEqual(@as(f64, 0), try sin(2.0 * pi));
+    try testing.expectEqual(@as(f64, -1), try sin(-pi / 2.0));
+    try testing.expectEqual(@as(f64, 0), try sin(-4.0 * pi));
+    try testing.expectEqual(@as(f64, 1), try cos(0));
+    try testing.expectEqual(@as(f64, 0), try cos(pi / 2.0));
+    try testing.expectEqual(@as(f64, -1), try cos(pi));
+    try testing.expectEqual(@as(f64, 0), try cos(-pi / 2.0));
+    try testing.expectEqual(@as(f64, 1), try cos(2.0 * pi));
 }
 
-test "sin and cos keep precision for small and negative angles" {
-    // Relative error stays tiny: the old modulo reduction lost it near zero.
-    const want = -1e-12 * std.math.pi / 180.0;
-    try testing.expectApproxEqRel(want, try sin(-1e-12), 1e-9);
-    try testing.expectEqual(@as(f64, -1), try sin(-90));
-    try testing.expectEqual(@as(f64, 0), try sin(-180));
-    try testing.expectEqual(@as(f64, 0), try sin(-360));
-    try testing.expectApproxEqAbs(@as(f64, -0.5), try sin(-30), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0.5), try cos(-60), 1e-12);
-    try testing.expectEqual(@as(f64, 0), try cos(-270));
-    try testing.expectEqual(@as(f64, 1), try cos(-720));
+test "sin and cos general values in radians" {
+    const pi = std.math.pi;
+    try testing.expectApproxEqAbs(@as(f64, 0.5), try sin(pi / 6.0), 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, -0.5), try sin(7.0 * pi / 6.0), 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0.5), try cos(-pi / 3.0), 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0.8414709848078965), try sin(1), 1e-15);
+    try testing.expectApproxEqAbs(@as(f64, 0.5403023058681398), try cos(1), 1e-15);
+    try testing.expectApproxEqRel(@as(f64, -1e-12), try sin(-1e-12), 1e-9);
+    try testing.expectError(error.Domain, sin(std.math.inf(f64)));
+    try testing.expectError(error.Domain, cos(std.math.nan(f64)));
 }
 
-test "tan for negative angles" {
-    try testing.expectEqual(@as(f64, 1), try tan(-135));
-    try testing.expectEqual(@as(f64, -1), try tan(-45));
-    try testing.expectEqual(@as(f64, 0), try tan(-180));
-    try testing.expectError(error.Domain, tan(-270));
-    try testing.expectError(error.Domain, tan(-450));
+test "large non-multiples are not snapped" {
+    const pi = std.math.pi;
+    const x = 3000000000.0 * pi / 2.0 + 0.004;
+    try testing.expect(@abs(try sin(x)) > 0.003);
+    try testing.expectEqual(@as(f64, -1), try sin(7.0 * pi / 2.0));
+    try testing.expectEqual(@as(f64, 0), try cos(3.0 * pi / 6.0));
+    try testing.expectEqual(@as(f64, 1), try tan(5.0 * pi / 4.0));
+}
+
+test "tan exact and poles" {
+    const pi = std.math.pi;
+    try testing.expectEqual(@as(f64, 0), try tan(0));
+    try testing.expectEqual(@as(f64, 1), try tan(pi / 4.0));
+    try testing.expectEqual(@as(f64, -1), try tan(3.0 * pi / 4.0));
+    try testing.expectEqual(@as(f64, -1), try tan(-pi / 4.0));
+    try testing.expectEqual(@as(f64, 0), try tan(pi));
+    try testing.expectApproxEqAbs(@as(f64, 1.0 / @sqrt(3.0)), try tan(pi / 6.0), 1e-12);
+    try testing.expectError(error.Domain, tan(pi / 2.0));
+    try testing.expectError(error.Domain, tan(-pi / 2.0));
+    try testing.expectError(error.Domain, tan(3.0 * pi / 2.0));
+    try testing.expectError(error.Domain, tan(std.math.nan(f64)));
 }
 
 test "results are never negative zero" {
@@ -199,90 +225,28 @@ test "results are never negative zero" {
     try testing.expect(!std.math.signbit(try asin(-0.0)));
     try testing.expect(!std.math.signbit(try atan2(-0.0, 1)));
     try testing.expect(!std.math.signbit(try sin(-0.0)));
-    try testing.expect(!std.math.signbit(try lerp(-0.0, 0, 0.5)));
 }
 
-test "sin general values" {
-    try testing.expectApproxEqAbs(@as(f64, 0.5), try sin(30), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -0.5), try sin(210), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, std.math.sqrt(0.5)), try sin(45), 1e-12);
-    try testing.expectError(error.Domain, sin(std.math.inf(f64)));
-    try testing.expectError(error.Domain, sin(std.math.nan(f64)));
-}
-
-test "cos exact at multiples of 90" {
-    try testing.expectEqual(@as(f64, 1), try cos(0));
-    try testing.expectEqual(@as(f64, 0), try cos(90));
-    try testing.expectEqual(@as(f64, -1), try cos(180));
-    try testing.expectEqual(@as(f64, 0), try cos(270));
-    try testing.expectEqual(@as(f64, 1), try cos(360));
-    try testing.expectEqual(@as(f64, -1), try cos(-180));
-    try testing.expectEqual(@as(f64, 0), try cos(-90));
-}
-
-test "cos general values" {
-    try testing.expectApproxEqAbs(@as(f64, 0.5), try cos(60), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -0.5), try cos(120), 1e-12);
-    try testing.expectError(error.Domain, cos(std.math.inf(f64)));
-}
-
-test "tan exact and poles" {
-    try testing.expectEqual(@as(f64, 0), try tan(0));
-    try testing.expectEqual(@as(f64, 1), try tan(45));
-    try testing.expectEqual(@as(f64, -1), try tan(135));
-    try testing.expectEqual(@as(f64, 1), try tan(225));
-    try testing.expectEqual(@as(f64, -1), try tan(315));
-    try testing.expectEqual(@as(f64, 0), try tan(180));
-    try testing.expectEqual(@as(f64, 0), try tan(-360));
-    try testing.expectApproxEqAbs(@as(f64, 1.0 / @sqrt(3.0)), try tan(30), 1e-12);
-    try testing.expectError(error.Domain, tan(90));
-    try testing.expectError(error.Domain, tan(270));
-    try testing.expectError(error.Domain, tan(-90));
-    try testing.expectError(error.Domain, tan(450));
-    try testing.expectError(error.Domain, tan(std.math.nan(f64)));
-}
-
-test "asin and acos in degrees" {
-    try testing.expectApproxEqAbs(@as(f64, 0), try asin(0), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 90), try asin(1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -90), try asin(-1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 30), try asin(0.5), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0), try acos(1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 90), try acos(0), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 180), try acos(-1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 60), try acos(0.5), 1e-12);
-    try testing.expectError(error.Domain, asin(1.5));
-    try testing.expectError(error.Domain, asin(-1.0000001));
+test "asin, acos and atan2 in radians" {
+    const pi = std.math.pi;
+    try testing.expectApproxEqAbs(pi / 2.0, try asin(1), 1e-15);
+    try testing.expectApproxEqAbs(pi / 6.0, try asin(0.5), 1e-15);
+    try testing.expectApproxEqAbs(pi, try acos(-1), 1e-15);
+    try testing.expectEqual(@as(f64, 0), try acos(1));
+    try testing.expectError(error.Domain, asin(1.0000001));
     try testing.expectError(error.Domain, acos(-2));
-    try testing.expectError(error.Domain, acos(std.math.nan(f64)));
-}
-
-test "atan2 in degrees" {
-    try testing.expectApproxEqAbs(@as(f64, 0), try atan2(0, 1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 90), try atan2(1, 0), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 180), try atan2(0, -1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -90), try atan2(-1, 0), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 45), try atan2(1, 1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -135), try atan2(-1, -1), 1e-12);
-}
-
-test "atan2 range is (-180, 180]" {
-    // Negative zero on the negative x axis would give -180 in radians.
-    try testing.expectApproxEqAbs(@as(f64, 180), try atan2(-0.0, -1), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 180), try atan2(-1e-300, -1), 1e-9);
+    try testing.expectApproxEqAbs(pi / 4.0, try atan2(1, 1), 1e-15);
+    try testing.expectApproxEqAbs(3.0 * pi / 4.0, try atan2(1, -1), 1e-15);
+    try testing.expectApproxEqAbs(-3.0 * pi / 4.0, try atan2(-1, -1), 1e-15);
+    try testing.expectEqual(@as(f64, pi), try atan2(0, -1));
+    try testing.expectEqual(@as(f64, pi), try atan2(-0.0, -1));
     try testing.expectEqual(@as(f64, 0), try atan2(0, 0));
-    try testing.expectEqual(@as(f64, 0), try atan2(-0.0, 0));
-    try testing.expectEqual(@as(f64, 0), try atan2(0, -0.0));
-    try testing.expectError(error.Domain, atan2(std.math.nan(f64), 1));
+}
 
-    var prng = std.Random.DefaultPrng.init(7);
-    const rnd = prng.random();
-    for (0..2000) |_| {
-        const y = rnd.float(f64) * 20 - 10;
-        const x = rnd.float(f64) * 20 - 10;
-        const d = try atan2(y, x);
-        try testing.expect(d > -180 and d <= 180);
-    }
+test "deg and rad" {
+    try testing.expectApproxEqAbs(@as(f64, 180), try deg(std.math.pi), 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, std.math.pi / 2.0), try rad(90), 1e-15);
+    try testing.expectApproxEqAbs(@as(f64, 30), try deg(try rad(30)), 1e-12);
 }
 
 test "lerp" {

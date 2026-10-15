@@ -641,7 +641,7 @@ pub fn convertText(arena: Allocator, p: *const Param, s: []const u8) Allocator.E
             return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not one of {s}", .{ s, all }) };
         },
         .color => {
-            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RRGGBB or #RRGGBBAA", .{s}) };
+            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RGB, #RRGGBB or #RRGGBBAA", .{s}) };
             return Ret{ .ok = .{ .color = c } };
         },
         .list => {
