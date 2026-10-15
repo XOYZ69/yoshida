@@ -129,6 +129,9 @@ fn writeWords(w: *Writer, key: []const u8, words: []const []const u8) Writer.Err
 pub const EvalOptions = struct {
     card: usize = 0,
     date: []const u8 = "1970-01-01",
+    /// The render clock, as `render.Options.now` and `utc_offset`.
+    now: ?[]const u8 = null,
+    utc_offset: ?f64 = null,
 };
 
 /// Evaluates `src` in place of field `f` while rendering one card of `set`
@@ -158,7 +161,7 @@ pub fn writeEval(
         return writeResult(w, null, &.{}, probe.trace.values, 0, u);
     }
     var diags = diag.List.init(arena);
-    if (try render.renderCard(gpa, assets, set, opts.card, .{ .date = opts.date, .preview = true, .dry = true, .probe = &probe }, &diags)) |bmp_const| {
+    if (try render.renderCard(gpa, assets, set, opts.card, .{ .date = opts.date, .now = opts.now, .utc_offset = opts.utc_offset, .preview = true, .dry = true, .probe = &probe }, &diags)) |bmp_const| {
         var bmp = bmp_const;
         bmp.deinit(gpa);
     }

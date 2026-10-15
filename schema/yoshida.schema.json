@@ -10,6 +10,12 @@
     "format": { "const": 1 },
     "name": { "type": "string" },
     "note": { "type": "string" },
+    "utc_offset": {
+      "type": "number",
+      "minimum": -14,
+      "maximum": 14,
+      "description": "Hours from UTC for render.date and render.time (default 0)."
+    },
     "sets": {
       "type": "array",
       "items": {

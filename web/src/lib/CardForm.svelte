@@ -199,7 +199,7 @@ function removeItem(p: Param, index: number) {
         <Select value={shown(p)} label={p.label ?? p.name} disabled={!editable} options={p.options ?? []} onchange={(v) => set(p, v)} />
       {:else if p.type === 'color'}
         <span class="row">
-          <ColorPicker value={/^#[0-9a-f]{6}/i.test(shown(p)) ? shown(p) : '#000000'} disabled={!editable} title="Pick {p.label ?? p.name}" onchange={(v) => set(p, v)} />
+          <ColorPicker value={/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(shown(p)) ? shown(p) : '#000000'} disabled={!editable} title="Pick {p.label ?? p.name}" onchange={(v) => set(p, v)} />
           <input type="text" value={shown(p)} disabled={!editable} onchange={(e) => set(p, e.currentTarget.value)} />
         </span>
       {:else if p.type === 'number' || p.type === 'integer'}

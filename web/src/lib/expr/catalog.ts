@@ -23,6 +23,8 @@ export type FnArg = {
 export type FnDoc = {
 	name: string;
 	args: FnArg[];
+	/** Another accepted form of the call with different arguments, shown as a second signature line. */
+	alt?: FnArg[];
 	ret: string;
 	doc: string;
 	example: string;
@@ -35,21 +37,21 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "min",
 		args: [n("a"), n("b"), { name: "…", type: "number", rest: true }],
 		ret: "number",
-		doc: "The smallest of the arguments.",
+		doc: "The smallest of the arguments, or of a list's number field: min(list, 'field') (an empty list is an error).",
 		example: "min(@title.bounds.w, 300)",
 	},
 	{
 		name: "max",
 		args: [n("a"), n("b"), { name: "…", type: "number", rest: true }],
 		ret: "number",
-		doc: "The largest of the arguments.",
+		doc: "The largest of the arguments, or of a list's number field: max(list, 'field') (an empty list is an error).",
 		example: "max(@title.bounds.bottom, 40) + 8",
 	},
 	{
 		name: "clamp",
 		args: [n("value"), n("lo"), n("hi")],
 		ret: "number",
-		doc: "Limits value to the range lo to hi.",
+		doc: "The middle of the three numbers, so clamp(value, lo, hi) and the CSS order clamp(lo, value, hi) both limit value to the range lo to hi. Not an error when lo is above hi.",
 		example: "clamp(level * 10, 0, 100)",
 	},
 	{
@@ -77,15 +79,112 @@ export const FUNCTIONS: FnDoc[] = [
 		name: "round",
 		args: [n("n"), { name: "digits", type: "number", optional: "0" }],
 		ret: "number",
-		doc: "Rounds to the nearest number with `digits` decimals (default 0).",
+		doc: "Rounds to `digits` decimals (default 0); halves go away from zero: round(1.005, 2) is 1.01, round(2.5) is 3. digits may be negative: round(1234, -2) is 1200.",
 		example: "round(scale * 1.5, 1)",
 	},
 	{
-		name: "len",
-		args: [{ name: "value", type: "list or text" }],
+		name: "sign",
+		args: [n("n")],
 		ret: "number",
-		doc: "Number of items in a list, or characters in a text.",
-		example: "len(ingredients)",
+		doc: "-1, 0 or 1 for the sign of n.",
+		example: "sign(offset_x) * 4",
+	},
+	{
+		name: "sqrt",
+		args: [n("n")],
+		ret: "number",
+		doc: "Square root of n; n must not be negative.",
+		example: "sqrt(area)",
+	},
+	{
+		name: "pow",
+		args: [n("base"), n("exp")],
+		ret: "number",
+		doc: "base raised to the power exp.",
+		example: "pow(1.2, i)",
+	},
+	{
+		name: "lerp",
+		args: [n("a"), n("b"), n("t")],
+		ret: "number",
+		doc: "Goes from a to b by t: t = 0 gives a, t = 1 gives b. t is not clamped.",
+		example: "lerp(20, 180, i / 9)",
+	},
+	{
+		name: "remap",
+		args: [
+			n("value"),
+			n("from_lo"),
+			n("from_hi"),
+			n("to_lo"),
+			n("to_hi"),
+		],
+		ret: "number",
+		doc: "Maps value from the range from_lo to from_hi onto to_lo to to_hi. Not clamped.",
+		example: "remap(level, 0, 100, 0, 360)",
+	},
+	{
+		name: "wrap",
+		args: [n("value"), n("n")],
+		ret: "number",
+		doc: "Wraps value into the range 0 up to n (n itself is not reached), for angles and cycles.",
+		example: "wrap(i * 47, 360)",
+	},
+	{
+		name: "sin",
+		args: [n("rad")],
+		ret: "number",
+		doc: "Sine of an angle in radians; sin(pi) is 0. For degrees, use sin(rad(deg)). rotate, arc angles and hsl hue take degrees.",
+		example: "sin(i * pi / 6) * radius",
+	},
+	{
+		name: "cos",
+		args: [n("rad")],
+		ret: "number",
+		doc: "Cosine of an angle in radians. For degrees, use cos(rad(deg)).",
+		example: "cx + cos(angle) * radius",
+	},
+	{
+		name: "tan",
+		args: [n("rad")],
+		ret: "number",
+		doc: "Tangent of an angle in radians. For degrees, use tan(rad(deg)).",
+		example: "tan(slope) * run",
+	},
+	{
+		name: "asin",
+		args: [n("x")],
+		ret: "number",
+		doc: "The angle in radians whose sine is x (x from -1 to 1). For degrees, wrap it in deg().",
+		example: "deg(asin(ratio))",
+	},
+	{
+		name: "acos",
+		args: [n("x")],
+		ret: "number",
+		doc: "The angle in radians whose cosine is x (x from -1 to 1). For degrees, wrap it in deg().",
+		example: "deg(acos(dot))",
+	},
+	{
+		name: "atan2",
+		args: [n("y"), n("x")],
+		ret: "number",
+		doc: "The angle in radians from the x axis to the point (x, y), in (-pi, pi]. rotate takes degrees, so: rotate: deg(atan2(dy, dx)).",
+		example: "deg(atan2(dy, dx))",
+	},
+	{
+		name: "deg",
+		args: [n("rad")],
+		ret: "number",
+		doc: "Converts an angle from radians to degrees: deg(pi) is 180.",
+		example: "deg(atan2(dy, dx))",
+	},
+	{
+		name: "rad",
+		args: [n("deg")],
+		ret: "number",
+		doc: "Converts an angle from degrees to radians: rad(180) is pi.",
+		example: "sin(rad(i * 30)) * radius",
 	},
 	{
 		name: "upper",
@@ -110,10 +209,287 @@ export const FUNCTIONS: FnDoc[] = [
 	},
 	{
 		name: "fmt",
-		args: [n("n"), n("decimals")],
+		args: [n("n"), n("digits")],
 		ret: "text",
-		doc: "Formats a number with a fixed number of decimals.",
+		doc: "Formats a number with a fixed number of decimals, rounded as round(n, digits) does. A value that rounds to zero prints without a minus sign.",
 		example: "fmt(0.5, 2)  → '0.50'",
+	},
+	{
+		name: "contains",
+		args: [
+			{ name: "text", type: "text" },
+			{ name: "part", type: "text" },
+		],
+		ret: "bool",
+		doc: "True if text contains part. An empty part is always found.",
+		example: "contains(title, 'Dragon')",
+	},
+	{
+		name: "starts_with",
+		args: [
+			{ name: "text", type: "text" },
+			{ name: "prefix", type: "text" },
+		],
+		ret: "bool",
+		doc: "True if text starts with prefix.",
+		example: "starts_with(card.id, 'A')",
+	},
+	{
+		name: "ends_with",
+		args: [
+			{ name: "text", type: "text" },
+			{ name: "suffix", type: "text" },
+		],
+		ret: "bool",
+		doc: "True if text ends with suffix.",
+		example: "ends_with(file, '.png')",
+	},
+	{
+		name: "replace",
+		args: [
+			{ name: "text", type: "text" },
+			{ name: "old", type: "text" },
+			{ name: "new", type: "text" },
+		],
+		ret: "text",
+		doc: "Replaces every old in text with new.",
+		example: "replace(title, ' ', '-')",
+	},
+	{
+		name: "slice",
+		args: [
+			{ name: "text", type: "text" },
+			n("start"),
+			{ name: "end", type: "number", optional: "the end" },
+		],
+		ret: "text",
+		doc: "The characters from start up to end (counted from 0; a negative count is from the end).",
+		example: "slice(title, 0, 3)",
+	},
+	{
+		name: "pad_start",
+		args: [
+			{ name: "text", type: "text" },
+			n("width"),
+			{ name: "fill", type: "text", optional: "' '" },
+		],
+		ret: "text",
+		doc: "Pads text on the left up to width characters. fill is repeated as a whole, like JavaScript's padStart: pad_start('7', 3, 'ab') is 'ab7'. A number is written with fmt(n, 0) first.",
+		example: "pad_start(card.id, 3, '0')",
+	},
+	{
+		name: "repeat",
+		args: [
+			{ name: "text", type: "text" },
+			n("n"),
+		],
+		ret: "text",
+		doc: "text written n times (none when n is 0 or less).",
+		example: "repeat('★', rating)",
+	},
+	{
+		name: "title_case",
+		args: [{ name: "text", type: "text" }],
+		ret: "text",
+		doc: "Upper-cases the first letter of each word and keeps the rest of each word as it is. For all-caps input, lower it first: title_case(lower(name)) gives 'Hello' from 'HELLO'.",
+		example: "title_case(lower(name))",
+	},
+	{
+		name: "roman",
+		args: [n("n")],
+		ret: "text",
+		doc: "The number n in Roman numerals, from 1 to 3999.",
+		example: "roman(render.index + 1)",
+	},
+	{
+		name: "part",
+		args: [
+			{ name: "text", type: "text" },
+			{ name: "sep", type: "text" },
+			n("n"),
+		],
+		ret: "text",
+		doc: "The n-th piece of text split on sep, counted from 0 (a negative n counts from the end); empty when there is none.",
+		example: "part(card.id, '-', 0)",
+	},
+	{
+		name: "len",
+		args: [{ name: "value", type: "list or text" }],
+		ret: "number",
+		doc: "Number of items in a list, or characters in a text.",
+		example: "len(ingredients)",
+	},
+	{
+		name: "has",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "key", type: "text" },
+		],
+		ret: "bool",
+		doc: "True if the list has an item with this key.",
+		example: "has(prices, tier)",
+	},
+	{
+		name: "get",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "key", type: "text" },
+			{ name: "fallback", type: "any" },
+		],
+		alt: [
+			{ name: "list", type: "list" },
+			{ name: "key", type: "text" },
+			{ name: "field", type: "text" },
+			{ name: "fallback", type: "any" },
+		],
+		ret: "any",
+		doc: "The value stored under key in a key and value list, else fallback. get(list, key, 'field', fallback) reads that field of the item with the key.",
+		example: "get(prices, tier, 0)",
+	},
+	{
+		name: "index_of",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "key", type: "text" },
+		],
+		ret: "number",
+		doc: "Position from 0 of the first item with this key, or -1 when there is none.",
+		example: "index_of(levels, 'gold')",
+	},
+	{
+		name: "sum",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "field", type: "text", optional: "value field" },
+		],
+		ret: "number",
+		doc: "The sum of a list of numbers, or of one number field of its items.",
+		example: "sum(cards, 'cost')",
+	},
+	{
+		name: "avg",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "field", type: "text", optional: "value field" },
+		],
+		ret: "number",
+		doc: "The average of a list of numbers, or of one number field of its items. An empty list is an error.",
+		example: "avg(scores, 'points')",
+	},
+	{
+		name: "count",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "field", type: "text" },
+			{ name: "value", type: "any" },
+		],
+		ret: "number",
+		doc: "How many items have field equal to value.",
+		example: "count(cards, 'type', 'monster')",
+	},
+	{
+		name: "join",
+		args: [
+			{ name: "list", type: "list" },
+			{ name: "sep", type: "text" },
+		],
+		alt: [
+			{ name: "list", type: "list" },
+			{ name: "field", type: "text" },
+			{ name: "sep", type: "text" },
+		],
+		ret: "text",
+		doc: "The items joined with sep. join(list, 'field', sep) joins one field of the items instead.",
+		example: "join(tags, ', ')",
+	},
+	{
+		name: "last",
+		args: [{ name: "list", type: "list" }],
+		ret: "any",
+		doc: "The last item of a list. An empty list is an error.",
+		example: "last(steps)",
+	},
+	{
+		name: "year",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The year of a date or date-time.",
+		example: "year(render.date)",
+	},
+	{
+		name: "month",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The month, 1 to 12, of a date or date-time.",
+		example: "month(release)",
+	},
+	{
+		name: "day",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The day of the month of a date or date-time.",
+		example: "day(render.date)",
+	},
+	{
+		name: "weekday",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The day of the week of a date or date-time: 1 for Monday up to 7 for Sunday.",
+		example: "weekday(render.date) >= 6",
+	},
+	{
+		name: "hour",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The hour, 0 to 23, of a time or date-time.",
+		example: "hour(start) < 12",
+	},
+	{
+		name: "minute",
+		args: [{ name: "t", type: "text" }],
+		ret: "number",
+		doc: "The minute, 0 to 59, of a time or date-time.",
+		example: "minute(start)",
+	},
+	{
+		name: "date_fmt",
+		args: [
+			{ name: "t", type: "text" },
+			{ name: "pattern", type: "text" },
+		],
+		ret: "text",
+		doc: "Formats a date, time or date-time with a pattern such as 'D MMM YYYY' or 'HH:mm'. Tokens: YYYY (2026), YY (26); MMMM (March), MMM (Mar), MM (03), M (3) for the month; DD (05), D (5) for the day; dddd (Thursday), ddd (Thu); HH (00–23), H (0–23) for the hour; hh (01–12), h (1–12) for the 12-hour clock; mm for minutes; ss for seconds; A (AM/PM), a (am/pm). Text in [brackets] is literal: [week] ddd. MM is the month, mm the minutes.",
+		example: "date_fmt(render.date, 'D MMM YYYY')",
+	},
+	{
+		name: "add_days",
+		args: [
+			{ name: "t", type: "text" },
+			n("n"),
+		],
+		ret: "text",
+		doc: "The date or date-time n days later, in the same form.",
+		example: "add_days(render.date, 7)",
+	},
+	{
+		name: "add_hours",
+		args: [
+			{ name: "t", type: "text" },
+			n("h"),
+		],
+		ret: "text",
+		doc: "The date or date-time h hours later, as a date-time.",
+		example: "add_hours(start, 1.5)",
+	},
+	{
+		name: "days_between",
+		args: [
+			{ name: "a", type: "text" },
+			{ name: "b", type: "text" },
+		],
+		ret: "number",
+		doc: "Whole days from date a to date b; negative when b is earlier.",
+		example: "days_between(render.date, due)",
 	},
 	{
 		name: "avg_color",
@@ -151,6 +527,86 @@ export const FUNCTIONS: FnDoc[] = [
 		example: "rgba(0, 0, 0, 0.4)",
 	},
 	{
+		name: "hsl",
+		args: [n("h"), n("s"), n("l")],
+		ret: "color",
+		doc: "A color from hue in degrees, saturation and lightness, each 0 to 100 (hue wraps).",
+		example: "hsl(i * 20, 70, 50)",
+	},
+	{
+		name: "hsla",
+		args: [n("h"), n("s"), n("l"), n("a")],
+		ret: "color",
+		doc: "A color from hue in degrees, saturation and lightness 0 to 100, and alpha 0 to 1.",
+		example: "hsla(hue, 60, 40, 0.5)",
+	},
+	{
+		name: "lighten",
+		args: [{ name: "c", type: "color" }, n("n")],
+		ret: "color",
+		doc: "The color lighter by n lightness points (0 to 100).",
+		example: "lighten(accent, 15)",
+	},
+	{
+		name: "darken",
+		args: [{ name: "c", type: "color" }, n("n")],
+		ret: "color",
+		doc: "The color darker by n lightness points (0 to 100).",
+		example: "darken(accent, 20)",
+	},
+	{
+		name: "luminance",
+		args: [{ name: "c", type: "color" }],
+		ret: "number",
+		doc: "Relative brightness of a color, from 0 (black) to 1 (white). Alpha is ignored. Mid-grey #808080 is about 0.22, so pick a text colour with readable() or a threshold near 0.18.",
+		example: "luminance(c_panel) > 0.18 ? #000000 : #FFFFFF",
+	},
+	{
+		name: "readable",
+		args: [
+			{ name: "bg", type: "color" },
+			{ name: "light", type: "color", optional: "#FFFFFF" },
+			{ name: "dark", type: "color", optional: "#000000" },
+		],
+		ret: "color",
+		doc: "Whichever of light and dark has the higher contrast against bg.",
+		example: "readable(c_panel)",
+	},
+	{
+		name: "rand",
+		args: [
+			{ name: "seed", type: "any" },
+			{ name: "…", type: "any", rest: true },
+		],
+		ret: "number",
+		doc: "A number from 0 up to 1 that is the same for the same seeds. Use card.id and i to vary it per card.",
+		example: "rand(card.id, i)",
+	},
+	{
+		name: "rand_int",
+		args: [
+			n("lo"),
+			n("hi"),
+			{ name: "seed", type: "any" },
+			{ name: "…", type: "any", rest: true },
+		],
+		ret: "number",
+		doc: "A whole number from lo to hi, both included; the same for the same seeds.",
+		example: "rand_int(1, 6, card.id, i)",
+	},
+	{
+		name: "pick",
+		args: [
+			{ name: "seed", type: "any" },
+			{ name: "a", type: "any" },
+			{ name: "b", type: "any" },
+			{ name: "…", type: "any", rest: true },
+		],
+		ret: "any",
+		doc: "One of the choices (two or more, all one type), picked by the seeds.",
+		example: "pick(card.id, 'Fire', 'Water', 'Earth')",
+	},
+	{
 		name: "match",
 		args: [
 			{ name: "value", type: "any" },
@@ -169,13 +625,14 @@ export const FN_BY_NAME = new Map(FUNCTIONS.map((f) => [f.name, f]));
 export function fnSignature(
 	f: FnDoc,
 	active = -1,
+	args: FnArg[] = f.args,
 ): { text: string; parts: { text: string; active: boolean }[] } {
 	const parts: { text: string; active: boolean }[] = [
 		{ text: `${f.name}(`, active: false },
 	];
-	const last = f.args.length - 1;
+	const last = args.length - 1;
 	const act = active < 0 ? -1 : Math.min(active, last);
-	f.args.forEach((a, i) => {
+	args.forEach((a, i) => {
 		if (i) parts.push({ text: ", ", active: false });
 		const t = a.rest
 			? "…"
@@ -209,9 +666,27 @@ export const BUILTINS: Record<string, { doc: string; fields: FieldDoc[] }> = {
 				doc: "Position of the card in its set, from 0.",
 			},
 			{ name: "date", type: "text", doc: "Render date, YYYY-MM-DD." },
+			{ name: "time", type: "text", doc: "Render time, HH:MM:SS local time." },
+			{
+				name: "now",
+				type: "text",
+				doc: "Render date-time in UTC, YYYY-MM-DDTHH:MM:SSZ.",
+			},
 		],
 	},
 };
+
+/**
+ * Built-in constants: bare names that are numbers, not objects with fields.
+ * A design param, const or local with the same name takes its place.
+ */
+export const CONSTANTS: FieldDoc[] = [
+	{
+		name: "pi",
+		type: "number",
+		doc: "The number pi, 3.14159…, for angles in radians: sin(pi / 2) is 1. A design param, const or local named pi takes its place.",
+	},
+];
 
 const bounds: FieldDoc[] = [
 	["left", "Left edge in pixels, after anchor and layout."],
@@ -311,14 +786,16 @@ export const CHEATSHEET: { title: string; rows: [string, string][] }[] = [
 		title: "Literals",
 		rows: [
 			["'text'", "text in single (or double) quotes"],
-			["#RRGGBB", "color, also #RRGGBBAA"],
+			["#RGB #RGBA", "color, short forms"],
+			["#RRGGBB #RRGGBBAA", "color, with alpha in the last pair"],
 			["true false", "bools"],
 		],
 	},
 	{
 		title: "Operators",
 		rows: [
-			["+ - * / %", "arithmetic on numbers (a % b needs spaces)"],
+			["+ - * / %", "arithmetic on numbers; % is floored, -7 % 3 is 2"],
+			["a % b", "put spaces around % (7%3 reads as 7 percent)"],
 			["< <= > >= == !=", "comparisons, give a bool"],
 			["v in [a, b]", "true if v equals one of the items"],
 			["and or not", "logic on bools"],
@@ -332,6 +809,7 @@ export const CHEATSHEET: { title: string; rows: [string, string][] }[] = [
 export const TEMPLATE_HELP: [string, string][] = [
 	["Hello {name}", "literal text with {expression} holes"],
 	["{{ }}", "literal braces"],
+	["{1 / 3}", "a number prints with at most 12 significant digits"],
 ];
 
 /** Param types as the expression language sees them. */

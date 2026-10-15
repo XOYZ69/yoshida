@@ -29,7 +29,7 @@ Text uses the layer's font; characters it has no glyph for come from the bundled
 
 ## Determinism
 
-The same project, card data and `render.date` always produce the same pixels, in every build (WebAssembly in the browser, the CLI, the server). The core has no clock, randomness, network or file access of its own; each front end gives it a virtual file system and (for `render.date`) a date. The browser export, the server zip and the CLI output were compared byte for byte on the examples.
+The same project, card data and render clock (`render.now` with the `utc_offset`, or `render.date`) always produce the same pixels, in every build (WebAssembly in the browser, the CLI, the server). The core has no clock, network or file access of its own; each front end gives it a virtual file system and the render clock. Seeded random functions are pure. The browser export, the server zip and the CLI output were compared byte for byte on the examples.
 
 ## What happens to a bad card
 

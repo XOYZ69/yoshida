@@ -20,7 +20,7 @@ Params are the inputs a card can set. Each one has a name and a type. Layers rea
 
 ## Names
 
-A param name follows the identifier rule `[a-z_][a-z0-9_]*` (lowercase letters, digits and underscores, not starting with a digit). It must not be a reserved word (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`) or a [function name](@/docs/expressions-functions.md); that is error 1106.
+A param name follows the identifier rule `[a-z_][a-z0-9_]*` (lowercase letters, digits and underscores, not starting with a digit). It must not be a reserved word (`canvas`, `render`, `card`, `true`, `false`, `and`, `or`, `not`, `in`); that is error 1106. A [function name](@/docs/expressions-functions.md) is allowed: in an expression a bare name is a value, and only a name followed by `(` calls a function.
 
 | Name | Valid? |
 | --- | --- |

@@ -7,8 +7,10 @@ The `yoshida` tool checks projects, renders cards and formats files. It never us
 
 ```txt
 yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+                          [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
 yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
-                          [--date YYYY-MM-DD] [--16bit] [--preview]
+                          [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
+                          [--utc-offset HOURS] [--16bit] [--preview]
                           [--offline] [--pdf] [--crop-marks]
                           [--format text|json]
 yoshida fmt    <project or file>  [--check]
@@ -19,7 +21,7 @@ yoshida version
 
 ## `yoshida check`
 
-Loads the manifest, every design and every card file, and reports every problem. When loading found no errors, it then **evaluates every card without drawing it**, which finds the problems that depend on card data: the [layer limit](@/docs/repeat.md#the-layer-limit), a missing image file, an index or key that does not exist, a division by zero. `https://` images are not downloaded by `check`. `--set` and `--card` limit which cards are evaluated. For each set it prints the design, the card file and the number of cards, then a summary:
+Loads the manifest, every design and every card file, and reports every problem. When loading found no errors, it then **evaluates every card without drawing it**, which finds the problems that depend on card data: the [layer limit](@/docs/repeat.md#the-layer-limit), a missing image file, an index or key that does not exist, a division by zero. `https://` images are not downloaded by `check`. `--set` and `--card` limit which cards are evaluated. `check` takes `--now` and `--utc-offset` as `render` does, so the expressions see the same `render.date` and `render.time`. It has no `--date`. For each set it prints the design, the card file and the number of cards, then a summary:
 
 ```txt
 set tour: designs/tour.design.json, 2 card(s)
@@ -35,7 +37,9 @@ Renders cards to PNG files at `<out>/<set>/<card id>.png`. A project with severa
 | `--set NAME`        | Render only this set. An unknown name lists the available sets and exits with status 2                                                                                                |
 | `--card ID`         | Render only the card with this id (the card's `id` in the card data, such as `road-trip`, not its title or index). Combine it with `--set` when several sets have a card with that id |
 | `--out DIR`         | Output folder. Default: `<project>/out`                                                                                                                                               |
-| `--date YYYY-MM-DD` | Value of `render.date` in expressions. Default: today. Pass it to make a render reproducible                                                                                          |
+| `--date YYYY-MM-DD` | Pins the date when `--now` is not given: `render.date` is this date, `render.time` is `00:00:00`, and `render.now` is that date at `00:00:00Z`. The utc offset is not applied. Ignored when `--now` is given. Pass it to make a render reproducible |
+| `--now YYYY-MM-DDTHH:MM:SSZ` | The UTC instant of the render. `render.now` is this instant, and `render.date` and `render.time` are it shifted by the offset. Overrides `--date`. Default: the clock when the command starts. Pass it to make a render reproducible |
+| `--utc-offset HOURS` | Offset from UTC for `render.date` and `render.time`: a number from -14 to 14, fractions allowed (`5.5`). Replaces `utc_offset` in `yoshida.json` for this run. Outside that range is a usage error (exit status 2). No effect with `--date` alone. See [Time zone](@/docs/project-layout-and-manifest.md#time-zone) |
 | `--16bit`           | Write 16-bit-per-channel PNGs (default is 8-bit)                                                                                                                                      |
 | `--preview`         | A missing or undecodable image becomes a placeholder and a warning instead of an error                                                                                                |
 | `--offline`         | Do not download `https://` and `http://` images                                                                                                                                       |
@@ -83,7 +87,7 @@ Image paths that are `https://` or `http://` URLs are downloaded once per run. U
 
 ### Reproducible output
 
-The same project, card data and `--date` give the same pixels on every platform and in every front end. Without `--date`, `render.date` is today's date.
+The same project, card data, `--now` (or `--date`) and offset give the same pixels on every platform and in every front end. Without `--now` or `--date`, the render uses the clock when the command starts, so `render.date` is today's date in the offset time zone.
 
 ### JSON output
 
@@ -133,6 +137,9 @@ With `--check` the exit status is 1 if any file is not formatted, which is what 
 ```sh
 # render the first card of a set, 16-bit, fixed date
 yoshida render my-cards --set core --card 001 --16bit --date 2026-01-01 --out build
+
+# render at a fixed instant, shown in UTC+2 (render.date and render.time)
+yoshida render my-cards --now 2026-01-01T22:30:00Z --utc-offset 2 --out build
 
 # validate in a script and fail the build on errors
 yoshida check my-cards || exit 1

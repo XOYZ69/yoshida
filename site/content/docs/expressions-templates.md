@@ -22,7 +22,7 @@ In JSON, `\n` inside a string *is* a newline character. So a `text` param whose 
 
 | Value | Becomes |
 | --- | --- |
-| number | The shortest decimal that round-trips: `5`, `0.5`, never `5.0` |
+| number | At most 12 significant digits, trailing zeros removed: `5`, `0.5`, `0.3` for `0.1 + 0.2`, `0.333333333333` for `1/3`. Plain digits from 1e-7 up to 1e21, exponent form outside (`1.5e-8`). The expression's own value is not rounded |
 | bool | `true` or `false` |
 | text | unchanged |
 | color | `#RRGGBBAA` (8-bit) |

@@ -641,7 +641,7 @@ pub fn convertText(arena: Allocator, p: *const Param, s: []const u8) Allocator.E
             return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not one of {s}", .{ s, all }) };
         },
         .color => {
-            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RRGGBB or #RRGGBBAA", .{s}) };
+            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RGB, #RRGGBB or #RRGGBBAA", .{s}) };
             return Ret{ .ok = .{ .color = c } };
         },
         .list => {
@@ -718,7 +718,14 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
     if (root.get("fonts")) |fnode| if (try l.expectObject(fnode, "fonts")) {
         for (fnode.data.object) |f| {
             if (!expr.isIdent(f.key)) try l.err(1103, f.key_pos, "font name '{s}' must be lowercase letters, digits and '_'", .{f.key});
-            if (try l.literalString(&f.value, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
+            if (f.value.data == .object) {
+                // { "path": "...", "note": "..." }: note is for editors and is not used when rendering.
+                try l.checkFields(&f.value, &.{ "path", "note" }, "a font");
+                if (f.value.get("note")) |nn| _ = try l.literalString(nn, "a font note");
+                if (f.value.get("path")) |pn| {
+                    if (try l.literalString(pn, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
+                } else try l.err(1102, f.value.pos, "font '{s}' needs a \"path\"", .{f.key});
+            } else if (try l.literalString(&f.value, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
         }
     };
     d.fonts = fonts.items;
@@ -809,8 +816,11 @@ fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
     var sigs: std.ArrayList(expr.FnSig) = .empty;
     for (fnode.data.object) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, d.const_symbols, sigs.items, f.key)) {
-            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant, reserved word or built-in function", .{f.key});
+            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant or reserved word", .{f.key});
             continue;
+        }
+        if (expr.isFunction(f.key)) {
+            try l.report(.warning, 1113, f.key_pos, try std.fmt.allocPrint(arena, "function '{s}' hides the built-in {s}() in this design", .{ f.key, f.key }), "rename it to keep using the built-in");
         }
         if (!try l.expectObject(&f.value, "a function")) continue;
         try l.checkFields(&f.value, &.{ "args", "expr", "note" }, "a function");
@@ -868,7 +878,7 @@ fn loadParam(l: *Loader, f: *const Node.Field) Allocator.Error!?Param {
         return null;
     }
     if (expr.isReserved(name)) {
-        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word or function name", .{name});
+        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word", .{name});
         return null;
     }
     const n = &f.value;
@@ -1502,6 +1512,56 @@ test "load a small design" {
     try std.testing.expectEqual(@as(usize, 3), d.layers.len);
 }
 
+test "fonts as strings or objects with a path and note" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "fonts": {
+        \\    "serif": "assets/fonts/Serif.ttf",
+        \\    "body": { "path": "assets/fonts/Body.ttf", "note": "Body text for rules cards" }
+        \\  },
+        \\  "layers": [
+        \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 2), d.fonts.len);
+    try std.testing.expectEqualStrings("serif", d.fonts[0].name);
+    try std.testing.expectEqualStrings("assets/fonts/Serif.ttf", d.fonts[0].path);
+    try std.testing.expectEqualStrings("body", d.fonts[1].name);
+    try std.testing.expectEqualStrings("assets/fonts/Body.ttf", d.fonts[1].path);
+}
+
+test "font objects reject unknown fields" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "fonts": { "body": { "path": "assets/fonts/Body.ttf", "nte": "typo" } },
+        \\  "layers": [
+        \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 1), diags.errorCount());
+    try std.testing.expectEqual(@as(u16, 1101), diags.items.items[0].code);
+    try std.testing.expectEqual(@as(usize, 1), d.fonts.len);
+}
+
 test "dividers and param groups" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1566,4 +1626,28 @@ test "list lookups by key and list counts" {
     try std.testing.expectEqualStrings("/layers/2/at/x", diags.items.items[0].path);
     try std.testing.expectEqualStrings("/layers/3/box/x", diags.items.items[1].path);
     try std.testing.expectEqualStrings("/layers/3/box/y", diags.items.items[2].path);
+}
+
+test "a design function may wrap the built-in it hides" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "title": { "type": "text", "default": "x" }, "sum": { "type": "number", "default": 2 } },
+        \\  "functions": { "round": { "args": { "v": "number" }, "expr": "round(v * 2) / 2" } },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "box": { "x": "round(sum)", "y": 0, "w": "len(title)", "h": 1 } }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), diags.items.items.len);
+    try std.testing.expectEqual(@as(u16, 1113), diags.items.items[0].code);
+    try std.testing.expectEqual(@as(usize, 1), d.functions.len);
 }

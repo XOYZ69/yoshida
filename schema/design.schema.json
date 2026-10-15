@@ -40,7 +40,20 @@
     "fonts": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        ]
+      }
     },
     "params": {
       "type": "object",

@@ -517,3 +517,37 @@ export function filesFromZip(data: Uint8Array): {
 	}
 	return { name: strip ? first : null, files };
 }
+
+// ---------------------------------------------------------------- manifest settings
+
+/** The project manifest, at the project root. */
+export const MANIFEST = "yoshida.json";
+/** Range of the manifest's utc_offset, in hours. */
+export const UTC_OFFSET_LIMIT = 14;
+
+/** The manifest's utc_offset in hours; 0 when absent or not a valid number. */
+export function utcOffsetOf(text: string | undefined): number {
+	if (!text) return 0;
+	try {
+		const v = JSON.parse(text)?.utc_offset;
+		return typeof v === "number" && Math.abs(v) <= UTC_OFFSET_LIMIT ? v : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
+ * The manifest text with utc_offset set to `hours` (the key is left out when
+ * 0). A missing manifest starts as `{ "format": 1 }`. Other keys keep their
+ * order. Throws when the existing text is not JSON.
+ */
+export function withUtcOffset(text: string | undefined, hours: number): string {
+	const doc: Record<string, unknown> = text?.trim()
+		? JSON.parse(text)
+		: { format: 1 };
+	if (!doc || typeof doc !== "object" || Array.isArray(doc))
+		throw new Error("yoshida.json is not an object");
+	if (hours === 0) delete doc.utc_offset;
+	else doc.utc_offset = hours;
+	return formatJson(doc);
+}

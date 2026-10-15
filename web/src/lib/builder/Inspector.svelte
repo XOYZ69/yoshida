@@ -16,6 +16,7 @@ import {
 	childrenOf,
 	effectiveLayer,
 	findLayer as findIn,
+	functionUses,
 	getPath,
 	identRe,
 	isObj,
@@ -24,13 +25,24 @@ import {
 	layersOf,
 	newParam,
 	type Obj,
+	renameFunction,
 	setPath,
 	textAnchors,
 } from "../design";
 import type { Diagnostic } from "../engine";
+import {
+	fontEntry,
+	fontEntryNote,
+	fontEntryPath,
+	layersUsing,
+	removeFont,
+	renameFont,
+} from "../fonts/project";
+import { loadPref, savePref } from "../ui/drag";
 import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
+import { chooseAction, confirmAction } from "../ui/overlay.svelte";
 import type { CompletionContext } from "./complete";
 import Field from "./Field.svelte";
 import Scope from "./Scope.svelte";
@@ -504,10 +516,8 @@ function parseCoord(raw: string): Json {
 const fontEntries = $derived(
 	isObj(doc.fonts) ? Object.entries(doc.fonts as Obj) : [],
 );
-const fontPathOf = (name: string) => {
-	const p = isObj(doc.fonts) ? (doc.fonts as Obj)[name] : undefined;
-	return typeof p === "string" ? p : "";
-};
+const fontPathOf = (name: string) =>
+	isObj(doc.fonts) ? fontEntryPath((doc.fonts as Obj)[name]) : "";
 const faceOf = (name: string) => fontFaces[fontPathOf(name)] ?? null;
 // Text for font previews: the selected text layer's text, shortened.
 const fontSampleText = $derived(
@@ -517,11 +527,102 @@ const sampleOf = (name: string) => {
 	const family = faceOf(name);
 	return family ? { family, text: fontSampleText } : undefined;
 };
+// Font notes are optional; their fields show only when turned on here.
+const prefs = loadPref("yoshida.inspector", { fontNotes: false });
+let fontNotes = $state(prefs.fontNotes);
+function toggleFontNotes() {
+	fontNotes = !fontNotes;
+	savePref("yoshida.inspector", { ...prefs, fontNotes });
+}
+function setFont(name: string, path: string, note: string) {
+	setDoc(["fonts", name], fontEntry(path, note));
+}
+
+// ------------------------------------------------------------ renaming fonts and functions
+
+const reservedNames = new Set(["canvas", "render", "card", "true", "false", "and", "or", "not", "in"]);
+let renaming = $state<{ kind: "font" | "function"; name: string; value: string; error: string } | null>(null);
+function startRename(kind: "font" | "function", name: string) {
+	renaming = { kind, name, value: name, error: "" };
+}
+function renameError(kind: "font" | "function", from: string, to: string): string {
+	if (!identRe.test(to)) return "Letters, digits and _ only, not starting with a digit";
+	if (kind === "font") {
+		if (to === "default") return "'default' is the built-in font";
+		if (fontEntries.some(([n]) => n === to)) return `There is already a font '${to}'`;
+		return "";
+	}
+	if (reservedNames.has(to)) return `'${to}' is a reserved word`;
+	if (functions.some(([n]) => n === to)) return `There is already a function '${to}'`;
+	if (consts.some(([n]) => n === to)) return `There is already a constant '${to}'`;
+	if (params.some(([n]) => n === to)) return `There is already a param '${to}'`;
+	return "";
+}
+async function confirmRename() {
+	if (!renaming) return;
+	const { kind, name: from } = renaming;
+	const to = renaming.value.trim();
+	if (to === from) {
+		renaming = null;
+		return;
+	}
+	const error = renameError(kind, from, to);
+	if (error) {
+		renaming.error = error;
+		return;
+	}
+	const uses = kind === "font" ? layersUsing(doc, from).map((id) => `layer ${id}`) : functionUses(doc, from);
+	let update = true;
+	if (uses.length) {
+		const n = uses.length;
+		const more = n > 5 ? `, and ${n - 5} more` : "";
+		const what = kind === "font" ? "font" : "function";
+		const choice = await chooseAction({
+			title: `Rename ${what} '${from}' to '${to}'?`,
+			message: `Used by ${uses.slice(0, 5).join(", ")}${more}. Update ${n === 1 ? "it" : "them"} to the new name? If not, ${kind === "font" ? `${n === 1 ? "it switches" : "they switch"} to the default font` : `${n === 1 ? "it shows" : "they show"} an "Unknown name" error until you fix ${n === 1 ? "it" : "them"}`}.`,
+			confirm: "Update and rename",
+			alt: "Rename only",
+		});
+		if (!choice) return;
+		update = choice === "confirm";
+	}
+	renaming = null;
+	if (kind === "font") editDoc((d) => renameFont(d, from, to, update));
+	else editDoc((d) => renameFunction(d, from, to, update));
+}
+function renameKey(e: KeyboardEvent) {
+	if (e.key === "Enter") {
+		e.preventDefault();
+		confirmRename();
+	} else if (e.key === "Escape") {
+		e.preventDefault();
+		e.stopPropagation();
+		renaming = null;
+	}
+}
+function focusSelect(node: HTMLInputElement) {
+	node.focus();
+	node.select();
+}
+async function askRemoveFont(name: string) {
+	const users = layersUsing(doc, name);
+	const n = users.length;
+	const more = n > 5 ? `, and ${n - 5} more` : "";
+	const ok = await confirmAction({
+		title: `Remove font '${name}'?`,
+		message: n
+			? `${n} ${n === 1 ? "layer uses" : "layers use"} it: ${users.slice(0, 5).join(", ")}${more}. ${n === 1 ? "It" : "They"} will use the default font. The font file stays in the project.`
+			: "No layer uses it. The font file stays in the project.",
+		confirm: "Remove",
+		danger: true,
+	});
+	if (ok) editDoc((d) => removeFont(d, name));
+}
 const BROWSE = "\u0001browse";
 const UPLOAD = "\u0001upload";
 const fontOptions = $derived([
 	{ value: "default", sample: sampleOf("default") },
-	...fonts.filter((f) => f !== "default").map((f) => ({ value: f, sample: sampleOf(f) })),
+	...fonts.filter((f) => f !== "default").map((f) => ({ value: f, sample: sampleOf(f), detail: fontEntryNote((doc.fonts as Obj)[f]) || undefined })),
 	{ value: BROWSE, label: "Browse fonts…", divider: true, action: true },
 	{ value: UPLOAD, label: "Upload font file…", action: true },
 ]);
@@ -533,6 +634,22 @@ function pickFont(v: unknown) {
 let newConst = $state("");
 let newFunction = $state("");
 </script>
+
+{#snippet nameHead(kind: 'font' | 'function', name: string, suffix: string)}
+  {#if renaming && renaming.kind === kind && renaming.name === name}
+    <div class="rename">
+      <div class="row">
+      <input class="mono" use:focusSelect bind:value={renaming.value} aria-label="New name for {name}" aria-invalid={!!renaming.error} oninput={() => renaming && (renaming.error = '')} onkeydown={renameKey} />
+      <button class="mini" title="Rename (Enter)" aria-label="Confirm rename" onclick={confirmRename}><Icon name="check" /></button>
+      <button class="mini" title="Cancel (Esc)" aria-label="Cancel rename" onclick={() => (renaming = null)}><Icon name="close" /></button>
+      </div>
+      {#if renaming.error}<div class="rename-err">{renaming.error}</div>{/if}
+    </div>
+  {:else}
+    <strong class="mono">{name}{#if suffix}<span class="suffix">{suffix}</span>{/if}</strong>
+    <button class="mini ghost-icon" title="Rename {kind} {name}" aria-label="Rename {name}" onclick={() => startRename(kind, name)}><Icon name="pencil" /></button>
+  {/if}
+{/snippet}
 
 {#snippet effectsSection()}
   <section>
@@ -857,7 +974,7 @@ let newFunction = $state("");
       {#each functions as [name, fn]}
         <div class="effect" data-goto="function:{name}">
           <div class="effect-head">
-            <strong class="mono">{name}({argsText(fn.args)})</strong>
+            {@render nameHead('function', name, `(${argsText(fn.args)})`)}
             <span class="spacer"></span>
             <button class="mini" title="Remove" onclick={() => editDoc((d) => {
               if (isObj(d.functions)) delete (d.functions as Obj)[name];
@@ -867,6 +984,10 @@ let newFunction = $state("");
           <div class="field-like">
             <span class="lbl">args</span>
             <input class="mono" value={argsText(fn.args)} placeholder="i: number, kind: text" onchange={(e) => setDoc(['functions', name, 'args'], parseArgs(e.currentTarget.value))} />
+          </div>
+          <div class="field-like">
+            <span class="lbl">note</span>
+            <input value={typeof fn.note === 'string' ? fn.note : ''} placeholder="What it does, shown on hover" title="Optional description, shown in completion and when you hover a call" onchange={(e) => setDoc(['functions', name, 'note'], e.currentTarget.value.trim() || undefined)} />
           </div>
           <Scope context={() => functionScope(name, fn)}>
             <Field label="expr" kind="expr" value={fn.expr} error={errorAt(['functions', name])} path={pathOf(['functions', name, 'expr'])} onchange={(x) => setDoc(['functions', name, 'expr'], x ?? '0')} />
@@ -880,25 +1001,42 @@ let newFunction = $state("");
       <p class="hint">A formula with arguments, such as <code>tile_x(i)</code>, that layers call instead of repeating it. Argument types: number, text, bool, color.</p>
     </section>
     <section>
-      <h3>Fonts</h3>
-      {#each fontEntries as [name, path]}
-        {@const face = fontFaces[String(path)]}
-        {@const lic = fontLicenses[String(path)]}
-        <div class="field-like font-row">
-          <span class="lbl mono">{name}</span>
-          <button class="font-sample" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path: String(path) })}>{fontSampleText}</button>
-          <div class="row">
+      <div class="section-head">
+        <h3>Fonts</h3>
+        <span class="spacer"></span>
+        <label class="toggle" title="Show a note field on every font, for example to tell 50 fonts apart"><input type="checkbox" checked={fontNotes} onchange={toggleFontNotes} /> Notes</label>
+      </div>
+      {#each fontEntries as [name, entry]}
+        {@const path = fontEntryPath(entry)}
+        {@const note = fontEntryNote(entry)}
+        {@const face = fontFaces[path]}
+        {@const lic = fontLicenses[path]}
+        {@const present = fontFiles.includes(path)}
+        <div class="effect font-card">
+          <div class="effect-head">
+            {@render nameHead('font', name, '')}
+            <span class="spacer"></span>
+            {#if !present}<span class="badge bad" title="This font file is not in the project; the default font is used">missing</span>
+            {:else if lic}<span class="badge" title="License file next to the font">{lic}</span>
+            {:else}<span class="badge warn" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">no license</span>{/if}
+            <button class="mini" title="Remove" aria-label="Remove font {name}" onclick={() => askRemoveFont(name)}>×</button>
+          </div>
+          <button class="font-preview" title="Show {name} in the Fonts window" style:font-family={face ? `"${face}"` : undefined} onclick={() => onfonts({ path })}>{fontSampleText}</button>
+          <div class="field-like">
+            <span class="lbl">file</span>
             <Select
-              value={String(path)}
+              value={path}
               mono
               label="Font file for {name}"
-              options={[...(fontFiles.includes(String(path)) ? [] : [{ value: String(path), label: String(path).split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
-              onchange={(v) => setDoc(['fonts', name], v)} />
-            {#if !fontFiles.includes(String(path))}<span class="missing" title="This font file is not in the project; the default font is used">!</span>
-            {:else if lic}<span class="lic" title="License file next to the font">{lic}</span>
-            {:else}<span class="missing" title="No license file next to this font: check its terms before you share the project. Open it in the Fonts window to add one.">?</span>{/if}
-            <button class="mini" title="Remove" onclick={() => setDoc(['fonts', name], undefined)}>×</button>
+              options={[...(present ? [] : [{ value: path, label: path.split('/').pop(), detail: 'missing' }]), ...fontFiles.map((f) => ({ value: f, label: f.split('/').pop(), sample: fontFaces[f] ? { family: fontFaces[f] as string, text: 'Aa' } : undefined }))]}
+              onchange={(v) => setFont(name, String(v), note)} />
           </div>
+          {#if fontNotes}
+            <div class="field-like">
+              <span class="lbl">note</span>
+              <input value={note} placeholder="What it is for, shown in the font list" aria-label="Note for {name}" onchange={(e) => setFont(name, path, e.currentTarget.value)} />
+            </div>
+          {/if}
         </div>
       {/each}
       <div class="row font-actions">
@@ -988,28 +1126,80 @@ let newFunction = $state("");
     display: flex;
     gap: 4px;
   }
-  .font-sample {
-    grid-column: 2;
-    justify-self: start;
-    max-width: 100%;
-    padding: 0;
-    border: 0;
+  .section-head {
+    display: flex;
+    align-items: center;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .rename {
+    flex: 4;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rename input {
+    padding: 1px 6px;
+  }
+  .rename input[aria-invalid='true'] {
+    border-color: var(--err);
+  }
+  .rename-err {
+    color: var(--err);
+    font-size: 11px;
+  }
+  .suffix {
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .ghost-icon {
+    border-color: transparent;
     background: none;
-    font-size: 18px;
-    line-height: 1.2;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .ghost-icon:hover {
+    opacity: 1;
+    color: var(--fg);
+  }
+  .font-preview {
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 22px;
+    line-height: 1.3;
+    text-align: left;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--fg);
     cursor: pointer;
   }
-  .lic {
-    align-self: center;
+  .font-preview:hover {
+    border-color: var(--accent);
+  }
+  .badge {
     padding: 0 5px;
     border: 1px solid var(--line);
     border-radius: 4px;
     font-size: 11px;
     color: var(--muted);
+  }
+  .badge.warn {
+    border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
+    color: var(--warn-text);
+  }
+  .badge.bad {
+    border-color: color-mix(in srgb, var(--err) 50%, var(--line));
+    color: var(--err);
   }
   .font-actions > button {
     flex: 1;
@@ -1056,17 +1246,6 @@ let newFunction = $state("");
   }
   .probs .go {
     color: var(--muted);
-  }
-  .missing {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    flex: none;
-    border-radius: 50%;
-    background: var(--warn);
-    color: #000;
-    font-weight: 700;
-    font-size: 12px;
   }
   .const {
     display: grid;

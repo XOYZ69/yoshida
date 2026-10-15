@@ -82,10 +82,11 @@ const theme = EditorView.theme({
 		color: "var(--muted)",
 		borderRight: "1px solid var(--line)",
 	},
-	".cm-activeLine": { backgroundColor: "var(--hover)" },
+	// Translucent so the selection layer, drawn beneath the text, shows through.
+	".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--hover) 55%, transparent)" },
 	".cm-activeLineGutter": { backgroundColor: "var(--hover)" },
 	"&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-		backgroundColor: "var(--sel) !important",
+		backgroundColor: "color-mix(in srgb, var(--accent) 30%, var(--bg-code)) !important",
 	},
 	".cm-cursor": { borderLeftColor: "var(--fg)" },
 	".cm-tooltip": {
@@ -195,6 +196,7 @@ function makeState(doc: string) {
 		doc,
 		extensions: [
 			lineNumbers(),
+			EditorView.lineWrapping,
 			foldGutter(),
 			lintGutter(),
 			highlightActiveLineGutter(),

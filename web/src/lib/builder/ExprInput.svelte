@@ -282,7 +282,7 @@ function extensions(): Extension[] {
 				aboveCursor: false,
 			}),
 			Prec.high(keymap.of([{ key: "Tab", run: acceptCompletion }])),
-			signatureHelp(template),
+			signatureHelp(template, getCtx),
 			exprHover(
 				getCtx,
 				template,

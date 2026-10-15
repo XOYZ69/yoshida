@@ -17,6 +17,7 @@ import type { ScopeResult } from "../engine";
 import Icon from "../ui/Icon.svelte";
 import { askText, overlay } from "../ui/overlay.svelte";
 import Window from "../ui/Window.svelte";
+import { CSS_HEX_COLOR } from "../hexcolor";
 import { exprCoreReady, formatExpr, type Node, parseExpr } from "./core";
 import {
 	addChip,
@@ -48,7 +49,6 @@ import {
 	condChainToMatch,
 	extractConst,
 	extractFunction,
-	FUNCTION_NAMES,
 	freeNames,
 	hasLayerRef,
 	matchToCondChain,
@@ -236,7 +236,6 @@ function nameProblem(name: string): string {
 		return "Use lowercase letters, digits and _, starting with a letter.";
 	if (
 		RESERVED.includes(name) ||
-		FUNCTION_NAMES.includes(name) ||
 		BUILTIN_NAMES.includes(name)
 	)
 		return `'${name}' is a word of the expression language.`;
@@ -409,7 +408,7 @@ function fmt(v: LiveValue | null | undefined): string {
 }
 
 function isHex(v: string): boolean {
-	return /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v);
+	return CSS_HEX_COLOR.test(v);
 }
 
 /** Ids of literal nodes: their value is their text, so no value is shown next to them. */

@@ -16,6 +16,7 @@ import type { EditorView } from "@codemirror/view";
 import type { CompletionContext } from "../builder/complete";
 import {
 	BUILTINS,
+	CONSTANTS,
 	type Expect,
 	type FnDoc,
 	FUNCTIONS,
@@ -72,12 +73,17 @@ export function info(
 	};
 }
 
+/** The signature, one line per accepted form (`alt`, when the call has one). */
 export function signatureNode(f: FnDoc, active = -1) {
 	const s = el("span", "yx-sig");
-	for (const p of fnSignature(f, active).parts)
-		s.appendChild(
-			el("span", p.active ? "yx-sig-arg yx-sig-active" : "yx-sig-arg", p.text),
-		);
+	const forms = f.alt ? [f.args, f.alt] : [f.args];
+	forms.forEach((args, k) => {
+		if (k) s.appendChild(document.createElement("br"));
+		for (const p of fnSignature(f, active, args).parts)
+			s.appendChild(
+				el("span", p.active ? "yx-sig-arg yx-sig-active" : "yx-sig-arg", p.text),
+			);
+	});
 	return s;
 }
 
@@ -189,6 +195,28 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 			),
 		);
 	}
+	for (const k of CONSTANTS) {
+		// A local, param or design const with this name takes its place.
+		const shadowed =
+			ctx.locals.some((x) => x.name === k.name) ||
+			ctx.params.some((x) => x.name === k.name) ||
+			(ctx.consts ?? []).some((x) => x.name === k.name);
+		if (shadowed) continue;
+		out.push(
+			opt(
+				{
+					label: k.name,
+					kind: "builtin",
+					detail: k.type,
+					section: S.builtins,
+					fitness: fit(k.type, expect),
+					info: info(k.name, k.doc),
+				},
+				expect,
+				1,
+			),
+		);
+	}
 	for (const f of ctx.functions ?? []) {
 		out.push(
 			opt(
@@ -199,7 +227,10 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 					section: S.functions,
 					fitness: 1,
 					apply: insertThenComplete(`${f.name}(`),
-					info: info(`${f.name}(${f.args})`, "A design function (functions)."),
+					info: info(
+						`${f.name}(${f.args})`,
+						f.note || "A design function (functions).",
+					),
 				},
 				expect,
 				1,
@@ -239,7 +270,10 @@ function topLevel(ctx: CompletionContext, expect: Expect | undefined): Opt[] {
 			boost: 0,
 		});
 	}
+	// A design function with a built-in's name hides the built-in here.
+	const own = new Set((ctx.functions ?? []).map((f) => f.name));
 	for (const f of FUNCTIONS) {
+		if (own.has(f.name)) continue;
 		out.push(
 			opt(
 				{

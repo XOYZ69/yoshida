@@ -36,7 +36,9 @@ Request body (JSON):
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `files`  | Object of project path to **base64-encoded** file content. The whole project: manifest, designs, card files, images, fonts. Paths must stay inside the project |
 | `set`    | Name of the set to render. **Required in practice**: an omitted or unknown name is 404                                                                         |
-| `date`   | Value of `render.date`. Default `1970-01-01` when omitted, so pass it for meaningful dates                                                                     |
+| `date`   | Used when `now` is not sent: `render.date` is this date, `render.time` is `00:00:00` and `render.now` is that date at midnight UTC. With neither `date` nor `now`, the server's current UTC instant is used. Format `YYYY-MM-DD` |
+| `now`    | UTC instant `YYYY-MM-DDTHH:MM:SSZ`: `render.now`. `render.date` and `render.time` are it shifted by `utc_offset`. Overrides `date`. A malformed value is **400** |
+| `utc_offset` | Hours from UTC, -14 to 14, fractions allowed. Replaces the project's `utc_offset`. Outside that range is **400** |
 | `format` | `png` (8-bit, default), `png16`, or `pdf` (one PDF, one page per card)                                                                                         |
 
 Response:

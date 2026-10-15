@@ -35,6 +35,7 @@ import {
 	styleLabel,
 } from "./catalog";
 import {
+	fontEntryPath,
 	fontFileRe,
 	fontWarning,
 	freeFontName,
@@ -82,10 +83,16 @@ function savePrefs() {
 	savePref("yoshida.fonts", { size, google });
 }
 
+// Font name -> file path; an entry may be a path or `{ path, note }`.
 const declared = $derived(
 	doc.fonts && typeof doc.fonts === "object" && !Array.isArray(doc.fonts)
-		? (doc.fonts as Record<string, unknown>)
-		: {},
+		? Object.fromEntries(
+				Object.entries(doc.fonts as Record<string, unknown>).map(([n, e]) => [
+					n,
+					fontEntryPath(e),
+				]),
+			)
+		: ({} as Record<string, string>),
 );
 const fontPaths = $derived(
 	[...files.keys()].filter((p) => fontFileRe.test(p)).sort((a, b) => a.localeCompare(b)),

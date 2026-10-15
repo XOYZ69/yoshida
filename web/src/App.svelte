@@ -65,6 +65,7 @@
 		type Diagnostic,
 		Engine,
 		type Param,
+		renderClock,
 		type RenderResult,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
@@ -101,6 +102,7 @@
 		isText,
 		listExamples,
 		loadExample,
+		MANIFEST,
 		openWritable,
 		PROJECT_EXT,
 		PROJECT_MIME,
@@ -112,6 +114,9 @@
 		setCardValue,
 		slug,
 		textOf,
+		UTC_OFFSET_LIMIT,
+		utcOffsetOf,
+		withUtcOffset,
 		writeCsv,
 		writeFile,
 	} from "./lib/project";
@@ -161,12 +166,19 @@
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
 	import Window from "./lib/ui/Window.svelte";
+	import FunctionsWindow from "./lib/expr/FunctionsWindow.svelte";
+	import {
+		closeFunctions,
+		functionsRef,
+		openFunctions,
+	} from "./lib/expr/functionsRef.svelte";
 	import FontsWindow, {
 		type FontAdd,
 		type FontsTarget,
 	} from "./lib/fonts/FontsWindow.svelte";
 	import {
 		findLicense,
+		fontEntryPath,
 		licenseKind,
 		previewFace,
 		previewTextOf,
@@ -248,7 +260,7 @@
 		},
 		eval: (path, src) =>
 			currentSet
-				? engine.eval(currentSet.name, path, src, cardIndex, today)
+				? engine.eval(currentSet.name, path, src, cardIndex, renderClock())
 				: Promise.resolve(null),
 		scope: (path) =>
 			currentSet
@@ -326,8 +338,6 @@
 		dragPreview = m;
 		savePref(dragKey, { mode: m });
 	}
-
-	const today = new Date().toISOString().slice(0, 10);
 
 	// Panel sizes, remembered in this browser. null: share the space evenly.
 	const layoutDefaults = {
@@ -823,6 +833,12 @@
 				action: exportProject,
 			},
 			{
+				label: "Project settings…",
+				detail: "UTC offset for render time",
+				disabled: !open,
+				action: openSettings,
+			},
+			{
 				label: "Rename…",
 				icon: "pencil",
 				disabled: !open,
@@ -1238,6 +1254,23 @@
 
 	let fontsTarget = $state<FontsTarget | null>(null);
 
+	/** The design's own functions, for the Functions window. */
+	const designFunctions = $derived.by(() => {
+		const fns = doc && isObj(doc.functions) ? doc.functions : {};
+		return Object.entries(fns)
+			.filter(([, f]) => isObj(f))
+			.map(([name, f]) => {
+				const fn = f as { args?: unknown; expr?: unknown; note?: unknown };
+				const args = isObj(fn.args)
+					? Object.entries(fn.args)
+							.map(([a, t]) => `${a}: ${t}`)
+							.join(", ")
+					: "";
+				const note = typeof fn.note === "string" ? fn.note : undefined;
+				return { name, args, expr: String(fn.expr ?? ""), note };
+			});
+	});
+
 	/** The selected text layer, for the Fonts window's preview and "use". */
 	const fontLayer = $derived.by(() => {
 		if (!doc || !selectedLayer) return null;
@@ -1253,6 +1286,52 @@
 		fontsTarget = { ...target };
 	}
 
+	// Project settings (the manifest's utc_offset).
+	let settingsOpen = $state(false);
+	let offsetText = $state("");
+	let offsetError = $state("");
+
+	function manifestText(): string | undefined {
+		const d = files.get(MANIFEST);
+		return d ? textOf(d) : undefined;
+	}
+
+	function openSettings() {
+		offsetText = String(utcOffsetOf(manifestText()));
+		offsetError = "";
+		settingsOpen = true;
+	}
+
+	/** Writes utc_offset into yoshida.json (left out when 0). */
+	async function setUtcOffset(hours: number) {
+		const before = manifestText();
+		// No manifest and no offset: nothing to write.
+		if (before === undefined && hours === 0) return;
+		try {
+			const text = withUtcOffset(before, hours);
+			offsetError = "";
+			offsetText = hours ? String(hours) : "";
+			await updateFile(MANIFEST, text, true);
+			status = hours
+				? `UTC offset set to ${hours} hours.`
+				: "UTC offset removed (0 hours).";
+		} catch (e) {
+			offsetError = `Could not update ${MANIFEST}: ${(e as Error).message}`;
+		}
+	}
+
+	/** Returns false, with the error shown, when raw is not a usable offset. */
+	function offsetEntered(raw: string): boolean {
+		const t = raw.trim();
+		const v = t === "" ? 0 : Number(t);
+		if (!Number.isFinite(v) || Math.abs(v) > UTC_OFFSET_LIMIT) {
+			offsetError = `Enter a number from -${UTC_OFFSET_LIMIT} to ${UTC_OFFSET_LIMIT}.`;
+			return false;
+		}
+		setUtcOffset(v);
+		return true;
+	}
+
 	/**
 	 * Adds font and license files, declares font names in the design and
 	 * switches the selected text layer to `use`, all as one undo step.
@@ -1265,8 +1344,15 @@
 		const changes: Snapshot = add.map((a) => ({ path: a.path, data: a.data }));
 		if (designPath && doc && (Object.keys(declare).length || use)) {
 			const next = clone(doc);
-			if (Object.keys(declare).length)
-				next.fonts = { ...(isObj(next.fonts) ? next.fonts : {}), ...declare };
+			if (Object.keys(declare).length) {
+				const fonts: Record<string, Json> = isObj(next.fonts)
+					? next.fonts
+					: {};
+				// A name already declared for the same file keeps its note.
+				for (const [n, path] of Object.entries(declare))
+					if (fontEntryPath(fonts[n]) !== path) fonts[n] = path;
+				next.fonts = fonts;
+			}
 			if (use && selectedLayer) {
 				const l = findLayer(next, selectedLayer);
 				if (l) l.font = use;
@@ -1297,7 +1383,7 @@
 				.render({
 					set: setName,
 					card: i,
-					date: today,
+					...renderClock(),
 					preview: true,
 					format: "png",
 					// Tiles are at most 320 x 448 screen pixels.
@@ -1445,7 +1531,7 @@
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
-			date: today,
+			...renderClock(),
 			preview: true,
 			format: "rgba",
 			layout: true,
@@ -2148,13 +2234,20 @@
 	let clipboard: Obj[] = [];
 
 	function canUseClipboard(e: ClipboardEvent) {
+		// A text field handled it (CodeMirror cuts the whole line when
+		// nothing is selected, which also removes the event's target from
+		// the page, so the target alone cannot tell).
+		if (e.defaultPrevented) return false;
+		const editable =
+			"input, textarea, select, [contenteditable], .cm-editor";
 		const t = e.target as HTMLElement | null;
+		const focused = document.activeElement as HTMLElement | null;
 		return (
 			mode === "build" &&
 			!!doc &&
-			!t?.closest(
-				"input, textarea, select, [contenteditable], .cm-editor",
-			)
+			!!t?.isConnected &&
+			!t.closest(editable) &&
+			!focused?.closest(editable)
 		);
 	}
 
@@ -2324,7 +2417,7 @@
 		const args = {
 			set: setName,
 			card: cardIndex,
-			date: today,
+			...renderClock(),
 			preview: true,
 			format: "rgba" as const,
 			scale: wantedScale,
@@ -2410,7 +2503,7 @@
 				const r = await engine.render({
 					set: setName,
 					card: cardIndex,
-					date: today,
+					...renderClock(),
 					preview: true,
 					format: "rgba",
 					layout: true,
@@ -2507,6 +2600,12 @@
 		);
 		const mod = e.ctrlKey || e.metaKey;
 		const k = e.key.toLowerCase();
+		if (k === "f1" && !mod && !e.shiftKey && !e.altKey) {
+			e.preventDefault();
+			if (functionsRef.open) closeFunctions();
+			else openFunctions();
+			return;
+		}
 		if (mod && !typing && (k === "z" || k === "y")) {
 			e.preventDefault();
 			if (k === "y" || e.shiftKey) redo();
@@ -2677,6 +2776,7 @@
 		if (!currentSet || !currentCard) return;
 		const card = currentCard;
 		const run = new Run(`Exporting ${card.id}.png`, []);
+		const clock = renderClock();
 		busy = "Rendering PNG…";
 		try {
 			run.log(`Rendering card '${card.id}' at full size in this browser`);
@@ -2687,7 +2787,7 @@
 			const r = await engine.render({
 				set: setName,
 				card: cardIndex,
-				date: today,
+				...clock,
 				preview: false,
 				format: "png",
 			});
@@ -2717,6 +2817,7 @@
 		const set = currentSet;
 		const name = setName;
 		const n = set.cards.length;
+		const clock = renderClock();
 		// Weights: rendering is nearly all of the time; the zip is stored, not compressed.
 		const run = new Run(
 			`Exporting ${n} card${n === 1 ? "" : "s"} as a ZIP`,
@@ -2743,7 +2844,7 @@
 				const r = await engine.render({
 					set: name,
 					card: i,
-					date: today,
+					...clock,
 					preview: false,
 					format: "png",
 				});
@@ -2799,6 +2900,7 @@
 		if (!currentSet) return;
 		if (onServer) return exportOnServer("pdf");
 		const n = currentSet.cards.length;
+		const clock = renderClock();
 		const run = new Run(
 			`Exporting ${n} page${n === 1 ? "" : "s"} as a PDF`,
 			[
@@ -2820,7 +2922,7 @@
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
-			const r = await engine.pdf(setName, today, bleed, n, (done) => {
+			const r = await engine.pdf(setName, clock, bleed, n, (done) => {
 				run.count(done, n);
 				run.detail(0, `${done} / ${n}`);
 			});
@@ -2859,7 +2961,7 @@
 		busy = "Checking every card…";
 		try {
 			run.log(`Evaluating every card of '${currentSet.design_name}'`);
-			const r = await engine.checkCards(setName, today);
+			const r = await engine.checkCards(setName, renderClock());
 			const errs = errorCount(r.diagnostics);
 			const warns = r.diagnostics.filter(
 				(d) => d.severity === "warning",
@@ -2908,6 +3010,7 @@
 		const set = currentSet;
 		const name = setName;
 		const n = set.cards.length;
+		const clock = renderClock();
 		const what = format === "pdf" ? "PDF" : "ZIP";
 		// Weights: a rough share of the time on a local network; the bar moves
 		// with the bytes sent, the cards the server reports and the bytes received.
@@ -2946,7 +3049,7 @@
 					[...files].map(([p, d]) => [p, b64(d)]),
 				),
 				set: name,
-				date: today,
+				...clock,
 				format,
 			});
 			const limit = (server?.max_body_mb ?? 0) * 1024 * 1024;
@@ -3469,6 +3572,14 @@
 						: ""}</button
 				>
 			{/if}
+			<button
+				class="fn-btn"
+				onclick={() =>
+					functionsRef.open ? closeFunctions() : openFunctions()}
+				aria-pressed={functionsRef.open}
+				title="Function reference: every function with a short example (F1)"
+				><span class="fn-mark" aria-hidden="true">ƒ</span> Functions</button
+			>
 			<ThemeToggle />
 		</header>
 
@@ -3826,6 +3937,43 @@
 	</div>
 {/if}
 
+{#if settingsOpen}
+	<Window
+		key="project-settings"
+		title="Project settings"
+		width={380}
+		fit
+		onclose={() => (settingsOpen = false)}
+	>
+		<div class="settings">
+			<label class="offset">
+				<span>UTC offset (hours)</span>
+				<input
+					type="number"
+					step="0.25"
+					min={-UTC_OFFSET_LIMIT}
+					max={UTC_OFFSET_LIMIT}
+					value={offsetText}
+					onchange={(e) => {
+						// A bad entry leaves the field showing the stored offset, next to its error.
+						if (!offsetEntered(e.currentTarget.value))
+							e.currentTarget.value = offsetText;
+					}}
+				/>
+			</label>
+			<p class="note">
+				The core uses this offset with the UTC time of each render for
+				render.date and render.time. Empty or 0 means UTC.
+			</p>
+			<button
+				type="button"
+				onclick={() => setUtcOffset(-new Date().getTimezoneOffset() / 60 || 0)}
+			>Use my browser's offset</button>
+			{#if offsetError}<p class="err" role="alert">{offsetError}</p>{/if}
+		</div>
+	</Window>
+{/if}
+
 {#if browsing && currentSet}
 	<Window
 		key="cards"
@@ -3859,6 +4007,16 @@
 		onapply={applyFonts}
 		onclose={() => (fontsTarget = null)}
 	/>
+	{/key}
+{/if}
+
+{#if functionsRef.open}
+	{#key functionsRef.nonce}
+		<FunctionsWindow
+			query={functionsRef.query}
+			userFunctions={designFunctions}
+			onclose={closeFunctions}
+		/>
 	{/key}
 {/if}
 
@@ -4042,6 +4200,22 @@
 		background: var(--hover);
 		color: var(--muted);
 	}
+	.fn-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: var(--ctl-h);
+		box-sizing: border-box;
+		font-size: 12px;
+	}
+	.fn-btn[aria-pressed="true"] {
+		border-color: var(--accent);
+		background: var(--sel);
+	}
+	.fn-mark {
+		font: italic 600 14px var(--mono);
+		color: var(--accent);
+	}
 	.saved {
 		display: inline-flex;
 		align-items: center;
@@ -4187,16 +4361,26 @@
 	.editor-pane > :global(.editor) {
 		flex: 1;
 	}
+	/* Same height as the tab strips beside it, so the lines under them meet. */
 	.pane-title {
-		padding: 6px 12px;
-		font: 12px var(--mono);
+		flex: none;
+		height: var(--bar-h);
+		box-sizing: border-box;
+		padding: 0 12px;
+		font: 12px/calc(var(--bar-h) - 1px) var(--mono);
 		border-bottom: 1px solid var(--line);
 		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.pane-title.row {
+		height: auto;
 		font: inherit;
 		color: inherit;
 		padding: 6px 12px;
+		white-space: normal;
+		overflow: visible;
 	}
 	.image-view {
 		overflow: auto;
@@ -4336,5 +4520,32 @@
 		color: var(--err);
 		font-size: 12px;
 		margin: 0;
+	}
+	.settings {
+		display: grid;
+		gap: 12px;
+		padding: 4px 2px;
+	}
+	.settings .offset {
+		display: grid;
+		grid-template-columns: 1fr 120px;
+		align-items: center;
+		gap: 8px;
+	}
+	.settings .offset input {
+		width: 100%;
+	}
+	.settings .note {
+		margin: 0;
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.settings .err {
+		margin: 0;
+		color: var(--err);
+		font-size: 12px;
+	}
+	.settings button {
+		justify-self: start;
 	}
 </style>
