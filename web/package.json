@@ -1,17 +1,17 @@
 {
 	"name": "yoshida-editor",
 	"private": true,
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"type": "module",
 	"scripts": {
-		"wasm": "cd .. && zig build wasm && mkdir -p web/public && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm",
+		"wasm": "cd .. && zig build wasm && mkdir -p web/public && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm && cp zig-out/web/expr.wasm web/public/expr.wasm",
 		"examples": "node scripts/sync-examples.mjs ../examples public/examples",
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test:unit": "node --experimental-strip-types tests/progress-math.mjs",
-		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs && node tests/ui-hover.mjs && node tests/ui-review.mjs && node tests/ui-perf.mjs",
+		"test:unit": "node --experimental-strip-types tests/progress-math.mjs && node tests/expr-core.mjs && node --experimental-strip-types tests/expr-rewrite.mjs && node --experimental-strip-types tests/expr-edit.mjs && node --experimental-strip-types tests/fonts.mjs && node --experimental-strip-types tests/hexcolor.mjs",
+		"test:ui": "node tests/ui.mjs && node tests/ui-organise.mjs && node tests/ui-view.mjs && node tests/ui-features.mjs && node tests/ui-hover.mjs && node tests/ui-review.mjs && node tests/ui-perf.mjs && node tests/ui-expr.mjs && node tests/ui-paths.mjs && node tests/ui-formula.mjs && node tests/ui-fonts.mjs && node tests/ui-rename.mjs",
 		"docs:screenshots": "node scripts/docs-screenshots/run.mjs"
 	},
 	"devDependencies": {

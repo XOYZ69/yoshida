@@ -19,8 +19,8 @@ What it shows:
 - **Indexed references**: `@tile_bg[t.n - 1]` gives the target tile of a shortcut, and `rule_measure` stacks the rules by reading the previous iteration.
 - **Auto-shrink with `shrink_group`**: every tile label uses the same size.
 - **Polygon shapes and arrows**: `shape` presets (arrow, chevron, star, triangle), a dashed open polygon with `"arrow": "end"` for the shortcut links, and text outlines (`stroke`) on the title.
-- **Symbol glyphs**: the `★` in the subtitle comes from the bundled symbol font, Bebas has none.
+- **Symbol glyphs**: the `★` in the subtitle comes from the bundled symbol font, Bebas Neue has none.
 - **Params**: enum list-item fields (`kind`), a bool (`show_links`), a list default with single-item overrides on `road-trip-night` (`"tiles": { "4": { ... } }`), param groups, a translucent panel through which the shortcut arrows show.
 - **Print**: `canvas.dpi`, `canvas.bleed`, `--pdf`, `--crop-marks`.
 
-Font: Bebas (see `assets/fonts/Bebas-Regular-license.txt`).
+Font: Bebas Neue by Dharma Type, SIL Open Font License 1.1 (see `assets/fonts/BebasNeue-Regular-license.txt`).

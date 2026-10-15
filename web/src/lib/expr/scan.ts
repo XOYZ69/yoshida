@@ -1,9 +1,11 @@
-// A small scanner for yoshida expressions and templates (FORMAT.md 6.1 to
-// 6.6). It never fails: anything it does not understand becomes an `error`
-// token. Used for highlighting, and to find the expression (template hole)
-// and the function call around the caret.
+// Scanner for yoshida expressions and templates. The syntax is decided by
+// the Zig core (core.ts, expr.wasm): this file maps its tokens and problems
+// onto highlight kinds, and keeps the text-based helpers that find the
+// expression and call around the caret. It never fails: with no core loaded
+// it returns no tokens.
 
 import { FN_BY_NAME } from "./catalog";
+import { type ExprToken, exprCoreReady, type Problem, parseExpr } from "./core";
 
 export type TokKind =
 	| "num"
@@ -38,11 +40,159 @@ export type Names = {
 	functions?: Set<string>;
 };
 
-const identStart = /[A-Za-z_]/;
 const identChar = /[A-Za-z0-9_]/;
 const builtins = new Set(["canvas", "card", "render"]);
 
-/** Tokens of the expression in text[from, to). */
+/** The message of the first problem that overlaps [from, to), if any. */
+function problemAt(problems: Problem[], from: number, to: number) {
+	return problems.find((p) => p.span[0] < to && p.span[1] > from)?.message;
+}
+
+/** Highlight range of a problem. A zero-width one marks the character before it. */
+function problemRange(p: Problem, len: number): [number, number] | null {
+	const [s, e] = p.span;
+	if (e > s) return [s, e];
+	if (s > 0) return [s - 1, s];
+	return len > 0 ? [0, 1] : null;
+}
+
+/** Name tokens: what the name is, given what it is followed by and what names exist. */
+function nameKind(
+	w: string,
+	call: boolean,
+	names: Names | null,
+): { kind: TokKind; note?: string } {
+	if (call) {
+		const known = FN_BY_NAME.has(w) || !names || !!names.functions?.has(w);
+		return known
+			? { kind: "fn" }
+			: { kind: "unknown", note: `Unknown function '${w}'` };
+	}
+	if (builtins.has(w)) return { kind: "builtin" };
+	if (!names || names.locals.has(w)) return { kind: "local" };
+	if (names.params.has(w)) return { kind: "param" };
+	if (names.consts?.has(w)) return { kind: "param", note: "Constant" };
+	if (w === "pi") return { kind: "builtin", note: "The built-in constant pi" };
+	// A bare name never calls a function, so a function name here is not a value.
+	if (FN_BY_NAME.has(w))
+		return {
+			kind: "unknown",
+			note: `'${w}' is a function: write ${w}(...) to call it`,
+		};
+	return { kind: "unknown", note: `Unknown name '${w}'` };
+}
+
+/** Highlight tokens of an expression or template, from the Zig core. */
+export function scan(
+	text: string,
+	template: boolean,
+	names: Names | null,
+): Tok[] {
+	if (!exprCoreReady() || text.length === 0) return [];
+	const r = parseExpr(text, template);
+	const out: Tok[] = [];
+	const push = (from: number, to: number, kind: TokKind, note?: string) =>
+		out.push({ from, to, kind, note });
+
+	// A `{` whose hole never closes.
+	const unclosed = new Set<number>();
+	for (const p of r.problems)
+		if (p.message.startsWith("unclosed '{'")) unclosed.add(p.span[0]);
+
+	// `.name` chains: a name after a reference is a reference field.
+	let afterDot = false;
+	let chainRef = false;
+	const toks: ExprToken[] = r.tokens;
+	for (let i = 0; i < toks.length; i++) {
+		const [from, to, kind] = toks[i];
+		const w = text.slice(from, to);
+		const dotted = afterDot;
+		afterDot = false;
+		const isDot = kind === "punct" && w === ".";
+		afterDot = isDot;
+		if (!isDot && !(kind === "name" && dotted)) chainRef = kind === "ref";
+
+		switch (kind) {
+			case "number":
+				push(from, to, "num");
+				break;
+			case "unit":
+				push(from, to, "unit");
+				break;
+			case "string":
+				push(from, to, "str");
+				break;
+			case "color":
+				push(from, to, "color");
+				break;
+			case "ref": {
+				const id = w.slice(1);
+				const known = !names || !id || names.layers.has(id);
+				push(
+					from,
+					to,
+					known ? "ref" : "unknown",
+					known ? undefined : `No layer '${id}' can be referenced here`,
+				);
+				break;
+			}
+			case "name": {
+				if (dotted) {
+					push(from, to, chainRef ? "ref-field" : "prop");
+					break;
+				}
+				const next = toks[i + 1];
+				const call = !!next && next[2] === "punct" && text[next[0]] === "(";
+				const k = nameKind(w, call, names);
+				push(from, to, k.kind, k.note);
+				break;
+			}
+			case "keyword":
+				push(from, to, w === "true" || w === "false" ? "bool" : "keyword");
+				break;
+			case "op":
+				push(from, to, "op");
+				break;
+			case "punct":
+				push(from, to, "punct");
+				break;
+			case "bad":
+				push(
+					from,
+					to,
+					"error",
+					problemAt(r.problems, from, to) ?? "Unexpected text",
+				);
+				break;
+			case "escape":
+				push(from, to, "escape", `Literal '${w[0]}'`);
+				break;
+			case "brace":
+				if (unclosed.has(from))
+					push(from, to, "error", "This '{' has no closing '}'");
+				else push(from, to, "brace");
+				break;
+			case "text":
+				break;
+		}
+	}
+
+	for (const h of r.holes ?? []) {
+		const closed = !unclosed.has(h.span[0]);
+		const from = h.span[0] + 1;
+		const to = closed ? h.span[1] - 1 : h.span[1];
+		if (to > from) push(from, to, "hole");
+	}
+
+	// Every problem, so nothing invalid goes unmarked.
+	for (const p of r.problems) {
+		const range = problemRange(p, text.length);
+		if (range) push(range[0], range[1], "error", p.message);
+	}
+	return out;
+}
+
+/** Tokens of the expression in text[from, to), appended to `out`. */
 export function scanExpr(
 	text: string,
 	from: number,
@@ -50,145 +200,8 @@ export function scanExpr(
 	names: Names | null,
 	out: Tok[],
 ) {
-	let i = from;
-	const push = (a: number, b: number, kind: TokKind, note?: string) =>
-		out.push({ from: a, to: b, kind, note });
-	const ident = (p: number) => {
-		let e = p;
-		while (e < to && identChar.test(text[e])) e++;
-		return e;
-	};
-	// `.name.name` chains after a name.
-	const chain = (p: number, kind: TokKind) => {
-		while (
-			p < to &&
-			text[p] === "." &&
-			p + 1 < to &&
-			identStart.test(text[p + 1])
-		) {
-			push(p, p + 1, "punct");
-			const e = ident(p + 1);
-			push(p + 1, e, kind);
-			p = e;
-		}
-		// A trailing dot while typing is fine.
-		if (p < to && text[p] === ".") {
-			push(p, p + 1, "punct");
-			p++;
-		}
-		return p;
-	};
-	while (i < to) {
-		const c = text[i];
-		if (c === " " || c === "\t" || c === "\n" || c === "\r") {
-			i++;
-			continue;
-		}
-		if (/[0-9]/.test(c)) {
-			let e = i;
-			while (e < to && /[0-9]/.test(text[e])) e++;
-			if (text[e] === "." && /[0-9]/.test(text[e + 1] ?? "")) {
-				e++;
-				while (e < to && /[0-9]/.test(text[e])) e++;
-			}
-			push(i, e, "num");
-			const u = /^(%|vw|vh)/.exec(text.slice(e, Math.min(to, e + 2)));
-			if (u && !(u[1] !== "%" && identChar.test(text[e + 2] ?? ""))) {
-				push(e, e + u[1].length, "unit");
-				e += u[1].length;
-			}
-			i = e;
-			continue;
-		}
-		if (c === "'" || c === '"') {
-			let e = i + 1;
-			while (e < to && text[e] !== c) e += text[e] === "\\" ? 2 : 1;
-			if (e < to) push(i, e + 1, "str");
-			else push(i, to, "error", "Text is missing its closing quote");
-			i = Math.min(to, e + 1);
-			continue;
-		}
-		if (c === "#") {
-			let e = i + 1;
-			while (e < to && /[0-9a-fA-F]/.test(text[e])) e++;
-			const len = e - i - 1;
-			if ([6, 8, 12, 16].includes(len)) push(i, e, "color");
-			else push(i, e, "error", "A color is #RRGGBB or #RRGGBBAA");
-			i = e;
-			continue;
-		}
-		if (c === "@") {
-			if (i + 1 < to && identStart.test(text[i + 1])) {
-				const e = ident(i + 1);
-				const id = text.slice(i + 1, e);
-				const known = !names || names.layers.has(id);
-				push(
-					i,
-					e,
-					known ? "ref" : "unknown",
-					known ? undefined : `No layer '${id}' can be referenced here`,
-				);
-				i = chain(e, "ref-field");
-			} else {
-				push(i, i + 1, "ref");
-				i++;
-			}
-			continue;
-		}
-		if (identStart.test(c)) {
-			const e = ident(i);
-			const w = text.slice(i, e);
-			let k = e;
-			while (k < to && text[k] === " ") k++;
-			const call = text[k] === "(";
-			if (w === "and" || w === "or" || w === "not") push(i, e, "keyword");
-			else if (w === "true" || w === "false") push(i, e, "bool");
-			else if (call) {
-				const known = FN_BY_NAME.has(w) || !names || !!names.functions?.has(w);
-				push(
-					i,
-					e,
-					known ? "fn" : "unknown",
-					known ? undefined : `Unknown function '${w}'`,
-				);
-			} else if (builtins.has(w)) {
-				push(i, e, "builtin");
-				i = chain(e, "prop");
-				continue;
-			} else if (!names || names.locals.has(w)) {
-				push(i, e, "local");
-				i = chain(e, "prop");
-				continue;
-			} else if (names.params.has(w)) push(i, e, "param");
-			else if (names.consts?.has(w)) push(i, e, "param", "Constant");
-			else if (FN_BY_NAME.has(w)) push(i, e, "fn");
-			else push(i, e, "unknown", `Unknown name '${w}'`);
-			i = chain(e, "prop");
-			continue;
-		}
-		const two = text.slice(i, i + 2);
-		if (["==", "!=", "<=", ">="].includes(two)) {
-			push(i, i + 2, "op");
-			i += 2;
-			continue;
-		}
-		if ("+-*/%<>?:!".includes(c)) {
-			push(i, i + 1, "op");
-			i++;
-			continue;
-		}
-		if (c === "." && identStart.test(text[i + 1] ?? "")) {
-			i = chain(i, "prop");
-			continue;
-		}
-		if ("()[],.".includes(c)) {
-			push(i, i + 1, "punct");
-			i++;
-			continue;
-		}
-		push(i, i + 1, "error", `Unexpected '${c}'`);
-		i++;
-	}
+	for (const t of scan(text.slice(from, to), false, names))
+		out.push({ ...t, from: t.from + from, to: t.to + from });
 }
 
 export type Hole = { from: number; to: number; closed: boolean };
@@ -225,54 +238,6 @@ export function holes(text: string): Hole[] {
 		}
 		i++;
 	}
-	return out;
-}
-
-export function scan(
-	text: string,
-	template: boolean,
-	names: Names | null,
-): Tok[] {
-	const out: Tok[] = [];
-	if (!template) {
-		scanExpr(text, 0, text.length, names, out);
-		return out;
-	}
-	let last = 0;
-	const literal = (a: number, b: number) => {
-		for (let i = a; i < b; i++) {
-			const two = text.slice(i, i + 2);
-			if (two === "{{" || two === "}}") {
-				out.push({
-					from: i,
-					to: i + 2,
-					kind: "escape",
-					note: `Literal '${two[0]}'`,
-				});
-				i++;
-			} else if (text[i] === "}")
-				out.push({
-					from: i,
-					to: i + 1,
-					kind: "error",
-					note: "A lone '}' — write '}}' for a literal brace",
-				});
-		}
-	};
-	for (const h of holes(text)) {
-		literal(last, h.from - 1);
-		out.push({
-			from: h.from - 1,
-			to: h.from,
-			kind: h.closed ? "brace" : "error",
-			note: h.closed ? undefined : "This '{' has no closing '}'",
-		});
-		if (h.to > h.from) out.push({ from: h.from, to: h.to, kind: "hole" });
-		scanExpr(text, h.from, h.to, names, out);
-		if (h.closed) out.push({ from: h.to, to: h.to + 1, kind: "brace" });
-		last = h.closed ? h.to + 1 : h.to;
-	}
-	literal(last, text.length);
 	return out;
 }
 

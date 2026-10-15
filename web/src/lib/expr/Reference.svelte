@@ -9,6 +9,7 @@ import type { CompletionContext } from "../builder/complete";
 import {
 	BUILTINS,
 	CHEATSHEET,
+	CONSTANTS,
 	type Expect,
 	FUNCTIONS,
 	fit,
@@ -17,6 +18,7 @@ import {
 	typeLabel,
 	valueType,
 } from "./catalog";
+import { openFunctions } from "./functionsRef.svelte";
 
 let {
 	ctx,
@@ -172,6 +174,16 @@ function keep(e: MouseEvent) {
   </section>
 
   <section>
+    <h4>Constants</h4>
+    {#each CONSTANTS as k}
+      <button class="row" class:dim={dim(k.type)} onmousedown={keep} onclick={() => oninsert(k.name, false)}>
+        <code class="n">{k.name}</code><span class="t">{k.type}</span>
+        <span class="d">{k.doc}</span>
+      </button>
+    {/each}
+  </section>
+
+  <section>
     <h4>Functions</h4>
     {#each fns as f}
       <button class="row fn" class:dim={dim(f.ret)} onmousedown={keep} onclick={() => oninsert(f.name + '(', false)}>
@@ -195,6 +207,10 @@ function keep(e: MouseEvent) {
       {/each}
     {/each}
   </section>
+
+  <footer class="more">
+    <button onmousedown={keep} onclick={() => { openFunctions(); onclose(); }}>All functions…</button>
+  </footer>
 </div>
 
 <style>
@@ -379,5 +395,19 @@ function keep(e: MouseEvent) {
   .crow code {
     color: var(--fg);
     font-size: 11.5px;
+  }
+  .more {
+    padding: 6px 12px 0;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+  }
+  .more button {
+    all: unset;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .more button:hover {
+    text-decoration: underline;
   }
 </style>

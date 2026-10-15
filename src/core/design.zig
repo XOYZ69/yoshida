@@ -26,6 +26,18 @@ pub const Tmpl = struct {
     pos: u32,
 };
 
+/// What an expression field may contain, for editors: the names it sees and
+/// the type it needs. One per expression or template field of the design.
+pub const FieldInfo = struct {
+    /// Byte offset of the JSON value.
+    pos: u32,
+    /// The type the field needs; null for any (constants, function bodies,
+    /// `repeat.each`, which needs a list).
+    want: ?Type,
+    template: bool = false,
+    scope: expr.Scope,
+};
+
 pub const ParamKind = enum { number, integer, text, bool, color, @"enum", image, list };
 
 pub const Param = struct {
@@ -244,6 +256,8 @@ pub const Design = struct {
     const_symbols: []const expr.Symbol = &.{},
     functions: []const Function = &.{},
     fn_sigs: []const expr.FnSig = &.{},
+    /// Every expression and template field (see `FieldInfo`).
+    fields: []const FieldInfo = &.{},
     /// False when loading found errors; such a design is never rendered.
     ok: bool = false,
 
@@ -265,6 +279,12 @@ pub const Design = struct {
     pub fn pathAt(d: *const Design, arena: Allocator, pos: u32) []const u8 {
         return json.pointerTo(arena, &d.root, pos) catch "";
     }
+
+    /// The expression field at a JSON value offset.
+    pub fn fieldAt(d: *const Design, pos: u32) ?*const FieldInfo {
+        for (d.fields) |*f| if (f.pos == pos) return f;
+        return null;
+    }
 };
 
 // ------------------------------------------------------------------ loader
@@ -277,6 +297,20 @@ const Loader = struct {
     errors: usize = 0,
     /// Set while compiling `repeat.count`: a list there counts its items.
     list_counts: bool = false,
+    fields: std.ArrayList(FieldInfo) = .empty,
+
+    /// Remembers the scope of an expression field (see `FieldInfo`). The
+    /// first note for a position wins.
+    fn note(l: *Loader, pos: u32, want: ?Type, is_template: bool, scope: *const expr.Scope) Allocator.Error!void {
+        for (l.fields.items) |f| if (f.pos == pos) return;
+        var sc = scope.*;
+        // The lists may still grow while the design loads: keep a copy.
+        sc.locals = try l.arena.dupe(expr.Symbol, scope.locals);
+        sc.consts = try l.arena.dupe(expr.Symbol, scope.consts);
+        sc.functions = try l.arena.dupe(expr.FnSig, scope.functions);
+        sc.rgroups = try l.arena.dupe(usize, scope.rgroups);
+        try l.fields.append(l.arena, .{ .pos = pos, .want = want, .template = is_template, .scope = sc });
+    }
 
     fn report(l: *Loader, sev: diag.Severity, code: u16, pos: u32, msg: []const u8, hint: ?[]const u8) Allocator.Error!void {
         if (sev == .err) l.errors += 1;
@@ -351,6 +385,7 @@ const Loader = struct {
 
     /// Compiles a number, bool or color field.
     fn prop(l: *Loader, n: *const Node, want: Type, scope: *const expr.Scope) Allocator.Error!?Prop {
+        try l.note(n.pos, want, false, scope);
         var problem: ?expr.Problem = null;
         switch (n.data) {
             .number => |x| {
@@ -413,6 +448,7 @@ const Loader = struct {
     }
 
     fn template(l: *Loader, n: *const Node, scope: *const expr.Scope) Allocator.Error!?Tmpl {
+        try l.note(n.pos, .text, true, scope);
         const s = switch (n.data) {
             .string => |s| s,
             else => {
@@ -605,7 +641,7 @@ pub fn convertText(arena: Allocator, p: *const Param, s: []const u8) Allocator.E
             return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not one of {s}", .{ s, all }) };
         },
         .color => {
-            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RRGGBB or #RRGGBBAA", .{s}) };
+            const c = value.Color.parseHex(s) orelse return Ret{ .bad = try std.fmt.allocPrint(arena, "'{s}' is not a color like #RGB, #RRGGBB or #RRGGBBAA", .{s}) };
             return Ret{ .ok = .{ .color = c } };
         },
         .list => {
@@ -682,7 +718,14 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
     if (root.get("fonts")) |fnode| if (try l.expectObject(fnode, "fonts")) {
         for (fnode.data.object) |f| {
             if (!expr.isIdent(f.key)) try l.err(1103, f.key_pos, "font name '{s}' must be lowercase letters, digits and '_'", .{f.key});
-            if (try l.literalString(&f.value, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
+            if (f.value.data == .object) {
+                // { "path": "...", "note": "..." }: note is for editors and is not used when rendering.
+                try l.checkFields(&f.value, &.{ "path", "note" }, "a font");
+                if (f.value.get("note")) |nn| _ = try l.literalString(nn, "a font note");
+                if (f.value.get("path")) |pn| {
+                    if (try l.literalString(pn, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
+                } else try l.err(1102, f.value.pos, "font '{s}' needs a \"path\"", .{f.key});
+            } else if (try l.literalString(&f.value, "a font path")) |p| try fonts.append(arena, .{ .name = f.key, .path = p, .pos = f.value.pos });
         }
     };
     d.fonts = fonts.items;
@@ -694,6 +737,7 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
         } else try l.err(1103, ln.pos, "layers must be an array, found {s}", .{ln.kindName()});
     } else try l.err(1102, root.pos, "the design needs \"layers\"", .{});
 
+    d.fields = l.fields.items;
     d.ok = l.errors == 0;
     return d;
 }
@@ -719,6 +763,7 @@ fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
             continue;
         }
         const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = null };
+        try l.note(f.value.pos, null, false, &scope);
         const want: Type = switch (f.value.data) {
             .number => .number,
             .bool => .bool,
@@ -771,8 +816,11 @@ fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
     var sigs: std.ArrayList(expr.FnSig) = .empty;
     for (fnode.data.object) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, d.const_symbols, sigs.items, f.key)) {
-            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant, reserved word or built-in function", .{f.key});
+            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant or reserved word", .{f.key});
             continue;
+        }
+        if (expr.isFunction(f.key)) {
+            try l.report(.warning, 1113, f.key_pos, try std.fmt.allocPrint(arena, "function '{s}' hides the built-in {s}() in this design", .{ f.key, f.key }), "rename it to keep using the built-in");
         }
         if (!try l.expectObject(&f.value, "a function")) continue;
         try l.checkFields(&f.value, &.{ "args", "expr", "note" }, "a function");
@@ -798,6 +846,7 @@ fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
         };
         const src = (try l.literalString(en, "expr")) orelse continue;
         const scope: expr.Scope = .{ .arena = arena, .params = d.symbols, .locals = args.items, .consts = d.const_symbols, .functions = sigs.items, .layers = null };
+        try l.note(en.pos, null, false, &scope);
         var problem: ?expr.Problem = null;
         const node = expr.parse(arena, src, 0, &problem) catch |e| switch (e) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -829,7 +878,7 @@ fn loadParam(l: *Loader, f: *const Node.Field) Allocator.Error!?Param {
         return null;
     }
     if (expr.isReserved(name)) {
-        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word or function name", .{name});
+        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word", .{name});
         return null;
     }
     const n = &f.value;
@@ -1192,6 +1241,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             rep.count = try l.prop(v, .number, &base_scope);
         }
         if (rn.get("each")) |v| {
+            try l.note(v.pos, null, false, &base_scope);
             var problem: ?expr.Problem = null;
             if (v.data != .string) {
                 try l.err(1103, v.pos, "repeat.each must be an expression giving a list", .{});
@@ -1462,6 +1512,56 @@ test "load a small design" {
     try std.testing.expectEqual(@as(usize, 3), d.layers.len);
 }
 
+test "fonts as strings or objects with a path and note" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "fonts": {
+        \\    "serif": "assets/fonts/Serif.ttf",
+        \\    "body": { "path": "assets/fonts/Body.ttf", "note": "Body text for rules cards" }
+        \\  },
+        \\  "layers": [
+        \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 2), d.fonts.len);
+    try std.testing.expectEqualStrings("serif", d.fonts[0].name);
+    try std.testing.expectEqualStrings("assets/fonts/Serif.ttf", d.fonts[0].path);
+    try std.testing.expectEqualStrings("body", d.fonts[1].name);
+    try std.testing.expectEqualStrings("assets/fonts/Body.ttf", d.fonts[1].path);
+}
+
+test "font objects reject unknown fields" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "fonts": { "body": { "path": "assets/fonts/Body.ttf", "nte": "typo" } },
+        \\  "layers": [
+        \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 1), diags.errorCount());
+    try std.testing.expectEqual(@as(u16, 1101), diags.items.items[0].code);
+    try std.testing.expectEqual(@as(usize, 1), d.fonts.len);
+}
+
 test "dividers and param groups" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1526,4 +1626,28 @@ test "list lookups by key and list counts" {
     try std.testing.expectEqualStrings("/layers/2/at/x", diags.items.items[0].path);
     try std.testing.expectEqualStrings("/layers/3/box/x", diags.items.items[1].path);
     try std.testing.expectEqualStrings("/layers/3/box/y", diags.items.items[2].path);
+}
+
+test "a design function may wrap the built-in it hides" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "title": { "type": "text", "default": "x" }, "sum": { "type": "number", "default": 2 } },
+        \\  "functions": { "round": { "args": { "v": "number" }, "expr": "round(v * 2) / 2" } },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "box": { "x": "round(sum)", "y": 0, "w": "len(title)", "h": 1 } }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), diags.items.items.len);
+    try std.testing.expectEqual(@as(u16, 1113), diags.items.items[0].code);
+    try std.testing.expectEqual(@as(usize, 1), d.functions.len);
 }

@@ -37,6 +37,7 @@ import {
 import { tags } from "@lezer/highlight";
 import { onMount } from "svelte";
 import type { Diagnostic } from "./engine";
+import { searchPanel } from "./searchPanel";
 
 let {
 	text,
@@ -67,6 +68,7 @@ const highlight = HighlightStyle.define([
 	{ tag: tags.punctuation, color: "var(--muted)" },
 ]);
 
+const searchRoot = ".cm-panel.cm-search.ys-search";
 const theme = EditorView.theme({
 	"&": {
 		height: "100%",
@@ -80,10 +82,11 @@ const theme = EditorView.theme({
 		color: "var(--muted)",
 		borderRight: "1px solid var(--line)",
 	},
-	".cm-activeLine": { backgroundColor: "var(--hover)" },
+	// Translucent so the selection layer, drawn beneath the text, shows through.
+	".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--hover) 55%, transparent)" },
 	".cm-activeLineGutter": { backgroundColor: "var(--hover)" },
 	"&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-		backgroundColor: "var(--sel) !important",
+		backgroundColor: "color-mix(in srgb, var(--accent) 30%, var(--bg-code)) !important",
 	},
 	".cm-cursor": { borderLeftColor: "var(--fg)" },
 	".cm-tooltip": {
@@ -92,6 +95,96 @@ const theme = EditorView.theme({
 		border: "1px solid var(--line)",
 	},
 	".cm-panels": { backgroundColor: "var(--bg-bar)", color: "var(--fg)" },
+	// The search panel (Ctrl+F), built in searchPanel.ts.
+	[searchRoot]: {
+		display: "flex",
+		flexDirection: "column",
+		gap: "6px",
+		padding: "6px 8px",
+		fontSize: "12px",
+		backgroundColor: "var(--bg-bar)",
+		color: "var(--fg)",
+	},
+	[`${searchRoot} .ys-row`]: { display: "flex", alignItems: "center", gap: "6px" },
+	[`${searchRoot} .ys-field`]: {
+		flex: "1",
+		minWidth: "0",
+		maxWidth: "420px",
+		height: "26px",
+		boxSizing: "border-box",
+		display: "flex",
+		alignItems: "center",
+		gap: "2px",
+		padding: "0 3px 0 8px",
+		backgroundColor: "var(--bg)",
+		border: "1px solid var(--line)",
+		borderRadius: "6px",
+	},
+	[`${searchRoot} .ys-field:focus-within`]: { borderColor: "var(--accent)" },
+	[`${searchRoot} .ys-field.ys-invalid`]: { borderColor: "var(--err)" },
+	[`${searchRoot} .ys-input`]: {
+		flex: "1",
+		minWidth: "0",
+		height: "100%",
+		margin: "0",
+		padding: "0",
+		border: "none",
+		outline: "none",
+		background: "transparent",
+		color: "var(--fg)",
+		font: "inherit",
+		fontSize: "12px",
+	},
+	[`${searchRoot} .ys-toggles`]: { display: "flex", flex: "none", gap: "2px" },
+	[`${searchRoot} .ys-toggle`]: {
+		display: "inline-flex",
+		alignItems: "center",
+		justifyContent: "center",
+		flex: "none",
+		minWidth: "22px",
+		height: "20px",
+		margin: "0",
+		padding: "0 3px",
+		border: "none",
+		borderRadius: "4px",
+		background: "transparent",
+		color: "var(--muted)",
+		cursor: "pointer",
+		font: "inherit",
+		fontSize: "12px",
+		fontWeight: "600",
+		lineHeight: "1",
+	},
+	[`${searchRoot} .ys-toggle-word`]: { textDecoration: "underline", textUnderlineOffset: "2px" },
+	[`${searchRoot} .ys-toggle:hover`]: { background: "var(--hover)", color: "var(--fg)" },
+	[`${searchRoot} .ys-toggle[aria-pressed="true"]`]: {
+		background: "color-mix(in srgb, var(--accent) 16%, transparent)",
+		color: "var(--accent)",
+	},
+	[`${searchRoot} .ys-btn`]: {
+		display: "inline-flex",
+		alignItems: "center",
+		justifyContent: "center",
+		flex: "none",
+		width: "24px",
+		height: "24px",
+		margin: "0",
+		padding: "0",
+		border: "none",
+		borderRadius: "4px",
+		background: "transparent",
+		color: "var(--muted)",
+		cursor: "pointer",
+	},
+	[`${searchRoot} .ys-btn:hover`]: { background: "var(--hover)", color: "var(--fg)" },
+	[`${searchRoot} .ys-count`]: {
+		flex: "none",
+		minWidth: "3.5em",
+		textAlign: "center",
+		whiteSpace: "nowrap",
+		fontVariantNumeric: "tabular-nums",
+		color: "var(--muted)",
+	},
 });
 
 function language(p: string): Extension[] {
@@ -103,6 +196,7 @@ function makeState(doc: string) {
 		doc,
 		extensions: [
 			lineNumbers(),
+			EditorView.lineWrapping,
 			foldGutter(),
 			lintGutter(),
 			highlightActiveLineGutter(),
@@ -125,6 +219,7 @@ function makeState(doc: string) {
 			EditorState.tabSize.of(2),
 			EditorState.readOnly.of(readonly),
 			theme,
+			searchPanel(),
 			language(path),
 			EditorView.updateListener.of((u) => {
 				if (!u.docChanged) return;

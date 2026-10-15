@@ -3,5 +3,6 @@ zig-out
 web/node_modules
 web/dist
 web/public/yoshida.wasm
+web/public/expr.wasm
 web/public/examples
 **/out

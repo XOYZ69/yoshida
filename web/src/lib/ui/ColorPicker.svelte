@@ -3,6 +3,7 @@
 // a saturation/value square, hue and alpha sliders and a hex field.
 // `value` is #RRGGBB or #RRGGBBAA; changes are reported when a drag ends.
 import { placeNear } from "./overlay.svelte";
+import { expandHex } from "../hexcolor";
 
 let {
 	value,
@@ -18,8 +19,28 @@ let {
 
 type Hsva = { h: number; s: number; v: number; a: number };
 
+/**
+ * A core hex color as CSS: #RRGGBB or #RRGGBBAA. The core also writes
+ * #RRRRGGGGBBBB and #RRRRGGGGBBBBAAAA (16-bit channels), which CSS lacks:
+ * those are reduced to 8 bits per channel. Null for anything else.
+ */
+function css8(hex: string): string | null {
+	const t = expandHex(hex).replace(/^#/, "");
+	if (!/^[0-9a-f]+$/i.test(t)) return null;
+	if (t.length === 6 || t.length === 8) return `#${t}`;
+	if (t.length === 12 || t.length === 16) {
+		let out = "#";
+		for (let i = 0; i < t.length; i += 4)
+			out += Math.round(parseInt(t.slice(i, i + 4), 16) / 257)
+				.toString(16)
+				.padStart(2, "0");
+		return out;
+	}
+	return null;
+}
+
 function parse(hex: string): Hsva {
-	const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim());
+	const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(css8(hex) ?? "");
 	const n = m ? parseInt(m[1], 16) : 0;
 	const r = ((n >> 16) & 255) / 255;
 	const g = ((n >> 8) & 255) / 255;
@@ -64,7 +85,8 @@ let c = $state<Hsva>({ h: 0, s: 0, v: 0, a: 1 });
 let hexText = $state("");
 
 const solid = $derived(format({ ...c, a: 1 }).slice(0, 7));
-const swatch = $derived(/^#[0-9a-f]{6}/i.test(value) ? value : "#000000");
+/** The chip's color, with its alpha (CSS form). */
+const swatch = $derived(css8(value) ?? "#000000");
 
 function show() {
 	if (disabled || !button) return;
@@ -107,8 +129,8 @@ function track(e: PointerEvent, apply: (x: number, y: number) => void) {
 
 function typedHex() {
 	const t = hexText.trim();
-	if (/^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t)) {
-		c = parse(t.startsWith("#") ? t : `#${t}`);
+	if (/^#?(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t)) {
+		c = parse(expandHex(t.startsWith("#") ? t : `#${t}`));
 		commit();
 	} else hexText = format(c);
 }
@@ -127,7 +149,7 @@ function typedHex() {
   }} />
 
 <button bind:this={button} type="button" class="swatch" {disabled} {title} aria-label={title} onclick={() => (open ? (open = false) : show())}>
-  <span class="chip" style:background={swatch}></span>
+  <span class="chip" style:--c={swatch}></span>
 </button>
 
 {#if open}
@@ -185,6 +207,12 @@ function typedHex() {
     border-radius: 3px;
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
   }
+  /* The color over a checkerboard: transparency shows the same in both themes. */
+  .chip {
+    background:
+      linear-gradient(var(--c), var(--c)),
+      repeating-conic-gradient(var(--swatch-a) 0 25%, var(--swatch-b) 0 50%) 0 0 / 8px 8px;
+  }
   .pop {
     position: fixed;
     z-index: 950;
@@ -229,7 +257,7 @@ function typedHex() {
   .alpha {
     background:
       linear-gradient(to right, transparent, var(--solid)),
-      repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 8px 8px;
+      repeating-conic-gradient(var(--swatch-a) 0 25%, var(--swatch-b) 0 50%) 0 0 / 8px 8px;
   }
   .thumb {
     position: absolute;
@@ -252,7 +280,7 @@ function typedHex() {
     height: 22px;
     border-radius: 4px;
     display: grid;
-    background: repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 8px 8px;
+    background: repeating-conic-gradient(var(--swatch-a) 0 25%, var(--swatch-b) 0 50%) 0 0 / 8px 8px;
   }
   .hex {
     flex: 1;

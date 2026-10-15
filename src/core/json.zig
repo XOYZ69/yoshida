@@ -377,6 +377,50 @@ fn findPath(arena: Allocator, node: *const Node, pos: u32, segs: *std.ArrayList(
     return false;
 }
 
+/// The value at a JSON Pointer such as "/layers/3/box/x", or null.
+pub fn resolve(root: *const Node, pointer: []const u8) ?*const Node {
+    if (pointer.len == 0) return root;
+    if (pointer[0] != '/') return null;
+    var node = root;
+    var it = std.mem.splitScalar(u8, pointer[1..], '/');
+    while (it.next()) |seg| {
+        node = switch (node.data) {
+            .array => |items| blk: {
+                const i = std.fmt.parseInt(usize, seg, 10) catch return null;
+                if (i >= items.len) return null;
+                break :blk &items[i];
+            },
+            .object => |fields| blk: {
+                for (fields) |*f| if (segmentIs(seg, f.key)) break :blk &f.value;
+                return null;
+            },
+            else => return null,
+        };
+    }
+    return node;
+}
+
+/// True when an escaped pointer segment (`~0` for `~`, `~1` for `/`) names `key`.
+fn segmentIs(seg: []const u8, key: []const u8) bool {
+    var i: usize = 0;
+    var k: usize = 0;
+    while (i < seg.len) : (k += 1) {
+        if (k >= key.len) return false;
+        var ch = seg[i];
+        i += 1;
+        if (ch == '~' and i < seg.len) {
+            ch = switch (seg[i]) {
+                '0' => '~',
+                '1' => '/',
+                else => return false,
+            };
+            i += 1;
+        }
+        if (ch != key[k]) return false;
+    }
+    return k == key.len;
+}
+
 /// 1-based line and column (in bytes) of a byte offset.
 pub fn lineCol(src: []const u8, pos: u32) struct { line: u32, col: u32 } {
     var line: u32 = 1;
@@ -433,4 +477,20 @@ test "parse reports trailing comma" {
     defer arena_state.deinit();
     const r = try parse(arena_state.allocator(), "{\"a\": 1,}");
     try std.testing.expect(r == .err);
+}
+
+test "resolve follows pointers and round-trips pointerTo" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const root = (try parse(arena, "{\"layers\": [{\"a/b\": {\"~x\": 3}}, 7]}")).ok;
+    const n = resolve(&root, "/layers/0/a~1b/~0x").?;
+    try std.testing.expectEqual(@as(f64, 3), n.data.number);
+    try std.testing.expectEqualStrings("/layers/0/a~1b/~0x", try pointerTo(arena, &root, n.pos));
+    try std.testing.expectEqual(@as(f64, 7), resolve(&root, "/layers/1").?.data.number);
+    try std.testing.expect(resolve(&root, "") == &root);
+    try std.testing.expect(resolve(&root, "/layers/2") == null);
+    try std.testing.expect(resolve(&root, "/layers/0/a~1") == null);
+    try std.testing.expect(resolve(&root, "/nope") == null);
+    try std.testing.expect(resolve(&root, "layers") == null);
 }

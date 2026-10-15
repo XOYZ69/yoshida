@@ -30,6 +30,9 @@ src/core/        the I/O-free core (module "yoshida")
   diag.zig         diagnostics list, text and JSON output, "did you mean" suggestions
   value.zig        values, types, colors
   expr.zig         expression lexer, Pratt parser, type checker, evaluator, templates
+  exprprint.zig    canonical printer for expressions (minimal parentheses, line breaking)
+  exprjson.zig     JSON views of expressions for editors: tokens, tree, problems, catalog
+  exprapi.zig      editor queries about one field: its scope and live values
   design.zig       design loader: params, layers, extends, compile-time checks
   project.zig      virtual file system, manifest, sets, JSON and CSV card data
   render.zig       per-card evaluation (lazy @layer references, cycle detection), drawing
@@ -42,9 +45,10 @@ src/core/        the I/O-free core (module "yoshida")
 src/c/           stb_image, stb_truetype (public domain / MIT) and simplewebp (BSD-3-Clause), compiled without libc
 src/cli/         CLI
 src/server/      HTTP server and zip writer
-src/wasm/        WebAssembly exports
+src/wasm/        WebAssembly exports: main.zig (yoshida.wasm) and expr.zig (expr.wasm, parser and printer only)
 schema/          JSON Schemas for the three file kinds
-scripts/         release.sh (cross-compiled bundle) and the start scripts it ships
+scripts/         release.sh (cross-compiled bundle) and the start scripts it ships;
+                 font-catalog.mjs (rebuilds web/public/fonts/google-fonts.json)
 web/             Svelte 5 + Vite + TypeScript editor
 examples/        poker deck and party board game
 ```
@@ -76,7 +80,10 @@ The C code (`stb_image`, `stb_truetype`, `simplewebp`) is compiled freestanding 
 - `lib/design.ts`, `lib/cards.ts`, `lib/project.ts`, `lib/paths.ts`: reading and editing designs, card files and project files (renames rewrite references).
 - `lib/store.ts`: IndexedDB autosave.
 - `lib/builder/`: layer tree, stage (canvas overlay), inspector, params panel, fields.
-- `lib/expr/`: the expression editor (highlighting, completion, signature help, reference).
+- `lib/expr/`: the expression editor (highlighting, completion, signature help, reference, breadcrumb, formula panel, rewrites). `core.ts` loads `expr.wasm` on the main thread for tokens, syntax trees and formatting; `live.ts` describes the live values the panel asks the worker for.
+- `lib/fonts/`: the Fonts window's data. `sfnt.ts` reads font files, `catalog.ts` the Google Fonts catalog and its downloads, `project.ts` the project's fonts and their licenses.
+- `lib/fonts/FontsWindow.svelte`: the [Fonts window](@/docs/builder-fonts.md).
+- `web/public/fonts/google-fonts.json`: the Google Fonts catalog, built by `scripts/font-catalog.mjs`. It is loaded only when the Google Fonts source is opened.
 - `lib/ui/`: dialogs, menus, select, color picker, file browser, card browser and card list, splitters.
 
 The editor never parses expressions itself for rendering; it asks the core. The `layout` option of the `render` request returns the resolved bounds of every layer for the canvas overlay.

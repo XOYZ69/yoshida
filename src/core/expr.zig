@@ -8,6 +8,12 @@ const Allocator = std.mem.Allocator;
 const Value = value.Value;
 const Type = value.Type;
 const Color = value.Color;
+const bmath = @import("builtins/math.zig");
+const btext = @import("builtins/text.zig");
+const blist = @import("builtins/list.zig");
+const bdate = @import("builtins/date.zig");
+const bcolor = @import("builtins/color.zig");
+const brand = @import("builtins/rand.zig");
 
 pub const Axis = enum { none, x, y };
 pub const Unit = enum { percent, vw, vh };
@@ -19,11 +25,13 @@ pub const Builtin = enum {
     card_id,
     render_index,
     render_date,
+    render_time,
+    render_now,
 
-    fn ty(b: Builtin) Type {
+    pub fn ty(b: Builtin) Type {
         return switch (b) {
             .canvas_w, .canvas_h, .render_index => .number,
-            .card_id, .render_date => .text,
+            .card_id, .render_date, .render_time, .render_now => .text,
         };
     }
 };
@@ -31,6 +39,8 @@ pub const Builtin = enum {
 pub const Func = enum {
     min,
     max,
+    /// Median of three numbers: `clamp(value, lo, hi)`, which is also the
+    /// CSS order `clamp(lo, value, hi)`. Never an error when lo > hi.
     clamp,
     abs,
     floor,
@@ -46,6 +56,64 @@ pub const Func = enum {
     with_alpha,
     rgb,
     rgba,
+    match,
+    // Numbers.
+    sqrt,
+    pow,
+    sign,
+    sin,
+    cos,
+    tan,
+    asin,
+    acos,
+    atan2,
+    deg,
+    rad,
+    lerp,
+    remap,
+    wrap,
+    // Text.
+    contains,
+    starts_with,
+    ends_with,
+    replace,
+    slice,
+    pad_start,
+    repeat,
+    title_case,
+    roman,
+    part,
+    // Lists.
+    has,
+    get,
+    index_of,
+    sum,
+    avg,
+    count,
+    join,
+    last,
+    // Dates and times.
+    date_fmt,
+    year,
+    month,
+    day,
+    weekday,
+    hour,
+    minute,
+    add_days,
+    add_hours,
+    days_between,
+    // Colours.
+    hsl,
+    hsla,
+    lighten,
+    darken,
+    luminance,
+    readable,
+    // Seeded random.
+    rand,
+    rand_int,
+    pick,
 };
 
 pub const function_names = blk: {
@@ -55,10 +123,16 @@ pub const function_names = blk: {
     break :blk names;
 };
 
-pub const reserved_names = [_][]const u8{ "canvas", "render", "card", "true", "false", "and", "or", "not" };
+pub const reserved_names = [_][]const u8{ "canvas", "render", "card", "true", "false", "and", "or", "not", "in" };
 
+/// A reserved word: never a name. Built-in function names are not reserved;
+/// a design function with one hides the built-in (warning 1113).
 pub fn isReserved(name: []const u8) bool {
     for (reserved_names) |r| if (std.mem.eql(u8, r, name)) return true;
+    return false;
+}
+
+pub fn isFunction(name: []const u8) bool {
     return std.meta.stringToEnum(Func, name) != null;
 }
 
@@ -85,26 +159,48 @@ pub const Node = struct {
         string: []const u8,
         boolean: bool,
         color: Color,
-        name: []const u8,
+        /// A param, loop name, function argument or design constant; the
+        /// checker sets `konst` when the name is a constant, and `pi` when it is
+        /// the built-in constant `pi` (a design name called `pi` hides it).
+        name: struct { text: []const u8, konst: ?usize = null, pi: bool = false },
         builtin: Builtin,
         /// `@id.path` or `@id[index].path` (one iteration of a repeated layer).
         layer_ref: struct { id: []const u8, path: []const []const u8, index: ?*Node = null },
-        field: struct { obj: *Node, name: []const u8, index: usize = 0 },
-        index: struct { obj: *Node, idx: *Node },
-        /// A list item found by its key (`stats.speed`, `stats["Speed"]`):
-        /// the first item whose key field equals `key`; the value field when
-        /// the list is a key/value list, else the whole item.
-        lookup: struct { obj: *Node, key: *Node, key_field: usize, value_field: ?usize },
-        call: struct { func: Func, args: []*Node },
+        /// `obj.name`: a field of a list item (`index`), or a key lookup on a
+        /// list (`key`, set by the checker; `stats.Speed`).
+        field: struct { obj: *Node, name: []const u8, index: usize = 0, key: ?KeyLookup = null },
+        /// `obj[idx]`: an item by position, or by key when `idx` is text
+        /// (`key`, set by the checker; `stats["Speed"]`).
+        index: struct { obj: *Node, idx: *Node, key: ?KeyLookup = null },
+        call: Call,
         /// A call to a design function (`functions`); `index` is set by the checker.
         ucall: struct { name: []const u8, args: []*Node, index: usize = 0 },
-        /// A design constant (`consts`), resolved from a name by the checker.
-        konst: usize,
         neg: *Node,
         not: *Node,
         binary: struct { op: BinOp, l: *Node, r: *Node },
         cond: struct { c: *Node, a: *Node, b: *Node },
+        /// `v in [items...]`: true when some item equals `v`.
+        in_list: struct { v: *Node, items: []*Node },
+        /// `( inner )`, kept so the tree maps back to the source text.
+        paren: *Node,
+        /// Text that does not parse (only from `parseTolerant`), with the
+        /// part that did parse, if any.
+        err: ?*Node,
     };
+
+    /// Finds list items by key: the first item whose `key_field` equals the
+    /// key; gives the `value_field` when the list is a key/value list, else
+    /// the whole item.
+    pub const KeyLookup = struct { key_field: usize, value_field: ?usize };
+};
+
+/// A built-in call. List functions get `field` (the item field they read)
+/// and `lk` (key lookup) from the checker.
+pub const Call = struct {
+    func: Func,
+    args: []*Node,
+    field: usize = 0,
+    lk: ?Node.KeyLookup = null,
 };
 
 /// A problem found while parsing, checking or evaluating an expression.
@@ -118,6 +214,26 @@ pub const Problem = struct {
 
 pub const Error = error{ Invalid, OutOfMemory };
 
+/// Problems collected by the tolerant parser, at most `max`.
+const Diags = struct {
+    arena: Allocator,
+    list: std.ArrayList(Problem) = .empty,
+    max: usize,
+    truncated: bool = false,
+
+    fn add(d: *Diags, pr: Problem) Allocator.Error!void {
+        for (d.list.items) |q| if (q.start == pr.start) return;
+        if (d.list.items.len >= d.max) {
+            d.truncated = true;
+            return;
+        }
+        try d.list.append(d.arena, pr);
+    }
+};
+
+/// Nesting deeper than this is an error (it protects the stack).
+const max_depth = 200;
+
 // ------------------------------------------------------------------ lexer
 
 const Tok = struct {
@@ -128,7 +244,7 @@ const Tok = struct {
     num: f64 = 0,
     unit: ?Unit = null,
 
-    const Kind = enum { number, string, color, ref, name, op, end };
+    const Kind = enum { number, string, color, ref, name, op, bad, end };
 };
 
 const Lexer = struct {
@@ -137,6 +253,8 @@ const Lexer = struct {
     base: u32,
     i: usize = 0,
     problem: *?Problem,
+    /// Tolerant mode: a bad token is reported here and lexing goes on.
+    diags: ?*Diags = null,
 
     fn fail(lx: *Lexer, code: u16, start: usize, end: usize, msg: []const u8, hint: ?[]const u8) Error {
         lx.problem.* = .{
@@ -152,7 +270,20 @@ const Lexer = struct {
     fn all(lx: *Lexer) Error![]Tok {
         var toks: std.ArrayList(Tok) = .empty;
         while (true) {
-            const t = try lx.next();
+            const before = lx.i;
+            const t = lx.next() catch |e| switch (e) {
+                error.Invalid => {
+                    const d = lx.diags orelse return e;
+                    const pr = lx.problem.*.?;
+                    lx.problem.* = null;
+                    try d.add(pr);
+                    // Skip the bad text; always move forward.
+                    lx.i = @min(@max(pr.end - lx.base, before + 1), lx.src.len);
+                    try toks.append(lx.arena, .{ .kind = .bad, .start = pr.start, .end = lx.base + @as(u32, @intCast(lx.i)), .text = lx.src[pr.start - lx.base .. lx.i] });
+                    continue;
+                },
+                else => return e,
+            };
             try toks.append(lx.arena, t);
             if (t.kind == .end) return toks.items;
         }
@@ -194,6 +325,11 @@ const Lexer = struct {
             if (lx.i < s.len and (std.ascii.isAlphabetic(s[lx.i]) or s[lx.i] == '_')) {
                 var e = lx.i;
                 while (e < s.len and std.ascii.isAlphanumeric(s[e])) e += 1;
+                if (exponentEnd(s, lx.i)) |end| {
+                    const num_value = std.fmt.parseFloat(f64, s[start..end]) catch 0;
+                    const hint = try std.fmt.allocPrint(lx.arena, "exponent notation is not supported; write {d}", .{num_value});
+                    return lx.fail(3001, start, end, "unknown unit after a number", hint);
+                }
                 return lx.fail(3001, start, e, "unknown unit after a number", "valid units are %, vw and vh");
             }
             var t = lx.tok(.number, start);
@@ -206,7 +342,7 @@ const Lexer = struct {
             while (lx.i < s.len and std.ascii.isAlphanumeric(s[lx.i])) lx.i += 1;
             const t = lx.tok(.color, start);
             if (Color.parseHex(t.text) == null) {
-                return lx.fail(3001, start, lx.i, "invalid color literal", "use #RRGGBB, #RRGGBBAA, #RRRRGGGGBBBB or #RRRRGGGGBBBBAAAA");
+                return lx.fail(3001, start, lx.i, "invalid color literal", "use #RGB, #RRGGBB, #RGBA, #RRGGBBAA, #RRRRGGGGBBBB or #RRRRGGGGBBBBAAAA");
             }
             return t;
         }
@@ -237,7 +373,7 @@ const Lexer = struct {
             lx.i += 1;
             const ns = lx.i;
             while (lx.i < s.len and (std.ascii.isLower(s[lx.i]) or std.ascii.isDigit(s[lx.i]) or s[lx.i] == '_')) lx.i += 1;
-            if (lx.i == ns) return lx.fail(3001, start, lx.i + 1, "expected a layer id after '@'", null);
+            if (lx.i == ns) return lx.fail(3001, start, @min(lx.i + 1, s.len), "expected a layer id after '@'", null);
             var t = lx.tok(.ref, start);
             t.text = s[ns..lx.i];
             return t;
@@ -253,6 +389,8 @@ const Lexer = struct {
             }
             return t;
         }
+        if (std.mem.startsWith(u8, s[lx.i..], "**")) return lx.fail(3001, start, start + 2, "unexpected '**'", "use pow(a, b)");
+        if (std.mem.startsWith(u8, s[lx.i..], "<>")) return lx.fail(3001, start, start + 2, "unexpected '<>'", "use '!=' for not equal");
         const two = [_][]const u8{ "==", "!=", "<=", ">=" };
         for (two) |op| {
             if (std.mem.startsWith(u8, s[lx.i..], op)) {
@@ -265,8 +403,10 @@ const Lexer = struct {
             return lx.tok(.op, start);
         }
         if (ch == '=') return lx.fail(3001, start, start + 1, "unexpected '='", "use '==' to compare");
-        if (ch == '&' or ch == '|') return lx.fail(3001, start, start + 1, "unexpected character", "use 'and' / 'or'");
+        if (ch == '&') return lx.fail(3001, start, start + 1, "unexpected '&'", "use 'and'");
+        if (ch == '|') return lx.fail(3001, start, start + 1, "unexpected '|'", "use 'or'");
         if (ch == '!') return lx.fail(3001, start, start + 1, "unexpected '!'", "use 'not'");
+        if (ch == '^') return lx.fail(3001, start, start + 1, "unexpected '^'", "use pow(a, b)");
         return lx.fail(3001, start, start + 1, "unexpected character", null);
     }
 };
@@ -278,6 +418,10 @@ const Parser = struct {
     toks: []Tok,
     i: usize = 0,
     problem: *?Problem,
+    /// Tolerant mode: problems are collected here and the bad part becomes
+    /// an `err` node, so there is always a tree.
+    diags: ?*Diags = null,
+    depth: u32 = 0,
 
     fn peek(p: *Parser) Tok {
         return p.toks[p.i];
@@ -299,7 +443,12 @@ const Parser = struct {
                 try std.fmt.allocPrint(p.arena, "expected '{s}' but the expression ended", .{op})
             else
                 try std.fmt.allocPrint(p.arena, "expected '{s}' but found '{s}'", .{ op, t.text });
-            return p.fail(3001, t, msg, null);
+            if (p.diags) |d| {
+                // Report it and go on as if it were there.
+                try d.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = msg, .hint = percentHint(p.toks, p.i) });
+                return .{ .kind = .op, .start = t.start, .end = t.start, .text = op };
+            }
+            return p.fail(3001, t, msg, percentHint(p.toks, p.i));
         }
         p.i += 1;
         return t;
@@ -309,6 +458,21 @@ const Parser = struct {
         const n = try p.arena.create(Node);
         n.* = .{ .start = start, .end = end, .data = data };
         return n;
+    }
+
+    /// A problem where a value was expected. Strict mode fails; tolerant
+    /// mode reports it and gives an `err` node over [start, end) that keeps
+    /// `child`, the part before the problem that did parse.
+    fn bad(p: *Parser, code: u16, t: Tok, msg: []const u8, hint: ?[]const u8, start: u32, child: ?*Node) Error!*Node {
+        const d = p.diags orelse return p.fail(code, t, msg, hint);
+        try d.add(.{ .code = code, .start = t.start, .end = t.end, .message = msg, .hint = hint });
+        return p.node(@min(start, t.start), @max(t.end, if (child) |c| c.end else t.end), .{ .err = child });
+    }
+
+    /// True for tokens a tolerant parse must not swallow as a bad value:
+    /// they close or separate an enclosing construct.
+    fn isCloser(t: Tok) bool {
+        return t.kind == .end or isOp(t, ")") or isOp(t, "]") or isOp(t, ",") or isOp(t, ":");
     }
 
     fn binOp(t: Tok) ?struct { op: BinOp, bp: u8 } {
@@ -344,6 +508,12 @@ const Parser = struct {
                 left = try p.node(left.start, b.end, .{ .cond = .{ .c = left, .a = a, .b = b } });
                 continue;
             }
+            if (t.kind == .name and std.mem.eql(u8, t.text, "in")) {
+                if (3 <= min_bp) return left;
+                p.i += 1;
+                left = try p.inList(left);
+                continue;
+            }
             const info = binOp(t) orelse return left;
             if (info.bp <= min_bp) return left;
             p.i += 1;
@@ -352,11 +522,46 @@ const Parser = struct {
         }
     }
 
+    /// The bracket list after `in`: `[e1, e2, ...]`, one or more items.
+    fn inList(p: *Parser, v: *Node) Error!*Node {
+        const open = p.peek();
+        if (!isOp(open, "[")) return p.bad(3001, open, "expected '[' after 'in'", "list the values, e.g. k in ['a', 'b']", v.start, v);
+        p.i += 1;
+        if (isOp(p.peek(), "]")) {
+            const close = p.peek();
+            const n = try p.bad(3001, close, "the list after 'in' is empty", null, v.start, v);
+            p.i += 1;
+            return n;
+        }
+        var items: std.ArrayList(*Node) = .empty;
+        try items.append(p.arena, try p.expr(0));
+        while (isOp(p.peek(), ",")) {
+            p.i += 1;
+            try items.append(p.arena, try p.expr(0));
+        }
+        const close = try p.expect("]");
+        return p.node(v.start, close.end, .{ .in_list = .{ .v = v, .items = items.items } });
+    }
+
     fn prefix(p: *Parser) Error!*Node {
         const t = p.peek();
+        if (p.depth >= max_depth) {
+            if (!isCloser(t)) p.i += 1;
+            return p.bad(3001, t, "the expression is nested too deeply", null, t.start, null);
+        }
+        p.depth += 1;
+        defer p.depth -= 1;
+        if (p.diags != null and isCloser(t)) {
+            // Leave the closer to the construct it belongs to.
+            const msg = if (t.kind == .end) "expected a value but the expression ended" else try std.fmt.allocPrint(p.arena, "expected a value before '{s}'", .{t.text});
+            const z: Tok = .{ .kind = t.kind, .start = t.start, .end = t.start, .text = t.text };
+            return p.bad(3001, z, msg, null, t.start, null);
+        }
         p.i += 1;
         switch (t.kind) {
             .end => return p.fail(3001, t, "expected a value but the expression ended", null),
+            // Already reported by the lexer.
+            .bad => return p.node(t.start, t.end, .{ .err = null }),
             .number => {
                 const n = if (t.unit) |u|
                     try p.node(t.start, t.end, .{ .unit = .{ .value = t.num, .unit = u } })
@@ -378,13 +583,13 @@ const Parser = struct {
                 while (isOp(p.peek(), ".")) {
                     p.i += 1;
                     const f = p.peek();
-                    if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+                    if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, t.start, null);
                     p.i += 1;
                     try path.append(p.arena, f.text);
                     end = f.end;
                 }
                 if (path.items.len == 0) {
-                    return p.fail(3003, t, "a layer reference needs a field", try std.fmt.allocPrint(p.arena, "for example @{s}.bounds.cx", .{t.text}));
+                    return p.bad(3003, t, "a layer reference needs a field", try std.fmt.allocPrint(p.arena, "for example @{s}.bounds.cx", .{t.text}), t.start, null);
                 }
                 return p.node(t.start, end, .{ .layer_ref = .{ .id = t.text, .path = path.items, .index = index } });
             },
@@ -395,29 +600,27 @@ const Parser = struct {
                     const operand = try p.expr(7);
                     return p.node(t.start, operand.end, .{ .not = operand });
                 }
-                if (std.mem.eql(u8, t.text, "and") or std.mem.eql(u8, t.text, "or")) {
-                    return p.fail(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null);
+                if (std.mem.eql(u8, t.text, "and") or std.mem.eql(u8, t.text, "or") or std.mem.eql(u8, t.text, "in")) {
+                    return p.bad(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null, t.start, null);
                 }
                 if (isOp(p.peek(), "(")) return p.postfix(try p.call(t));
                 if (std.mem.eql(u8, t.text, "canvas") or std.mem.eql(u8, t.text, "render") or std.mem.eql(u8, t.text, "card")) {
                     return p.builtin(t);
                 }
-                return p.postfix(try p.node(t.start, t.end, .{ .name = t.text }));
+                return p.postfix(try p.node(t.start, t.end, .{ .name = .{ .text = t.text } }));
             },
             .op => {
                 if (isOp(t, "(")) {
                     const inner = try p.expr(0);
                     const close = try p.expect(")");
-                    inner.start = t.start;
-                    inner.end = close.end;
-                    return p.postfix(inner);
+                    return p.postfix(try p.node(t.start, close.end, .{ .paren = inner }));
                 }
                 if (isOp(t, "-")) {
                     const operand = try p.expr(7);
                     return p.node(t.start, operand.end, .{ .neg = operand });
                 }
-                if (isOp(t, ".")) return p.fail(3001, t, "unexpected '.'", "write numbers with a leading digit, e.g. 0.5");
-                return p.fail(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null);
+                if (isOp(t, ".")) return p.bad(3001, t, "unexpected '.'", "write 0.5", t.start, null);
+                return p.bad(3001, t, try std.fmt.allocPrint(p.arena, "unexpected '{s}'", .{t.text}), null, t.start, null);
             },
         }
     }
@@ -426,22 +629,22 @@ const Parser = struct {
         const fields: []const struct { []const u8, Builtin } = if (std.mem.eql(u8, t.text, "canvas"))
             &.{ .{ "w", .canvas_w }, .{ "h", .canvas_h } }
         else if (std.mem.eql(u8, t.text, "render"))
-            &.{ .{ "index", .render_index }, .{ "date", .render_date } }
+            &.{ .{ "index", .render_index }, .{ "date", .render_date }, .{ "time", .render_time }, .{ "now", .render_now } }
         else
             &.{.{ "id", .card_id }};
-        var names: [2][]const u8 = undefined;
+        var names: [4][]const u8 = undefined;
         for (fields, 0..) |f, i| names[i] = f[0];
         if (!isOp(p.peek(), ".")) {
-            return p.fail(3003, t, try std.fmt.allocPrint(p.arena, "'{s}' needs a field", .{t.text}), try std.fmt.allocPrint(p.arena, "for example {s}.{s}", .{ t.text, fields[0][0] }));
+            return p.bad(3003, t, try std.fmt.allocPrint(p.arena, "'{s}' needs a field", .{t.text}), try std.fmt.allocPrint(p.arena, "for example {s}.{s}", .{ t.text, fields[0][0] }), t.start, null);
         }
         p.i += 1;
         const f = p.peek();
-        if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+        if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, t.start, null);
         p.i += 1;
         for (fields) |e| {
             if (std.mem.eql(u8, e[0], f.text)) return p.postfix(try p.node(t.start, f.end, .{ .builtin = e[1] }));
         }
-        return p.fail(3002, f, try std.fmt.allocPrint(p.arena, "'{s}' has no field '{s}'", .{ t.text, f.text }), diag.suggest(p.arena, f.text, names[0..fields.len]));
+        return p.bad(3002, f, try std.fmt.allocPrint(p.arena, "'{s}' has no field '{s}'", .{ t.text, f.text }), diag.suggest(p.arena, f.text, names[0..fields.len]), t.start, null);
     }
 
     fn call(p: *Parser, t: Tok) Error!*Node {
@@ -467,7 +670,7 @@ const Parser = struct {
             if (isOp(t, ".")) {
                 p.i += 1;
                 const f = p.peek();
-                if (f.kind != .name) return p.fail(3001, f, "expected a field name after '.'", null);
+                if (f.kind != .name) return p.bad(3001, f, "expected a field name after '.'", null, n.start, n);
                 p.i += 1;
                 n = try p.node(n.start, f.end, .{ .field = .{ .obj = n, .name = f.text } });
             } else if (isOp(t, "[")) {
@@ -488,9 +691,95 @@ pub fn parse(arena: Allocator, src: []const u8, base: u32, problem: *?Problem) E
     const n = try p.expr(0);
     const t = p.peek();
     if (t.kind != .end) {
-        return p.fail(3001, t, try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), if (Parser.isOp(t, "%")) "the '%' unit must follow a number directly; the '%' operator needs operands on both sides" else null);
+        const hint = if (Parser.isOp(t, "%")) "the '%' unit must follow a number directly; the '%' operator needs operands on both sides" else percentHint(p.toks, p.i);
+        return p.fail(3001, t, try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), hint);
     }
     return n;
+}
+
+/// A token for highlighting: the lexer's view of the text, never failing.
+pub const Token = struct {
+    kind: Kind,
+    start: u32,
+    end: u32,
+
+    pub const Kind = enum { number, unit, string, color, ref, name, keyword, op, punct, bad };
+};
+
+/// The tokens of an expression (spans start at `base`); bad text becomes
+/// `bad` tokens and lexing goes on.
+pub fn tokenize(arena: Allocator, src: []const u8, base: u32) Allocator.Error![]const Token {
+    var diags: Diags = .{ .arena = arena, .max = 0 };
+    var problem: ?Problem = null;
+    var lx: Lexer = .{ .arena = arena, .src = src, .base = base, .problem = &problem, .diags = &diags };
+    const toks = lx.all() catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => unreachable, // tolerant lexing does not fail
+    };
+    var out: std.ArrayList(Token) = .empty;
+    for (toks) |t| {
+        const kind: Token.Kind = switch (t.kind) {
+            .end => continue,
+            .number => {
+                // `10%` is one token for the parser, two for highlighting.
+                const ulen: u32 = if (t.unit) |u| (if (u == .percent) 1 else 2) else 0;
+                try out.append(arena, .{ .kind = .number, .start = t.start, .end = t.end - ulen });
+                if (ulen > 0) try out.append(arena, .{ .kind = .unit, .start = t.end - ulen, .end = t.end });
+                continue;
+            },
+            .string => .string,
+            .color => .color,
+            .ref => .ref,
+            .bad => .bad,
+            .name => if (isKeyword(t.text)) .keyword else .name,
+            .op => if (std.mem.indexOfScalar(u8, "()[],.", t.text[0]) != null) .punct else .op,
+        };
+        try out.append(arena, .{ .kind = kind, .start = t.start, .end = t.end });
+    }
+    return out.items;
+}
+
+fn isKeyword(s: []const u8) bool {
+    for ([_][]const u8{ "and", "or", "not", "in", "true", "false" }) |k| if (std.mem.eql(u8, s, k)) return true;
+    return false;
+}
+
+/// The result of `parseTolerant`: always a tree, with `err` nodes where the
+/// text does not parse, and the problems found (at most `max`).
+pub const Parsed = struct {
+    root: *Node,
+    problems: []const Problem,
+    /// More problems were found than were kept.
+    truncated: bool = false,
+};
+
+/// Parses one expression without stopping at the first problem: for
+/// editors, which need a tree while the user is typing.
+pub fn parseTolerant(arena: Allocator, src: []const u8, base: u32, max: usize) Allocator.Error!Parsed {
+    var diags: Diags = .{ .arena = arena, .max = max };
+    const root = tolerantRoot(arena, src, base, &diags) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        // Tolerant parsing reports instead of failing; keep a tree anyway.
+        error.Invalid => blk: {
+            const n = try arena.create(Node);
+            n.* = .{ .start = base, .end = base + @as(u32, @intCast(src.len)), .data = .{ .err = null } };
+            break :blk n;
+        },
+    };
+    return .{ .root = root, .problems = diags.list.items, .truncated = diags.truncated };
+}
+
+fn tolerantRoot(arena: Allocator, src: []const u8, base: u32, diags: *Diags) Error!*Node {
+    var problem: ?Problem = null;
+    var lx: Lexer = .{ .arena = arena, .src = src, .base = base, .problem = &problem, .diags = diags };
+    const toks = try lx.all();
+    var p: Parser = .{ .arena = arena, .toks = toks, .problem = &problem, .diags = diags };
+    const n = try p.expr(0);
+    const t = p.peek();
+    if (t.kind == .end) return n;
+    // Text after a complete expression: one error node over all of it.
+    try diags.add(.{ .code = 3001, .start = t.start, .end = t.end, .message = try std.fmt.allocPrint(arena, "unexpected '{s}'", .{t.text}), .hint = percentHint(toks, p.i) });
+    return p.node(n.start, toks[toks.len - 1].start, .{ .err = n });
 }
 
 // ------------------------------------------------------------------ templates
@@ -561,6 +850,80 @@ pub fn parseTemplate(arena: Allocator, src: []const u8, problem: *?Problem) Erro
     return .{ .parts = parts.items };
 }
 
+/// A template split for an editor: literal text, `{{`/`}}` escapes and
+/// `{...}` holes, each with its span; every hole parsed tolerantly.
+pub const TemplateParsed = struct {
+    pieces: []const Piece,
+    problems: []const Problem,
+    truncated: bool = false,
+
+    pub const Piece = struct {
+        kind: enum { lit, escape, hole },
+        start: u32,
+        end: u32,
+        /// The hole's expression (spans index into the whole template).
+        root: ?*Node = null,
+    };
+};
+
+/// Like `parseTemplate`, but never stops: a stray `}` stays text, an
+/// unclosed `{` runs to the end, and problems are collected.
+pub fn parseTemplateTolerant(arena: Allocator, src: []const u8, max: usize) Allocator.Error!TemplateParsed {
+    var diags: Diags = .{ .arena = arena, .max = max };
+    var pieces: std.ArrayList(TemplateParsed.Piece) = .empty;
+    var lit_start: ?usize = null;
+    var i: usize = 0;
+    const flush = struct {
+        fn f(a: Allocator, list: *std.ArrayList(TemplateParsed.Piece), from: *?usize, to: usize) Allocator.Error!void {
+            if (from.*) |st| try list.append(a, .{ .kind = .lit, .start = @intCast(st), .end = @intCast(to) });
+            from.* = null;
+        }
+    }.f;
+    while (i < src.len) {
+        const ch = src[i];
+        if ((ch == '{' or ch == '}') and i + 1 < src.len and src[i + 1] == ch) {
+            try flush(arena, &pieces, &lit_start, i);
+            try pieces.append(arena, .{ .kind = .escape, .start = @intCast(i), .end = @intCast(i + 2) });
+            i += 2;
+            continue;
+        }
+        if (ch != '{') {
+            if (ch == '}') try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(i + 1), .message = "stray '}' in text", .hint = "write '}}' for a literal brace" });
+            if (lit_start == null) lit_start = i;
+            i += 1;
+            continue;
+        }
+        try flush(arena, &pieces, &lit_start, i);
+        var j = i + 1;
+        var quote: u8 = 0;
+        while (j < src.len) : (j += 1) {
+            const c = src[j];
+            if (quote != 0) {
+                if (c == '\\') j += 1 else if (c == quote) quote = 0;
+            } else if (c == '\'' or c == '"') {
+                quote = c;
+            } else if (c == '}') break;
+        }
+        const close = @min(j, src.len);
+        if (j >= src.len) try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(src.len), .message = "unclosed '{' in text", .hint = "write '{{' for a literal brace" });
+        const inner = src[i + 1 .. close];
+        var root: ?*Node = null;
+        if (std.mem.trim(u8, inner, " ").len == 0) {
+            try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(@min(close + 1, src.len)), .message = "empty '{}' in text", .hint = "write '{{}}' for literal braces" });
+        } else {
+            const parsed = try parseTolerant(arena, inner, @intCast(i + 1), max);
+            for (parsed.problems) |pr| try diags.add(pr);
+            if (parsed.truncated) diags.truncated = true;
+            root = parsed.root;
+        }
+        const end = @min(close + 1, src.len);
+        try pieces.append(arena, .{ .kind = .hole, .start = @intCast(i), .end = @intCast(end), .root = root });
+        i = end;
+    }
+    try flush(arena, &pieces, &lit_start, src.len);
+    return .{ .pieces = pieces.items, .problems = diags.list.items, .truncated = diags.truncated };
+}
+
 // ------------------------------------------------------------------ checker
 
 pub const Symbol = struct {
@@ -580,6 +943,17 @@ pub const LayerSymbol = struct {
     repeated: bool,
     /// Repeated groups around the layer (outermost first).
     rgroups: []const usize = &.{},
+
+    /// Repeat levels of the layer that a layer inside `rgroups` is not
+    /// inside: 0 means one position, 1 means an `[index]` picks one, more
+    /// means it cannot be referenced.
+    pub fn unshared(l: LayerSymbol, rgroups: []const usize) usize {
+        var n: usize = if (l.repeated) 1 else 0;
+        for (l.rgroups) |g| {
+            if (std.mem.indexOfScalar(usize, rgroups, g) == null) n += 1;
+        }
+        return n;
+    }
 };
 
 pub const Scope = struct {
@@ -626,15 +1000,14 @@ pub const Checker = struct {
         }
     }
 
-    /// Turns `n` into a key lookup on a list: by its first text field, giving
-    /// the other field for two-field (key/value) items, else the item.
-    fn keyLookup(c: *Checker, n: *Node, obj: *Node, key: *Node, def: *const value.ItemDef) Error!Type {
+    /// A key lookup on a list: by its first text field, giving the other
+    /// field for two-field (key/value) items, else the item.
+    fn keyLookup(c: *Checker, n: *Node, def: *const value.ItemDef) Error!struct { Node.KeyLookup, Type } {
         const kf = keyField(def) orelse {
             return c.fail(3003, n, "this list has no text field to look items up by", "use a position instead, e.g. list[0]");
         };
         const vf = valueField(def, kf);
-        n.data = .{ .lookup = .{ .obj = obj, .key = key, .key_field = kf, .value_field = vf } };
-        return if (vf) |v| def.types[v].toType() else .{ .item = def };
+        return .{ .{ .key_field = kf, .value_field = vf }, if (vf) |v| def.types[v].toType() else .{ .item = def } };
     }
 
     fn infer(c: *Checker, n: *Node) Error!Type {
@@ -655,7 +1028,10 @@ pub const Checker = struct {
                 if (!s.allow_builtins) return c.fail(3002, n, "canvas, card and render are not available here", null);
                 return b.ty();
             },
-            .name => |name| {
+            .name => |*nm| {
+                const name = nm.text;
+                nm.konst = null;
+                nm.pi = false;
                 var i = s.locals.len;
                 while (i > 0) {
                     i -= 1;
@@ -663,9 +1039,13 @@ pub const Checker = struct {
                 }
                 for (s.params) |p| if (std.mem.eql(u8, p.name, name)) return p.ty;
                 for (s.consts, 0..) |k, ki| if (std.mem.eql(u8, k.name, name)) {
-                    n.data = .{ .konst = ki };
+                    nm.konst = ki;
                     return k.ty;
                 };
+                if (std.mem.eql(u8, name, "pi")) {
+                    nm.pi = true;
+                    return .number;
+                }
                 var names: std.ArrayList([]const u8) = .empty;
                 for (s.locals) |l| try names.append(s.arena, l.name);
                 for (s.params) |p| try names.append(s.arena, p.name);
@@ -682,12 +1062,7 @@ pub const Checker = struct {
                 const layers = s.layers orelse return c.fail(3002, n, "layer references are not allowed here", null);
                 for (layers) |l| {
                     if (!std.mem.eql(u8, l.id, r.id)) continue;
-                    // Repeat levels of the target that the referencing layer
-                    // is not inside: an index picks the iteration of one.
-                    var unshared: usize = if (l.repeated) 1 else 0;
-                    for (l.rgroups) |g| {
-                        if (std.mem.indexOfScalar(usize, s.rgroups, g) == null) unshared += 1;
-                    }
+                    const unshared = l.unshared(s.rgroups);
                     if (r.index) |ix| {
                         if (unshared == 0) return c.fail(3003, n, try c.print("layer '{s}' is not repeated here; remove the [index]", .{r.id}), null);
                         if (unshared > 1) return c.fail(3005, n, try c.print("layer '{s}' is inside nested repeats and cannot be referenced from here", .{r.id}), null);
@@ -707,12 +1082,13 @@ pub const Checker = struct {
             },
             .field => |*f| {
                 const t = try c.check(f.obj);
+                f.key = null;
                 switch (t) {
                     .list => |def| {
                         // stats.Speed: the item whose key is "Speed".
-                        const key = try s.arena.create(Node);
-                        key.* = .{ .start = n.start, .end = n.end, .ty = .text, .data = .{ .string = f.name } };
-                        return c.keyLookup(n, f.obj, key, def);
+                        const r = try c.keyLookup(n, def);
+                        f.key = r[0];
+                        return r[1];
                     },
                     .item => |def| {
                         f.index = def.find(f.name) orelse {
@@ -723,25 +1099,24 @@ pub const Checker = struct {
                     else => return c.fail(3003, n, try c.print("'.{s}' on a {s}", .{ f.name, t.name() }), null),
                 }
             },
-            .index => |ix| {
+            .index => |*ix| {
                 const t = try c.check(ix.obj);
+                ix.key = null;
                 const def = switch (t) {
                     .list => |d| d,
                     else => return c.fail(3003, n, try c.print("cannot index a {s}", .{t.name()}), null),
                 };
                 const it = try c.check(ix.idx);
-                if (it == .text) return c.keyLookup(n, ix.obj, ix.idx, def);
+                if (it == .text) {
+                    const r = try c.keyLookup(n, def);
+                    ix.key = r[0];
+                    return r[1];
+                }
                 if (it != .number) return c.fail(3003, ix.idx, try c.print("a list index needs a number (position) or text (key), got a {s}", .{it.name()}), null);
                 return .{ .item = def };
             },
-            .lookup => |lk| {
-                const t = try c.check(lk.obj);
-                _ = try c.check(lk.key);
-                return switch (t) {
-                    .list => |def| if (lk.value_field) |v| def.types[v].toType() else .{ .item = def },
-                    else => unreachable,
-                };
-            },
+            .paren => |inner| return c.check(inner),
+            .err => return c.fail(3001, n, "this part does not parse", null),
             .neg => |o| {
                 try c.expectType(o, .number, "'-'");
                 return .number;
@@ -764,7 +1139,7 @@ pub const Checker = struct {
                     },
                     else => {
                         if (lt != .number or rt != .number) {
-                            const hint: ?[]const u8 = if (b.op == .add and (lt == .text or rt == .text)) "join text with a template, e.g. \"{a} {b}\"" else null;
+                            const hint: ?[]const u8 = if (b.op == .add and (lt == .text or rt == .text)) "build text in a text field with {holes}, e.g. 'Lv {level}'" else null;
                             return c.fail(3003, n, try c.print("'{s}' needs numbers, got {s} and {s}", .{ opText(b.op), lt.name(), rt.name() }), hint);
                         }
                         return switch (b.op) {
@@ -774,6 +1149,15 @@ pub const Checker = struct {
                     },
                 }
             },
+            .in_list => |il| {
+                const lt = try c.check(il.v);
+                if (!keyable(lt)) return c.fail(3003, il.v, try c.print("'in' compares numbers, text, bools or colors, got a {s}", .{lt.name()}), null);
+                for (il.items, 1..) |item, i| {
+                    const it = try c.check(item);
+                    if (!it.eql(lt)) return c.fail(3003, item, try c.print("item {d} of the list is a {s}, but the left side is a {s}", .{ i, it.name(), lt.name() }), null);
+                }
+                return .bool;
+            },
             .cond => |cd| {
                 try c.expectType(cd.c, .bool, "the condition of '? :'");
                 const a = try c.check(cd.a);
@@ -781,7 +1165,15 @@ pub const Checker = struct {
                 if (!a.eql(b)) return c.fail(3003, n, try c.print("the branches of '? :' differ: {s} and {s}", .{ a.name(), b.name() }), null);
                 return a;
             },
-            .call => |cl| return c.checkCall(n, cl.func, cl.args),
+            .call => |*cl| {
+                // A design function with a built-in's name hides the built-in.
+                for (s.functions) |f| if (std.mem.eql(u8, f.name, @tagName(cl.func))) {
+                    const call_args = cl.args;
+                    n.data = .{ .ucall = .{ .name = f.name, .args = call_args } };
+                    return c.infer(n);
+                };
+                return c.checkCall(n, cl);
+            },
             .ucall => |*uc| {
                 for (s.functions, 0..) |f, fi| {
                     if (!std.mem.eql(u8, f.name, uc.name)) continue;
@@ -798,36 +1190,48 @@ pub const Checker = struct {
                 for (s.functions) |f| try names.append(s.arena, f.name);
                 return c.fail(3002, n, try c.print("unknown function '{s}'", .{uc.name}), diag.suggest(s.arena, uc.name, names.items));
             },
-            .konst => |ki| return s.consts[ki].ty,
         }
     }
 
-    fn checkCall(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
-        const Sig = struct { min: usize, max: usize, args: []const ?Type, ret: Type };
-        const num: ?Type = .number;
-        const txt: ?Type = .text;
-        const col: ?Type = .color;
-        const sig: Sig = switch (func) {
-            .min, .max => .{ .min = 2, .max = 64, .args = &.{num}, .ret = .number },
-            .clamp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
-            .abs, .floor, .ceil => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
-            .round => .{ .min = 1, .max = 2, .args = &.{ num, num }, .ret = .number },
-            .len => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .number },
-            .upper, .lower, .trim => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
-            .fmt => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .text },
-            .avg_color => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .color },
-            .mix => .{ .min = 3, .max = 3, .args = &.{ col, col, num }, .ret = .color },
-            .with_alpha => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
-            .rgb => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
-            .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
-        };
-        if (args.len < sig.min or args.len > sig.max) {
-            const msg = if (sig.min == sig.max)
-                try c.print("{s}() takes {d} argument{s}, got {d}", .{ @tagName(func), sig.min, if (sig.min == 1) "" else "s", args.len })
-            else
-                try c.print("{s}() takes {d} to {d} arguments, got {d}", .{ @tagName(func), sig.min, sig.max, args.len });
-            return c.fail(3003, n, msg, null);
+    /// match(value, key1, result1, ..., default): the keys are compared with
+    /// the value, and the results and the default share one type.
+    fn checkMatch(c: *Checker, n: *Node, args: []*Node) Error!Type {
+        if (args.len < 4 or args.len % 2 != 0) {
+            return c.fail(3003, n, "match() needs a value, then key/result pairs, then a default", "e.g. match(k, 'a', 1, 'b', 2, 0)");
         }
+        const vt = try c.check(args[0]);
+        if (!keyable(vt)) return c.fail(3003, args[0], try c.print("match() compares numbers, text, bools or colors, got a {s}", .{vt.name()}), null);
+        var i: usize = 1;
+        var pair: usize = 1;
+        while (i < args.len - 1) : (i += 2) {
+            const kt = try c.check(args[i]);
+            if (!kt.eql(vt)) return c.fail(3003, args[i], try c.print("key {d} of match() is a {s}, but the value is a {s}", .{ pair, kt.name(), vt.name() }), null);
+            pair += 1;
+        }
+        const rt = try c.check(args[2]);
+        var j: usize = 4;
+        while (j < args.len) : (j += 2) try c.matchResult(args[j], rt);
+        try c.matchResult(args[args.len - 1], rt);
+        return rt;
+    }
+
+    fn matchResult(c: *Checker, a: *Node, rt: Type) Error!void {
+        const t = try c.check(a);
+        if (!t.eql(rt)) return c.fail(3003, a, try c.print("the results of match() differ: {s} and {s}", .{ rt.name(), t.name() }), null);
+    }
+
+    fn checkCall(c: *Checker, n: *Node, cl: *Call) Error!Type {
+        const func = cl.func;
+        const args = cl.args;
+        if (func == .match) return c.checkMatch(n, args);
+        switch (func) {
+            .has, .get, .index_of, .sum, .avg, .count, .join, .last => return c.checkList(n, cl),
+            .min, .max => if (args.len >= 1 and args.len <= 2 and (try c.check(args[0])) == .list) return c.checkList(n, cl),
+            .rand, .rand_int, .pick => return c.checkRandom(n, func, args),
+            else => {},
+        }
+        const sig = funcSig(func);
+        try c.arity(n, func, args.len, sig.min, sig.max);
         for (args, 0..) |a, i| {
             const want = sig.args[@min(i, sig.args.len - 1)];
             const t = try c.check(a);
@@ -839,9 +1243,201 @@ pub const Checker = struct {
                 else => unreachable,
             }
         }
-        return sig.ret;
+        return sig.ret.?;
+    }
+
+    fn arity(c: *Checker, n: *Node, func: Func, got: usize, min: usize, max: usize) Error!void {
+        if (got >= min and got <= max) return;
+        const name = @tagName(func);
+        const msg = if (min == max)
+            try c.print("{s}() takes {d} argument{s}, got {d}", .{ name, min, if (min == 1) "" else "s", got })
+        else if (max >= 64)
+            try c.print("{s}() takes at least {d} arguments, got {d}", .{ name, min, got })
+        else
+            try c.print("{s}() takes {d} to {d} arguments, got {d}", .{ name, min, max, got });
+        return c.fail(3003, n, msg, null);
+    }
+
+    /// List functions: the first argument is a list param; field names are
+    /// quoted literals, resolved here so a typo is a load-time error.
+    fn checkList(c: *Checker, n: *Node, cl: *Call) Error!Type {
+        const func = cl.func;
+        const args = cl.args;
+        const name = @tagName(func);
+        const range: [2]usize = switch (func) {
+            .has, .index_of => .{ 2, 2 },
+            .get => .{ 3, 4 },
+            .sum, .avg, .min, .max => .{ 1, 2 },
+            .count => .{ 3, 3 },
+            .join => .{ 2, 3 },
+            .last => .{ 1, 1 },
+            else => unreachable,
+        };
+        try c.arity(n, func, args.len, range[0], range[1]);
+        const lt = try c.check(args[0]);
+        const def = switch (lt) {
+            .list => |d| d,
+            else => return c.fail(3003, args[0], try c.print("{s}() needs a list, got a {s}", .{ name, lt.name() }), "lists come from list params"),
+        };
+        switch (func) {
+            .has, .index_of => {
+                try c.expectType(args[1], .text, try c.print("the key of {s}()", .{name}));
+                cl.lk = (try c.keyLookup(n, def))[0];
+                return if (func == .has) .bool else .number;
+            },
+            .get => {
+                try c.expectType(args[1], .text, "the key of get()");
+                const lk = (try c.keyLookup(n, def))[0];
+                cl.lk = lk;
+                const ft: Type = if (args.len == 4) blk: {
+                    cl.field = try c.fieldArg(args[2], def, name);
+                    break :blk def.types[cl.field].toType();
+                } else blk: {
+                    const vf = lk.value_field orelse return c.fail(3003, n, "get() with 3 arguments needs a key/value list", "name the field: get(list, key, 'field', fallback)");
+                    cl.field = vf;
+                    break :blk def.types[vf].toType();
+                };
+                const fb = args[args.len - 1];
+                const t = try c.check(fb);
+                if (!t.eql(ft)) return c.fail(3003, fb, try c.print("the fallback of get() must be a {s}, got a {s}", .{ ft.name(), t.name() }), null);
+                return ft;
+            },
+            .sum, .avg, .min, .max => {
+                cl.field = if (args.len == 2) try c.fieldArg(args[1], def, name) else try c.defaultField(n, def, name);
+                if (def.types[cl.field] != .number) return c.fail(3003, if (args.len == 2) args[1] else n, try c.print("{s}() needs a number field, '{s}' is a {s}", .{ name, def.names[cl.field], def.types[cl.field].toType().name() }), null);
+                return .number;
+            },
+            .count => {
+                cl.field = try c.fieldArg(args[1], def, name);
+                const ft = def.types[cl.field].toType();
+                const t = try c.check(args[2]);
+                if (!t.comparable(ft)) return c.fail(3003, args[2], try c.print("count() compares with field '{s}', a {s}, got a {s}", .{ def.names[cl.field], ft.name(), t.name() }), null);
+                return .number;
+            },
+            .join => {
+                cl.field = if (args.len == 3) try c.fieldArg(args[1], def, name) else try c.defaultField(n, def, name);
+                try c.expectType(args[args.len - 1], .text, "the separator of join()");
+                return .text;
+            },
+            .last => return .{ .item = def },
+            else => unreachable,
+        }
+    }
+
+    /// A quoted field name of the list's items.
+    fn fieldArg(c: *Checker, a: *Node, def: *const value.ItemDef, func: []const u8) Error!usize {
+        _ = try c.check(a);
+        const fname = switch (a.data) {
+            .string => |str| str,
+            else => return c.fail(3003, a, try c.print("the field of {s}() must be a quoted field name", .{func}), try c.print("e.g. {s}(list, '{s}')", .{ func, def.names[0] })),
+        };
+        return def.find(fname) orelse c.fail(3002, a, try c.print("list item has no field '{s}'", .{fname}), diag.suggest(c.scope.arena, fname, def.names));
+    }
+
+    /// The field a list function reads when none is named: the only field,
+    /// or the value of a key/value list.
+    fn defaultField(c: *Checker, n: *Node, def: *const value.ItemDef, func: []const u8) Error!usize {
+        if (def.types.len == 1) return 0;
+        if (keyField(def)) |kf| if (valueField(def, kf)) |vf| return vf;
+        return c.fail(3003, n, try c.print("{s}() needs a field name for this list", .{func}), try c.print("e.g. {s}(list, '{s}')", .{ func, def.names[0] }));
+    }
+
+    /// rand(seed, ...), rand_int(lo, hi, seed, ...), pick(seed, a, b, ...).
+    fn checkRandom(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
+        const name = @tagName(func);
+        switch (func) {
+            .rand => {
+                try c.arity(n, func, args.len, 1, 64);
+                for (args) |a| try c.seed(a, name);
+                return .number;
+            },
+            .rand_int => {
+                try c.arity(n, func, args.len, 3, 64);
+                try c.expectType(args[0], .number, "lo of rand_int()");
+                try c.expectType(args[1], .number, "hi of rand_int()");
+                for (args[2..]) |a| try c.seed(a, name);
+                return .number;
+            },
+            .pick => {
+                try c.arity(n, func, args.len, 3, 64);
+                try c.seed(args[0], name);
+                const rt = try c.check(args[1]);
+                if (rt == .list or rt == .item) return c.fail(3003, args[1], try c.print("pick() chooses numbers, text, bools, colours or images, got a {s}", .{rt.name()}), null);
+                for (args[2..]) |a| {
+                    const t = try c.check(a);
+                    if (!t.eql(rt)) return c.fail(3003, a, try c.print("the choices of pick() differ: {s} and {s}", .{ rt.name(), t.name() }), null);
+                }
+                return rt;
+            },
+            else => unreachable,
+        }
+    }
+
+    fn seed(c: *Checker, a: *Node, func: []const u8) Error!void {
+        const t = try c.check(a);
+        if (!keyable(t)) return c.fail(3003, a, try c.print("seeds of {s}() are numbers, text, bools or colours, got a {s}", .{ func, t.name() }), null);
     }
 };
+
+/// A built-in function's argument count and types. `args` repeats its last
+/// entry for further arguments; null is checked by the function itself
+/// (`len`: list or text; `avg_color`: image; `match`: see checkMatch).
+pub const FuncSig = struct { min: usize, max: usize, args: []const ?Type, ret: ?Type };
+
+pub fn funcSig(func: Func) FuncSig {
+    const num: ?Type = .number;
+    const txt: ?Type = .text;
+    const col: ?Type = .color;
+    return switch (func) {
+        .min, .max => .{ .min = 2, .max = 64, .args = &.{num}, .ret = .number },
+        .clamp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
+        .abs, .floor, .ceil => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
+        .round => .{ .min = 1, .max = 2, .args = &.{ num, num }, .ret = .number },
+        .len => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .number },
+        .upper, .lower, .trim => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
+        .fmt => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .text },
+        .avg_color => .{ .min = 1, .max = 1, .args = &.{null}, .ret = .color },
+        .mix => .{ .min = 3, .max = 3, .args = &.{ col, col, num }, .ret = .color },
+        .with_alpha => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
+        .rgb => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
+        .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
+        // Value, key/result pairs, default; the result type is the results'.
+        .match => .{ .min = 4, .max = 64, .args = &.{null}, .ret = null },
+        .sqrt, .sign, .sin, .cos, .tan, .asin, .acos, .deg, .rad => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
+        .pow, .atan2, .wrap => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .number },
+        .lerp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
+        .remap => .{ .min = 5, .max = 5, .args = &.{ num, num, num, num, num }, .ret = .number },
+        .contains, .starts_with, .ends_with => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .bool },
+        .replace => .{ .min = 3, .max = 3, .args = &.{ txt, txt, txt }, .ret = .text },
+        .slice => .{ .min = 2, .max = 3, .args = &.{ txt, num, num }, .ret = .text },
+        .pad_start => .{ .min = 2, .max = 3, .args = &.{ txt, num, txt }, .ret = .text },
+        .repeat => .{ .min = 2, .max = 2, .args = &.{ txt, num }, .ret = .text },
+        .title_case => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
+        .roman => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .text },
+        .part => .{ .min = 3, .max = 3, .args = &.{ txt, txt, num }, .ret = .text },
+        // List functions are checked by checkList: list, then field names.
+        .has => .{ .min = 2, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .get => .{ .min = 3, .max = 4, .args = &.{ null, txt, null, null }, .ret = null },
+        .index_of => .{ .min = 2, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .sum, .avg => .{ .min = 1, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .count => .{ .min = 3, .max = 3, .args = &.{ null, txt, null }, .ret = null },
+        .join => .{ .min = 2, .max = 3, .args = &.{ null, txt, txt }, .ret = null },
+        .last => .{ .min = 1, .max = 1, .args = &.{null}, .ret = null },
+        .date_fmt => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .text },
+        .year, .month, .day, .weekday, .hour, .minute => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .number },
+        .add_days, .add_hours => .{ .min = 2, .max = 2, .args = &.{ txt, num }, .ret = .text },
+        .days_between => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .number },
+        .hsl => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
+        .hsla => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
+        .lighten, .darken => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
+        .luminance => .{ .min = 1, .max = 1, .args = &.{col}, .ret = .number },
+        .readable => .{ .min = 1, .max = 3, .args = &.{ col, col, col }, .ret = .color },
+        // Seeds are numbers, text, bools or colours (checkRandom).
+        .rand => .{ .min = 1, .max = 64, .args = &.{null}, .ret = .number },
+        .rand_int => .{ .min = 3, .max = 64, .args = &.{ num, num, null }, .ret = .number },
+        .pick => .{ .min = 3, .max = 64, .args = &.{null}, .ret = null },
+    };
+}
 
 pub fn opText(op: BinOp) []const u8 {
     return switch (op) {
@@ -911,6 +1507,14 @@ pub fn valueField(def: *const value.ItemDef, key: usize) ?usize {
     return 1 - key;
 }
 
+/// Types that `in` and `match()` can compare.
+fn keyable(t: Type) bool {
+    return switch (t) {
+        .number, .text, .bool, .color => true,
+        else => false,
+    };
+}
+
 pub fn checkTemplate(t: Template, scope: *const Scope, problem: *?Problem) Error!void {
     var c: Checker = .{ .scope = scope, .problem = problem };
     for (t.parts) |part| {
@@ -929,6 +1533,63 @@ pub fn checkTemplate(t: Template, scope: *const Scope, problem: *?Problem) Error
 
 pub const EvalError = error{ Eval, OutOfMemory };
 
+/// The children of a node, in the order editors number them (pre-order,
+/// see `exprjson.writeNode`).
+pub fn children(arena: Allocator, n: *const Node) Allocator.Error![]const *Node {
+    var out: std.ArrayList(*Node) = .empty;
+    switch (n.data) {
+        .number, .unit, .string, .boolean, .color, .name, .builtin => {},
+        .layer_ref => |r| if (r.index) |ix| try out.append(arena, ix),
+        .field => |f| try out.append(arena, f.obj),
+        .index => |ix| try out.appendSlice(arena, &.{ ix.obj, ix.idx }),
+        .call => |c| try out.appendSlice(arena, c.args),
+        .ucall => |c| try out.appendSlice(arena, c.args),
+        .neg, .not, .paren => |x| try out.append(arena, x),
+        .binary => |b| try out.appendSlice(arena, &.{ b.l, b.r }),
+        .cond => |c| try out.appendSlice(arena, &.{ c.c, c.a, c.b }),
+        .in_list => |il| {
+            try out.append(arena, il.v);
+            try out.appendSlice(arena, il.items);
+        },
+        .err => |x| if (x) |c| try out.append(arena, c),
+    }
+    return out.items;
+}
+
+/// Values of the nodes of one expression, recorded while it is evaluated
+/// (for an editor's live values). Nodes that were not evaluated (the other
+/// branch of `? :`) stay null.
+pub const Trace = struct {
+    /// Holds the values: they are copied, so they outlive the evaluation.
+    arena: Allocator,
+    ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
+    values: []?Value = &.{},
+
+    /// Numbers the nodes of `roots` in pre-order, continuing across roots
+    /// (template holes), like `exprjson.writeNode`.
+    pub fn init(arena: Allocator, roots: []const *const Node) Allocator.Error!Trace {
+        var t: Trace = .{ .arena = arena };
+        var next: u32 = 0;
+        for (roots) |r| try t.number(arena, r, &next);
+        t.values = try arena.alloc(?Value, next);
+        @memset(t.values, null);
+        return t;
+    }
+
+    fn number(t: *Trace, arena: Allocator, n: *const Node, next: *u32) Allocator.Error!void {
+        try t.ids.put(arena, n, next.*);
+        next.* += 1;
+        for (try children(arena, n)) |c| try t.number(arena, c, next);
+    }
+
+    fn record(t: *Trace, n: *const Node, v: Value) Allocator.Error!void {
+        // The first value wins: a loop or function evaluates it again.
+        if (t.ids.get(n)) |id| if (t.values[id] == null) {
+            t.values[id] = try v.dupe(t.arena);
+        };
+    }
+};
+
 pub const Env = struct {
     arena: Allocator,
     canvas_w: f64,
@@ -936,6 +1597,10 @@ pub const Env = struct {
     card_id: []const u8,
     render_index: f64,
     render_date: []const u8,
+    /// Local time of the render, `HH:MM:SS`.
+    render_time: []const u8 = "00:00:00",
+    /// UTC instant of the render, `YYYY-MM-DDTHH:MM:SSZ`.
+    render_now: []const u8 = "1970-01-01T00:00:00Z",
     axis: Axis = .none,
     ctx: *anyopaque,
     /// Params and loop names.
@@ -946,6 +1611,8 @@ pub const Env = struct {
     constValue: ?*const fn (ctx: *anyopaque, index: usize) EvalError!Value = null,
     callUser: ?*const fn (ctx: *anyopaque, index: usize, args: []const Value) EvalError!Value = null,
     problem: ?Problem = null,
+    /// When set, records the value of every node evaluated.
+    trace: ?*Trace = null,
 
     fn fail(env: *Env, code: u16, n: *const Node, msg: []const u8) EvalError {
         env.problem = .{ .code = code, .start = n.start, .end = n.end, .message = msg };
@@ -953,6 +1620,12 @@ pub const Env = struct {
     }
 
     pub fn eval(env: *Env, n: *const Node) EvalError!Value {
+        const v = try env.evalNode(n);
+        if (env.trace) |t| try t.record(n, v);
+        return v;
+    }
+
+    fn evalNode(env: *Env, n: *const Node) EvalError!Value {
         switch (n.data) {
             .number => |x| return .{ .number = x },
             .unit => |u| return .{ .number = u.value / 100 * switch (u.unit) {
@@ -973,32 +1646,23 @@ pub const Env = struct {
                 .card_id => .{ .text = env.card_id },
                 .render_index => .{ .number = env.render_index },
                 .render_date => .{ .text = env.render_date },
+                .render_time => .{ .text = env.render_time },
+                .render_now => .{ .text = env.render_now },
             },
-            .name => |name| return env.lookup(env.ctx, name) orelse env.fail(3002, n, "unknown name"),
+            .name => |nm| {
+                if (nm.pi) return .{ .number = std.math.pi };
+                if (nm.konst) |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki);
+                return env.lookup(env.ctx, nm.text) orelse env.fail(3002, n, "unknown name");
+            },
             .layer_ref => |r| return env.layerRef(env.ctx, r.id, r.path, if (r.index) |ix| (try env.eval(ix)).number else null),
             .field => |f| {
                 const obj = try env.eval(f.obj);
+                if (f.key) |lk| return env.keyLookup(n, obj.list, f.name, lk);
                 return obj.item[f.index];
-            },
-            .lookup => |lk| {
-                const list = (try env.eval(lk.obj)).list;
-                const key = (try env.eval(lk.key)).text;
-                for (list) |it| {
-                    if (std.mem.eql(u8, it[lk.key_field].text, key)) return if (lk.value_field) |v| it[v] else .{ .item = it };
-                }
-                var keys: std.ArrayList([]const u8) = .empty;
-                for (list) |it| try keys.append(env.arena, it[lk.key_field].text);
-                const hint = diag.suggest(env.arena, key, keys.items);
-                const known = try std.mem.join(env.arena, ", ", keys.items);
-                return env.fail(3104, n, try std.fmt.allocPrint(env.arena, "no item with key '{s}' in this list{s}{s}{s}", .{
-                    key,
-                    if (hint) |h| try std.fmt.allocPrint(env.arena, " ({s})", .{h}) else "",
-                    if (keys.items.len > 0) "; keys: " else " (the list is empty)",
-                    known,
-                }));
             },
             .index => |ix| {
                 const list = (try env.eval(ix.obj)).list;
+                if (ix.key) |lk| return env.keyLookup(n, list, (try env.eval(ix.idx)).text, lk);
                 const idx = (try env.eval(ix.idx)).number;
                 const i = @floor(idx);
                 if (!(i >= 0 and i < @as(f64, @floatFromInt(list.len)))) {
@@ -1006,6 +1670,8 @@ pub const Env = struct {
                 }
                 return .{ .item = list[@intFromFloat(i)] };
             },
+            .paren => |inner| return env.eval(inner),
+            .err => return env.fail(3001, n, "this part does not parse"),
             .neg => |o| return .{ .number = -(try env.eval(o)).number },
             .not => |o| return .{ .bool = !(try env.eval(o)).bool },
             .binary => |b| {
@@ -1027,13 +1693,19 @@ pub const Env = struct {
                     .sub => .{ .number = l - r },
                     .mul => .{ .number = l * r },
                     .div => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = l / r },
-                    .mod => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = @rem(l, r) },
+                    .mod => if (r == 0) env.fail(3103, n, "division by zero") else .{ .number = floorMod(l, r) },
                     else => unreachable,
                 };
             },
+            .in_list => |il| {
+                const v = try env.eval(il.v);
+                for (il.items) |item| {
+                    if (v.eql(try env.eval(item))) return .{ .bool = true };
+                }
+                return .{ .bool = false };
+            },
             .cond => |cd| return if ((try env.eval(cd.c)).bool) env.eval(cd.a) else env.eval(cd.b),
-            .call => |cl| return env.call(cl.func, cl.args),
-            .konst => |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki),
+            .call => |cl| return env.call(n, cl),
             .ucall => |uc| {
                 const f = env.callUser orelse return env.fail(3002, n, "functions are not available here");
                 const vals = try env.arena.alloc(Value, uc.args.len);
@@ -1043,13 +1715,32 @@ pub const Env = struct {
         }
     }
 
+    fn keyLookup(env: *Env, n: *const Node, list: []const []const Value, key: []const u8, lk: Node.KeyLookup) EvalError!Value {
+        for (list) |it| {
+            if (std.mem.eql(u8, it[lk.key_field].text, key)) return if (lk.value_field) |v| it[v] else .{ .item = it };
+        }
+        var keys: std.ArrayList([]const u8) = .empty;
+        for (list) |it| try keys.append(env.arena, it[lk.key_field].text);
+        const hint = diag.suggest(env.arena, key, keys.items);
+        const known = try std.mem.join(env.arena, ", ", keys.items);
+        return env.fail(3104, n, try std.fmt.allocPrint(env.arena, "no item with key '{s}' in this list{s}{s}{s}", .{
+            key,
+            if (hint) |h| try std.fmt.allocPrint(env.arena, " ({s})", .{h}) else "",
+            if (keys.items.len > 0) "; keys: " else " (the list is empty)",
+            known,
+        }));
+    }
+
     fn num(env: *Env, n: *const Node) EvalError!f64 {
         return (try env.eval(n)).number;
     }
 
-    fn call(env: *Env, func: Func, args: []*Node) EvalError!Value {
+    fn call(env: *Env, n: *const Node, cl: Call) EvalError!Value {
+        const func = cl.func;
+        const args = cl.args;
         switch (func) {
             .min, .max => {
+                if (args.len <= 2 and args[0].ty == .list) return env.listCall(n, cl);
                 var acc = try env.num(args[0]);
                 for (args[1..]) |a| {
                     const v = try env.num(a);
@@ -1058,10 +1749,10 @@ pub const Env = struct {
                 return .{ .number = acc };
             },
             .clamp => {
-                const v = try env.num(args[0]);
-                const lo = try env.num(args[1]);
-                const hi = try env.num(args[2]);
-                return .{ .number = @max(lo, @min(hi, v)) };
+                const a = try env.num(args[0]);
+                const b = try env.num(args[1]);
+                const c = try env.num(args[2]);
+                return .{ .number = median3(a, b, c) };
             },
             .abs => return .{ .number = @abs(try env.num(args[0])) },
             .floor => return .{ .number = @floor(try env.num(args[0])) },
@@ -1069,8 +1760,10 @@ pub const Env = struct {
             .round => {
                 const v = try env.num(args[0]);
                 const digits = if (args.len > 1) @round(try env.num(args[1])) else 0;
-                const f = std.math.pow(f64, 10, @max(-15, @min(15, digits)));
-                return .{ .number = @round(v * f) / f };
+                if (!std.math.isFinite(v)) return .{ .number = v };
+                const d: i32 = @intFromFloat(@max(-15, @min(15, digits)));
+                const rounded = try roundedDecimal(env.arena, v, d);
+                return .{ .number = std.fmt.parseFloat(f64, rounded) catch v };
             },
             .len => return switch (try env.eval(args[0])) {
                 .list => |l| .{ .number = @floatFromInt(l.len) },
@@ -1078,16 +1771,15 @@ pub const Env = struct {
                 else => unreachable,
             },
             .upper, .lower => {
-                const t = (try env.eval(args[0])).text;
-                const out = try env.arena.alloc(u8, t.len);
-                for (t, 0..) |ch, i| out[i] = if (func == .upper) std.ascii.toUpper(ch) else std.ascii.toLower(ch);
-                return .{ .text = out };
+                const t = try env.str(args[0]);
+                return env.text(n, func, if (func == .upper) btext.upper(env.arena, t) else btext.lower(env.arena, t));
             },
             .trim => return .{ .text = std.mem.trim(u8, (try env.eval(args[0])).text, " \t\n\r") },
             .fmt => {
                 const v = try env.num(args[0]);
-                const d: usize = @intFromFloat(@max(0, @min(15, @round(try env.num(args[1])))));
-                return .{ .text = try std.fmt.allocPrint(env.arena, "{d:.[1]}", .{ v, d }) };
+                const d: i32 = @intFromFloat(@max(0, @min(15, @round(try env.num(args[1])))));
+                if (!std.math.isFinite(v)) return .{ .text = try std.fmt.allocPrint(env.arena, "{d}", .{v}) };
+                return .{ .text = try roundedDecimal(env.arena, v, d) };
             },
             .avg_color => {
                 const path = switch (try env.eval(args[0])) {
@@ -1109,7 +1801,7 @@ pub const Env = struct {
             },
             .with_alpha => {
                 var c = (try env.eval(args[0])).color;
-                c.a = unit16(try env.num(args[1]));
+                c.a = alpha16(try env.num(args[1]));
                 return .{ .color = c };
             },
             .rgb, .rgba => {
@@ -1119,9 +1811,197 @@ pub const Env = struct {
                     .b = chan16(try env.num(args[2])),
                     .a = 65535,
                 };
-                if (func == .rgba) c.a = unit16(try env.num(args[3]));
+                if (func == .rgba) c.a = alpha16(try env.num(args[3]));
                 return .{ .color = c };
             },
+            .match => {
+                // Lazy like `? :`: only the chosen result is evaluated.
+                const v = try env.eval(args[0]);
+                var i: usize = 1;
+                while (i < args.len - 1) : (i += 2) {
+                    if ((try env.eval(args[i])).eql(v)) return env.eval(args[i + 1]);
+                }
+                return env.eval(args[args.len - 1]);
+            },
+            .sqrt, .sign, .sin, .cos, .tan, .asin, .acos, .deg, .rad => {
+                const x = try env.num(args[0]);
+                return env.number(n, func, switch (func) {
+                    .sqrt => bmath.sqrt(x),
+                    .sign => bmath.sign(x),
+                    .sin => bmath.sin(x),
+                    .cos => bmath.cos(x),
+                    .tan => bmath.tan(x),
+                    .asin => bmath.asin(x),
+                    .acos => bmath.acos(x),
+                    .deg => bmath.deg(x),
+                    .rad => bmath.rad(x),
+                    else => unreachable,
+                });
+            },
+            .pow => return env.number(n, func, bmath.pow(try env.num(args[0]), try env.num(args[1]))),
+            .atan2 => return env.number(n, func, bmath.atan2(try env.num(args[0]), try env.num(args[1]))),
+            .wrap => return env.number(n, func, bmath.wrap(try env.num(args[0]), try env.num(args[1]))),
+            .lerp => return env.number(n, func, bmath.lerp(try env.num(args[0]), try env.num(args[1]), try env.num(args[2]))),
+            .remap => {
+                var v: [5]f64 = undefined;
+                for (args, &v) |a, *x| x.* = try env.num(a);
+                return env.number(n, func, bmath.remap(v[0], v[1], v[2], v[3], v[4]));
+            },
+            .contains, .starts_with, .ends_with => {
+                const t = try env.str(args[0]);
+                const sub = try env.str(args[1]);
+                return .{ .bool = switch (func) {
+                    .contains => btext.contains(t, sub),
+                    .starts_with => btext.startsWith(t, sub),
+                    else => btext.endsWith(t, sub),
+                } };
+            },
+            .replace => return env.text(n, func, btext.replace(env.arena, try env.str(args[0]), try env.str(args[1]), try env.str(args[2]))),
+            .slice => {
+                const t = try env.str(args[0]);
+                const start = try env.num(args[1]);
+                const end: ?f64 = if (args.len > 2) try env.num(args[2]) else null;
+                return env.text(n, func, btext.slice(env.arena, t, start, end));
+            },
+            .pad_start => {
+                const t = try env.str(args[0]);
+                const width = try env.num(args[1]);
+                const fill = if (args.len > 2) try env.str(args[2]) else " ";
+                return env.text(n, func, btext.padStart(env.arena, t, width, fill));
+            },
+            .repeat => return env.text(n, func, btext.repeat(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .title_case => return env.text(n, func, btext.titleCase(env.arena, try env.str(args[0]))),
+            .roman => return env.text(n, func, btext.roman(env.arena, try env.num(args[0]))),
+            .part => return env.text(n, func, btext.part(try env.str(args[0]), try env.str(args[1]), try env.num(args[2]))),
+            .has, .get, .index_of, .sum, .avg, .count, .join, .last => return env.listCall(n, cl),
+            .date_fmt => {
+                const p = try env.date(n, func, try env.str(args[0]));
+                return env.text(n, func, bdate.format(env.arena, p, try env.str(args[1])));
+            },
+            .year, .month, .day, .weekday, .hour, .minute => {
+                const p = try env.date(n, func, try env.str(args[0]));
+                return env.number(n, func, switch (func) {
+                    .year => bdate.year(p),
+                    .month => bdate.month(p),
+                    .day => bdate.day(p),
+                    .weekday => bdate.weekday(p),
+                    .hour => bdate.hour(p),
+                    else => bdate.minute(p),
+                });
+            },
+            .add_days => return env.text(n, func, bdate.addDays(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .add_hours => return env.text(n, func, bdate.addHours(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .days_between => return env.number(n, func, bdate.daysBetween(try env.str(args[0]), try env.str(args[1]))),
+            .hsl, .hsla => {
+                const h = try env.num(args[0]);
+                const sat = try env.num(args[1]);
+                const l = try env.num(args[2]);
+                // hsl() is opaque here; the alpha goes on the 8-bit grid like rgba().
+                var c = bcolor.hsl(h, sat, l, 1);
+                if (func == .hsla) c.a = alpha16(try env.num(args[3]));
+                return .{ .color = c };
+            },
+            .lighten, .darken => {
+                const c = (try env.eval(args[0])).color;
+                const amount = try env.num(args[1]);
+                return .{ .color = if (func == .lighten) bcolor.lighten(c, amount) else bcolor.darken(c, amount) };
+            },
+            .luminance => return .{ .number = bcolor.luminance((try env.eval(args[0])).color) },
+            .readable => {
+                const bg = (try env.eval(args[0])).color;
+                const light = if (args.len > 1) (try env.eval(args[1])).color else Color.white;
+                const dark = if (args.len > 2) (try env.eval(args[2])).color else Color.black;
+                return .{ .color = bcolor.readable(bg, light, dark) };
+            },
+            .rand => return .{ .number = brand.unit(try env.evalAll(args)) },
+            .rand_int => {
+                const lo = try env.num(args[0]);
+                const hi = try env.num(args[1]);
+                return env.number(n, func, brand.int(lo, hi, try env.evalAll(args[2..])));
+            },
+            .pick => {
+                // Lazy like match(): only the chosen value is evaluated.
+                const seed_v = try env.eval(args[0]);
+                const i = brand.pickIndex(&.{seed_v}, args.len - 1);
+                return env.eval(args[1 + i]);
+            },
+        }
+    }
+
+    fn str(env: *Env, n: *const Node) EvalError![]const u8 {
+        return (try env.eval(n)).text;
+    }
+
+    fn evalAll(env: *Env, nodes: []const *Node) EvalError![]const Value {
+        const out = try env.arena.alloc(Value, nodes.len);
+        for (nodes, out) |a, *v| v.* = try env.eval(a);
+        return out;
+    }
+
+    fn date(env: *Env, n: *const Node, func: Func, t: []const u8) EvalError!bdate.Parsed {
+        return bdate.parse(t) catch |e| env.builtinFail(n, func, e);
+    }
+
+    /// A number result: a plain f64 or an error union from a builtin module.
+    fn number(env: *Env, n: *const Node, func: Func, r: anytype) EvalError!Value {
+        const x: f64 = if (@typeInfo(@TypeOf(r)) == .error_union) (r catch |e| return env.builtinFail(n, func, e)) else r;
+        if (!std.math.isFinite(x)) return env.fail(3103, n, try std.fmt.allocPrint(env.arena, "{s}() has no finite result here", .{@tagName(func)}));
+        return .{ .number = x };
+    }
+
+    fn text(env: *Env, n: *const Node, func: Func, r: anytype) EvalError!Value {
+        return .{ .text = r catch |e| return env.builtinFail(n, func, e) };
+    }
+
+    /// Maps a builtin module's error to its diagnostic (SPEC: 3103, 3105, 3106, 3107).
+    fn builtinFail(env: *Env, n: *const Node, func: Func, e: anyerror) EvalError {
+        const name = @tagName(func);
+        const a = env.arena;
+        return switch (e) {
+            error.OutOfMemory => error.OutOfMemory,
+            error.Domain => env.fail(3103, n, try switch (func) {
+                .avg, .min, .max => std.fmt.allocPrint(a, "{s}() of an empty list", .{name}),
+                .remap => std.fmt.allocPrint(a, "remap() needs two different input ends", .{}),
+                .wrap => std.fmt.allocPrint(a, "wrap() by zero", .{}),
+                else => std.fmt.allocPrint(a, "{s}() has no result for these arguments", .{name}),
+            }),
+            error.BadDate => env.fail(3105, n, try std.fmt.allocPrint(a, "{s}() needs a date like 2026-10-15, a time like 18:30 or both like 2026-10-15T18:30", .{name})),
+            error.TooLong => env.fail(3106, n, try std.fmt.allocPrint(a, "{s}() would make text longer than {d} bytes", .{ name, btext.max_len })),
+            error.Range => env.fail(3107, n, try switch (func) {
+                .roman => std.fmt.allocPrint(a, "roman() needs a number from 1 to 3999", .{}),
+                .part => std.fmt.allocPrint(a, "part() needs a separator that is not empty", .{}),
+                .rand_int => std.fmt.allocPrint(a, "rand_int() needs lo <= hi", .{}),
+                else => std.fmt.allocPrint(a, "an argument of {s}() is out of range", .{name}),
+            }),
+            else => env.fail(3103, n, try std.fmt.allocPrint(a, "{s}() failed: {s}", .{ name, @errorName(e) })),
+        };
+    }
+
+    /// List functions; `cl.field` and `cl.lk` were set by the checker.
+    fn listCall(env: *Env, n: *const Node, cl: Call) EvalError!Value {
+        const items = (try env.eval(cl.args[0])).list;
+        const func = cl.func;
+        switch (func) {
+            .has, .index_of => {
+                const i = blist.indexOf(items, cl.lk.?.key_field, try env.str(cl.args[1]));
+                if (func == .has) return .{ .bool = i != null };
+                return .{ .number = if (i) |x| @floatFromInt(x) else -1 };
+            },
+            .get => {
+                const i = blist.indexOf(items, cl.lk.?.key_field, try env.str(cl.args[1])) orelse return env.eval(cl.args[cl.args.len - 1]);
+                return items[i][cl.field];
+            },
+            .sum => return env.number(n, func, blist.sum(items, cl.field)),
+            .avg => return env.number(n, func, blist.avg(items, cl.field)),
+            .min => return env.number(n, func, blist.minOf(items, cl.field)),
+            .max => return env.number(n, func, blist.maxOf(items, cl.field)),
+            .count => return .{ .number = @floatFromInt(blist.count(items, cl.field, try env.eval(cl.args[2]))) },
+            .join => return env.text(n, func, blist.join(env.arena, items, cl.field, try env.str(cl.args[cl.args.len - 1]))),
+            .last => {
+                if (items.len == 0) return env.fail(3102, n, "last() of an empty list");
+                return .{ .item = items[items.len - 1] };
+            },
+            else => unreachable,
         }
     }
 
@@ -1135,7 +2015,7 @@ pub const Env = struct {
                 .lit => |s| w.writeAll(s) catch return error.OutOfMemory,
                 .expr => |e| {
                     switch (try env.eval(e)) {
-                        .number => |x| value.writeNumber(w, x) catch return error.OutOfMemory,
+                        .number => |x| value.writeDisplayNumber(w, x) catch return error.OutOfMemory,
                         .bool => |b| w.writeAll(if (b) "true" else "false") catch return error.OutOfMemory,
                         .text, .image => |s| w.writeAll(s) catch return error.OutOfMemory,
                         .color => |c| {
@@ -1156,12 +2036,124 @@ fn lerp16(a: u16, b: u16, t: f64) u16 {
     return @intFromFloat(std.math.clamp(@round(v), 0, 65535));
 }
 
-fn unit16(x: f64) u16 {
-    return @intFromFloat(@round(std.math.clamp(x, 0, 1) * 65535));
+/// A channel (0 to 255) on the 8-bit grid: round(x) * 257.
+fn chan16(x: f64) u16 {
+    return @intFromFloat(@round(std.math.clamp(x, 0, 255)) * 257);
 }
 
-fn chan16(x: f64) u16 {
-    return @intFromFloat(@round(std.math.clamp(x, 0, 255) * 257));
+/// An alpha (0 to 1) on the 8-bit grid: round(a * 255) * 257, as `#RRGGBBAA` writes it.
+fn alpha16(x: f64) u16 {
+    return @intFromFloat(@round(std.math.clamp(x, 0, 1) * 255) * 257);
+}
+
+/// The median of three numbers.
+fn median3(a: f64, b: f64, c: f64) f64 {
+    return @max(@min(a, b), @min(@max(a, b), c));
+}
+
+/// `a % b` with the sign of `b`, as in maths and Excel MOD: -7 % 3 is 2.
+fn floorMod(a: f64, b: f64) f64 {
+    const m = @rem(a, b);
+    const r = if (m != 0 and (m < 0) != (b < 0)) m + b else m;
+    // `m + b` can round to `b` for a tiny `m`; the result must stay below |b|.
+    return if (r == 0 or r == b) 0 else r;
+}
+
+/// The end of an exponent (`e3`, `E-2`) starting at `i`, or null.
+fn exponentEnd(s: []const u8, i: usize) ?usize {
+    if (i >= s.len or (s[i] != 'e' and s[i] != 'E')) return null;
+    var j = i + 1;
+    if (j < s.len and (s[j] == '+' or s[j] == '-')) j += 1;
+    const digits = j;
+    while (j < s.len and std.ascii.isDigit(s[j])) j += 1;
+    return if (j == digits) null else j;
+}
+
+/// A hint for a number right after `7%` (`7%3`): the `%` is a unit there.
+fn percentHint(toks: []const Tok, i: usize) ?[]const u8 {
+    if (i == 0 or i >= toks.len) return null;
+    const t = toks[i];
+    const prev = toks[i - 1];
+    if (t.kind != .number or prev.kind != .number or prev.unit != .percent or prev.end != t.start) return null;
+    return "put spaces around % for the remainder: 7 % 3 (7% is a percent of the canvas)";
+}
+
+/// `v` rounded half away from zero to `d` decimals (`d` may be negative),
+/// as text with max(d, 0) decimals. Rounding works on the shortest decimal
+/// that reads back as `v`, so 1.005 gives 1.01. `round` and `fmt` both use
+/// it, so they always agree.
+fn roundedDecimal(arena: Allocator, v: f64, d: i32) Allocator.Error![]u8 {
+    // |v| as digits D and a point p: |v| = 0.D * 10^p.
+    const text = try std.fmt.allocPrint(arena, "{d}", .{@abs(v)});
+    var digits: std.ArrayList(u8) = .empty;
+    var point: i32 = -1;
+    for (text) |ch| {
+        if (ch == '.') {
+            point = @intCast(digits.items.len);
+        } else try digits.append(arena, ch);
+    }
+    if (point < 0) point = @intCast(digits.items.len);
+    // Leading zeros move the point left.
+    var lead: usize = 0;
+    while (lead < digits.items.len and digits.items[lead] == '0') lead += 1;
+    var kept = digits.items[lead..];
+    point -= @intCast(lead);
+    if (kept.len == 0) point = 0;
+
+    var out = kept;
+    var out_point = point;
+    const keep: i64 = @as(i64, point) + @as(i64, d);
+    if (keep < 0) {
+        out = kept[0..0];
+        out_point = 0;
+    } else if (keep < kept.len) {
+        const k: usize = @intCast(keep);
+        const up = kept[k] >= '5';
+        out = kept[0..k];
+        if (up) {
+            // One unit in the last kept place; a carry out of the top adds a leading 1.
+            const buf = try arena.dupe(u8, kept[0..k]);
+            var i = buf.len;
+            var carry = true;
+            while (carry and i > 0) {
+                i -= 1;
+                if (buf[i] == '9') {
+                    buf[i] = '0';
+                } else {
+                    buf[i] += 1;
+                    carry = false;
+                }
+            }
+            if (carry) {
+                out = try std.fmt.allocPrint(arena, "1{s}", .{buf});
+                out_point = point + 1;
+            } else {
+                out = buf;
+            }
+        }
+    }
+
+    var nonzero = false;
+    for (out) |ch| if (ch != '0') {
+        nonzero = true;
+        break;
+    };
+    const fd: usize = @intCast(@max(d, 0));
+    var aw: std.ArrayList(u8) = .empty;
+    if (v < 0 and nonzero) try aw.append(arena, '-');
+    if (out_point <= 0) {
+        try aw.append(arena, '0');
+    } else {
+        for (0..@intCast(out_point)) |k| try aw.append(arena, if (k < out.len) out[k] else '0');
+    }
+    if (fd > 0) {
+        try aw.append(arena, '.');
+        for (0..fd) |k| {
+            const j: i64 = @as(i64, out_point) + @as(i64, @intCast(k));
+            try aw.append(arena, if (j >= 0 and j < out.len) out[@intCast(j)] else '0');
+        }
+    }
+    return aw.items;
 }
 
 // ------------------------------------------------------------------ tests
@@ -1189,6 +2181,21 @@ test "parse and check" {
     try testing.expect((try testCheck(a, "edition == '1  Edition'", &scope)) == .bool);
     try testing.expect((try testCheck(a, "@bg.bounds.cx + 1", &scope)) == .number);
     try testing.expect((try testCheck(a, "level > 3 ? #FF0000 : rgb(0, 0, 255)", &scope)) == .color);
+    try testing.expect((try testCheck(a, "edition in ['a', 'b']", &scope)) == .bool);
+    try testing.expect((try testCheck(a, "level in [1, 2, 3]", &scope)) == .bool);
+    try testing.expect((try testCheck(a, "match(level, 1, #FF0000, 2, #00FF00, #0000FF)", &scope)) == .color);
+    try testing.expect((try testCheck(a, "match(edition, 'a', 1, 0)", &scope)) == .number);
+
+    try expectProblem(a, "level in ['a']", &scope, 3003);
+    try expectProblem(a, "level in 1", &scope, 3001);
+    try expectProblem(a, "level in []", &scope, 3001);
+    try expectProblem(a, "level in [1, 2,]", &scope, 3001);
+    try expectProblem(a, "in", &scope, 3001);
+    try expectProblem(a, "match(level, 1, 2)", &scope, 3003);
+    try expectProblem(a, "match(level, 1)", &scope, 3003);
+    try expectProblem(a, "match(level, 1, 2, 3, 4)", &scope, 3003);
+    try expectProblem(a, "match(level, 'a', 1, 0)", &scope, 3003);
+    try expectProblem(a, "match(level, 1, 'x', 0)", &scope, 3003);
 
     var problem: ?Problem = null;
     const n = try parse(a, "lvl + 1", 0, &problem);
@@ -1205,6 +2212,19 @@ test "parse and check" {
     problem = null;
     try testing.expectError(error.Invalid, parse(a, "(1 + 2", 0, &problem));
     try testing.expectEqual(@as(u16, 3001), problem.?.code);
+}
+
+/// Expects `src` to fail with `code`, either while parsing or while checking.
+fn expectProblem(arena: Allocator, src: []const u8, scope: *const Scope, code: u16) !void {
+    var problem: ?Problem = null;
+    const n = parse(arena, src, 0, &problem) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        try testing.expectEqual(code, problem.?.code);
+        return;
+    };
+    var c: Checker = .{ .scope = scope, .problem = &problem };
+    try testing.expectError(error.Invalid, c.check(n));
+    try testing.expectEqual(code, problem.?.code);
 }
 
 fn testLookup(_: *anyopaque, name: []const u8) ?Value {
@@ -1245,4 +2265,470 @@ test "evaluate" {
     try testing.expectEqualStrings("Lv 4 {x} 0.50 001", try env.template(t));
     try testing.expectError(error.Eval, env.eval(try parse(a, "1 / (level - 4)", 0, &problem)));
     try testing.expectEqual(@as(u16, 3103), env.problem.?.code);
+
+    try testing.expect((try env.eval(try parse(a, "level in [1, 4]", 0, &problem))).bool);
+    try testing.expect(!(try env.eval(try parse(a, "level in [1, 2]", 0, &problem))).bool);
+    try testing.expectEqual(@as(f64, 40), (try env.eval(try parse(a, "match(level, 1, 10, 4, 40, 0)", 0, &problem))).number);
+    try testing.expectEqual(@as(f64, 0), (try env.eval(try parse(a, "match(level, 1, 10, 0)", 0, &problem))).number);
+    try testing.expectEqual(@as(f64, 1), (try env.eval(try parse(a, "match(level, 4, 1, 1 / (level - 4))", 0, &problem))).number);
+}
+
+fn expectTolerant(arena: Allocator, src: []const u8, n_problems: usize, root_kind: std.meta.Tag(Node.Data)) !Parsed {
+    const r = try parseTolerant(arena, src, 0, 8);
+    testing.expectEqual(n_problems, r.problems.len) catch |e| {
+        for (r.problems) |pr| std.debug.print("{s}: {d}..{d} {s}\n", .{ src, pr.start, pr.end, pr.message });
+        return e;
+    };
+    try testing.expectEqual(root_kind, std.meta.activeTag(r.root.data));
+    return r;
+}
+
+test "tolerant parse" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    // Valid input: same tree as the strict parser, no problems.
+    _ = try expectTolerant(a, "1 + 2 * x", 0, .binary);
+    _ = try expectTolerant(a, "(a)", 0, .paren);
+
+    // Missing operand: the binary node is kept, its right side is an error.
+    var r = try expectTolerant(a, "a + ", 1, .binary);
+    try testing.expect(r.root.data.binary.r.data == .err);
+    // Missing ')' is reported, the call is kept.
+    r = try expectTolerant(a, "max(a, b", 1, .call);
+    try testing.expectEqual(@as(usize, 2), r.root.data.call.args.len);
+    // An empty argument does not swallow the ')'.
+    r = try expectTolerant(a, "max(a, )", 1, .call);
+    // Several problems are all reported.
+    r = try expectTolerant(a, "a + ! + #zz", 2, .binary);
+    // Text after a complete expression: one error node keeping the tree.
+    r = try expectTolerant(a, "a b c", 1, .err);
+    try testing.expect(r.root.data.err.?.data == .name);
+    try testing.expectEqual(@as(u32, 5), r.root.end);
+    // Cond missing its else branch.
+    r = try expectTolerant(a, "x ? 1", 1, .cond);
+    // Bad 'in' list keeps the left side.
+    r = try expectTolerant(a, "k in 3", 1, .err);
+    // Lexer problems become error tokens.
+    r = try expectTolerant(a, "'open", 1, .err);
+    r = try expectTolerant(a, "", 1, .err);
+    r = try expectTolerant(a, ")", 1, .err);
+
+    // Deep nesting is an error, not a crash.
+    const deep = try a.alloc(u8, 600);
+    @memset(deep[0..300], '(');
+    @memset(deep[300..], ')');
+    r = try parseTolerant(a, deep, 0, 8);
+    try testing.expect(r.problems.len >= 1);
+    var problem: ?Problem = null;
+    try testing.expectError(error.Invalid, parse(a, deep, 0, &problem));
+
+    // The problem list is capped.
+    r = try parseTolerant(a, "! ! ! ! ! ! ! ! ! ! ! !", 0, 3);
+    try testing.expectEqual(@as(usize, 3), r.problems.len);
+    try testing.expect(r.truncated);
+
+    // Every prefix of a real expression parses without failing.
+    const src = "match(t.kind, 'back', with_alpha(c_ink, 0.5), 'forward', @tile[i - 1].bounds.cx > 2 ? #FF0000 : rgb(1, 2, 3), c_plain)";
+    for (0..src.len + 1) |k| _ = try parseTolerant(a, src[0..k], 0, 8);
+}
+
+test "tolerant template parse" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var t = try parseTemplateTolerant(a, "Lv {level + 1} {{x}}", 8);
+    try testing.expectEqual(@as(usize, 0), t.problems.len);
+    try testing.expectEqual(@as(usize, 6), t.pieces.len);
+    try testing.expect(t.pieces[1].kind == .hole);
+    try testing.expectEqual(@as(u32, 4), t.pieces[1].root.?.start);
+    t = try parseTemplateTolerant(a, "a } b {c + ", 8);
+    try testing.expectEqual(@as(usize, 3), t.problems.len);
+    t = try parseTemplateTolerant(a, "{}", 8);
+    try testing.expectEqual(@as(usize, 1), t.problems.len);
+}
+
+test "tolerant parse never fails on random input" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const chars = "ab1.%#@()[],?:+-*/<>=!'\"{} \\_inotv";
+    var prng = std.Random.DefaultPrng.init(42);
+    const rnd = prng.random();
+    var buf: [24]u8 = undefined;
+    for (0..20000) |_| {
+        const len = rnd.uintLessThan(usize, buf.len);
+        for (buf[0..len]) |*ch| ch.* = chars[rnd.uintLessThan(usize, chars.len)];
+        const r = try parseTolerant(a, buf[0..len], 0, 8);
+        try testing.expect(r.root.end <= len);
+        _ = try parseTemplateTolerant(a, buf[0..len], 8);
+    }
+}
+
+// Built-in functions in expressions (the modules in builtins/ test their own
+// edge cases; these check the wiring: types, field resolution, errors).
+
+const units_def: value.ItemDef = .{
+    .names = &.{ "name", "cost", "elite" },
+    .types = &.{ .text, .number, .bool },
+};
+const stats_def: value.ItemDef = .{
+    .names = &.{ "stat", "value" },
+    .types = &.{ .text, .number },
+};
+const tags_def: value.ItemDef = .{ .names = &.{"tag"}, .types = &.{.text} };
+
+fn builtinLookup(_: *anyopaque, name: []const u8) ?Value {
+    const eq = std.mem.eql;
+    if (eq(u8, name, "level")) return .{ .number = 4 };
+    if (eq(u8, name, "units")) return .{ .list = &.{
+        &.{ .{ .text = "Elf" }, .{ .number = 3 }, .{ .bool = false } },
+        &.{ .{ .text = "Orc" }, .{ .number = 5 }, .{ .bool = true } },
+        &.{ .{ .text = "Imp" }, .{ .number = 1 }, .{ .bool = true } },
+    } };
+    if (eq(u8, name, "stats")) return .{ .list = &.{
+        &.{ .{ .text = "Speed" }, .{ .number = 7 } },
+        &.{ .{ .text = "Power" }, .{ .number = 2 } },
+    } };
+    if (eq(u8, name, "tags")) return .{ .list = &.{ &.{.{ .text = "Fire" }}, &.{.{ .text = "Flying" }} } };
+    if (eq(u8, name, "none") or eq(u8, name, "no_stats")) return .{ .list = &.{} };
+    return null;
+}
+
+const BuiltinFixture = struct {
+    scope: Scope,
+    env: Env,
+
+    fn eval(f: *BuiltinFixture, src: []const u8) !Value {
+        var problem: ?Problem = null;
+        const n = try parse(f.scope.arena, src, 0, &problem);
+        var c: Checker = .{ .scope = &f.scope, .problem = &problem };
+        _ = c.check(n) catch |e| {
+            std.debug.print("{s}: {s}\n", .{ src, problem.?.message });
+            return e;
+        };
+        return f.env.eval(n);
+    }
+
+    fn checkCode(f: *BuiltinFixture, src: []const u8) !u16 {
+        var problem: ?Problem = null;
+        const n = try parse(f.scope.arena, src, 0, &problem);
+        var c: Checker = .{ .scope = &f.scope, .problem = &problem };
+        if (c.check(n)) |_| return 0 else |_| return problem.?.code;
+    }
+
+    fn evalCode(f: *BuiltinFixture, src: []const u8) !u16 {
+        f.env.problem = null;
+        if (f.eval(src)) |_| return 0 else |e| switch (e) {
+            error.Eval => return f.env.problem.?.code,
+            else => return e,
+        }
+    }
+};
+
+fn builtinFixture(a: Allocator, dummy: *u8) BuiltinFixture {
+    return .{
+        .scope = .{
+            .arena = a,
+            .params = &.{
+                .{ .name = "level", .ty = .number },
+                .{ .name = "units", .ty = .{ .list = &units_def } },
+                .{ .name = "stats", .ty = .{ .list = &stats_def } },
+                .{ .name = "tags", .ty = .{ .list = &tags_def } },
+                .{ .name = "none", .ty = .{ .list = &tags_def } },
+                .{ .name = "no_stats", .ty = .{ .list = &stats_def } },
+                // A param may share a built-in function's name.
+                .{ .name = "sum", .ty = .number },
+            },
+            .layers = null,
+        },
+        .env = .{
+            .arena = a,
+            .canvas_w = 200,
+            .canvas_h = 400,
+            .card_id = "007",
+            .render_index = 0,
+            .render_date = "2026-10-15",
+            .render_time = "18:30:00",
+            .render_now = "2026-10-15T16:30:00Z",
+            .ctx = dummy,
+            .lookup = builtinLookup,
+            .layerRef = testRef,
+            .avgColor = testAvg,
+        },
+    };
+}
+
+test "template numbers use the display rounding" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var dummy: u8 = 0;
+    var f = builtinFixture(a, &dummy);
+    var problem: ?Problem = null;
+    const t = try parseTemplate(a, "{0.1 + 0.2}|{1 / 3}", &problem);
+    try testing.expectEqualStrings("0.3|0.333333333333", try f.env.template(t));
+}
+
+test "built-in functions: numbers, text, dates, colours" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqual(@as(f64, 1), (try f.eval("sin(pi / 2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("cos(pi / 2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("sin(pi)")).number);
+    try testing.expectApproxEqAbs(@as(f64, 0.8414709848078965), (try f.eval("sin(1)")).number, 1e-15);
+    try testing.expectApproxEqAbs(@as(f64, 180), (try f.eval("deg(pi)")).number, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 1), (try f.eval("sin(rad(90))")).number, 1e-15);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("sqrt(9)")).number);
+    try testing.expectEqual(@as(f64, 8), (try f.eval("pow(2, 3)")).number);
+    try testing.expectEqual(@as(f64, 50), (try f.eval("remap(5, 0, 10, 0, 100)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("wrap(-1, 3)")).number);
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("sqrt(-1)"));
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("remap(1, 2, 2, 0, 1)"));
+
+    try testing.expect((try f.eval("starts_with(card.id, '00')")).bool);
+    try testing.expectEqualStrings("007", (try f.eval("pad_start('7', 3, '0')")).text);
+    try testing.expectEqualStrings("★★★", (try f.eval("repeat('★', 3)")).text);
+    try testing.expectEqualStrings("Water", (try f.eval("part('Fire/Water', '/', 1)")).text);
+    try testing.expectEqualStrings("XIV", (try f.eval("roman(level + 10)")).text);
+    try testing.expectEqualStrings("ÉCLAIR", (try f.eval("upper('éclair')")).text);
+    try testing.expectEqual(@as(u16, 3107), try f.evalCode("roman(0)"));
+    try testing.expectEqual(@as(u16, 3106), try f.evalCode("repeat('ab', 6000)"));
+
+    try testing.expectEqualStrings("15 Oct 2026", (try f.eval("date_fmt(render.date, 'D MMM YYYY')")).text);
+    try testing.expectEqual(@as(f64, 18), (try f.eval("hour(render.time)")).number);
+    try testing.expectEqual(@as(f64, 4), (try f.eval("weekday(render.date)")).number);
+    try testing.expectEqualStrings("2026-10-25", (try f.eval("add_days(render.date, 10)")).text);
+    try testing.expectEqual(@as(f64, 77), (try f.eval("days_between(render.date, '2026-12-31')")).number);
+    try testing.expectEqualStrings("2026-10-15T11:30:00Z", (try f.eval("add_hours(render.now, -5)")).text);
+    try testing.expectEqual(@as(u16, 3105), try f.evalCode("year('15.10.2026')"));
+
+    try testing.expect((try f.eval("hsl(0, 100, 50) == #FF0000")).bool);
+    try testing.expect((try f.eval("readable(#111111) == #FFFFFF")).bool);
+    try testing.expect((try f.eval("readable(#EEEEEE) == #000000")).bool);
+
+    const r1 = (try f.eval("rand(card.id, 1)")).number;
+    try testing.expect(r1 >= 0 and r1 < 1);
+    try testing.expectEqual(r1, (try f.eval("rand(card.id, 1)")).number);
+    const k = (try f.eval("rand_int(1, 6, card.id)")).number;
+    try testing.expect(k >= 1 and k <= 6 and k == @floor(k));
+    try testing.expect((try f.eval("pick(card.id, 'a', 'b') in ['a', 'b']")).bool);
+
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sin('a')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("rand()"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("pick(1, 'a', 2)"));
+}
+
+test "built-in functions: lists" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("has(units, 'Orc')")).bool);
+    try testing.expect(!(try f.eval("has(units, 'Elk')")).bool);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("index_of(units, 'Orc')")).number);
+    try testing.expectEqual(@as(f64, -1), (try f.eval("index_of(units, 'Elk')")).number);
+    try testing.expectEqual(@as(f64, 7), (try f.eval("get(stats, 'Speed', 0)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("get(stats, 'Luck', 0)")).number);
+    try testing.expectEqual(@as(f64, 5), (try f.eval("get(units, 'Orc', 'cost', 0)")).number);
+    try testing.expectEqual(@as(f64, 9), (try f.eval("sum(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 9), (try f.eval("sum(stats)")).number);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("avg(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("min(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 7), (try f.eval("max(stats)")).number);
+    try testing.expectEqual(@as(f64, 4), (try f.eval("max(level, 2)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("count(units, 'elite', true)")).number);
+    try testing.expectEqualStrings("Fire, Flying", (try f.eval("join(tags, ', ')")).text);
+    try testing.expectEqualStrings("3/5/1", (try f.eval("join(units, 'cost', '/')")).text);
+    try testing.expectEqualStrings("Imp", (try f.eval("last(units).name")).text);
+    // A param named like a built-in is still a plain name.
+    try testing.expectEqual(@as(u16, 0), try f.checkCode("sum + 1"));
+
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("avg(no_stats)"));
+    try testing.expectEqual(@as(u16, 3102), try f.evalCode("last(none).tag"));
+    try testing.expectEqual(@as(u16, 3002), try f.checkCode("sum(units, 'cots')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(units, 'name')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(units)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("get(units, 'Orc', 0)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("get(stats, 'Speed', 'x')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("count(units, 'elite', 1)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(level)"));
+}
+
+test "a design function hides a built-in of the same name" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const scope: Scope = .{
+        .arena = a,
+        .params = &.{.{ .name = "level", .ty = .number }},
+        .functions = &.{.{ .name = "sign", .args = &.{.{ .name = "t", .ty = .text }}, .ret = .text }},
+        .layers = null,
+    };
+    try testing.expect((try testCheck(a, "sign('x')", &scope)) == .text);
+    try expectProblem(a, "sign(level)", &scope, 3003);
+}
+
+test "pi is a number unless the design names something pi" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const plain: Scope = .{ .arena = a, .params = &.{}, .layers = null };
+    try testing.expect((try testCheck(a, "pi * 2", &plain)) == .number);
+    const named: Scope = .{ .arena = a, .params = &.{.{ .name = "pi", .ty = .text }}, .layers = null };
+    try testing.expect((try testCheck(a, "pi", &named)) == .text);
+}
+
+test "round and fmt agree on ties" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var dummy: u8 = 0;
+    var f = builtinFixture(a, &dummy);
+
+    try testing.expectEqual(@as(f64, 1.01), (try f.eval("round(1.005, 2)")).number);
+    try testing.expectEqualStrings("1.01", (try f.eval("fmt(1.005, 2)")).text);
+    try testing.expectEqual(@as(f64, 0.29), (try f.eval("round(0.285, 2)")).number);
+    try testing.expectEqualStrings("0.29", (try f.eval("fmt(0.285, 2)")).text);
+    try testing.expectEqual(@as(f64, 1.26), (try f.eval("round(1.255, 2)")).number);
+    try testing.expectEqualStrings("1.26", (try f.eval("fmt(1.255, 2)")).text);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("round(2.5)")).number);
+    try testing.expectEqual(@as(f64, -3), (try f.eval("round(-2.5)")).number);
+    try testing.expectEqual(@as(f64, 0.13), (try f.eval("round(0.125, 2)")).number);
+    try testing.expectEqual(@as(f64, 1200), (try f.eval("round(1234.5678, -2)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("round(0.004, 2)")).number);
+
+    // Every value and digit count: round(v, d) reads back as fmt(v, d).
+    const vals = [_][]const u8{ "1.005", "0.285", "1.255", "2.5", "-2.5", "0.125", "1234.5678", "-0.001", "0.1" };
+    for (vals) |v| {
+        for ([_]i32{ 0, 1, 2, 3 }) |d| {
+            const r = (try f.eval(try std.fmt.allocPrint(a, "round({s}, {d})", .{ v, d }))).number;
+            const s = (try f.eval(try std.fmt.allocPrint(a, "fmt({s}, {d})", .{ v, d }))).text;
+            testing.expectEqual(r, std.fmt.parseFloat(f64, s) catch unreachable) catch |e| {
+                std.debug.print("round/fmt of {s} to {d}: {s}\n", .{ v, d, s });
+                return e;
+            };
+        }
+    }
+    try testing.expectEqualStrings("1234.57", (try f.eval("fmt(1234.5678, 2)")).text);
+    try testing.expectEqualStrings("1235", (try f.eval("fmt(1234.5678, 0)")).text);
+    try testing.expectEqualStrings("-3", (try f.eval("fmt(-2.5, 0)")).text);
+    try testing.expectEqualStrings("0.10", (try f.eval("fmt(0.1, 2)")).text);
+}
+
+test "a value that rounds to zero prints without a minus sign" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqualStrings("0.00", (try f.eval("fmt(-0.001, 2)")).text);
+    try testing.expectEqualStrings("0", (try f.eval("fmt(-0.4, 0)")).text);
+    try testing.expectEqualStrings("-0.10", (try f.eval("fmt(-0.1, 2)")).text);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("round(-0.001, 2)")).number);
+}
+
+test "clamp is the median of its three numbers" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    // clamp(value, lo, hi).
+    try testing.expectEqual(@as(f64, 3), (try f.eval("clamp(5, 0, 3)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("clamp(-1, 0, 3)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("clamp(2, 0, 3)")).number);
+    // The CSS order clamp(lo, value, hi).
+    try testing.expectEqual(@as(f64, 5), (try f.eval("clamp(0, 5, 10)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("clamp(0, -3, 10)")).number);
+    try testing.expectEqual(@as(f64, 10), (try f.eval("clamp(0, 12, 10)")).number);
+}
+
+test "% is a floored modulo" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqual(@as(f64, 2), (try f.eval("-7 % 3")).number);
+    try testing.expectEqual(@as(f64, -2), (try f.eval("7 % -3")).number);
+    try testing.expectEqual(@as(f64, 1.5), (try f.eval("7.5 % 2")).number);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("7 % 3")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("-6 % 3")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("-0.00000000000000000001 % 3")).number);
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("7 % 0"));
+}
+
+test "colours: short hex forms" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("#F80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#f80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#F80F == #FF8800FF")).bool);
+    try testing.expect((try f.eval("#F808 == #FF880088")).bool);
+    try testing.expect((try f.eval("#F80 == #FF8800")).bool);
+    try testing.expect((try f.eval("#FF8800 == #FF8800FF")).bool);
+    for ([_][]const u8{ "#FG0", "#FF80F" }) |bad| {
+        var problem: ?Problem = null;
+        try testing.expectError(error.Invalid, parse(f.scope.arena, bad, 0, &problem));
+        try testing.expectEqual(@as(u16, 3001), problem.?.code);
+    }
+}
+
+test "colours: alpha is on the 8-bit grid" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("rgba(255, 0, 0, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("with_alpha(#FF0000, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("hsla(0, 100, 50, 0.5) == #FF000080")).bool);
+    try testing.expect((try f.eval("rgba(0, 0, 0, 1) == #000000FF")).bool);
+    try testing.expect((try f.eval("with_alpha(#FF0000, 0) == #FF000000")).bool);
+    try testing.expect((try f.eval("hsl(0, 100, 50) == #FF0000FF")).bool);
+}
+
+test "error hints for habits from other languages" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    try expectHint(a, "a && b", "use 'and'");
+    try expectHint(a, "a || b", "use 'or'");
+    try expectHint(a, "!a", "use 'not'");
+    try expectHint(a, "a = 1", "use '==' to compare");
+    try expectHint(a, "a === 1", "use '==' to compare");
+    try expectHint(a, "a <> 1", "use '!=' for not equal");
+    try expectHint(a, "a ^ 2", "use pow(a, b)");
+    try expectHint(a, "a ** 2", "use pow(a, b)");
+    try expectHint(a, "'Lv ' + 1", "build text in a text field with {holes}, e.g. 'Lv {level}'");
+    try expectHint(a, "7%3", "put spaces around % for the remainder: 7 % 3 (7% is a percent of the canvas)");
+    try expectHint(a, "1e3", "exponent notation is not supported; write 1000");
+    try expectHint(a, "2.5e-3", "exponent notation is not supported; write 0.0025");
+    try expectHint(a, ".5", "write 0.5");
+}
+
+/// Expects `src` to fail with `want` as its hint, while parsing or checking.
+fn expectHint(arena: Allocator, src: []const u8, want: []const u8) !void {
+    const plain: Scope = .{ .arena = arena, .params = &.{}, .layers = null };
+    var problem: ?Problem = null;
+    const n = parse(arena, src, 0, &problem) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        return testing.expectEqualStrings(want, problem.?.hint orelse "");
+    };
+    var c: Checker = .{ .scope = &plain, .problem = &problem };
+    _ = c.check(n) catch |e| {
+        try testing.expectEqual(error.Invalid, e);
+        return testing.expectEqualStrings(want, problem.?.hint orelse "");
+    };
+    return error.TestExpectedError;
 }

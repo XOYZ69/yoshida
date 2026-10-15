@@ -25,6 +25,23 @@ designs/tour.design.json:41:17: error[3002]: unknown name 'levl'
 
 `file:line:column`, severity and code, the message (with `card <id>:` in front when it belongs to one card), the JSON pointer of the field, the byte range inside an expression when there is one, and a hint. Hints such as *did you mean 'color'?* come from a closest-name search over the valid names.
 
+### Habits from other languages
+
+Some operators and forms from other languages are not in yoshida. The error says what to write instead:
+
+| You write | Error | Hint |
+| --- | --- | --- |
+| `&`, `&&` | 3001 unexpected '&' | use 'and' |
+| `\|`, `\|\|` | 3001 unexpected '\|' | use 'or' |
+| `!` | 3001 unexpected '!' | use 'not' |
+| `^`, `**` | 3001 unexpected '^' or '**' | use pow(a, b) |
+| `=` | 3001 unexpected '=' | use '==' to compare |
+| `<>` | 3001 unexpected '<>' | use '!=' for not equal |
+| `1e3` | 3001 unknown unit after a number | exponent notation is not supported; write 1000 |
+| `.5` | 3001 unexpected '.' | write 0.5 |
+| `7%3` | 3001 | put spaces around % for the remainder: 7 % 3 |
+| `'a' + b` | 3003 'needs numbers' | join text with a template, e.g. "{a} {b}" |
+
 ## JSON shape
 
 `yoshida check --format json`, `yoshida render --format json`, the server's 422 response and the WebAssembly module all use this object per diagnostic:
@@ -72,13 +89,14 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 1103 | error | Wrong JSON type for the field's kind, or a word that is not one of an enum's options |
 | 1104 | error | `format` missing |
 | 1105 | error | Unsupported `format` version |
-| 1106 | error | Param, constant or function name is invalid, or collides with a reserved word, a built-in function or another name |
+| 1106 | error | Param, constant or function name is invalid, is a reserved word, or collides with another param, constant or function name |
 | 1107 | error | Param has neither `default` nor `required` |
 | 1108 | error | Duplicate or invalid layer id |
 | 1109 | error | Polygon has fewer than 3 points (2 for an open polygon) |
 | 1110 | error | Image `w` and `h` both `auto` |
 | 1111 | error | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape` |
 | 1112 | error | `extends` across different layer types (including a group), or of a divider |
+| 1113 | warning | A design function has the name of a built-in function; the design's function is used in this design instead of the built-in |
 | 1201 | error | File not found |
 | 1202 | error | CSV syntax error (also a missing header row, or a row with the wrong number of fields) |
 | 1203 | error | Path escapes the project root |
@@ -105,9 +123,12 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3005 | error | Reference to a repeated layer without an iteration index, or into nested repeats |
 | 3006 | error | Unit not valid in this field |
 | 3101 | error | Negative width or height (at render time) |
-| 3102 | error | List index or iteration index out of range (at render time) |
-| 3103 | error | Division by zero (at render time) |
+| 3102 | error | List index or iteration index out of range, or `last()` of an empty list (at render time) |
+| 3103 | error | Math error (division by zero, empty list average/min/max, result not a finite number, value outside a function's domain) (at render time) |
 | 3104 | error | List lookup by a key no item has (at render time) |
+| 3105 | error | Text is not a valid date, time or date-time, or a date token is used on a time-only value (at render time) |
+| 3106 | error | Text result over 10 000 bytes (at render time) |
+| 3107 | error | Argument out of range: `roman` outside 1 to 3999, an empty `part` separator, `rand_int` with `lo` greater than `hi` (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |
@@ -140,6 +161,9 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | `3005` | Referencing a layer that uses `repeat` | Pick an iteration, `@layer[0].bounds.cx`, or reference a group around it |
 | `5001 ... visible layers after repeat` | A card draws more than 500 layers | Hide variants with `visible`, see [the layer limit](@/docs/repeat.md#the-layer-limit) |
 | `3006` | `%` in `size`, `radius`, ... | Use `vw` or `vh` |
-| `3104` | `stats.Speed` on a card without that key | Add the item, or check spelling and case |
+| `3104` | `stats.Speed` on a card without that key | Add the item, or check spelling and case; `get(stats, 'Speed', 0)` gives a fallback |
+| `3103` from `avg`, `min` or `max` | An empty list | Guard with `len(list) > 0`, or give a fallback in the expression |
+| `3105` | A date that is not `YYYY-MM-DD` | Use the ISO form; see [Dates and times](@/docs/expressions-functions-dates.md#accepted-text) |
+| `1113` | A design function named like a built-in | Rename the function, or keep the name on purpose: the design's function is used in this design |
 | `4001` | Image path wrong, URL unreachable | Fix the path; with `--preview` you get a placeholder |
 | `4005` | Font file missing | Add the file, or fix the `fonts` path |

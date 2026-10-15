@@ -29,6 +29,7 @@
 		isDivider,
 		isGroup,
 		isObj,
+		type Json,
 		type LayerType,
 		layerAtPointer,
 		layerPointer,
@@ -63,9 +64,12 @@
 		type CheckResult,
 		type Diagnostic,
 		Engine,
+		type Param,
+		renderClock,
 		type RenderResult,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
+	import { LIVE_CONTEXT, type LiveContext } from "./lib/expr/live";
 	import Problems from "./lib/Problems.svelte";
 	import {
 		baseOf,
@@ -77,7 +81,7 @@
 		keepName,
 		pathsUnder,
 		rewriteRefs,
-		useCounts,
+		usedBy,
 	} from "./lib/paths";
 	import {
 		blankCards,
@@ -98,6 +102,7 @@
 		isText,
 		listExamples,
 		loadExample,
+		MANIFEST,
 		openWritable,
 		PROJECT_EXT,
 		PROJECT_MIME,
@@ -109,6 +114,9 @@
 		setCardValue,
 		slug,
 		textOf,
+		UTC_OFFSET_LIMIT,
+		utcOffsetOf,
+		withUtcOffset,
 		writeCsv,
 		writeFile,
 	} from "./lib/project";
@@ -130,6 +138,8 @@
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import {
+		type DragPreview,
+		dragLabels,
 		type PreviewQuality,
 		previewScale,
 		qualityLabels,
@@ -137,7 +147,7 @@
 	} from "./lib/quality";
 	import { loadPref, savePref } from "./lib/ui/drag";
 	import FileBrowser from "./lib/ui/FileBrowser.svelte";
-	import Icon from "./lib/ui/Icon.svelte";
+	import Icon, { layerIcon } from "./lib/ui/Icon.svelte";
 	import MenuHost from "./lib/ui/MenuHost.svelte";
 	import {
 		askText,
@@ -146,11 +156,33 @@
 		openMenu,
 	} from "./lib/ui/overlay.svelte";
 	import ProgressHost from "./lib/ui/ProgressHost.svelte";
-	import { formatBytes, formatMs, Run } from "./lib/ui/progress.svelte";
+	import {
+		formatBytes,
+		formatMs,
+		progress,
+		Run,
+	} from "./lib/ui/progress.svelte";
 	import Select from "./lib/ui/Select.svelte";
 	import Splitter from "./lib/ui/Splitter.svelte";
 	import TooltipHost from "./lib/ui/TooltipHost.svelte";
 	import Window from "./lib/ui/Window.svelte";
+	import FunctionsWindow from "./lib/expr/FunctionsWindow.svelte";
+	import {
+		closeFunctions,
+		functionsRef,
+		openFunctions,
+	} from "./lib/expr/functionsRef.svelte";
+	import FontsWindow, {
+		type FontAdd,
+		type FontsTarget,
+	} from "./lib/fonts/FontsWindow.svelte";
+	import {
+		findLicense,
+		fontEntryPath,
+		licenseKind,
+		previewFace,
+		previewTextOf,
+	} from "./lib/fonts/project";
 
 	// CodeMirror is only needed in the Advanced view; load it on demand.
 	const loadEditor = () => import("./lib/Editor.svelte");
@@ -218,6 +250,44 @@
 		}
 	}
 	setContext("yoshida-goto", goto);
+	// Live values in the formula panel: the field evaluated for the card on
+	// the stage.
+	const live: LiveContext = {
+		card: () => {
+			const s = currentSet;
+			const c = currentCard;
+			return s && c ? `${c.id} (${cardIndex + 1}/${s.cards.length})` : null;
+		},
+		eval: (path, src) =>
+			currentSet
+				? engine.eval(currentSet.name, path, src, cardIndex, renderClock())
+				: Promise.resolve(null),
+		scope: (path) =>
+			currentSet
+				? engine.scope(currentSet.name, path)
+				: Promise.resolve(null),
+		design: () => doc,
+		extract: (next, path, text) =>
+			editDoc((d) => {
+				for (const key of ["consts", "functions"])
+					if (next[key] !== undefined) d[key] = next[key] as Json;
+				setPointer(d, path, text);
+			}, "extract"),
+	};
+
+	/** Sets the value at a JSON pointer of `d` (the parents exist: it is a field being edited). */
+	function setPointer(d: Obj, path: string, v: string) {
+		const segs = path
+			.split("/")
+			.slice(1)
+			.map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
+		let cur: unknown = d;
+		for (const seg of segs.slice(0, -1))
+			cur = (cur as Record<string, unknown> | undefined)?.[seg];
+		if (cur && typeof cur === "object")
+			(cur as Record<string, unknown>)[segs[segs.length - 1]] = v;
+	}
+	setContext(LIVE_CONTEXT, live);
 	const selectedLayer = $derived(
 		selectedLayers.length === 1 ? selectedLayers[0] : null,
 	);
@@ -256,7 +326,18 @@
 		savePref(qualityKey, { quality: q });
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	// What the stage shows while a layer is dragged (see Stage's drag preview).
+	const dragKey = "yoshida.dragPreview";
+	let dragPreview = $state<DragPreview>(
+		loadPref(dragKey, { mode: "live" as string }).mode === "fast"
+			? "fast"
+			: "live",
+	);
+
+	function setDragPreview(m: DragPreview) {
+		dragPreview = m;
+		savePref(dragKey, { mode: m });
+	}
 
 	// Panel sizes, remembered in this browser. null: share the space evenly.
 	const layoutDefaults = {
@@ -310,7 +391,37 @@
 		[...files.keys()].filter((p) => !isKeep(p)).sort(),
 	);
 	const imageFiles = $derived(fileList.filter(isImage));
-	const fontFiles = $derived(fileList.filter((f) => /\.(ttf|otf)$/i.test(f)));
+	const fontFiles = $derived(
+		fileList.filter((f) => /\.(ttf|otf|ttc)$/i.test(f)),
+	);
+	// CSS font-family of each project font, loaded from its bytes for previews.
+	let fontFaces = $state<Record<string, string | null>>({});
+	$effect(() => {
+		for (const p of fontFiles) {
+			const data = files.get(p);
+			if (!data) continue;
+			previewFace(data).then((name) => {
+				if (fontFaces[p] !== name) fontFaces = { ...fontFaces, [p]: name };
+			});
+		}
+	});
+	// License tag of each project font: "" when no license file is next to it.
+	const fontLicenses = $derived(
+		Object.fromEntries(
+			fontFiles.map((p) => {
+				const lp = findLicense(files, p);
+				const kind = lp ? licenseKind(textOf(files.get(lp)!)) : "";
+				const tags: Record<string, string> = {
+					OFL: "OFL",
+					APACHE2: "Apache",
+					UFL: "UFL",
+					restricted: "limited",
+					other: "license",
+				};
+				return [p, kind ? tags[kind] : ""];
+			}),
+		),
+	);
 	const sets = $derived(check?.project.sets ?? []);
 	const currentSet = $derived(sets.find((s) => s.name === setName));
 	const currentCard = $derived(currentSet?.cards[cardIndex]);
@@ -329,9 +440,37 @@
 		}
 		return out;
 	});
-	const diagnostics: Diagnostic[] = $derived(
-		lastRender?.diagnostics ?? check?.diagnostics ?? [],
-	);
+	/** Same identity as the Problems list uses to show a problem once. */
+	const diagnosticKey = (d: Diagnostic) =>
+		[d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join("\u0000");
+	// The project check covers every file; the preview render adds what the
+	// current card reports on top of it.
+	const diagnostics: Diagnostic[] = $derived.by(() => {
+		const seen = new Set<string>();
+		const out: Diagnostic[] = [];
+		for (const d of [
+			...(check?.diagnostics ?? []),
+			...(lastRender?.diagnostics ?? []),
+		]) {
+			const key = diagnosticKey(d);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			out.push(d);
+		}
+		return out;
+	});
+	/** Errors and warnings per file, for the Files tab. Hints do not count. */
+	const fileProblems = $derived.by(() => {
+		const m = new Map<string, { errors: number; warnings: number }>();
+		for (const d of diagnostics) {
+			if (!d.file || d.severity === "hint") continue;
+			const c = m.get(d.file) ?? { errors: 0, warnings: 0 };
+			if (d.severity === "error") c.errors++;
+			else c.warnings++;
+			m.set(d.file, c);
+		}
+		return m;
+	});
 	const fileDiagnostics = $derived(
 		diagnostics.filter((d) => d.file === selected),
 	);
@@ -655,6 +794,13 @@
 				action: newDesign,
 			},
 			{
+				label: "Fonts…",
+				icon: "text",
+				detail: "preview, upload, Google Fonts",
+				disabled: !projectName || !doc,
+				action: () => openFonts(),
+			},
+			{
 				label: "Add files…",
 				icon: "files",
 				detail: uploadFolder
@@ -687,6 +833,12 @@
 				action: exportProject,
 			},
 			{
+				label: "Project settings…",
+				detail: "UTC offset for render time",
+				disabled: !open,
+				action: openSettings,
+			},
+			{
 				label: "Rename…",
 				icon: "pencil",
 				disabled: !open,
@@ -710,7 +862,7 @@
 		for (const p of myProjects)
 			items.push({
 				label: p.name,
-				icon: p.id === projectId ? "check" : "",
+				icon: p.id === projectId ? "check" : undefined,
 				detail: `${formatAge(p.updated)} · ${formatSize(p.size)}`,
 				action: () =>
 					p.id === projectId ? undefined : openSaved(p.id),
@@ -719,7 +871,7 @@
 		for (const ex of examples)
 			items.push({
 				label: ex.title,
-				icon: !projectId && ex.name === projectName ? "check" : "",
+				icon: !projectId && ex.name === projectName ? "check" : undefined,
 				detail: "opens a fresh copy",
 				action: () => openExample(ex.name),
 			});
@@ -768,6 +920,9 @@
 		});
 	}
 
+	/** Value of the "New design…" command row in the DESIGN picker. */
+	const newDesignOption = "\u0000new-design";
+
 	/** Adds a blank design with its own card file to the open project. */
 	async function newDesign() {
 		const name = (
@@ -796,6 +951,111 @@
 		}
 		mode = "build";
 		leftTab = "layers";
+	}
+
+	/** The design's own defaults, keyed by param name (params without one are left out). */
+	function sampleCard(params: Param[]): Record<string, unknown> {
+		const card: Record<string, unknown> = {};
+		for (const p of params)
+			if (p.default !== undefined) card[p.name] = p.default;
+		return card;
+	}
+
+	/**
+	 * Adds a card file for a design to the open project and switches to it.
+	 * Without a design, a menu asks which design it is for.
+	 */
+	async function newCardFile(
+		design?: string,
+		at?: { x: number; y: number },
+	) {
+		const named = new Map<string, string>();
+		for (const s of sets)
+			if (!named.has(s.design))
+				named.set(s.design, s.design_name || baseOf(s.design));
+		if (!named.size) return;
+		if (!design) {
+			const pos = at ?? {
+				x: window.innerWidth / 2,
+				y: window.innerHeight / 3,
+			};
+			const items: MenuItem[] = [{ heading: "Design" }];
+			for (const [path, label] of named)
+				items.push({
+					label,
+					icon: "design",
+					detail: path,
+					action: () => newCardFile(path),
+				});
+			openMenu(pos.x, pos.y, items);
+			return;
+		}
+		if (!files.has(design)) return;
+		const label = named.get(design) ?? baseOf(design);
+		const name = (
+			await askText({
+				title: "New card file",
+				message: `Adds a card file for ${label}.`,
+				value: `${label} cards`,
+				confirm: "Add card file",
+				validate: needName,
+			})
+		)?.trim();
+		if (!name) return;
+		let stem = slug(name);
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${slug(name)}-${n}`;
+		const cards = `cards/${stem}.cards.json`;
+		const params = sets.find((x) => x.design === design)?.params ?? [];
+		await updateFile(cards, blankCards(design, name, sampleCard(params)));
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
+	}
+
+	/**
+	 * Stem for a new card file of a design: the design's file name without
+	 * ".design.json", kept as is when it is plain, else slugged; a number is
+	 * added when the name is taken.
+	 */
+	function sampleStem(design: string): string {
+		const base = baseOf(design).replace(/\.design\.json$/i, "");
+		const first = /^[a-z0-9_-]+$/i.test(base) ? base : slug(base);
+		let stem = first;
+		for (let n = 2; files.has(`cards/${stem}.cards.json`); n++)
+			stem = `${first}-${n}`;
+		return stem;
+	}
+
+	/** Where "Create card file" writes for the open design, when it has no card file. */
+	const sampleCardsPath = $derived(
+		currentSet && !currentSet.cards_file
+			? `cards/${sampleStem(currentSet.design)}.cards.json`
+			: undefined,
+	);
+
+	/** Writes one sample card (the design's defaults) for the open design, without a dialog. */
+	async function createSampleCards() {
+		const set = currentSet;
+		if (!set || set.cards_file) return;
+		const stem = sampleStem(set.design);
+		const cards = `cards/${stem}.cards.json`;
+		await updateFile(
+			cards,
+			blankCards(set.design, set.design_name || stem, sampleCard(set.params)),
+		);
+		await refresh();
+		const s = sets.find((x) => x.cards_file === cards);
+		if (s) {
+			setName = s.name;
+			cardIndex = 0;
+			await renderPreview();
+		}
+		status = `Created ${cards} with one sample card.`;
 	}
 
 	/**
@@ -844,7 +1104,10 @@
 	let uploadFolder = $state("");
 	let filesSelected: string | null = $state(null);
 	let filesHighlight: string | null = $state(null);
-	const fileUses = $derived(useCounts(files));
+	const fileUsedBy = $derived(usedBy(files));
+	const fileUses = $derived(
+		new Map([...fileUsedBy].map(([p, by]) => [p, by.length])),
+	);
 
 	async function uploadTo(folder: string) {
 		const list = await pickFiles("", { multiple: true });
@@ -986,6 +1249,122 @@
 	// ---------------------------------------------------------------- card browser
 
 	let browsing = $state(false);
+
+	// ---------------------------------------------------------------- fonts window
+
+	let fontsTarget = $state<FontsTarget | null>(null);
+
+	/** The design's own functions, for the Functions window. */
+	const designFunctions = $derived.by(() => {
+		const fns = doc && isObj(doc.functions) ? doc.functions : {};
+		return Object.entries(fns)
+			.filter(([, f]) => isObj(f))
+			.map(([name, f]) => {
+				const fn = f as { args?: unknown; expr?: unknown; note?: unknown };
+				const args = isObj(fn.args)
+					? Object.entries(fn.args)
+							.map(([a, t]) => `${a}: ${t}`)
+							.join(", ")
+					: "";
+				const note = typeof fn.note === "string" ? fn.note : undefined;
+				return { name, args, expr: String(fn.expr ?? ""), note };
+			});
+	});
+
+	/** The selected text layer, for the Fonts window's preview and "use". */
+	const fontLayer = $derived.by(() => {
+		if (!doc || !selectedLayer) return null;
+		const l = effectiveLayer(doc, selectedLayer);
+		if (l?.type !== "text") return null;
+		const values: Record<string, unknown> = {};
+		for (const p of currentSet?.params ?? []) values[p.name] = p.default;
+		const text = previewTextOf(String(l.text ?? ""), { ...values, ...currentCard?.values });
+		return { id: selectedLayer, font: String(l.font ?? "default"), text };
+	});
+
+	function openFonts(target: FontsTarget = {}) {
+		fontsTarget = { ...target };
+	}
+
+	// Project settings (the manifest's utc_offset).
+	let settingsOpen = $state(false);
+	let offsetText = $state("");
+	let offsetError = $state("");
+
+	function manifestText(): string | undefined {
+		const d = files.get(MANIFEST);
+		return d ? textOf(d) : undefined;
+	}
+
+	function openSettings() {
+		offsetText = String(utcOffsetOf(manifestText()));
+		offsetError = "";
+		settingsOpen = true;
+	}
+
+	/** Writes utc_offset into yoshida.json (left out when 0). */
+	async function setUtcOffset(hours: number) {
+		const before = manifestText();
+		// No manifest and no offset: nothing to write.
+		if (before === undefined && hours === 0) return;
+		try {
+			const text = withUtcOffset(before, hours);
+			offsetError = "";
+			offsetText = hours ? String(hours) : "";
+			await updateFile(MANIFEST, text, true);
+			status = hours
+				? `UTC offset set to ${hours} hours.`
+				: "UTC offset removed (0 hours).";
+		} catch (e) {
+			offsetError = `Could not update ${MANIFEST}: ${(e as Error).message}`;
+		}
+	}
+
+	/** Returns false, with the error shown, when raw is not a usable offset. */
+	function offsetEntered(raw: string): boolean {
+		const t = raw.trim();
+		const v = t === "" ? 0 : Number(t);
+		if (!Number.isFinite(v) || Math.abs(v) > UTC_OFFSET_LIMIT) {
+			offsetError = `Enter a number from -${UTC_OFFSET_LIMIT} to ${UTC_OFFSET_LIMIT}.`;
+			return false;
+		}
+		setUtcOffset(v);
+		return true;
+	}
+
+	/**
+	 * Adds font and license files, declares font names in the design and
+	 * switches the selected text layer to `use`, all as one undo step.
+	 */
+	async function applyFonts(
+		add: FontAdd[],
+		declare: Record<string, string>,
+		use: string | null,
+	) {
+		const changes: Snapshot = add.map((a) => ({ path: a.path, data: a.data }));
+		if (designPath && doc && (Object.keys(declare).length || use)) {
+			const next = clone(doc);
+			if (Object.keys(declare).length) {
+				const fonts: Record<string, Json> = isObj(next.fonts)
+					? next.fonts
+					: {};
+				// A name already declared for the same file keeps its note.
+				for (const [n, path] of Object.entries(declare))
+					if (fontEntryPath(fonts[n]) !== path) fonts[n] = path;
+				next.fonts = fonts;
+			}
+			if (use && selectedLayer) {
+				const l = findLayer(next, selectedLayer);
+				if (l) l.font = use;
+			}
+			const text = formatJson(next);
+			if (text !== designText)
+				changes.push({ path: designPath, data: bytesOf(text) });
+		}
+		if (!changes.length) return;
+		recordMany(changes.map((c) => snap(c.path)));
+		await writeFiles(changes);
+	}
 	const thumbCache = new Map<string, Promise<string | null>>();
 	let thumbFiles: Files | null = null;
 
@@ -1004,7 +1383,7 @@
 				.render({
 					set: setName,
 					card: i,
-					date: today,
+					...renderClock(),
 					preview: true,
 					format: "png",
 					// Tiles are at most 320 x 448 screen pixels.
@@ -1108,6 +1487,28 @@
 		}
 	}
 
+	/** Puts a rendered picture (drawn at `scale`) on the stage; returns the canvas size. */
+	function showPicture(r: RenderResult, scale: number) {
+		shownScale = scale;
+		const size = {
+			w: r.canvas_width || r.width,
+			h: r.canvas_height || r.height,
+		};
+		imageSize = size;
+		image = new ImageData(
+			new Uint8ClampedArray(
+				r.bin.buffer as ArrayBuffer,
+				r.bin.byteOffset,
+				r.bin.byteLength,
+			),
+			r.width,
+			r.height,
+		);
+		layout = r.layout ?? [];
+		stale = false;
+		return size;
+	}
+
 	async function renderPreview() {
 		if (!currentSet?.cards.length) {
 			lastRender = null;
@@ -1126,15 +1527,11 @@
 			return;
 		}
 		const t0 = performance.now();
-		// Resizing and rotating render on every move: at half the pixels.
-		const scale =
-			gestureBase !== null
-				? Math.max(wantedScale / 2, 1 / 64)
-				: wantedScale;
+		const scale = wantedScale;
 		const r = await engine.render({
 			set: setName,
 			card: cardIndex,
-			date: today,
+			...renderClock(),
 			preview: true,
 			format: "rgba",
 			layout: true,
@@ -1143,26 +1540,17 @@
 		renderMs = Math.round(performance.now() - t0);
 		renderScale = scale;
 		lastRender = r;
+		if (gestureBase !== null) {
+			// A drag started while this render ran: its picture and layout are
+			// older than what the stage shows. The release renders again.
+			previewSkipped = true;
+			return;
+		}
 		if (r.width) {
-			shownScale = scale;
-			imageSize = {
-				w: r.canvas_width || r.width,
-				h: r.canvas_height || r.height,
-			};
-			image = new ImageData(
-				new Uint8ClampedArray(
-					r.bin.buffer as ArrayBuffer,
-					r.bin.byteOffset,
-					r.bin.byteLength,
-				),
-				r.width,
-				r.height,
-			);
-			layout = r.layout ?? [];
-			stale = false;
+			const size = showPicture(r, scale);
 			dragSprite = null;
 			status =
-				`${imageSize.w} × ${imageSize.h} px` +
+				`${size.w} × ${size.h} px` +
 				(scale < 1 ? ` (preview at ${r.width} × ${r.height})` : "") +
 				`, rendered in ${renderMs} ms`;
 		} else {
@@ -1623,20 +2011,20 @@
 			});
 			for (const t of layerTypes)
 				items.push({
-					label: typeLabels[t].replace(/^\S+\s/, ""),
-					icon: typeLabels[t].split(" ")[0],
+					label: typeLabels[t],
+					icon: layerIcon(t),
 					action: () => addLayer(t),
 				});
 			items.push(
 				{
 					label: "Group",
-					icon: "▤",
+					icon: "group",
 					detail: "empty",
 					action: () => addContainer("group"),
 				},
 				{
 					label: "Divider…",
-					icon: "―",
+					icon: "divider",
 					detail: "only in this list",
 					action: () => addContainer("divider"),
 				},
@@ -1645,12 +2033,14 @@
 			items.push(
 				{
 					label: "Paste",
+					icon: "paste",
 					shortcut: "Ctrl+V",
 					disabled: !clipboard.length,
 					action: () => pasteFromMemory(),
 				},
 				{
 					label: "Select all",
+					icon: "select-all",
 					shortcut: "Ctrl+A",
 					action: () =>
 						(selectedLayers = layersOf(doc!)
@@ -1664,18 +2054,19 @@
 		if (one)
 			items.push({
 				label: "Rename…",
-				icon: "✎",
+				icon: "pencil",
 				action: () => renameAsk(one),
 			});
 		if (one && isDivider(l))
 			items.push({
 				label: "Edit title…",
+				icon: "pencil",
 				action: () => editDividerLabel(one),
 			});
 		if (one)
 			items.push({
 				label: "Add above",
-				icon: "＋",
+				icon: "plus",
 				detail: "layer, group or divider",
 				action: () => {
 					selectedLayers = [one];
@@ -1691,17 +2082,19 @@
 		items.push(
 			{
 				label: "Duplicate",
-				icon: "⧉",
+				icon: "copy",
 				shortcut: "Ctrl+D",
 				action: () => duplicateMany(ids),
 			},
 			{
 				label: "Copy",
+				icon: "clipboard",
 				shortcut: "Ctrl+C",
 				action: () => copyToMemory(ids),
 			},
 			{
 				label: "Cut",
+				icon: "scissors",
 				shortcut: "Ctrl+X",
 				action: () => {
 					copyToMemory(ids);
@@ -1710,6 +2103,7 @@
 			},
 			{
 				label: "Paste above",
+				icon: "paste",
 				shortcut: "Ctrl+V",
 				disabled: !clipboard.length,
 				action: () => pasteFromMemory(),
@@ -1717,12 +2111,13 @@
 			{ separator: true },
 			{
 				label: "Group",
-				icon: "▤",
+				icon: "group",
 				shortcut: "Ctrl+G",
 				action: groupSelected,
 			},
 			{
 				label: "Ungroup",
+				icon: "ungroup",
 				shortcut: "Ctrl+Shift+G",
 				disabled: !anyGroup,
 				action: ungroupSelected,
@@ -1733,11 +2128,13 @@
 			items.push(
 				{
 					label: "Bring forward",
+					icon: "up",
 					shortcut: "Ctrl+↑",
 					action: () => editDoc((d) => stepLayer(d, one, 1)),
 				},
 				{
 					label: "Send backward",
+					icon: "down",
 					shortcut: "Ctrl+↓",
 					action: () => editDoc((d) => stepLayer(d, one, -1)),
 				},
@@ -1745,6 +2142,7 @@
 			if (at)
 				items.push({
 					label: `Move out of '${at}'`,
+					icon: "move-out",
 					action: () => editDoc((d) => reorderLayer(d, one, at)),
 				});
 		}
@@ -1753,19 +2151,19 @@
 			items.push(
 				{
 					label: l.visible === false ? "Show" : "Hide",
-					icon: l.visible === false ? "◉" : "○",
+					icon: l.visible === false ? "eye" : "eye-off",
 					action: () => toggleVisible(one!),
 				},
 				{
 					label: locked.has(one!) ? "Unlock" : "Lock",
-					icon: "🔒",
+					icon: locked.has(one!) ? "lock" : "unlock",
 					action: () => toggleLock(one!),
 				},
 			);
 		}
 		items.push({
 			label: ids.length > 1 ? `Delete ${ids.length} layers` : "Delete",
-			icon: "🗑",
+			icon: "trash",
 			shortcut: "Del",
 			danger: true,
 			action: () => removeLayers(ids),
@@ -1836,13 +2234,20 @@
 	let clipboard: Obj[] = [];
 
 	function canUseClipboard(e: ClipboardEvent) {
+		// A text field handled it (CodeMirror cuts the whole line when
+		// nothing is selected, which also removes the event's target from
+		// the page, so the target alone cannot tell).
+		if (e.defaultPrevented) return false;
+		const editable =
+			"input, textarea, select, [contenteditable], .cm-editor";
 		const t = e.target as HTMLElement | null;
+		const focused = document.activeElement as HTMLElement | null;
 		return (
 			mode === "build" &&
 			!!doc &&
-			!t?.closest(
-				"input, textarea, select, [contenteditable], .cm-editor",
-			)
+			!!t?.isConnected &&
+			!t.closest(editable) &&
+			!focused?.closest(editable)
 		);
 	}
 
@@ -1935,13 +2340,76 @@
 	// started, so every move recomputes from the same base.
 	let gestureBase: string | null = null;
 
-	// Moving layers does not render while the pointer moves: at the start the
-	// card is rendered once without the moved layers and once with only them,
-	// and the stage slides the second picture over the first. The real render
+	function applyGesture(d: Obj, g: Gesture) {
+		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
+		else if (g.mode === "resize")
+			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
+		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
+		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+	}
+
+	// Moving layers, Fast drag preview: at the start the card is rendered as
+	// three pictures, the layers below the moved ones (with the card), the moved
+	// ones alone, and the layers above them alone. The stage slides the moved
+	// picture over the first and draws the last over it. The real render
 	// follows on release. (Layers that depend on the moved ones by expression
-	// catch up then.)
+	// do not follow until then.)
 	let dragSprite = $state.raw<Sprite | null>(null);
 	let spriteToken: object | null = null;
+
+	/**
+	 * Layers drawn above the layers `ids` (in card order), at every level, not
+	 * including them. A later sibling inside a group is listed as it is (the
+	 * render filter takes nested ids); a group listed covers its children, so
+	 * only the outermost of those are listed.
+	 */
+	function layersAbove(ids: string[]): string[] {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return [];
+		const order = layersOf(d).map((l) => String(l.id));
+		const cut = Math.max(-1, ...ids.map((id) => order.indexOf(id)));
+		if (cut < 0) return [];
+		const moved = new Set(ids);
+		const out: string[] = [];
+		const listed = new Set<string>();
+		for (const id of order.slice(cut + 1)) {
+			// Inside a moved layer (it moves with the layer) or inside a listed group.
+			if (ancestorsOf(d, id).some((a) => moved.has(a) || listed.has(a))) continue;
+			out.push(id);
+			listed.add(id);
+		}
+		return out;
+	}
+
+	/**
+	 * Whether Fast cannot draw the moved layers exactly, so the gesture uses
+	 * Live: an ancestor group with a repeat, effects, opacity below 1 or a
+	 * rotation (rendered through a scratch bitmap, or once per iteration), or a
+	 * layer that is not moved lying between moved layers in card order.
+	 */
+	function needsLive(ids: string[]): boolean {
+		const d = doc;
+		if (!d || !Array.isArray(d.layers)) return true;
+		const all = layersOf(d);
+		const byId = new Map(all.map((l) => [String(l.id), l]));
+		const moved = new Set(ids);
+		const composites = (g: Obj) =>
+			g.repeat != null ||
+			(Array.isArray(g.effects) ? g.effects.length > 0 : g.effects != null) ||
+			(typeof g.opacity === "number" ? g.opacity < 1 : g.opacity != null) ||
+			(typeof g.rotate === "number" ? g.rotate !== 0 : g.rotate != null);
+		for (const id of ids)
+			for (const a of ancestorsOf(d, id))
+				if (byId.has(a) && composites(byId.get(a)!)) return true;
+		const pos = ids.map((id) => all.findIndex((l) => String(l.id) === id));
+		if (pos.some((i) => i < 0)) return true;
+		for (let i = Math.min(...pos) + 1; i < Math.max(...pos); i++) {
+			const id = String(all[i].id);
+			if (!moved.has(id) && !ancestorsOf(d, id).some((a) => moved.has(a)))
+				return true;
+		}
+		return false;
+	}
 
 	async function prepareSprite(ids: string[]) {
 		const token = {};
@@ -1949,18 +2417,23 @@
 		const args = {
 			set: setName,
 			card: cardIndex,
-			date: today,
+			...renderClock(),
 			preview: true,
 			format: "rgba" as const,
-			scale: shownScale,
+			scale: wantedScale,
 		};
+		const above = layersAbove(ids);
 		try {
-			const [bg, fg] = await Promise.all([
-				engine.render({ ...args, except: ids }),
+			const [bg, fg, top] = await Promise.all([
+				engine.render({ ...args, except: [...ids, ...above] }),
 				engine.render({ ...args, only: ids }),
+				above.length
+					? engine.render({ ...args, only: above })
+					: Promise.resolve(null),
 			]);
 			if (spriteToken !== token || !bg.width || !fg.width) return;
-			const bitmap = (r: RenderResult) =>
+			// async: a throw here becomes a rejection, so the others are still closed.
+			const bitmap = async (r: RenderResult) =>
 				createImageBitmap(
 					new ImageData(
 						new Uint8ClampedArray(
@@ -1972,18 +2445,82 @@
 						r.height,
 					),
 				);
-			const [b, f] = await Promise.all([bitmap(bg), bitmap(fg)]);
-			if (spriteToken !== token) {
-				b.close();
-				f.close();
+			const settled = await Promise.allSettled([
+				bitmap(bg),
+				bitmap(fg),
+				top?.width ? bitmap(top) : Promise.resolve(null),
+			]);
+			// Close the bitmaps that were made, also when a later one failed.
+			const made: ImageBitmap[] = [];
+			for (const s of settled)
+				if (s.status === "fulfilled" && s.value) made.push(s.value);
+			if (
+				settled.some((s) => s.status === "rejected") ||
+				spriteToken !== token
+			) {
+				for (const m of made) m.close();
 				return;
 			}
-			dragSprite = { bg: b, fg: f, dx: spriteMove.dx, dy: spriteMove.dy };
+			const [b, f, t] = settled.map((s) =>
+				s.status === "fulfilled" ? s.value : null,
+			) as [ImageBitmap, ImageBitmap, ImageBitmap | null];
+			dragSprite = {
+				bg: b,
+				fg: f,
+				top: t,
+				dx: spriteMove.dx,
+				dy: spriteMove.dy,
+			};
 		} catch {
 			// No sprite: the boxes still follow the pointer, the render comes on release.
 		}
 	}
 	let spriteMove = { dx: 0, dy: 0 };
+
+	// Live gesture preview (moving in Live mode, resizing, rotating, moving a
+	// point): the whole card is re-rendered with the gesture applied, without
+	// checking the project or touching the open files. One render runs at a
+	// time; gestures that arrive meanwhile are skipped, the latest is rendered next.
+	let liveToken: object | null = null;
+	let liveWant: Gesture | null = null;
+	let liveRunning = false;
+	/** A preview render finished during a gesture and was not shown. */
+	let previewSkipped = false;
+
+	async function liveRender(token: object) {
+		if (liveRunning) return;
+		liveRunning = true;
+		try {
+			while (liveWant && liveToken === token) {
+				const want = liveWant;
+				liveWant = null;
+				const d = JSON.parse(gestureBase!) as Obj;
+				applyGesture(d, want);
+				// The worker reads the design from its file system: put the candidate there.
+				await engine.put(designPath!, bytesOf(formatJson(d)));
+				if (liveToken !== token) break;
+				const scale = wantedScale;
+				const r = await engine.render({
+					set: setName,
+					card: cardIndex,
+					...renderClock(),
+					preview: true,
+					format: "rgba",
+					layout: true,
+					scale,
+				});
+				if (liveToken !== token) break;
+				if (r.width) showPicture(r, scale);
+			}
+		} catch (err) {
+			// The last picture stays; the release renders again.
+			status = `Live preview failed: ${err instanceof Error ? err.message : err}`;
+		} finally {
+			liveRunning = false;
+			// A newer gesture may have asked for a render while this one ran.
+			if (liveWant && liveToken) void liveRender(liveToken);
+		}
+	}
 
 	$effect(() => {
 		const sp = dragSprite;
@@ -1992,6 +2529,7 @@
 			if (sp && dragSprite?.bg !== sp.bg) {
 				sp.bg.close();
 				sp.fg.close();
+				sp.top?.close();
 			}
 		};
 	});
@@ -2000,37 +2538,52 @@
 		if (!designPath) return;
 		if (phase === "start") {
 			gestureBase = designText;
+			previewSkipped = false;
 			spriteMove = { dx: 0, dy: 0 };
-			// A plain copy: the ids may be reactive state, which cannot be posted.
-			if (g.mode === "move") prepareSprite([...g.ids]);
+			if (g.mode === "move" && dragPreview === "fast" && !needsLive(g.ids)) {
+				// A plain copy: the ids may be reactive state, which cannot be posted.
+				prepareSprite([...g.ids]);
+			} else {
+				liveToken = {};
+				liveWant = null;
+			}
 			return;
 		}
 		if (gestureBase === null) return;
-		if (g.mode === "move" && phase === "move") {
-			spriteMove = { dx: g.dx, dy: g.dy };
-			if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+		if (phase === "move") {
+			if (liveToken) {
+				// A plain copy, for the same reason.
+				liveWant = $state.snapshot(g) as Gesture;
+				void liveRender(liveToken);
+			} else if (g.mode === "move") {
+				spriteMove = { dx: g.dx, dy: g.dy };
+				if (dragSprite) dragSprite = { ...dragSprite, dx: g.dx, dy: g.dy };
+			}
 			return;
 		}
-		if (phase === "end") spriteToken = null;
+		// phase "end"
+		const live = liveToken !== null;
+		spriteToken = null;
+		liveToken = null;
+		liveWant = null;
 		let d: Obj;
 		try {
 			d = JSON.parse(gestureBase);
 		} catch {
 			return;
 		}
-		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
-		else if (g.mode === "resize")
-			resizeLayer(d, g.id, g.from, g.to, canvasSize, g.angle);
-		else if (g.mode === "rotate") rotateLayer(d, g.id, g.angle);
-		else movePoint(d, g.id, g.index, g.dx, g.dy, canvasSize);
+		applyGesture(d, g);
 		const text = formatJson(d);
-		if (phase === "end") {
-			if (text !== gestureBase) record(designPath, gestureBase);
-			lastKey = "";
-			gestureBase = null;
-		}
+		if (text !== gestureBase) record(designPath, gestureBase);
+		lastKey = "";
+		gestureBase = null;
 		if (text !== designText) updateFile(designPath, text, true);
-		else if (phase === "end") dragSprite = null;
+		else {
+			dragSprite = null;
+			// A live preview left the changed card in the worker: put the card back.
+			if (live) engine.put(designPath, bytesOf(designText));
+			if (live || previewSkipped) refresh();
+		}
 	}
 
 	function nudge(ids: string[], dx: number, dy: number) {
@@ -2047,6 +2600,12 @@
 		);
 		const mod = e.ctrlKey || e.metaKey;
 		const k = e.key.toLowerCase();
+		if (k === "f1" && !mod && !e.shiftKey && !e.altKey) {
+			e.preventDefault();
+			if (functionsRef.open) closeFunctions();
+			else openFunctions();
+			return;
+		}
 		if (mod && !typing && (k === "z" || k === "y")) {
 			e.preventDefault();
 			if (k === "y" || e.shiftKey) redo();
@@ -2217,6 +2776,7 @@
 		if (!currentSet || !currentCard) return;
 		const card = currentCard;
 		const run = new Run(`Exporting ${card.id}.png`, []);
+		const clock = renderClock();
 		busy = "Rendering PNG…";
 		try {
 			run.log(`Rendering card '${card.id}' at full size in this browser`);
@@ -2227,7 +2787,7 @@
 			const r = await engine.render({
 				set: setName,
 				card: cardIndex,
-				date: today,
+				...clock,
 				preview: false,
 				format: "png",
 			});
@@ -2257,6 +2817,7 @@
 		const set = currentSet;
 		const name = setName;
 		const n = set.cards.length;
+		const clock = renderClock();
 		// Weights: rendering is nearly all of the time; the zip is stored, not compressed.
 		const run = new Run(
 			`Exporting ${n} card${n === 1 ? "" : "s"} as a ZIP`,
@@ -2283,7 +2844,7 @@
 				const r = await engine.render({
 					set: name,
 					card: i,
-					date: today,
+					...clock,
 					preview: false,
 					format: "png",
 				});
@@ -2339,6 +2900,7 @@
 		if (!currentSet) return;
 		if (onServer) return exportOnServer("pdf");
 		const n = currentSet.cards.length;
+		const clock = renderClock();
 		const run = new Run(
 			`Exporting ${n} page${n === 1 ? "" : "s"} as a PDF`,
 			[
@@ -2360,7 +2922,7 @@
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
-			const r = await engine.pdf(setName, today, bleed, n, (done) => {
+			const r = await engine.pdf(setName, clock, bleed, n, (done) => {
 				run.count(done, n);
 				run.detail(0, `${done} / ${n}`);
 			});
@@ -2395,17 +2957,27 @@
 		if (!currentSet) return;
 		const n = currentSet.cards.length;
 		const run = new Run(`Checking ${n} card${n === 1 ? "" : "s"}`, []);
+		const doneTitle = `Checked ${n} card${n === 1 ? "" : "s"}`;
 		busy = "Checking every card…";
 		try {
 			run.log(`Evaluating every card of '${currentSet.design_name}'`);
-			const r = await engine.checkCards(setName, today);
+			const r = await engine.checkCards(setName, renderClock());
 			const errs = errorCount(r.diagnostics);
 			const warns = r.diagnostics.filter(
 				(d) => d.severity === "warning",
 			).length;
+			const hints = r.diagnostics.filter(
+				(d) => d.severity === "hint",
+			).length;
+			const plural = (k: number, word: string) =>
+				`${k} ${word}${k === 1 ? "" : "s"}`;
 			status = `Checked ${n} card(s): ${errs} error(s), ${warns} warning(s)`;
 			showDiagnostics(r.diagnostics);
-			run.finish(status);
+			run.finish(
+				status,
+				`Checked ${plural(n, "card")}: ${plural(errs, "error")}, ${plural(warns, "warning")}, ${plural(hints, "hint")}.`,
+			);
+			if (run.live && progress.task) progress.task.title = doneTitle;
 		} catch (e) {
 			run.fail(`Could not check the cards: ${(e as Error).message}`);
 		} finally {
@@ -2438,6 +3010,7 @@
 		const set = currentSet;
 		const name = setName;
 		const n = set.cards.length;
+		const clock = renderClock();
 		const what = format === "pdf" ? "PDF" : "ZIP";
 		// Weights: a rough share of the time on a local network; the bar moves
 		// with the bytes sent, the cards the server reports and the bytes received.
@@ -2476,7 +3049,7 @@
 					[...files].map(([p, d]) => [p, b64(d)]),
 				),
 				set: name,
-				date: today,
+				...clock,
 				format,
 			});
 			const limit = (server?.max_body_mb ?? 0) * 1024 * 1024;
@@ -2646,12 +3219,25 @@
 			caption="Design"
 			label="Design file"
 			title="The design (card layout) being edited, with its card set"
-			options={sets.map((s) => ({
-				value: s.name,
-				label: s.design_name,
-				detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
-			}))}
+			options={[
+				...sets.map((s) => ({
+					value: s.name,
+					label: s.design_name,
+					detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
+				})),
+				{
+					value: newDesignOption,
+					label: "New design…",
+					detail: "with its own card file",
+					action: true,
+					divider: true,
+				},
+			]}
 			onchange={(v) => {
+				if (v === newDesignOption) {
+					newDesign();
+					return;
+				}
 				setName = v;
 				cardIndex = 0;
 				selectedLayers = [];
@@ -2671,44 +3257,38 @@
 			}}
 		/>
 	</span>
-	<span class="exports">
-		<span class="btn-group" role="group" aria-label="Export">
-			<span class="group-cap" aria-hidden="true"
-				><Icon name="download" /> Export</span
+	<span class="edit">
+		<div class="btn-group mode" role="tablist" aria-label="View">
+			<button
+				role="tab"
+				aria-selected={mode === "build"}
+				class:active={mode === "build"}
+				onclick={() => (mode = "build")}
+				title="Build the design visually">Builder</button
 			>
 			<button
-				onclick={exportPng}
-				title="Export the card shown ({currentCard?.id ??
-					'none'}) as a PNG image, rendered in this browser"
-				disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+				role="tab"
+				aria-selected={mode === "code"}
+				class:active={mode === "code"}
+				onclick={() => (mode = "code")}
+				title="Raw files, for everything the builder does not cover"
+				>Advanced (JSON)</button
+			>
+		</div>
+		<div class="btn-group history" role="group" aria-label="History">
+			<button
+				onclick={undo}
+				disabled={!undoStack.length}
+				aria-label="Undo"
+				title="Undo (Ctrl+Z)"><Icon name="undo" /></button
 			>
 			<button
-				onclick={exportZip}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design as PNG images in one ZIP{onServer
-					? ', rendered on the server'
-					: ''}">ZIP</button
+				onclick={redo}
+				disabled={!redoStack.length}
+				aria-label="Redo"
+				title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
 			>
-			<button
-				onclick={exportPdf}
-				disabled={!!busy || !currentSet?.ok}
-				title="Export all {currentSet?.cards.length ??
-					0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
-					? ', rendered on the server'
-					: ''}">PDF</button
-			>
-		</span>
-		{#if server?.render}
-			<label
-				class="switch server"
-				title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
-			>
-				<input type="checkbox" role="switch" bind:checked={useServer} />
-				<Icon name="cloud" />
-				<span>Render on server</span>
-			</label>
-		{/if}
+		</div>
 	</span>
 {/snippet}
 
@@ -2716,7 +3296,10 @@
 	<FileBrowser
 		{files}
 		{dirty}
+		saveTarget={dirHandle?.name ?? null}
 		uses={fileUses}
+		usedBy={fileUsedBy}
+		problems={fileProblems}
 		bind:selected={filesSelected}
 		bind:folder={uploadFolder}
 		highlight={filesHighlight}
@@ -2726,6 +3309,8 @@
 		onmove={(paths, folder) =>
 			movePaths(paths.map((p) => [p, join(folder, baseOf(p))]))}
 		onnewfolder={newFolder}
+		onnewdesign={newDesign}
+		onnewcards={newCardFile}
 		onupload={uploadTo}
 		onduplicate={duplicateFile}
 		ondropfiles={(list, folder) => importFiles(list, folder)}
@@ -2773,7 +3358,7 @@
 					class="mini"
 					onclick={() => (browsing = true)}
 					title="Browse all cards in a big window, as a table or as pictures"
-					>⤢ Browse</button
+					><Icon name="expand" /> Browse</button
 				>
 			</div>
 			<CardList
@@ -2923,48 +3508,59 @@
 				class="saved {saveState}"
 				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
-				{saveState === "saving"
-					? "Saving…"
-					: saveState === "saved"
-						? "✓ Saved in this browser"
-						: saveState === "unsaved"
-							? "● Unsaved"
-							: saveState === "error"
-								? "⚠ Not saved"
-								: "Example (saved once you change it)"}
+				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
+				<span class="text"
+					>{saveState === "saving"
+						? "Saving…"
+						: saveState === "saved"
+							? "Saved in this browser"
+							: saveState === "unsaved"
+								? "Unsaved"
+								: saveState === "error"
+									? "Not saved"
+									: "Example (saved once you change it)"}</span
+				>
 			</span>
 			<span class="spacer"></span>
-			<div class="btn-group mode" role="tablist" aria-label="View">
-				<button
-					role="tab"
-					aria-selected={mode === "build"}
-					class:active={mode === "build"}
-					onclick={() => (mode = "build")}
-					title="Build the design visually">Builder</button
-				>
-				<button
-					role="tab"
-					aria-selected={mode === "code"}
-					class:active={mode === "code"}
-					onclick={() => (mode = "code")}
-					title="Raw files, for everything the builder does not cover"
-					>Advanced (JSON)</button
-				>
-			</div>
-			<div class="btn-group history" role="group" aria-label="History">
-				<button
-					onclick={undo}
-					disabled={!undoStack.length}
-					aria-label="Undo"
-					title="Undo (Ctrl+Z)"><Icon name="undo" /></button
-				>
-				<button
-					onclick={redo}
-					disabled={!redoStack.length}
-					aria-label="Redo"
-					title="Redo (Ctrl+Shift+Z)"><Icon name="redo" /></button
-				>
-			</div>
+			<span class="exports">
+				<span class="btn-group" role="group" aria-label="Export">
+					<span class="group-cap" aria-hidden="true"
+						><Icon name="download" /> Export</span
+					>
+					<button
+						onclick={exportPng}
+						title="Export the card shown ({currentCard?.id ??
+							'none'}) as a PNG image, rendered in this browser"
+						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
+					>
+					<button
+						onclick={exportZip}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design as PNG images in one ZIP{onServer
+							? ', rendered on the server'
+							: ''}">ZIP</button
+					>
+					<button
+						onclick={exportPdf}
+						disabled={!!busy || !currentSet?.ok}
+						title="Export all {currentSet?.cards.length ??
+							0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
+							? ', rendered on the server'
+							: ''}">PDF</button
+					>
+				</span>
+				{#if server?.render}
+					<label
+						class="switch server"
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+					>
+						<input type="checkbox" role="switch" bind:checked={useServer} />
+						<Icon name="cloud" />
+						<span>Render on server</span>
+					</label>
+				{/if}
+			</span>
 			{#if dirHandle}
 				<button
 					class="save-btn"
@@ -2976,6 +3572,14 @@
 						: ""}</button
 				>
 			{/if}
+			<button
+				class="fn-btn"
+				onclick={() =>
+					functionsRef.open ? closeFunctions() : openFunctions()}
+				aria-pressed={functionsRef.open}
+				title="Function reference: every function with a short example (F1)"
+				><span class="fn-mark" aria-hidden="true">ƒ</span> Functions</button
+			>
 			<ThemeToggle />
 		</header>
 
@@ -3055,6 +3659,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>
@@ -3074,19 +3680,22 @@
 			<main class="center">
 				<div class="toolbar">
 					<span class="adds">
-						<span class="caption">Add</span>
 						<span
 							class="btn-group group"
 							role="group"
 							aria-label="Add layer"
 						>
+							<span class="group-cap" aria-hidden="true"
+								><Icon name="plus" /> Add</span
+							>
 							{#each layerTypes as t}
+								{@const ic = layerIcon(t)}
 								<button
 									disabled={!doc}
 									onclick={() => addLayer(t)}
 									aria-label="Add a {t} layer"
 									title="Add a {t} layer"
-									><Icon name={t} /><span
+									>{#if ic}<Icon name={ic} />{/if}<span
 										class="lbl"
 										aria-hidden="true">{typeLabels[t]}</span
 									></button
@@ -3127,6 +3736,18 @@
 						).map((q) => ({ value: q, label: qualityLabels[q] }))}
 						onchange={(v) => setPreviewQuality(v as PreviewQuality)}
 					/>
+					<Select
+						compact
+						caption="Drag"
+						label="Drag preview"
+						title="What the picture shows while layers are dragged. Live re-renders the whole card at the pointer, so layers above and below and layers that depend on the moved ones are right. Fast keeps the card still and moves only the dragged layers, drawn in their place in the stack; layers that depend on them follow on release. Fast switches to Live automatically for layers inside repeated or effect groups."
+						value={dragPreview}
+						options={(Object.keys(dragLabels) as DragPreview[]).map((m) => ({
+							value: m,
+							label: dragLabels[m],
+						}))}
+						onchange={(v) => setDragPreview(v as DragPreview)}
+					/>
 				</div>
 			</main>
 
@@ -3151,6 +3772,10 @@
 						{imageFiles}
 						upload={uploadImage}
 						{fontFiles}
+						{fontFaces}
+						{fontLicenses}
+						fontText={fontLayer?.text ?? ""}
+						onfonts={openFonts}
 						{diagnostics}
 						designFile={designPath ?? ""}
 						{editLayer}
@@ -3202,6 +3827,8 @@
 						{imageFiles}
 						upload={uploadImage}
 						onchange={setCard}
+						oncreate={createSampleCards}
+						createPath={sampleCardsPath}
 					/>
 				{/if}
 			</aside>
@@ -3310,6 +3937,43 @@
 	</div>
 {/if}
 
+{#if settingsOpen}
+	<Window
+		key="project-settings"
+		title="Project settings"
+		width={380}
+		fit
+		onclose={() => (settingsOpen = false)}
+	>
+		<div class="settings">
+			<label class="offset">
+				<span>UTC offset (hours)</span>
+				<input
+					type="number"
+					step="0.25"
+					min={-UTC_OFFSET_LIMIT}
+					max={UTC_OFFSET_LIMIT}
+					value={offsetText}
+					onchange={(e) => {
+						// A bad entry leaves the field showing the stored offset, next to its error.
+						if (!offsetEntered(e.currentTarget.value))
+							e.currentTarget.value = offsetText;
+					}}
+				/>
+			</label>
+			<p class="note">
+				The core uses this offset with the UTC time of each render for
+				render.date and render.time. Empty or 0 means UTC.
+			</p>
+			<button
+				type="button"
+				onclick={() => setUtcOffset(-new Date().getTimezoneOffset() / 60 || 0)}
+			>Use my browser's offset</button>
+			{#if offsetError}<p class="err" role="alert">{offsetError}</p>{/if}
+		</div>
+	</Window>
+{/if}
+
 {#if browsing && currentSet}
 	<Window
 		key="cards"
@@ -3331,6 +3995,29 @@
 			}}
 		/>
 	</Window>
+{/if}
+
+{#if fontsTarget && doc}
+	{#key fontsTarget}
+	<FontsWindow
+		{files}
+		{doc}
+		layer={fontLayer}
+		target={fontsTarget}
+		onapply={applyFonts}
+		onclose={() => (fontsTarget = null)}
+	/>
+	{/key}
+{/if}
+
+{#if functionsRef.open}
+	{#key functionsRef.nonce}
+		<FunctionsWindow
+			query={functionsRef.query}
+			userFunctions={designFunctions}
+			onclose={closeFunctions}
+		/>
+	{/key}
 {/if}
 
 <DialogHost />
@@ -3406,6 +4093,9 @@
 	.cards-head .mini {
 		padding: 1px 8px;
 		font-size: 12px;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
 	.cards-head {
 		align-items: center;
@@ -3461,7 +4151,7 @@
 		min-width: 0;
 	}
 	.top > button,
-	.top > .btn-group {
+	.top .btn-group {
 		flex: none;
 		white-space: nowrap;
 		height: var(--ctl-h);
@@ -3510,13 +4200,43 @@
 		background: var(--hover);
 		color: var(--muted);
 	}
+	.fn-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: var(--ctl-h);
+		box-sizing: border-box;
+		font-size: 12px;
+	}
+	.fn-btn[aria-pressed="true"] {
+		border-color: var(--accent);
+		background: var(--sel);
+	}
+	.fn-mark {
+		font: italic 600 14px var(--mono);
+		color: var(--accent);
+	}
 	.saved {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 12px;
 		color: var(--muted);
 		white-space: nowrap;
 		overflow: hidden;
-		text-overflow: ellipsis;
 		max-width: 16em;
+	}
+	.saved .text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.saved .dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: currentColor;
+		flex: none;
 	}
 	.saved.unsaved {
 		color: var(--warn);
@@ -3556,19 +4276,23 @@
 		overflow: hidden;
 		container-type: inline-size;
 	}
-	/* Toolbars wrap whole groups, never single buttons; the export group
-	   stays on the right. */
+	/* Toolbars wrap whole groups, never single buttons; the editing
+	   switch and undo/redo stay on the right. Same height as the tab
+	   strip beside them (.tabbar). */
 	.toolbar,
 	.pane-title.row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
 		align-items: center;
+		min-height: var(--bar-h);
+		box-sizing: border-box;
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--line);
 	}
 	.adds,
 	.pick,
+	.edit,
 	.exports {
 		display: flex;
 		gap: 8px;
@@ -3586,8 +4310,10 @@
 		flex-wrap: wrap;
 		min-width: 0;
 	}
-	.exports {
+	.edit {
 		margin-left: auto;
+	}
+	.exports {
 		gap: 12px;
 	}
 	/* Every button in a group has the same padding, icon box and gap. */
@@ -3635,16 +4361,26 @@
 	.editor-pane > :global(.editor) {
 		flex: 1;
 	}
+	/* Same height as the tab strips beside it, so the lines under them meet. */
 	.pane-title {
-		padding: 6px 12px;
-		font: 12px var(--mono);
+		flex: none;
+		height: var(--bar-h);
+		box-sizing: border-box;
+		padding: 0 12px;
+		font: 12px/calc(var(--bar-h) - 1px) var(--mono);
 		border-bottom: 1px solid var(--line);
 		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.pane-title.row {
+		height: auto;
 		font: inherit;
 		color: inherit;
 		padding: 6px 12px;
+		white-space: normal;
+		overflow: visible;
 	}
 	.image-view {
 		overflow: auto;
@@ -3784,5 +4520,32 @@
 		color: var(--err);
 		font-size: 12px;
 		margin: 0;
+	}
+	.settings {
+		display: grid;
+		gap: 12px;
+		padding: 4px 2px;
+	}
+	.settings .offset {
+		display: grid;
+		grid-template-columns: 1fr 120px;
+		align-items: center;
+		gap: 8px;
+	}
+	.settings .offset input {
+		width: 100%;
+	}
+	.settings .note {
+		margin: 0;
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.settings .err {
+		margin: 0;
+		color: var(--err);
+		font-size: 12px;
+	}
+	.settings button {
+		justify-self: start;
 	}
 </style>

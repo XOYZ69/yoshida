@@ -29,6 +29,7 @@ import {
 	templatesUsing,
 } from "../design";
 import type { CardInfo, Diagnostic } from "../engine";
+import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import { askText, confirmAction, openMenu } from "../ui/overlay.svelte";
 import Select from "../ui/Select.svelte";
@@ -88,6 +89,7 @@ const reserved = new Set([
 	"and",
 	"or",
 	"not",
+	"in",
 ]);
 
 let open: string | null = $state(null);
@@ -199,7 +201,7 @@ function fold(key: string) {
 function groupMenu(e: MouseEvent, g: string) {
 	e.preventDefault();
 	openMenu(e.clientX, e.clientY, [
-		{ label: "Rename group…", icon: "✎", action: () => renameGroup(g) },
+		{ label: "Rename group…", icon: "pencil", action: () => renameGroup(g) },
 		{
 			label: "Ungroup",
 			detail: "params stay, without a group",
@@ -468,12 +470,12 @@ function withDefault(ft: Json, v: Json | undefined): Json {
         }}
         oncontextmenu={(e) => view === 'groups' && sec.title && groupMenu(e, sec.title)}>
         <button class="fold" aria-expanded={!folded.has(sec.key)} onclick={() => fold(sec.key)}>
-          <span class="arrow">{folded.has(sec.key) ? '▸' : '▾'}</span>
+          <span class="arrow"><Icon name={folded.has(sec.key) ? 'chevron-right' : 'chevron-down'} /></span>
           <span class="title">{sec.title || 'No group'}</span>
           <span class="count">{sec.params.length}</span>
         </button>
         {#if view === 'groups' && sec.title}
-          <button class="more" title="Group actions" onclick={(e) => groupMenu(e, sec.title)}>⋯</button>
+          <button class="more" title="Group actions" onclick={(e) => groupMenu(e, sec.title)}><Icon name="more" /></button>
         {/if}
       </div>
     {/if}
@@ -511,11 +513,11 @@ function withDefault(ft: Json, v: Json | undefined): Json {
           <button
             class="head"
             onclick={() => (open = open === name ? null : name)}>
-            {#if canDrag}<span class="grip" aria-hidden="true">⋮⋮</span>{/if}
+            {#if canDrag}<span class="grip" aria-hidden="true"><Icon name="grip" /></span>{/if}
             <span class="mono pname" title={name}>{name}</span>
             {#if p.label}<span class="label">{p.label}</span>{/if}
             <span class="type">{t}{p.required ? ', required' : ''}</span>
-            {#if p.note}<span class="has-note" title={String(p.note)}>ⓘ</span>{/if}
+            {#if p.note}<span class="has-note" title={String(p.note)}><Icon name="info" /></span>{/if}
             {#if probs.length}<span class="dot"></span>{/if}
           </button>
           {#if open === name}
@@ -729,9 +731,8 @@ function withDefault(ft: Json, v: Json | undefined): Json {
     color: var(--muted);
   }
   .grip {
+    display: flex;
     color: var(--muted);
-    font-size: 10px;
-    letter-spacing: -2px;
     cursor: grab;
   }
   .label {

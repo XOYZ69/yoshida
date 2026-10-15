@@ -47,6 +47,8 @@ onMount(() => {
     flex: none;
     display: inline-grid;
     place-items: center;
+    height: var(--ctl-h);
+    box-sizing: border-box;
     padding: 4px 7px;
   }
   svg {

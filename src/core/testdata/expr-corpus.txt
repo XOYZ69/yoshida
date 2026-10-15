@@ -1,0 +1,560 @@
+# One expression per line from the example designs (JSON strings and {} holes). Backslash is written as \\ and newline as \n; lines that do not parse are skipped.
+Party board game
+Canvas is A3 landscape at 300 dpi (4961 x 3508 px, 420 x 297 mm, print at 100 %). The ring is 13 x 9 tiles = 40 tiles; change the consts to resize it.
+assets/fonts/BebasNeue-Regular.ttf
+text
+Road Trip Rally
+Texts
+Race across the map, one roll at a time
+list
+Everyone puts a pawn on START.
+Take turns rolling a die and move clockwise.
+Follow the tile you land on.
+Safe zones protect you from going back.
+First to land on FINISH wins.
+Print on A3 landscape at 100 %. Needs two dice and some pawns.
+bool
+Draw shortcut arrows
+Board
+color
+#FFF1D0
+Theme colors
+#2B2B3A
+#FFFAEB
+#D1495B
+#8BD17C
+#FFD166
+#FFFFFF
+#7FD1E8
+#F28B82
+#F4A261
+#B7E4A0
+#C3A6F0
+#FF9EC4
+enum
+start
+finish
+plain
+safe
+skip
+back
+forward
+shortcut
+dare
+Start
+Everyone begins here
+Plain
+Do what the tile says
+Safe zone
+Nothing bad can happen
+Skip
+Miss your next turn
+Go back
+Move back by the number
+Go forward
+Move ahead by the number
+Shortcut
+Jump to the tile number
+Dare
+Complete it or step back 1
+Finish
+Land here to win
+integer
+40 tiles clockwise from the top-left corner. kind: start, finish, plain, safe, skip, back, forward, shortcut, dare. n is the step count (back, forward) or the target tile number (shortcut).
+Start: pack the car
+Sing the chorus of a song
+Name 3 road snacks
+Do your best GPS voice
+Spot a red car
+Rest stop, you are safe
+Tell a travel story
+Wrong exit!
+Imitate a radio DJ
+Flat tire, miss a turn
+Green lights
+Hum a song, others guess
+Secret backroad
+Count 5 trucks aloud
+Pick the next playlist song
+Gas station detour
+Roadside picnic, safe
+Name a city with a Z
+Tunnel echo cheer
+Traffic jam
+Give the driver a compliment
+Mountain pass
+Detour sign
+Act like a tour guide
+Late for dinner
+Scenic overlook, safe
+Reverse the alphabet game
+Bumpy road
+Spin the souvenir
+Backseat karaoke
+Fast lane
+Name 3 national parks
+Lost the map
+Photo stop, pose together
+Tailwind
+Rainstorm, miss a turn
+Cheer for the driver
+Last gas station
+Almost there
+Finish: arrive!
+2 * (cols + rows) - 4
+(canvas.w - cols * tile) / 2
+(canvas.h - rows * tile) / 2
+(cols - 2) * tile
+(rows - 2) * tile
+number
+i < cols ? i : (i < cols + rows - 1 ? cols - 1 : (i < 2 * cols + rows - 2 ? 2 * cols + rows - 3 - i : 0))
+Column of tile i on the ring: along the top, down the right, back along the bottom, up the left.
+i < cols ? 0 : (i < cols + rows - 1 ? i - cols + 1 : (i < 2 * cols + rows - 2 ? rows - 1 : ring - i))
+ox + ring_col(i) * tile
+Left edge of tile i on the canvas.
+oy + ring_row(i) * tile
+ring_row(i) == 0 or ring_row(i) == rows - 1 ? 0 : (ring_col(i) == 0 ? 1 : -1)
+Direction from tile i towards the middle of the board (x part).
+ring_row(i) == 0 ? 1 : (ring_row(i) == rows - 1 ? -1 : 0)
+k in ['back', 'forward', 'shortcut']
+Tiles that show a number: steps for back and forward, the target tile for a shortcut.
+match(k, 'start', c_start, 'finish', c_finish, 'safe', c_safe, 'skip', c_skip, 'back', c_back, 'forward', c_forward, 'shortcut', c_shortcut, 'dare', c_dare, c_plain)
+Tile color of a kind, from the theme.
+match(face, 1, k in [4], 2, k in [0, 8], 3, k in [0, 4, 8], 4, k in [0, 2, 6, 8], 5, k in [0, 2, 4, 6, 8], k in [0, 2, 3, 5, 6, 8])
+Is pip k (0-8, row by row) shown on a die face?
+match(n, 0, c_start, 1, c_dare, 2, c_skip, c_safe)
+paper
+rect
+100%
+c_paper
+stripes
+group
+Soft diagonal stripes on the paper: a repeated group, every other iteration hidden.
+ceil((canvas.w + 847.1) / 254.1)
+s
+s % 2 == 0
+s * 254.1
+stripe
+polygon
+canvas.h
+mix(c_paper, c_ink, 0.05)
+frame
+100% - 152.5
+#00000000
+c_frame
+board_divider
+divider
+Ring of tiles (one repeated group)
+tile
+tiles
+t
+i
+tile_x(i)
+tile_y(i)
+tile_base
+Hidden base: box and corner radius shared by shadow and background.
+pad
+tile - 2 * pad
+tile_shadow
+pad + 10.6
+pad + 14.8
+with_alpha(c_ink, 0.28)
+tile_bg
+kind_color(t.kind)
+c_ink
+tile_num
+bebas
+with_alpha(c_ink, 0.6)
+top-left
+{i + 1}
+i + 1
+tile_icon
+One icon per kind; the group moves left when the tile also shows a number.
+t.kind != 'plain'
+has_n(t.kind) ? -50.8 : 0
+icon_arrow
+arrow
+center
+t.kind == 'forward'
+icon_back
+t.kind == 'back'
+icon_chev_a
+chevron
+t.kind == 'shortcut'
+icon_chev_b
+icon_start
+triangle
+t.kind == 'start'
+icon_dare
+star
+t.kind == 'dare'
+icon_safe
+t.kind == 'safe'
+icon_skip
+t.kind == 'skip'
+icon_finish
+t.kind == 'finish'
+tile_n
+left
+has_n(t.kind)
+{match(t.kind, 'back', '-', 'forward', '+', '')}{t.n}
+match(t.kind, 'back', '-', 'forward', '+', '')
+t.n
+tile_text
+{t.text}
+t.text
+links_divider
+Shortcut links (drawn from the tile to its target)
+link
+show_links and t.kind == 'shortcut'
+link_line
+@tile_bg[i].bounds.cx + in_x(i) * 165.2
+@tile_bg[i].bounds.cy + in_y(i) * 165.2
+@tile_bg[max(t.n, 1) - 1].bounds.cx + in_x(max(t.n, 1) - 1) * 165.2
+@tile_bg[max(t.n, 1) - 1].bounds.cy + in_y(max(t.n, 1) - 1) * 165.2
+mix(c_shortcut, c_ink, 0.3)
+end
+panel_divider
+Title and rules panel
+panel
+ox + tile
+oy + tile
+panel_shadow
+59.3
+72
+pw - 84.7
+ph - 84.7
+with_alpha(c_ink, 0.3)
+panel_body
+with_alpha(c_panel, 0.8)
+panel_inner
+pw - 177.9
+ph - 177.9
+with_alpha(c_accent, 0.6)
+title
+{upper(title)}
+upper(title)
+pw - 1101.2
+c_accent
+top
+pw / 2
+title_stars
+Two stars flanking the title: a repeated group with its own origin and rotation.
+s == 0 ? 402.4 : pw - 402.4
+title_star
+s == 0 ? -14 : 14
+c_finish
+title_star_dot
+ellipse
+with_alpha(#FFFFFF, 0.8)
+subtitle
+★ {subtitle} ★
+c_text
+@title.bounds.bottom + 8.5
+rule_line
+@subtitle.bounds.bottom + 63.5
+pw - 550.6
+rules
+@rule_line.bounds.bottom + 63.5
+rules_head
+HOW TO PLAY
+rule_measure
+Hidden ruler: stacks the rules by measuring each text above the previous one (a group cannot read its own contents for its translate).
+{r.text}
+r.text
+r
+ri
+ri == 0 ? @rules_head.bounds.bottom + 46.6 : @rule_measure[ri - 1].bounds.bottom + 42.4
+rule
+One group per rule, placed where its hidden ruler is.
+@rule_measure[ri].bounds.top
+rule_badge
+rule_no
+{ri + 1}
+ri + 1
+c_panel
+@rule_badge.bounds.cx
+@rule_badge.bounds.cy + 4.2
+rule_text
+legend
+legend_head
+TILE GUIDE
+legend_row
+e
+j
+@legend_head.bounds.bottom + 42.4 + j * 122.8
+legend_swatch
+kind_color(e.kind)
+legend_label
+{e.label}
+e.label
+legend_desc
+{e.desc}
+e.desc
+with_alpha(c_text, 0.85)
+dice
+Two dice. The face of each comes from a function; the pips are a 3 x 3 repeated group shown by pip(face, k).
+d
+275.3 + d * 275.3
+ph - 635.3
+d == 0 ? -8 : 7
+die_body
+die_pips
+k
+pip(d == 0 ? 5 : 6, k)
+105.9 + (k % 3 - 1) * 57.2
+105.9 + (floor(k / 3) - 1) * 57.2
+die_pip
+pawns
+n
+1016.5 + n * 222.4
+ph - 423.5
+pawn_shadow
+pawn_body
+bottom
+pawn_color(n)
+pawn_head
+pawn_gloss
+with_alpha(#FFFFFF, 0.6)
+foot
+{foot}
+with_alpha(c_text, 0.75)
+bottom-left
+ph - 110.1
+Card back
+Poker size, 63.5 x 88.9 mm (2.5 x 3.5 in) at 300 dpi. Corners are transparent; cut along the face outline.
+assets/fonts/CinzelDecorative-Bold.ttf
+#1D3557
+Back color
+Back
+yoshida
+#FBF7EE
+Deck colors
+#B8232F
+#C99A2E
+(canvas.w - 2 * margin) / cols
+(canvas.h - 2 * margin) / rows
+mix(color, #FFFFFF, 0.12)
+face
+canvas.w
+corner
+#00000026
+field
+margin
+canvas.w - 2 * margin
+canvas.h - 2 * margin
+corner - margin / 2
+lattice_row
+Nested repeat: one group per row, one diamond per column. The lattice is sized from consts so it fills the field exactly.
+rows
+margin + r * cell_h
+diamond
+cols
+c
+(c + 0.5) * cell_w
+cell_h / 2
+cell_w - 8
+cell_h - 8
+(r + c) % 2 == 0 ? shade : with_alpha(gold, 0.35)
+field_line
+margin + 16
+canvas.w - 2 * margin - 32
+canvas.h - 2 * margin - 32
+corner - margin / 2 - 8
+gold
+medal
+canvas.w / 2
+canvas.h / 2
+medal_ring
+medal_star
+canvas.h / 2 - 20
+medal_suits
+♠ ♥ ♣ ♦
+canvas.h / 2 + 92
+deck_label
+{upper(deck_name)}
+upper(deck_name)
+canvas.h - margin - 70
+display
+Court cards (J, Q, K)
+assets/fonts/DMSerifDisplay-Regular.ttf
+J
+Q
+K
+Card
+spades
+hearts
+diamonds
+clubs
+Name on the banner
+Leave empty for King, Queen or Jack.
+#1F1D27
+s == 'hearts' ? '♥' : s == 'diamonds' ? '♦' : s == 'clubs' ? '♣' : '♠'
+The suit symbol. The serif font has no suit glyphs, so they come from the bundled symbol font.
+r == 'K' ? 'King' : r == 'Q' ? 'Queen' : 'Jack'
+suit == 'hearts' or suit == 'diamonds' ? red : black
+(canvas.h / 2 - panel_y) / 2
+inset
+canvas.w - 2 * inset
+canvas.h - 2 * inset
+corner - inset
+with_alpha(ink, 0.28)
+corner_divider
+Corner indices
+index_rank
+Top-left index. The bottom-right copy extends it.
+{rank}
+rank
+index_x
+index_y
+serif
+ink
+index_suit
+{glyph(suit)}
+glyph(suit)
+@index_rank.at.x
+@index_rank.bounds.bottom + 2
+index_rank_br
+Mirror of index_rank: same text, font and size, placed at the opposite corner and turned around its anchor.
+canvas.w - @index_rank.at.x
+canvas.h - @index_rank.at.y
+index_suit_br
+canvas.w - @index_suit.at.x
+canvas.h - @index_suit.at.y
+Portrait panel
+panel_x
+panel_y
+canvas.w - 2 * panel_x
+canvas.h - 2 * panel_y
+mix(ink, paper, 0.9)
+panel_line
+Inner dashed line, 14 px inside the panel.
+panel_x + 14
+panel_y + 14
+canvas.w - 2 * panel_x - 28
+canvas.h - 2 * panel_y - 28
+figure
+One half of the portrait, drawn twice: the second iteration is turned 180 degrees, so the card reads the same both ways up. figure_box keeps the group's bounds centred on its origin, so the turn mirrors it exactly.
+half_i
+half_i == 0 ? panel_y + half : canvas.h - panel_y - half
+half_i * 180
+figure_box
+2 * half - 20
+rays
+with_alpha(gold, 0.22)
+crown_k
+rank == 'K'
+crown_q
+rank == 'Q'
+crown_j
+rank == 'J'
+jack_feather
+crown_band
+#00000040
+jewel
+(j - 1) * 72
+letter
+side_suit
+k == 0 ? -128 : 128
+banner_divider
+Banner and medallion
+banner
+canvas.w - 2 * panel_x + 40
+banner_text
+{upper(title == '' ? rank_name(rank) : title)}
+upper(title == '' ? rank_name(rank) : title)
+@banner.bounds.left + 40
+@banner.bounds.cy
+banner_text_r
+The same name, read from the other end of the card.
+@banner.bounds.right - 40
+medallion
+medallion_suit
+@medallion.bounds.cx
+@medallion.bounds.cy
+Joker
+red
+black
+Joker color
+tone == 'red' ? red : black
+tone == 'red' ? black : red
+(i - 1) * 176
+i == 1 ? -184 : -132
+index_word
+J\nO\nK\nE\nR
+index_star
+@index_word.at.x
+@index_word.bounds.bottom + 10
+index_word_br
+canvas.w - @index_word.at.x
+canvas.h - @index_word.at.y
+index_star_br
+canvas.w - @index_star.bounds.cx
+canvas.h - @index_star.bounds.top
+art_divider
+Jester
+burst
+hat_y
+mix(gold, paper, 0.7)
+burst_ring
+hat
+hat_y + 40
+hat_body
+#00000066
+hat_flap
+The middle flap in the other color, as on a classic jester cap.
+other
+hat_brim
+brim_dot
+(d - 2) * 56
+bell
+bell_x(i)
+bell_y(i)
+caption_text
+{upper(caption)}
+upper(caption)
+caption_rule
+@caption_text.bounds.top - 18 + k * (@caption_text.bounds.h + 36)
+caption_star
+canvas.w / 2 + (k - 1) * 64
+@caption_text.bounds.bottom + 70
+k == 1 ? ink : gold
+Number cards (A to 10)
+Rank (1 = ace)
+r == 1 ? 'A' : fmt(r, 0)
+r >= 9 ? 4 : r >= 6 ? 3 : r >= 4 ? 2 : 0
+Pips in each side column.
+r == 3 ? 3 : r == 2 or r == 8 or r == 10 ? 2 : r == 5 or r == 7 or r == 9 ? 1 : 0
+Pips in the middle column.
+r == 2 ? i : r == 3 ? i / 2 : r == 7 ? 0.25 : r == 8 ? 0.25 + i / 2 : r == 10 ? 1 / 6 + i * 2 / 3 : 0.5
+Height of middle pip i, from 0 (top row) to 1 (bottom row).
+floor(i / 2) / (side_n(r) - 1)
+Height of side pip i; even i is the left column, odd i the right one.
+pip_top + t * (pip_bottom - pip_top)
+t > 0.5 ? 180 : 0
+Pips below the middle point down, as on a printed deck.
+{label(rank)}
+label(rank)
+pip_divider
+Pips
+pip
+Hidden base pip. Every pip below extends it and only sets its position and turn.
+col_m
+pip_y(0.5)
+pip_size
+pips_side
+side_n(rank) * 2
+i % 2 == 0 ? col_l : col_r
+pip_y(side_t(rank, i))
+flip(side_t(rank, i))
+pips_mid
+mid_n(rank)
+pip_y(mid_t(rank, i))
+flip(mid_t(rank, i))
+ace_divider
+Ace
+ace_ring
+rank == 1
+mix(ink, paper, 0.93)
+ace_ring_inner
+ace_pip

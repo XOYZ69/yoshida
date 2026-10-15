@@ -84,6 +84,21 @@ path = "docs/expressions-operators.md"
 title = "Functions"
 path = "docs/expressions-functions.md"
 [[group.item.child]]
+title = "Numbers"
+path = "docs/expressions-functions-numbers.md"
+[[group.item.child]]
+title = "Text"
+path = "docs/expressions-functions-text.md"
+[[group.item.child]]
+title = "Lists"
+path = "docs/expressions-functions-lists.md"
+[[group.item.child]]
+title = "Dates and times"
+path = "docs/expressions-functions-dates.md"
+[[group.item.child]]
+title = "Colors and random"
+path = "docs/expressions-functions-colors-and-random.md"
+[[group.item.child]]
 title = "Templates"
 path = "docs/expressions-templates.md"
 [[group.item.child]]
@@ -123,6 +138,9 @@ path = "docs/builder-layers.md"
 [[group.item]]
 title = "Inspector"
 path = "docs/builder-inspector.md"
+[[group.item]]
+title = "Fonts"
+path = "docs/builder-fonts.md"
 [[group.item]]
 title = "Params"
 path = "docs/builder-params.md"

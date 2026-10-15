@@ -130,7 +130,11 @@ await row("tile").click();
 const tx = field("translate.x");
 t = await hover(tx, "tile_x");
 ok("hover on a design function shows it", /tile_x\(i: number\)/.test(t), t);
-ok("hover on a design function shows its body", /= ox \+ ring_col\(i\)/.test(t), t);
+ok(
+	"hover on a design function shows its body",
+	/= ox \+ ring_col\(i\)/.test(t),
+	t,
+);
 t = await hover(tx, "i");
 ok(
 	"hover on a repeat name says where it comes from",
@@ -187,7 +191,8 @@ ok(
 	(await color.locator(".yx-unknown[title]").count()) === 0,
 );
 await color.click();
-await p.keyboard.press("Home");
+// Ctrl+Home goes to the start of the whole text, also when it spans lines.
+await p.keyboard.press("Control+Home");
 await p.keyboard.press("ArrowRight");
 await p.keyboard.press("ArrowRight");
 await p.keyboard.press("F12");
@@ -199,7 +204,8 @@ ok(
 );
 await row("rules_head").click();
 await field("color").click();
-await p.keyboard.press("End");
+// Ctrl+End goes to the end of the whole text, also when it spans lines.
+await p.keyboard.press("Control+End");
 await p.keyboard.type(" ", { delay: 5 });
 await p.keyboard.press("Backspace");
 await p.keyboard.type("x", { delay: 5 });

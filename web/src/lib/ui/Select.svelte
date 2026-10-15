@@ -4,11 +4,23 @@ export type Option = {
 	label?: string;
 	detail?: string;
 	muted?: boolean;
+	/** Shows `text` in `family` on the right of the row (font pickers). */
+	sample?: { family: string; text: string };
+	/** Draws a separator above this option. The option stays selectable. */
+	divider?: boolean;
+	/** A command, not a value: accent label, never checked, the trigger keeps its value. */
+	action?: boolean;
 };
+
+/** A CSS font-family list for a sample, with a system font as the fallback. */
+function sampleFont(family: string): string {
+	return `"${family.replace(/["\\]/g, "")}", system-ui, sans-serif`;
+}
 </script>
 
 <script lang="ts">
   // Themed dropdown (replaces <select>). Long lists get a filter box.
+  import Icon from './Icon.svelte';
   import { placeNear } from './overlay.svelte';
 
   let {
@@ -23,6 +35,7 @@ export type Option = {
     searchable = undefined,
     compact = false,
     caption = '',
+    sample = null,
   }: {
     value: string;
     options: (string | Option)[];
@@ -37,10 +50,13 @@ export type Option = {
     compact?: boolean;
     /** Small label shown inside the button, before the value (toolbar pickers). */
     caption?: string;
+    /** Shows a small "Aa" in this font on the trigger (font pickers). */
+    sample?: { family: string; text: string } | null;
   } = $props();
 
   const opts = $derived(options.map((o): Option => (typeof o === 'string' ? { value: o } : o)));
-  const current = $derived(opts.find((o) => o.value === value));
+  // Actions are commands, so they are never the current value.
+  const current = $derived(opts.find((o) => !o.action && o.value === value));
   const canSearch = $derived(searchable ?? opts.length > 10);
 
   let open = $state(false);
@@ -61,12 +77,12 @@ export type Option = {
     if (disabled || !button) return;
     const r = button.getBoundingClientRect();
     // Wide enough for the longest option (label and detail), within reason.
-    const longest = Math.max(0, ...opts.map((o) => (o.label ?? o.value).length * 7.5 + (o.detail ? o.detail.length * 6.5 + 12 : 0)));
+    const longest = Math.max(0, ...opts.map((o) => (o.label ?? o.value).length * 7.5 + (o.detail ? o.detail.length * 6.5 + 12 : 0) + (o.sample ? o.sample.text.length * 8 + 12 : 0)));
     const width = Math.min(Math.max(r.width, 180, longest + 48), 440, window.innerWidth - 16);
     const p = placeNear(r, width, Math.min(320, opts.length * 30 + (canSearch ? 40 : 8)));
     pos = { ...p, maxHeight: Math.min(p.maxHeight, 360), width };
     query = '';
-    active = Math.max(0, opts.findIndex((o) => o.value === value));
+    active = Math.max(0, opts.findIndex((o) => !o.action && o.value === value));
     open = true;
     requestAnimationFrame(() => {
       if (canSearch) search?.focus();
@@ -82,7 +98,7 @@ export type Option = {
 
   function pick(o: Option) {
     hide();
-    if (o.value !== value) onchange(o.value);
+    if (o.action || o.value !== value) onchange(o.value);
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -135,6 +151,7 @@ export type Option = {
   onkeydown={onbuttonkey}>
   {#if caption}<span class="cap">{caption}</span>{/if}
   <span class="text">{current ? (current.label ?? current.value) : value || placeholder}</span>
+  {#if sample}<span class="aa" style:font-family={sampleFont(sample.family)} aria-hidden="true">Aa</span>{/if}
   <svg class="chev" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
 </button>
 
@@ -147,18 +164,21 @@ export type Option = {
       {#each shown as o, i (o.value)}
         <li
           role="option"
-          aria-selected={o.value === value}
+          aria-selected={!o.action && o.value === value}
           class:active={i === active}
-          class:selected={o.value === value}
+          class:selected={!o.action && o.value === value}
           class:muted={o.muted}
+          class:action={o.action}
+          class:divider={o.divider}
           class:mono
           onpointerenter={() => (active = i)}
           onpointerdown={(e) => e.preventDefault()}
           onclick={() => pick(o)}
           onkeydown={() => {}}>
-          <span class="check">{o.value === value ? '✓' : ''}</span>
+          <span class="check">{#if !o.action && o.value === value}<Icon name="check" />{/if}</span>
           <span class="lbl">{o.label ?? o.value}</span>
           {#if o.detail}<span class="detail">{o.detail}</span>{/if}
+          {#if o.sample}<span class="sample" style:font-family={sampleFont(o.sample.family)} aria-hidden="true">{o.sample.text}</span>{/if}
         </li>
       {:else}
         <li class="empty">No matches</li>
@@ -284,6 +304,29 @@ export type Option = {
   }
   li.muted .lbl {
     color: var(--muted);
+  }
+  li.divider {
+    margin: 4px 0;
+    border-top: 1px solid var(--line);
+  }
+  li.action .lbl {
+    color: var(--accent);
+  }
+  .aa {
+    flex: none;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--muted);
+  }
+  .sample {
+    flex: 0 1 auto;
+    max-width: 55%;
+    min-width: 0;
+    font-size: 15px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .check {
     width: 14px;

@@ -400,7 +400,10 @@ ok(
 );
 await p.click('button[role=tab]:has-text("Builder")');
 await p.click('.toolbar button[aria-label="Design file"]');
-const designsAfter = await p.locator("[role=option]").count();
+// "New design…" is a command row in the same list, not a design.
+const designsAfter = await p
+	.locator("[role=option]:not(.action)")
+	.count();
 await p.keyboard.press("Escape");
 ok("new design survives reload", designsAfter === 5, String(designsAfter));
 

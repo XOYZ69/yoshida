@@ -127,10 +127,14 @@ pub const Set = struct {
     design: *Design,
     cards: []const Card = &.{},
     ok: bool = false,
+    /// The project's `utc_offset` (hours), for `render.date` and `render.time`.
+    utc_offset: f64 = 0,
 };
 
 pub const Project = struct {
     name: []const u8 = "",
+    /// Hours added to the render's UTC instant (`utc_offset`, -14 to 14).
+    utc_offset: f64 = 0,
     sets: []const Set = &.{},
 
     pub fn findSet(p: *const Project, name: []const u8) ?*const Set {
@@ -158,7 +162,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
         if (try design_mod.parseJson(arena, diags, src)) |root| {
             _ = try design_mod.checkFormat(&root, diags, src);
             for (root.data.object) |f| {
-                const known = [_][]const u8{ "$schema", "format", "name", "note", "sets" };
+                const known = [_][]const u8{ "$schema", "format", "name", "note", "sets", "utc_offset" };
                 var ok = false;
                 for (known) |k| if (std.mem.eql(u8, k, f.key)) {
                     ok = true;
@@ -168,6 +172,11 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
             if (root.get("name")) |n| if (n.data == .string) {
                 project.name = n.data.string;
             };
+            if (root.get("utc_offset")) |o| {
+                if (o.data == .number and o.data.number >= -14 and o.data.number <= 14) {
+                    project.utc_offset = o.data.number;
+                } else try diags.at(.err, 1103, src, o.pos, try pointer(arena, &root, o.pos), "utc_offset must be a number of hours from -14 to 14", "e.g. 2 or -5.5");
+            }
             if (root.get("sets")) |sets| {
                 if (sets.data == .array) {
                     for (sets.data.array, 0..) |*s, i| {
@@ -262,7 +271,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
             try designs.put(arena, r.design, loaded);
             break :blk loaded;
         };
-        var set: Set = .{ .name = r.name, .design_path = r.design, .cards_path = r.cards, .design = d };
+        var set: Set = .{ .name = r.name, .design_path = r.design, .cards_path = r.cards, .design = d, .utc_offset = project.utc_offset };
         const before = diags.errorCount();
         if (r.cards) |cp| {
             if (vfs.read(cp)) |text| {

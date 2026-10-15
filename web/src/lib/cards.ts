@@ -13,7 +13,7 @@ const nameParams = [
 ];
 const looksLikeFile = (s: string) =>
 	/\.(png|jpe?g|webp|gif|bmp)$/i.test(s) || /^https?:\/\//i.test(s);
-const looksLikeColor = (s: string) => /^#[0-9a-f]{6}/i.test(s);
+const looksLikeColor = (s: string) => /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s);
 
 /** The param whose value names a card: title or name if there is one, else the first text param. */
 export function nameParam(params: Param[]): string | null {

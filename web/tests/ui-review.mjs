@@ -89,7 +89,7 @@ ok(
 		)
 		.count()) === 0,
 );
-const history = p.locator("header .btn-group.history > button");
+const history = p.locator(".btn-group.history > button");
 const hBoxes = await history.evaluateAll((els) =>
 	els.map((e) => e.getBoundingClientRect().toJSON()),
 );
@@ -122,7 +122,7 @@ ok(
 ok(
 	"menu icons are line icons, not emoji",
 	(await p.locator(".menu .icon svg").count()) >= 7 &&
-		!/[📁🗑⤓⤒]/u.test(menu),
+		!/\p{Extended_Pictographic}/u.test(menu),
 );
 await p.keyboard.press("Escape");
 

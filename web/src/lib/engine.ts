@@ -1,6 +1,7 @@
 // Main-thread client for the render worker, plus the shapes the core returns.
 
 import type { Placed } from "./design";
+import type { EvalResult } from "./expr/live";
 
 export type Severity = "error" | "warning" | "hint";
 
@@ -78,10 +79,27 @@ export type RenderResult = {
 	bin: Uint8Array;
 };
 
+/**
+ * The render time: `now` is the UTC instant (`YYYY-MM-DDTHH:MM:SSZ`) and the
+ * core derives render.date and render.time from it, with the project's
+ * utc_offset. `date` is the local date of the same instant, for older cores.
+ */
+export type Clock = { date: string; now: string };
+
+/** The clock at `at` (default: now). Compute once per export, per preview render. */
+export function renderClock(at: Date = new Date()): Clock {
+	const p2 = (n: number) => String(n).padStart(2, "0");
+	const date = `${String(at.getFullYear()).padStart(4, "0")}-${p2(at.getMonth() + 1)}-${p2(at.getDate())}`;
+	// Seconds precision, no milliseconds.
+	const now = `${at.toISOString().slice(0, 19)}Z`;
+	return { date, now };
+}
+
 export type RenderArgs = {
 	set: string;
 	card: number;
 	date: string;
+	now: string;
 	preview: boolean;
 	format: "rgba" | "png" | "png16";
 	layout?: boolean;
@@ -91,6 +109,35 @@ export type RenderArgs = {
 	only?: string[];
 	/** Draw everything but these layer ids. */
 	except?: string[];
+};
+
+/** A name an expression can use, with its type (`number`, `list`, ...). */
+export type ScopeSymbol = {
+	name: string;
+	type: string;
+	/** Params: the param type (`enum`, `integer`, ...) and enum options. */
+	kind?: string;
+	options?: string[];
+	/** Lists and list items: their fields. */
+	fields?: { name: string; type: string; options?: string[] }[];
+};
+
+/** What one expression field can use, from the core (`scope` op). */
+export type ScopeResult = {
+	/** The type the field needs; null for any. */
+	want: string | null;
+	template: boolean;
+	axis: "none" | "x" | "y";
+	units: boolean;
+	builtins: boolean;
+	/** False where layer references are not allowed (constants, functions). */
+	layers: boolean;
+	params: ScopeSymbol[];
+	consts: ScopeSymbol[];
+	functions: { name: string; args: ScopeSymbol[]; ret: string | null }[];
+	locals: ScopeSymbol[];
+	/** ok: `@id` works; index: needs `@id[i]`; none: cannot be referenced here. */
+	layer_refs: { id: string; kind: string; ref: "ok" | "index" | "none" }[];
 };
 
 export class Engine {
@@ -185,12 +232,43 @@ export class Engine {
 	}
 
 	/** Every card of a set evaluated without drawing: errors that depend on card data. */
-	checkCards(set: string, date: string) {
+	checkCards(set: string, clock: Clock) {
 		return this.call<{ diagnostics: Diagnostic[] }>({
 			op: "checkCards",
 			set,
-			date,
+			...clock,
 		});
+	}
+
+	/**
+	 * What the expression field at JSON pointer `path` of the set's design can
+	 * use; null when there is no such field (or the design does not load).
+	 */
+	scope(set: string, path: string): Promise<ScopeResult | null> {
+		return this.call<ScopeResult>({ op: "scope", set, path }).catch(
+			() => null,
+		);
+	}
+
+	/**
+	 * Evaluates `src` in place of the field at `path` while rendering card
+	 * `card` (without drawing); null when there is no such field.
+	 */
+	eval(
+		set: string,
+		path: string,
+		src: string,
+		card: number,
+		clock: Clock,
+	): Promise<EvalResult | null> {
+		return this.call<EvalResult>({
+			op: "eval",
+			set,
+			path,
+			src,
+			card,
+			...clock,
+		}).catch(() => null);
 	}
 
 	/**
@@ -199,7 +277,7 @@ export class Engine {
 	 */
 	pdf(
 		set: string,
-		date: string,
+		clock: Clock,
 		cropMarks: boolean,
 		cards: number,
 		progress?: (done: number) => void,
@@ -212,7 +290,7 @@ export class Engine {
 			{
 				op: "pdf",
 				set,
-				date,
+				...clock,
 				crop_marks: cropMarks,
 				cards,
 			},

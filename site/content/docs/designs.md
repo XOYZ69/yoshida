@@ -61,6 +61,8 @@ The canvas cannot use `%`, `vw` or `vh` (it is being defined, error 3006) and ca
 - A font file that is missing or not a TrueType/OpenType font is warning 4005 and the default font is used for that name.
 - Characters the font does not contain are drawn with the bundled default font, and if that has none either, with the bundled symbol font (arrows, shapes, stars, check marks, dice faces, dingbats). Only characters none of them has are drawn as boxes, and warning 4003 says so.
 
+In the editor, the [Fonts window](@/docs/builder-fonts.md) adds entries to `fonts` when you import a font.
+
 See [Layer: text](@/docs/layer-text.md).
 
 ## Canvas and card data together

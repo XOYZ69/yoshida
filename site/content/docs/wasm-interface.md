@@ -28,11 +28,14 @@ Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 J
   "preview": true, "format": "rgba", "layout": true }
 { "op": "check_cards", "set": "name", "date": "2026-10-07" }
 { "op": "pdf", "set": "name", "date": "2026-10-07", "crop_marks": false }
+{ "op": "scope", "set": "name", "path": "/layers/3/fill" }
+{ "op": "eval", "set": "name", "card": 0, "date": "2026-10-07",
+  "path": "/layers/3/fill", "src": "kind == 'dare' ? c_dare : c_plain" }
 ```
 
 ### `info`
 
-Returns `{ "version": "0.5.0", "format": 1 }`.
+Returns `{ "version": "0.6.0", "format": 1 }`.
 
 ### `check`
 
@@ -44,7 +47,9 @@ Returns `{ "diagnostics": [...], "project": {...} }`. The project summary lists 
 | --------- | -------------- | ---------------------------------------------------------------------------------- |
 | `set`     | `""`           | Set name (set it: an omitted or unknown name answers `{ "error": "unknown set" }`) |
 | `card`    | `0`            | 0-based card index in the set                                                      |
-| `date`    | `"1970-01-01"` | Value of `render.date`. The editor sends today's date                              |
+| `date`    | `"1970-01-01"` | Used when `now` is not given: `render.date` is this date, `render.time` is `00:00:00` and `render.now` is that date at midnight UTC. The editor sends today's date |
+| `now`     | none | UTC instant `YYYY-MM-DDTHH:MM:SSZ`: `render.now`. `render.date` and `render.time` are it shifted by the offset. Overrides `date`. An invalid value is ignored, so the render falls back to `date` at midnight |
+| `utc_offset` | project's | Hours from UTC, -14 to 14, replaces the project's `utc_offset`. Other values are ignored |
 | `preview` | `true`         | Missing or undecodable images become a placeholder and a warning                   |
 | `format`  | `"rgba"`       | `rgba` (raw 8-bit RGBA for a canvas), `png` or `png16`                             |
 | `layout`  | `false`        | Also return the resolved bounds of every layer                                     |
@@ -71,9 +76,65 @@ Evaluates every card of the set without drawing (like `yoshida check`) and retur
 
 Renders every card of the set into one PDF (the binary result) and returns `{ "pages": n, "diagnostics": [...] }`. With `"crop_marks": true`, each page gets a margin with crop marks at the trim line.
 
+### `scope`
+
+What the expression field at `path` (a JSON Pointer into the set's design file, as in diagnostics) can use. A path that is not an expression or template field answers `{ "error": "no expression field at path" }`.
+
+```json
+{
+	"want": "color",
+	"template": false,
+	"axis": "none",
+	"units": true,
+	"builtins": true,
+	"layers": true,
+	"params": [{ "name": "kind", "type": "text", "kind": "enum", "options": ["start", "dare"] }],
+	"consts": [{ "name": "gap", "type": "number" }],
+	"functions": [{ "name": "tile_x", "args": [{ "name": "i", "type": "number" }], "ret": "number" }],
+	"locals": [{ "name": "t", "type": "list item", "fields": [{ "name": "kind", "type": "text" }] }],
+	"layer_refs": [{ "id": "tile", "kind": "rect", "ref": "index" }]
+}
+```
+
+`want` is the type the field needs (`null` for constants, function bodies and `repeat.each`). `axis` says what `%` means there. `layers` is false where layer references are not allowed. Each layer reference has `ref`: `ok` (`@id` works), `index` (needs `@id[i]`) or `none` (cannot be referenced from this field).
+
+### `eval`
+
+Evaluates `src` in place of the field at `path` while the card is rendered without drawing, so it sees the card's params, repeat names, function arguments and layer positions. The design itself is not changed.
+
+```json
+{
+	"hits": 1,
+	"value": "#C04A3BFF",
+	"type": "color",
+	"problems": [],
+	"trace": ["#C04A3BFF", "dare", "dare", true, "#C04A3BFF", null]
+}
+```
+
+- `hits` counts how often the card evaluated the field (repeat iterations, function calls and layout passes); 0 when it never did, for example in a hidden layer or an unused constant. The value and trace come from the first evaluation.
+- `trace` holds the value of every syntax tree node in pre-order (the node ids of `expr.wasm`'s `parse`), `null` for nodes that were not evaluated, such as the branch not taken.
+- `problems` lists parse and type errors of `src` in this field, or the error that stopped the evaluation. Spans are UTF-16 offsets into `src`.
+
 ### `https://` images
 
 The core never downloads anything. Images given as URLs come back in `missing_urls`; the worker fetches them (when the remote server allows CORS), adds them with `vfs_put` **under the URL as the path**, and renders again.
+
+## The expression module
+
+`expr.wasm` (built by the same `zig build wasm` step) holds only the expression parser and printer. It needs no project, so the editor loads it on the main thread and calls it on every keystroke (a parse takes about 0.1 ms). It exports `alloc`, `free`, `request`, `result_ptr` and `result_len`, and answers:
+
+```json
+{ "op": "parse", "src": "max(a, 1) * 2", "template": false }
+{ "op": "format", "src": "max(a,1)*2", "width": 72 }
+{ "op": "catalog" }
+```
+
+- `parse` never fails: it returns `tokens` (`[start, end, kind]`), up to 8 `problems` with `code`, `span`, `message` and `hint`, and the syntax tree as `root` (or `holes` for a template). Broken parts become `err` nodes, so the rest of the tree is still there. Every node has an `id` (pre-order), a kind `k` and a `span`.
+- `format` returns the canonical text (`{ "text": ... }`) with minimal parentheses and line breaks at `width`, or `"text": null` with the problems when the source does not parse. Number and color literals keep their spelling.
+- `catalog` lists the built-in functions with their argument and return types, the built-in names, the fields of each layer kind and the reserved words.
+
+All spans are UTF-16 offsets, the way JavaScript counts string positions.
 
 ## Notes
 

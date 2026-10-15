@@ -5,10 +5,10 @@ description = "Numbers, units, strings, colours and lists."
 
 ## Literals
 
-- **Numbers**: `12`, `0.5`. A leading dot (`.5`) is invalid. An optional unit suffix follows: `%`, `vw`, `vh`.
+- **Numbers**: `12`, `0.5`. A leading dot (`.5`) and exponent notation (`1e3`) are invalid: write `0.5` and `1000`. An optional unit suffix follows: `%`, `vw`, `vh`.
 - **Strings**: `'single'` or `"double"` quotes, with the escapes `\'`, `\"`, `\\` and `\n`. Single quotes avoid escaping inside JSON: `"foil ? 'FOIL' : 'NEW'"`.
 - **Booleans**: `true`, `false`.
-- **Colors**: `#RRGGBB`, `#RRGGBBAA` (8-bit per channel), `#RRRRGGGGBBBB`, `#RRRRGGGGBBBBAAAA` (16-bit per channel). Hex digits are case-insensitive.
+- **Colors**: `#RRGGBB`, `#RRGGBBAA` (8-bit per channel), `#RRRRGGGGBBBB`, `#RRRRGGGGBBBBAAAA` (16-bit per channel). Hex digits are case-insensitive. The short forms `#RGB` and `#RGBA` are also accepted, each digit doubled, so `#F80` is `#FF8800`.
 
 Internally all colors are 16-bit RGBA; an 8-bit value `v` becomes `v * 257`, so `#FF` is exactly full. Use the 16-bit forms when you need fine gradations in 16-bit PNG output (`yoshida render --16bit`).
 
@@ -36,7 +36,7 @@ Numbers can carry a unit. Without one a number is a pixel value.
 | `wrap`, `max_width` | `max_height` |
 | `crop` / `fade` `length` toward `left` or `right` | `crop` / `fade` `length` toward `top` or `bottom` |
 
-Anywhere else (`size`, `radius`, `stroke.width`, `line_spacing`, ...) `%` is error 3006 with the hint to use `vw` or `vh`. Those two always work.
+Anywhere else (`size`, `radius`, `stroke.width`, `line_spacing`, ...) `%` is error 3006 with the hint to use `vw` or `vh`. Those two always work. Percentages and `vw` / `vh` always refer to the canvas, also inside a group moved with `translate`.
 
 `canvas.width` and `canvas.height` cannot use any unit, because the canvas is being defined (error 3006).
 
@@ -52,7 +52,7 @@ Units are part of a number, not a separate type, so they can be combined with ar
 
 ### `%` as the modulo operator
 
-`%` as an operator needs operands on both sides (`a % b`). `50%` directly after a number is the unit. See [Operators](@/docs/expressions-operators.md).
+`%` as an operator needs operands on both sides (`a % b`), and after a number literal a space: `7 % 3`, since `7%3` reads `7%` as a percent unit. `50%` directly after a number is the unit. See [Operators](@/docs/expressions-operators.md).
 
 ## Next
 

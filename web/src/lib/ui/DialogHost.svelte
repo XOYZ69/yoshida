@@ -58,7 +58,7 @@ function close(result: string | boolean | null) {
 	if (!cur) return;
 	if (cur.kind === "text")
 		cur.resolve(typeof result === "string" ? result : null);
-	else cur.resolve(result === true);
+	else cur.resolve(result === "alt" ? "alt" : result === true);
 }
 
 function submit() {
@@ -108,6 +108,7 @@ function onkeydown(e: KeyboardEvent) {
       {/if}
       <div class="actions">
         <button class="ghost" onclick={() => close(null)}>Cancel</button>
+        {#if d.kind === 'confirm' && d.alt}<button onclick={() => close('alt')}>{d.alt}</button>{/if}
         <button bind:this={okButton} class="primary" class:danger={d.kind === 'confirm' && d.danger} onclick={submit}>{d.confirm}</button>
       </div>
       <div class="grip" role="presentation" onpointerdown={resizeBy}></div>

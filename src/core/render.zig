@@ -7,6 +7,7 @@ const c = @import("c.zig");
 const json = @import("json.zig");
 const diag = @import("diag.zig");
 const value = @import("value.zig");
+const bdate = @import("builtins/date.zig");
 const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
@@ -30,9 +31,32 @@ pub const limits = struct {
     pub const image_pixels = 50_000_000;
 };
 
+/// An expression (or template) evaluated in place of the field at `pos` of
+/// design `file`, the first time the card evaluates that field, with every
+/// node's value traced. The field's own value is used for the card as usual.
+/// Values and the problem are copied into the trace's arena.
+pub const Probe = struct {
+    file: []const u8,
+    pos: u32,
+    root: ?*const expr.Node = null,
+    tmpl: ?expr.Template = null,
+    trace: expr.Trace,
+    /// How often the card evaluated the field (iterations, calls, layout
+    /// passes); 0 when it never did.
+    hits: u32 = 0,
+    value: ?Value = null,
+    problem: ?expr.Problem = null,
+};
+
 pub const Options = struct {
     /// ISO date for `render.date`, chosen once by whoever starts the render.
     date: []const u8 = "1970-01-01",
+    /// UTC instant of the render (`YYYY-MM-DDTHH:MM:SSZ`). When set,
+    /// `render.date` and `render.time` come from it plus the UTC offset, and
+    /// `date` is ignored.
+    now: ?[]const u8 = null,
+    /// Overrides the project's `utc_offset` (hours).
+    utc_offset: ?f64 = null,
     /// Editor preview: missing images become a placeholder and a warning.
     preview: bool = false,
     /// When set, receives the resolved bounds of every layer (the editor uses
@@ -49,6 +73,9 @@ pub const Options = struct {
     /// Draw only some layers (editor drag preview). Layers that are hidden
     /// by the filter are still evaluated and outlined.
     filter: ?Filter = null,
+    /// Editor live values: evaluates another expression where one field is
+    /// evaluated, with the same names and layout (see `Probe`).
+    probe: ?*Probe = null,
 
     pub const Filter = struct {
         ids: []const []const u8,
@@ -324,6 +351,7 @@ const Ctx = struct {
     index: usize,
     opts: Options,
     diags: *diag.List,
+    clock: Clock = .{},
     canvas_w: f64 = 0,
     canvas_h: f64 = 0,
     /// Bitmap pixels per canvas pixel (`Options.scale`).
@@ -367,7 +395,9 @@ const Ctx = struct {
             .canvas_h = ctx.canvas_h,
             .card_id = ctx.card.id,
             .render_index = @floatFromInt(ctx.index),
-            .render_date = ctx.opts.date,
+            .render_date = ctx.clock.date,
+            .render_time = ctx.clock.time,
+            .render_now = ctx.clock.now,
             .ctx = ctx,
             .lookup = lookup,
             .layerRef = layerRef,
@@ -428,7 +458,36 @@ const Ctx = struct {
 
     fn eval(ctx: *Ctx, env: *expr.Env, layer: ?*const Layer, p: Prop) Failed!Value {
         env.axis = p.axis;
+        try ctx.probeAt(env, p.pos);
         return env.eval(p.node) catch |e| return ctx.evalFailed(e, env, layer, p.pos);
+    }
+
+    /// Runs the probe when `pos` is its field (see `Probe`).
+    fn probeAt(ctx: *Ctx, env: *const expr.Env, pos: u32) Allocator.Error!void {
+        const pr = ctx.opts.probe orelse return;
+        if (pr.pos != pos or !std.mem.eql(u8, pr.file, ctx.d.file)) return;
+        pr.hits += 1;
+        if (pr.hits > 1) return;
+        var e = env.*;
+        e.trace = &pr.trace;
+        e.problem = null;
+        const v = if (pr.tmpl) |t|
+            if (e.template(t)) |out| Value{ .text = out } else |err| err
+        else if (pr.root) |r| e.eval(r) else return;
+        const got = v catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Eval => {
+                if (e.problem) |p| pr.problem = .{
+                    .code = p.code,
+                    .start = p.start,
+                    .end = p.end,
+                    .message = try pr.trace.arena.dupe(u8, p.message),
+                    .hint = if (p.hint) |h| try pr.trace.arena.dupe(u8, h) else null,
+                };
+                return;
+            },
+        };
+        pr.value = try got.dupe(pr.trace.arena);
     }
 
     fn num(ctx: *Ctx, env: *expr.Env, layer: ?*const Layer, p: Prop) Failed!f64 {
@@ -443,6 +502,7 @@ const Ctx = struct {
 
     fn tmpl(ctx: *Ctx, env: *expr.Env, layer: *const Layer, t: design_mod.Tmpl) Failed![]const u8 {
         env.axis = .none;
+        try ctx.probeAt(env, t.pos);
         return env.template(t.t) catch |e| return ctx.evalFailed(e, env, layer, t.pos);
     }
 
@@ -681,6 +741,7 @@ const Ctx = struct {
         ctx.locals = locals;
         defer ctx.locals = saved;
         var e = ctx.newEnv();
+        try ctx.probeAt(&e, f.pos);
         return e.eval(f.body) catch |err| {
             // Report inside the function, where the expression is.
             if (ctx.evalFailed(err, &e, null, f.pos) == error.OutOfMemory) return error.OutOfMemory;
@@ -1532,6 +1593,32 @@ fn readField(r: *const Resolved, path: []const []const u8, off: [2]f64) ?Value {
     return null;
 }
 
+/// What `render.date`, `render.time` and `render.now` read.
+pub const Clock = struct {
+    date: []const u8 = "1970-01-01",
+    time: []const u8 = "00:00:00",
+    now: []const u8 = "1970-01-01T00:00:00Z",
+};
+
+/// The render's clock: `opts.now` shifted by the UTC offset, or `opts.date`
+/// at midnight when there is no (valid) instant.
+pub fn clockFor(arena: Allocator, opts: Options, project_offset: f64) Allocator.Error!Clock {
+    const at_midnight: Clock = .{ .date = opts.date, .now = try std.fmt.allocPrint(arena, "{s}T00:00:00Z", .{opts.date}) };
+    const now = opts.now orelse return at_midnight;
+    const p = bdate.parse(now) catch return at_midnight;
+    if (p.kind != .datetime) return at_midnight;
+    const offset = opts.utc_offset orelse project_offset;
+    const local = bdate.localFromUtc(arena, now, offset) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadDate, error.TooLong => return at_midnight,
+    };
+    const utc = bdate.localFromUtc(arena, now, 0) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadDate, error.TooLong => return at_midnight,
+    };
+    return .{ .date = local.date, .time = local.time, .now = try std.fmt.allocPrint(arena, "{s}T{s}Z", .{ utc.date, utc.time }) };
+}
+
 /// Renders card `index` of `set`. Returns null when nothing could be drawn
 /// (the reasons are in `diags`). The caller owns the returned bitmap.
 pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, index: usize, opts: Options, diags: *diag.List) Allocator.Error!?raster.Bitmap {
@@ -1572,6 +1659,7 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     @memset(ctx.group_iters, null);
     @memset(ctx.partial, null);
     @memset(ctx.partial_done, 0);
+    ctx.clock = try clockFor(arena, opts, set.utc_offset);
 
     // Canvas
     var e = ctx.newEnv();

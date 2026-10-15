@@ -37,19 +37,19 @@ Expressions have the types number, bool, text, color, image, list and list item.
 | --- | --- |
 | [Literals and units](@/docs/expressions-literals-and-units.md) | numbers, strings, booleans, colors, `%`, `vw`, `vh` |
 | [Names and references](@/docs/expressions-names-and-references.md) | params, loop names, `canvas`, `card`, `render`, `@layer` references |
-| [Operators](@/docs/expressions-operators.md) | precedence, arithmetic, comparison, logic, `? :` |
-| [Functions](@/docs/expressions-functions.md) | `min`, `clamp`, `round`, `fmt`, `mix`, `avg_color`, ... |
+| [Operators](@/docs/expressions-operators.md) | precedence, arithmetic, comparison, logic, `in`, `? :` |
+| [Functions](@/docs/expressions-functions.md) | `min`, `clamp`, `round`, `fmt`, `mix`, `avg_color`, `match`, ... |
 | [Templates](@/docs/expressions-templates.md) | `{expression}` holes in `text` and `path` fields |
 | [List lookup by key](@/docs/expressions-list-lookup.md) | `stats.Speed`, `stats["Speed"]` |
 | [Constants and functions](@/docs/expressions-constants-and-functions.md) | `consts` and `functions` of a design: named values and formulas |
 
 ## Determinism
 
-The same project, card data and `render.date` always produce the same pixels in every build (WebAssembly, CLI, server). Expressions have no clock, no randomness, no network and no file access.
+The same project, card data and render clock (`render.now` with `utc_offset`, or `render.date`) always produce the same pixels in every build (WebAssembly, CLI, server). Expressions have no clock of their own, no network and no file access. Seeded random functions give the same values for the same seeds.
 
 ## Errors
 
 - Syntax errors are 3001, unknown names or functions 3002 (with a "did you mean" hint), type mismatches and wrong function arguments 3003, reference cycles 3004, references to repeated layers without an iteration index 3005, units in the wrong place 3006.
-- Division by zero (3103), a list or iteration index out of range (3102), a list key that does not exist (3104) and a negative width or height (3101) can only be found while evaluating a specific card, so they are reported with the card's id, by `yoshida check` (which evaluates every card) and when rendering.
+- Math errors (3103), invalid date text (3105), a list or iteration index out of range (3102), a list key that does not exist (3104) and a negative width or height (3101) can only be found while evaluating a specific card, so they are reported with the card's id, by `yoshida check` (which evaluates every card) and when rendering.
 
 See [Diagnostics](@/docs/diagnostics.md). In the editor, expression fields are small code editors with highlighting, completion and a reference: [Builder: Expression editor](@/docs/builder-expression-editor.md).

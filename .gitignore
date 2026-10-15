@@ -4,10 +4,11 @@ out/
 web/node_modules/
 web/dist/
 web/public/yoshida.wasm
+web/public/expr.wasm
 web/public/examples/
 release/
 web/test-results/
-public/
+/public/
 site/public/
 releases.json
 site/content/releases/*.md

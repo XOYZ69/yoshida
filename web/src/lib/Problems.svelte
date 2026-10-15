@@ -3,7 +3,7 @@
 // message with names set as code, where it is (file:line and a readable
 // path) and the hint. The same problem on several cards is shown once.
 import type { Diagnostic, Severity } from "./engine";
-import Icon from "./ui/Icon.svelte";
+import Icon, { type IconName } from "./ui/Icon.svelte";
 
 let {
 	diagnostics,
@@ -96,7 +96,11 @@ const area: Record<string, string> = {
 const short = (f: string) => f.split("/").pop() ?? f;
 /** Messages start with "layer 'x': "; the location already says that. */
 const body = (m: string) => m.replace(/^layer '[^']*': /, "");
-const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" };
+const icon: Record<Severity, IconName> = {
+  error: "close",
+  warning: "alert",
+  hint: "info",
+};
 </script>
 
 <div class="problems">
@@ -104,7 +108,7 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     <strong>Problems</strong>
     {#each ['error', 'warning', 'hint'] as const as s}
       <button class="toggle {s}" class:off={!show[s]} aria-pressed={show[s]} onclick={() => (show[s] = !show[s])} title={show[s] ? `Hide ${s}s` : `Show ${s}s`}>
-        <span class="dot">{icon[s]}</span>{counts[s]} {s}{counts[s] === 1 ? '' : 's'}
+        <span class="dot"><Icon name={icon[s]} /></span>{counts[s]} {s}{counts[s] === 1 ? '' : 's'}
       </button>
     {/each}
     {#if focus}
@@ -124,13 +128,13 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     {/if}
   </header>
   {#if !scoped.length}
-    <p class="empty"><span class="ok">✓</span> {focus ? `No problems in ${focus.label}.` : 'No problems.'}</p>
+    <p class="empty"><span class="ok"><Icon name="check" /></span> {focus ? `No problems in ${focus.label}.` : 'No problems.'}</p>
   {:else}
     <ul>
       {#each visible as { d, cards }, i (i)}
         <li>
           <button class="item {d.severity}" onclick={() => onselect(d)} title="Go to the problem">
-            <span class="badge">{icon[d.severity]}</span>
+            <span class="badge"><Icon name={icon[d.severity]} /></span>
             <span class="main">
               <span class="line1">
                 <span class="msg">
@@ -175,7 +179,6 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
   }
   header {
     padding: 5px 12px;
-    border-bottom: 1px solid var(--line);
     display: flex;
     gap: 8px;
     align-items: center;
@@ -203,6 +206,10 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     font-size: 10px;
     font-weight: 700;
     color: var(--on-status);
+  }
+  .dot :global(svg) {
+    width: 10px;
+    height: 10px;
   }
   .error .dot,
   .error .badge {
@@ -234,13 +241,18 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     line-height: 1.2;
   }
   .empty {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 10px 12px;
     color: var(--muted);
     margin: 0;
   }
   .ok {
     color: #2e9e5b;
-    font-weight: 700;
+  }
+  .ok :global(svg) {
+    margin: 0;
   }
   ul {
     list-style: none;
@@ -291,6 +303,10 @@ const icon: Record<Severity, string> = { error: "✕", warning: "!", hint: "i" }
     font-size: 11px;
     font-weight: 700;
     color: var(--on-status);
+  }
+  .badge :global(svg) {
+    width: 12px;
+    height: 12px;
   }
   .main {
     flex: 1;
