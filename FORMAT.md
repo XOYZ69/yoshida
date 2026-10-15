@@ -87,13 +87,19 @@ A wrong JSON type is [1103]. Expressions are parsed and type-checked at load tim
 | `canvas.background` | color | no | `#00000000` | Transparent by default |
 | `canvas.dpi` | number | no | none | Print resolution. Written to PNG files (`pHYs`) and used for the PDF page size. No effect on drawing |
 | `canvas.bleed` | number | no | `0` | Pixels on every side that are cut off after printing; the trim line is this far inside the edge. Used for the PDF TrimBox and for crop marks |
-| `fonts` | object of name → path | no | `{}` | Font families available to text layers. Names follow `ident`. `default` is built in (a bundled permissive font) and may be overridden |
+| `fonts` | object of name → path or font object | no | `{}` | Font families available to text layers. Names follow `ident`. `default` is built in (a bundled permissive font) and may be overridden. A font object is `{ "path": ..., "note": ... }` (see below) |
 | `params` | object of name → param | no | `{}` | Section 4 |
 | `consts` | object of name → value | no | `{}` | Section 6.8 |
 | `functions` | object of name → function | no | `{}` | Section 6.8 |
 | `layers` | array of layers | yes | | Drawn in array order, first is bottom |
 
 Unknown top-level fields are [1101].
+
+A font entry is either the path as a string, or an object with a required `path` and an optional `note` (text for editors; rendering ignores it). Unknown keys in the object are [1101]; a missing `path` is [1102]:
+
+```json
+"fonts": { "serif": "assets/fonts/Serif.ttf", "body": { "path": "assets/fonts/Body.ttf", "note": "Body text for rules cards" } }
+```
 
 ## 4. Params
 
