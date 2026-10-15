@@ -7,6 +7,7 @@ const c = @import("c.zig");
 const json = @import("json.zig");
 const diag = @import("diag.zig");
 const value = @import("value.zig");
+const bdate = @import("builtins/date.zig");
 const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
@@ -50,6 +51,12 @@ pub const Probe = struct {
 pub const Options = struct {
     /// ISO date for `render.date`, chosen once by whoever starts the render.
     date: []const u8 = "1970-01-01",
+    /// UTC instant of the render (`YYYY-MM-DDTHH:MM:SSZ`). When set,
+    /// `render.date` and `render.time` come from it plus the UTC offset, and
+    /// `date` is ignored.
+    now: ?[]const u8 = null,
+    /// Overrides the project's `utc_offset` (hours).
+    utc_offset: ?f64 = null,
     /// Editor preview: missing images become a placeholder and a warning.
     preview: bool = false,
     /// When set, receives the resolved bounds of every layer (the editor uses
@@ -344,6 +351,7 @@ const Ctx = struct {
     index: usize,
     opts: Options,
     diags: *diag.List,
+    clock: Clock = .{},
     canvas_w: f64 = 0,
     canvas_h: f64 = 0,
     /// Bitmap pixels per canvas pixel (`Options.scale`).
@@ -387,7 +395,9 @@ const Ctx = struct {
             .canvas_h = ctx.canvas_h,
             .card_id = ctx.card.id,
             .render_index = @floatFromInt(ctx.index),
-            .render_date = ctx.opts.date,
+            .render_date = ctx.clock.date,
+            .render_time = ctx.clock.time,
+            .render_now = ctx.clock.now,
             .ctx = ctx,
             .lookup = lookup,
             .layerRef = layerRef,
@@ -1583,6 +1593,32 @@ fn readField(r: *const Resolved, path: []const []const u8, off: [2]f64) ?Value {
     return null;
 }
 
+/// What `render.date`, `render.time` and `render.now` read.
+pub const Clock = struct {
+    date: []const u8 = "1970-01-01",
+    time: []const u8 = "00:00:00",
+    now: []const u8 = "1970-01-01T00:00:00Z",
+};
+
+/// The render's clock: `opts.now` shifted by the UTC offset, or `opts.date`
+/// at midnight when there is no (valid) instant.
+pub fn clockFor(arena: Allocator, opts: Options, project_offset: f64) Allocator.Error!Clock {
+    const at_midnight: Clock = .{ .date = opts.date, .now = try std.fmt.allocPrint(arena, "{s}T00:00:00Z", .{opts.date}) };
+    const now = opts.now orelse return at_midnight;
+    const p = bdate.parse(now) catch return at_midnight;
+    if (p.kind != .datetime) return at_midnight;
+    const offset = opts.utc_offset orelse project_offset;
+    const local = bdate.localFromUtc(arena, now, offset) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadDate, error.TooLong => return at_midnight,
+    };
+    const utc = bdate.localFromUtc(arena, now, 0) catch |e| switch (e) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadDate, error.TooLong => return at_midnight,
+    };
+    return .{ .date = local.date, .time = local.time, .now = try std.fmt.allocPrint(arena, "{s}T{s}Z", .{ utc.date, utc.time }) };
+}
+
 /// Renders card `index` of `set`. Returns null when nothing could be drawn
 /// (the reasons are in `diags`). The caller owns the returned bitmap.
 pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, index: usize, opts: Options, diags: *diag.List) Allocator.Error!?raster.Bitmap {
@@ -1623,6 +1659,7 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     @memset(ctx.group_iters, null);
     @memset(ctx.partial, null);
     @memset(ctx.partial_done, 0);
+    ctx.clock = try clockFor(arena, opts, set.utc_offset);
 
     // Canvas
     var e = ctx.newEnv();

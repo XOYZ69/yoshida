@@ -809,8 +809,11 @@ fn loadFunctions(l: *Loader, d: *Design) Allocator.Error!void {
     var sigs: std.ArrayList(expr.FnSig) = .empty;
     for (fnode.data.object) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, d.const_symbols, sigs.items, f.key)) {
-            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant, reserved word or built-in function", .{f.key});
+            try l.err(1106, f.key_pos, "function name '{s}' must be lowercase letters, digits and '_', and not a param, constant or reserved word", .{f.key});
             continue;
+        }
+        if (expr.isFunction(f.key)) {
+            try l.report(.warning, 1113, f.key_pos, try std.fmt.allocPrint(arena, "function '{s}' hides the built-in {s}() in this design", .{ f.key, f.key }), "rename it to keep using the built-in");
         }
         if (!try l.expectObject(&f.value, "a function")) continue;
         try l.checkFields(&f.value, &.{ "args", "expr", "note" }, "a function");
@@ -868,7 +871,7 @@ fn loadParam(l: *Loader, f: *const Node.Field) Allocator.Error!?Param {
         return null;
     }
     if (expr.isReserved(name)) {
-        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word or function name", .{name});
+        try l.err(1106, f.key_pos, "param name '{s}' is a reserved word", .{name});
         return null;
     }
     const n = &f.value;
@@ -1566,4 +1569,28 @@ test "list lookups by key and list counts" {
     try std.testing.expectEqualStrings("/layers/2/at/x", diags.items.items[0].path);
     try std.testing.expectEqualStrings("/layers/3/box/x", diags.items.items[1].path);
     try std.testing.expectEqualStrings("/layers/3/box/y", diags.items.items[2].path);
+}
+
+test "a design function may wrap the built-in it hides" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "title": { "type": "text", "default": "x" }, "sum": { "type": "number", "default": 2 } },
+        \\  "functions": { "round": { "args": { "v": "number" }, "expr": "round(v * 2) / 2" } },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "box": { "x": "round(sum)", "y": 0, "w": "len(title)", "h": 1 } }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), diags.items.items.len);
+    try std.testing.expectEqual(@as(u16, 1113), diags.items.items[0].code);
+    try std.testing.expectEqual(@as(usize, 1), d.functions.len);
 }

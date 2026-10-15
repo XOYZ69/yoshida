@@ -171,6 +171,8 @@ fn builtinText(b: expr.Builtin) []const u8 {
         .card_id => "card.id",
         .render_index => "render.index",
         .render_date => "render.date",
+        .render_time => "render.time",
+        .render_now => "render.now",
     };
 }
 

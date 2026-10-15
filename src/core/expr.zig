@@ -8,6 +8,12 @@ const Allocator = std.mem.Allocator;
 const Value = value.Value;
 const Type = value.Type;
 const Color = value.Color;
+const bmath = @import("builtins/math.zig");
+const btext = @import("builtins/text.zig");
+const blist = @import("builtins/list.zig");
+const bdate = @import("builtins/date.zig");
+const bcolor = @import("builtins/color.zig");
+const brand = @import("builtins/rand.zig");
 
 pub const Axis = enum { none, x, y };
 pub const Unit = enum { percent, vw, vh };
@@ -19,11 +25,13 @@ pub const Builtin = enum {
     card_id,
     render_index,
     render_date,
+    render_time,
+    render_now,
 
     pub fn ty(b: Builtin) Type {
         return switch (b) {
             .canvas_w, .canvas_h, .render_index => .number,
-            .card_id, .render_date => .text,
+            .card_id, .render_date, .render_time, .render_now => .text,
         };
     }
 };
@@ -47,6 +55,61 @@ pub const Func = enum {
     rgb,
     rgba,
     match,
+    // Numbers.
+    sqrt,
+    pow,
+    sign,
+    sin,
+    cos,
+    tan,
+    asin,
+    acos,
+    atan2,
+    lerp,
+    remap,
+    wrap,
+    // Text.
+    contains,
+    starts_with,
+    ends_with,
+    replace,
+    slice,
+    pad_start,
+    repeat,
+    title_case,
+    roman,
+    part,
+    // Lists.
+    has,
+    get,
+    index_of,
+    sum,
+    avg,
+    count,
+    join,
+    last,
+    // Dates and times.
+    date_fmt,
+    year,
+    month,
+    day,
+    weekday,
+    hour,
+    minute,
+    add_days,
+    add_hours,
+    days_between,
+    // Colours.
+    hsl,
+    hsla,
+    lighten,
+    darken,
+    luminance,
+    readable,
+    // Seeded random.
+    rand,
+    rand_int,
+    pick,
 };
 
 pub const function_names = blk: {
@@ -58,8 +121,14 @@ pub const function_names = blk: {
 
 pub const reserved_names = [_][]const u8{ "canvas", "render", "card", "true", "false", "and", "or", "not", "in" };
 
+/// A reserved word: never a name. Built-in function names are not reserved;
+/// a design function with one hides the built-in (warning 1113).
 pub fn isReserved(name: []const u8) bool {
     for (reserved_names) |r| if (std.mem.eql(u8, r, name)) return true;
+    return false;
+}
+
+pub fn isFunction(name: []const u8) bool {
     return std.meta.stringToEnum(Func, name) != null;
 }
 
@@ -98,7 +167,7 @@ pub const Node = struct {
         /// `obj[idx]`: an item by position, or by key when `idx` is text
         /// (`key`, set by the checker; `stats["Speed"]`).
         index: struct { obj: *Node, idx: *Node, key: ?KeyLookup = null },
-        call: struct { func: Func, args: []*Node },
+        call: Call,
         /// A call to a design function (`functions`); `index` is set by the checker.
         ucall: struct { name: []const u8, args: []*Node, index: usize = 0 },
         neg: *Node,
@@ -118,6 +187,15 @@ pub const Node = struct {
     /// key; gives the `value_field` when the list is a key/value list, else
     /// the whole item.
     pub const KeyLookup = struct { key_field: usize, value_field: ?usize };
+};
+
+/// A built-in call. List functions get `field` (the item field they read)
+/// and `lk` (key lookup) from the checker.
+pub const Call = struct {
+    func: Func,
+    args: []*Node,
+    field: usize = 0,
+    lk: ?Node.KeyLookup = null,
 };
 
 /// A problem found while parsing, checking or evaluating an expression.
@@ -537,10 +615,10 @@ const Parser = struct {
         const fields: []const struct { []const u8, Builtin } = if (std.mem.eql(u8, t.text, "canvas"))
             &.{ .{ "w", .canvas_w }, .{ "h", .canvas_h } }
         else if (std.mem.eql(u8, t.text, "render"))
-            &.{ .{ "index", .render_index }, .{ "date", .render_date } }
+            &.{ .{ "index", .render_index }, .{ "date", .render_date }, .{ "time", .render_time }, .{ "now", .render_now } }
         else
             &.{.{ "id", .card_id }};
-        var names: [2][]const u8 = undefined;
+        var names: [4][]const u8 = undefined;
         for (fields, 0..) |f, i| names[i] = f[0];
         if (!isOp(p.peek(), ".")) {
             return p.bad(3003, t, try std.fmt.allocPrint(p.arena, "'{s}' needs a field", .{t.text}), try std.fmt.allocPrint(p.arena, "for example {s}.{s}", .{ t.text, fields[0][0] }), t.start, null);
@@ -1067,7 +1145,15 @@ pub const Checker = struct {
                 if (!a.eql(b)) return c.fail(3003, n, try c.print("the branches of '? :' differ: {s} and {s}", .{ a.name(), b.name() }), null);
                 return a;
             },
-            .call => |cl| return c.checkCall(n, cl.func, cl.args),
+            .call => |*cl| {
+                // A design function with a built-in's name hides the built-in.
+                for (s.functions) |f| if (std.mem.eql(u8, f.name, @tagName(cl.func))) {
+                    const call_args = cl.args;
+                    n.data = .{ .ucall = .{ .name = f.name, .args = call_args } };
+                    return c.infer(n);
+                };
+                return c.checkCall(n, cl);
+            },
             .ucall => |*uc| {
                 for (s.functions, 0..) |f, fi| {
                     if (!std.mem.eql(u8, f.name, uc.name)) continue;
@@ -1114,16 +1200,18 @@ pub const Checker = struct {
         if (!t.eql(rt)) return c.fail(3003, a, try c.print("the results of match() differ: {s} and {s}", .{ rt.name(), t.name() }), null);
     }
 
-    fn checkCall(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
+    fn checkCall(c: *Checker, n: *Node, cl: *Call) Error!Type {
+        const func = cl.func;
+        const args = cl.args;
         if (func == .match) return c.checkMatch(n, args);
-        const sig = funcSig(func);
-        if (args.len < sig.min or args.len > sig.max) {
-            const msg = if (sig.min == sig.max)
-                try c.print("{s}() takes {d} argument{s}, got {d}", .{ @tagName(func), sig.min, if (sig.min == 1) "" else "s", args.len })
-            else
-                try c.print("{s}() takes {d} to {d} arguments, got {d}", .{ @tagName(func), sig.min, sig.max, args.len });
-            return c.fail(3003, n, msg, null);
+        switch (func) {
+            .has, .get, .index_of, .sum, .avg, .count, .join, .last => return c.checkList(n, cl),
+            .min, .max => if (args.len >= 1 and args.len <= 2 and (try c.check(args[0])) == .list) return c.checkList(n, cl),
+            .rand, .rand_int, .pick => return c.checkRandom(n, func, args),
+            else => {},
         }
+        const sig = funcSig(func);
+        try c.arity(n, func, args.len, sig.min, sig.max);
         for (args, 0..) |a, i| {
             const want = sig.args[@min(i, sig.args.len - 1)];
             const t = try c.check(a);
@@ -1136,6 +1224,138 @@ pub const Checker = struct {
             }
         }
         return sig.ret.?;
+    }
+
+    fn arity(c: *Checker, n: *Node, func: Func, got: usize, min: usize, max: usize) Error!void {
+        if (got >= min and got <= max) return;
+        const name = @tagName(func);
+        const msg = if (min == max)
+            try c.print("{s}() takes {d} argument{s}, got {d}", .{ name, min, if (min == 1) "" else "s", got })
+        else if (max >= 64)
+            try c.print("{s}() takes at least {d} arguments, got {d}", .{ name, min, got })
+        else
+            try c.print("{s}() takes {d} to {d} arguments, got {d}", .{ name, min, max, got });
+        return c.fail(3003, n, msg, null);
+    }
+
+    /// List functions: the first argument is a list param; field names are
+    /// quoted literals, resolved here so a typo is a load-time error.
+    fn checkList(c: *Checker, n: *Node, cl: *Call) Error!Type {
+        const func = cl.func;
+        const args = cl.args;
+        const name = @tagName(func);
+        const range: [2]usize = switch (func) {
+            .has, .index_of => .{ 2, 2 },
+            .get => .{ 3, 4 },
+            .sum, .avg, .min, .max => .{ 1, 2 },
+            .count => .{ 3, 3 },
+            .join => .{ 2, 3 },
+            .last => .{ 1, 1 },
+            else => unreachable,
+        };
+        try c.arity(n, func, args.len, range[0], range[1]);
+        const lt = try c.check(args[0]);
+        const def = switch (lt) {
+            .list => |d| d,
+            else => return c.fail(3003, args[0], try c.print("{s}() needs a list, got a {s}", .{ name, lt.name() }), "lists come from list params"),
+        };
+        switch (func) {
+            .has, .index_of => {
+                try c.expectType(args[1], .text, try c.print("the key of {s}()", .{name}));
+                cl.lk = (try c.keyLookup(n, def))[0];
+                return if (func == .has) .bool else .number;
+            },
+            .get => {
+                try c.expectType(args[1], .text, "the key of get()");
+                const lk = (try c.keyLookup(n, def))[0];
+                cl.lk = lk;
+                const ft: Type = if (args.len == 4) blk: {
+                    cl.field = try c.fieldArg(args[2], def, name);
+                    break :blk def.types[cl.field].toType();
+                } else blk: {
+                    const vf = lk.value_field orelse return c.fail(3003, n, "get() with 3 arguments needs a key/value list", "name the field: get(list, key, 'field', fallback)");
+                    cl.field = vf;
+                    break :blk def.types[vf].toType();
+                };
+                const fb = args[args.len - 1];
+                const t = try c.check(fb);
+                if (!t.eql(ft)) return c.fail(3003, fb, try c.print("the fallback of get() must be a {s}, got a {s}", .{ ft.name(), t.name() }), null);
+                return ft;
+            },
+            .sum, .avg, .min, .max => {
+                cl.field = if (args.len == 2) try c.fieldArg(args[1], def, name) else try c.defaultField(n, def, name);
+                if (def.types[cl.field] != .number) return c.fail(3003, if (args.len == 2) args[1] else n, try c.print("{s}() needs a number field, '{s}' is a {s}", .{ name, def.names[cl.field], def.types[cl.field].toType().name() }), null);
+                return .number;
+            },
+            .count => {
+                cl.field = try c.fieldArg(args[1], def, name);
+                const ft = def.types[cl.field].toType();
+                const t = try c.check(args[2]);
+                if (!t.comparable(ft)) return c.fail(3003, args[2], try c.print("count() compares with field '{s}', a {s}, got a {s}", .{ def.names[cl.field], ft.name(), t.name() }), null);
+                return .number;
+            },
+            .join => {
+                cl.field = if (args.len == 3) try c.fieldArg(args[1], def, name) else try c.defaultField(n, def, name);
+                try c.expectType(args[args.len - 1], .text, "the separator of join()");
+                return .text;
+            },
+            .last => return .{ .item = def },
+            else => unreachable,
+        }
+    }
+
+    /// A quoted field name of the list's items.
+    fn fieldArg(c: *Checker, a: *Node, def: *const value.ItemDef, func: []const u8) Error!usize {
+        _ = try c.check(a);
+        const fname = switch (a.data) {
+            .string => |str| str,
+            else => return c.fail(3003, a, try c.print("the field of {s}() must be a quoted field name", .{func}), try c.print("e.g. {s}(list, '{s}')", .{ func, def.names[0] })),
+        };
+        return def.find(fname) orelse c.fail(3002, a, try c.print("list item has no field '{s}'", .{fname}), diag.suggest(c.scope.arena, fname, def.names));
+    }
+
+    /// The field a list function reads when none is named: the only field,
+    /// or the value of a key/value list.
+    fn defaultField(c: *Checker, n: *Node, def: *const value.ItemDef, func: []const u8) Error!usize {
+        if (def.types.len == 1) return 0;
+        if (keyField(def)) |kf| if (valueField(def, kf)) |vf| return vf;
+        return c.fail(3003, n, try c.print("{s}() needs a field name for this list", .{func}), try c.print("e.g. {s}(list, '{s}')", .{ func, def.names[0] }));
+    }
+
+    /// rand(seed, ...), rand_int(lo, hi, seed, ...), pick(seed, a, b, ...).
+    fn checkRandom(c: *Checker, n: *Node, func: Func, args: []*Node) Error!Type {
+        const name = @tagName(func);
+        switch (func) {
+            .rand => {
+                try c.arity(n, func, args.len, 1, 64);
+                for (args) |a| try c.seed(a, name);
+                return .number;
+            },
+            .rand_int => {
+                try c.arity(n, func, args.len, 3, 64);
+                try c.expectType(args[0], .number, "lo of rand_int()");
+                try c.expectType(args[1], .number, "hi of rand_int()");
+                for (args[2..]) |a| try c.seed(a, name);
+                return .number;
+            },
+            .pick => {
+                try c.arity(n, func, args.len, 3, 64);
+                try c.seed(args[0], name);
+                const rt = try c.check(args[1]);
+                if (rt == .list or rt == .item) return c.fail(3003, args[1], try c.print("pick() chooses numbers, text, bools, colours or images, got a {s}", .{rt.name()}), null);
+                for (args[2..]) |a| {
+                    const t = try c.check(a);
+                    if (!t.eql(rt)) return c.fail(3003, a, try c.print("the choices of pick() differ: {s} and {s}", .{ rt.name(), t.name() }), null);
+                }
+                return rt;
+            },
+            else => unreachable,
+        }
+    }
+
+    fn seed(c: *Checker, a: *Node, func: []const u8) Error!void {
+        const t = try c.check(a);
+        if (!keyable(t)) return c.fail(3003, a, try c.print("seeds of {s}() are numbers, text, bools or colours, got a {s}", .{ func, t.name() }), null);
     }
 };
 
@@ -1163,6 +1383,39 @@ pub fn funcSig(func: Func) FuncSig {
         .rgba => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
         // Value, key/result pairs, default; the result type is the results'.
         .match => .{ .min = 4, .max = 64, .args = &.{null}, .ret = null },
+        .sqrt, .sign, .sin, .cos, .tan, .asin, .acos => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .number },
+        .pow, .atan2, .wrap => .{ .min = 2, .max = 2, .args = &.{ num, num }, .ret = .number },
+        .lerp => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .number },
+        .remap => .{ .min = 5, .max = 5, .args = &.{ num, num, num, num, num }, .ret = .number },
+        .contains, .starts_with, .ends_with => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .bool },
+        .replace => .{ .min = 3, .max = 3, .args = &.{ txt, txt, txt }, .ret = .text },
+        .slice => .{ .min = 2, .max = 3, .args = &.{ txt, num, num }, .ret = .text },
+        .pad_start => .{ .min = 2, .max = 3, .args = &.{ txt, num, txt }, .ret = .text },
+        .repeat => .{ .min = 2, .max = 2, .args = &.{ txt, num }, .ret = .text },
+        .title_case => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .text },
+        .roman => .{ .min = 1, .max = 1, .args = &.{num}, .ret = .text },
+        .part => .{ .min = 3, .max = 3, .args = &.{ txt, txt, num }, .ret = .text },
+        // List functions are checked by checkList: list, then field names.
+        .has => .{ .min = 2, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .get => .{ .min = 3, .max = 4, .args = &.{ null, txt, null, null }, .ret = null },
+        .index_of => .{ .min = 2, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .sum, .avg => .{ .min = 1, .max = 2, .args = &.{ null, txt }, .ret = null },
+        .count => .{ .min = 3, .max = 3, .args = &.{ null, txt, null }, .ret = null },
+        .join => .{ .min = 2, .max = 3, .args = &.{ null, txt, txt }, .ret = null },
+        .last => .{ .min = 1, .max = 1, .args = &.{null}, .ret = null },
+        .date_fmt => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .text },
+        .year, .month, .day, .weekday, .hour, .minute => .{ .min = 1, .max = 1, .args = &.{txt}, .ret = .number },
+        .add_days, .add_hours => .{ .min = 2, .max = 2, .args = &.{ txt, num }, .ret = .text },
+        .days_between => .{ .min = 2, .max = 2, .args = &.{ txt, txt }, .ret = .number },
+        .hsl => .{ .min = 3, .max = 3, .args = &.{ num, num, num }, .ret = .color },
+        .hsla => .{ .min = 4, .max = 4, .args = &.{ num, num, num, num }, .ret = .color },
+        .lighten, .darken => .{ .min = 2, .max = 2, .args = &.{ col, num }, .ret = .color },
+        .luminance => .{ .min = 1, .max = 1, .args = &.{col}, .ret = .number },
+        .readable => .{ .min = 1, .max = 3, .args = &.{ col, col, col }, .ret = .color },
+        // Seeds are numbers, text, bools or colours (checkRandom).
+        .rand => .{ .min = 1, .max = 64, .args = &.{null}, .ret = .number },
+        .rand_int => .{ .min = 3, .max = 64, .args = &.{ num, num, null }, .ret = .number },
+        .pick => .{ .min = 3, .max = 64, .args = &.{null}, .ret = null },
     };
 }
 
@@ -1324,6 +1577,10 @@ pub const Env = struct {
     card_id: []const u8,
     render_index: f64,
     render_date: []const u8,
+    /// Local time of the render, `HH:MM:SS`.
+    render_time: []const u8 = "00:00:00",
+    /// UTC instant of the render, `YYYY-MM-DDTHH:MM:SSZ`.
+    render_now: []const u8 = "1970-01-01T00:00:00Z",
     axis: Axis = .none,
     ctx: *anyopaque,
     /// Params and loop names.
@@ -1369,6 +1626,8 @@ pub const Env = struct {
                 .card_id => .{ .text = env.card_id },
                 .render_index => .{ .number = env.render_index },
                 .render_date => .{ .text = env.render_date },
+                .render_time => .{ .text = env.render_time },
+                .render_now => .{ .text = env.render_now },
             },
             .name => |nm| {
                 if (nm.konst) |ki| return (env.constValue orelse return env.fail(3002, n, "constants are not available here"))(env.ctx, ki);
@@ -1425,7 +1684,7 @@ pub const Env = struct {
                 return .{ .bool = false };
             },
             .cond => |cd| return if ((try env.eval(cd.c)).bool) env.eval(cd.a) else env.eval(cd.b),
-            .call => |cl| return env.call(cl.func, cl.args),
+            .call => |cl| return env.call(n, cl),
             .ucall => |uc| {
                 const f = env.callUser orelse return env.fail(3002, n, "functions are not available here");
                 const vals = try env.arena.alloc(Value, uc.args.len);
@@ -1455,9 +1714,12 @@ pub const Env = struct {
         return (try env.eval(n)).number;
     }
 
-    fn call(env: *Env, func: Func, args: []*Node) EvalError!Value {
+    fn call(env: *Env, n: *const Node, cl: Call) EvalError!Value {
+        const func = cl.func;
+        const args = cl.args;
         switch (func) {
             .min, .max => {
+                if (args.len <= 2 and args[0].ty == .list) return env.listCall(n, cl);
                 var acc = try env.num(args[0]);
                 for (args[1..]) |a| {
                     const v = try env.num(a);
@@ -1486,10 +1748,8 @@ pub const Env = struct {
                 else => unreachable,
             },
             .upper, .lower => {
-                const t = (try env.eval(args[0])).text;
-                const out = try env.arena.alloc(u8, t.len);
-                for (t, 0..) |ch, i| out[i] = if (func == .upper) std.ascii.toUpper(ch) else std.ascii.toLower(ch);
-                return .{ .text = out };
+                const t = try env.str(args[0]);
+                return env.text(n, func, if (func == .upper) btext.upper(env.arena, t) else btext.lower(env.arena, t));
             },
             .trim => return .{ .text = std.mem.trim(u8, (try env.eval(args[0])).text, " \t\n\r") },
             .fmt => {
@@ -1539,6 +1799,181 @@ pub const Env = struct {
                 }
                 return env.eval(args[args.len - 1]);
             },
+            .sqrt, .sign, .sin, .cos, .tan, .asin, .acos => {
+                const x = try env.num(args[0]);
+                return env.number(n, func, switch (func) {
+                    .sqrt => bmath.sqrt(x),
+                    .sign => bmath.sign(x),
+                    .sin => bmath.sin(x),
+                    .cos => bmath.cos(x),
+                    .tan => bmath.tan(x),
+                    .asin => bmath.asin(x),
+                    .acos => bmath.acos(x),
+                    else => unreachable,
+                });
+            },
+            .pow => return env.number(n, func, bmath.pow(try env.num(args[0]), try env.num(args[1]))),
+            .atan2 => return env.number(n, func, bmath.atan2(try env.num(args[0]), try env.num(args[1]))),
+            .wrap => return env.number(n, func, bmath.wrap(try env.num(args[0]), try env.num(args[1]))),
+            .lerp => return env.number(n, func, bmath.lerp(try env.num(args[0]), try env.num(args[1]), try env.num(args[2]))),
+            .remap => {
+                var v: [5]f64 = undefined;
+                for (args, &v) |a, *x| x.* = try env.num(a);
+                return env.number(n, func, bmath.remap(v[0], v[1], v[2], v[3], v[4]));
+            },
+            .contains, .starts_with, .ends_with => {
+                const t = try env.str(args[0]);
+                const sub = try env.str(args[1]);
+                return .{ .bool = switch (func) {
+                    .contains => btext.contains(t, sub),
+                    .starts_with => btext.startsWith(t, sub),
+                    else => btext.endsWith(t, sub),
+                } };
+            },
+            .replace => return env.text(n, func, btext.replace(env.arena, try env.str(args[0]), try env.str(args[1]), try env.str(args[2]))),
+            .slice => {
+                const t = try env.str(args[0]);
+                const start = try env.num(args[1]);
+                const end: ?f64 = if (args.len > 2) try env.num(args[2]) else null;
+                return env.text(n, func, btext.slice(env.arena, t, start, end));
+            },
+            .pad_start => {
+                const t = try env.str(args[0]);
+                const width = try env.num(args[1]);
+                const fill = if (args.len > 2) try env.str(args[2]) else " ";
+                return env.text(n, func, btext.padStart(env.arena, t, width, fill));
+            },
+            .repeat => return env.text(n, func, btext.repeat(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .title_case => return env.text(n, func, btext.titleCase(env.arena, try env.str(args[0]))),
+            .roman => return env.text(n, func, btext.roman(env.arena, try env.num(args[0]))),
+            .part => return env.text(n, func, btext.part(try env.str(args[0]), try env.str(args[1]), try env.num(args[2]))),
+            .has, .get, .index_of, .sum, .avg, .count, .join, .last => return env.listCall(n, cl),
+            .date_fmt => {
+                const p = try env.date(n, func, try env.str(args[0]));
+                return env.text(n, func, bdate.format(env.arena, p, try env.str(args[1])));
+            },
+            .year, .month, .day, .weekday, .hour, .minute => {
+                const p = try env.date(n, func, try env.str(args[0]));
+                return env.number(n, func, switch (func) {
+                    .year => bdate.year(p),
+                    .month => bdate.month(p),
+                    .day => bdate.day(p),
+                    .weekday => bdate.weekday(p),
+                    .hour => bdate.hour(p),
+                    else => bdate.minute(p),
+                });
+            },
+            .add_days => return env.text(n, func, bdate.addDays(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .add_hours => return env.text(n, func, bdate.addHours(env.arena, try env.str(args[0]), try env.num(args[1]))),
+            .days_between => return env.number(n, func, bdate.daysBetween(try env.str(args[0]), try env.str(args[1]))),
+            .hsl, .hsla => {
+                const h = try env.num(args[0]);
+                const sat = try env.num(args[1]);
+                const l = try env.num(args[2]);
+                const a = if (func == .hsla) try env.num(args[3]) else 1;
+                return .{ .color = bcolor.hsl(h, sat, l, a) };
+            },
+            .lighten, .darken => {
+                const c = (try env.eval(args[0])).color;
+                const amount = try env.num(args[1]);
+                return .{ .color = if (func == .lighten) bcolor.lighten(c, amount) else bcolor.darken(c, amount) };
+            },
+            .luminance => return .{ .number = bcolor.luminance((try env.eval(args[0])).color) },
+            .readable => {
+                const bg = (try env.eval(args[0])).color;
+                const light = if (args.len > 1) (try env.eval(args[1])).color else Color.white;
+                const dark = if (args.len > 2) (try env.eval(args[2])).color else Color.black;
+                return .{ .color = bcolor.readable(bg, light, dark) };
+            },
+            .rand => return .{ .number = brand.unit(try env.evalAll(args)) },
+            .rand_int => {
+                const lo = try env.num(args[0]);
+                const hi = try env.num(args[1]);
+                return env.number(n, func, brand.int(lo, hi, try env.evalAll(args[2..])));
+            },
+            .pick => {
+                // Lazy like match(): only the chosen value is evaluated.
+                const seed_v = try env.eval(args[0]);
+                const i = brand.pickIndex(&.{seed_v}, args.len - 1);
+                return env.eval(args[1 + i]);
+            },
+        }
+    }
+
+    fn str(env: *Env, n: *const Node) EvalError![]const u8 {
+        return (try env.eval(n)).text;
+    }
+
+    fn evalAll(env: *Env, nodes: []const *Node) EvalError![]const Value {
+        const out = try env.arena.alloc(Value, nodes.len);
+        for (nodes, out) |a, *v| v.* = try env.eval(a);
+        return out;
+    }
+
+    fn date(env: *Env, n: *const Node, func: Func, t: []const u8) EvalError!bdate.Parsed {
+        return bdate.parse(t) catch |e| env.builtinFail(n, func, e);
+    }
+
+    /// A number result: a plain f64 or an error union from a builtin module.
+    fn number(env: *Env, n: *const Node, func: Func, r: anytype) EvalError!Value {
+        const x: f64 = if (@typeInfo(@TypeOf(r)) == .error_union) (r catch |e| return env.builtinFail(n, func, e)) else r;
+        if (!std.math.isFinite(x)) return env.fail(3103, n, try std.fmt.allocPrint(env.arena, "{s}() has no finite result here", .{@tagName(func)}));
+        return .{ .number = x };
+    }
+
+    fn text(env: *Env, n: *const Node, func: Func, r: anytype) EvalError!Value {
+        return .{ .text = r catch |e| return env.builtinFail(n, func, e) };
+    }
+
+    /// Maps a builtin module's error to its diagnostic (SPEC: 3103, 3105, 3106, 3107).
+    fn builtinFail(env: *Env, n: *const Node, func: Func, e: anyerror) EvalError {
+        const name = @tagName(func);
+        const a = env.arena;
+        return switch (e) {
+            error.OutOfMemory => error.OutOfMemory,
+            error.Domain => env.fail(3103, n, try switch (func) {
+                .avg, .min, .max => std.fmt.allocPrint(a, "{s}() of an empty list", .{name}),
+                .remap => std.fmt.allocPrint(a, "remap() needs two different input ends", .{}),
+                .wrap => std.fmt.allocPrint(a, "wrap() by zero", .{}),
+                else => std.fmt.allocPrint(a, "{s}() has no result for these arguments", .{name}),
+            }),
+            error.BadDate => env.fail(3105, n, try std.fmt.allocPrint(a, "{s}() needs a date like 2026-10-15, a time like 18:30 or both like 2026-10-15T18:30", .{name})),
+            error.TooLong => env.fail(3106, n, try std.fmt.allocPrint(a, "{s}() would make text longer than {d} bytes", .{ name, btext.max_len })),
+            error.Range => env.fail(3107, n, try switch (func) {
+                .roman => std.fmt.allocPrint(a, "roman() needs a number from 1 to 3999", .{}),
+                .part => std.fmt.allocPrint(a, "part() needs a separator that is not empty", .{}),
+                .rand_int => std.fmt.allocPrint(a, "rand_int() needs lo <= hi", .{}),
+                else => std.fmt.allocPrint(a, "an argument of {s}() is out of range", .{name}),
+            }),
+            else => env.fail(3103, n, try std.fmt.allocPrint(a, "{s}() failed: {s}", .{ name, @errorName(e) })),
+        };
+    }
+
+    /// List functions; `cl.field` and `cl.lk` were set by the checker.
+    fn listCall(env: *Env, n: *const Node, cl: Call) EvalError!Value {
+        const items = (try env.eval(cl.args[0])).list;
+        const func = cl.func;
+        switch (func) {
+            .has, .index_of => {
+                const i = blist.indexOf(items, cl.lk.?.key_field, try env.str(cl.args[1]));
+                if (func == .has) return .{ .bool = i != null };
+                return .{ .number = if (i) |x| @floatFromInt(x) else -1 };
+            },
+            .get => {
+                const i = blist.indexOf(items, cl.lk.?.key_field, try env.str(cl.args[1])) orelse return env.eval(cl.args[cl.args.len - 1]);
+                return items[i][cl.field];
+            },
+            .sum => return env.number(n, func, blist.sum(items, cl.field)),
+            .avg => return env.number(n, func, blist.avg(items, cl.field)),
+            .min => return env.number(n, func, blist.minOf(items, cl.field)),
+            .max => return env.number(n, func, blist.maxOf(items, cl.field)),
+            .count => return .{ .number = @floatFromInt(blist.count(items, cl.field, try env.eval(cl.args[2]))) },
+            .join => return env.text(n, func, blist.join(env.arena, items, cl.field, try env.str(cl.args[cl.args.len - 1]))),
+            .last => {
+                if (items.len == 0) return env.fail(3102, n, "last() of an empty list");
+                return .{ .item = items[items.len - 1] };
+            },
+            else => unreachable,
         }
     }
 
@@ -1789,4 +2224,197 @@ test "tolerant parse never fails on random input" {
         try testing.expect(r.root.end <= len);
         _ = try parseTemplateTolerant(a, buf[0..len], 8);
     }
+}
+
+// Built-in functions in expressions (the modules in builtins/ test their own
+// edge cases; these check the wiring: types, field resolution, errors).
+
+const units_def: value.ItemDef = .{
+    .names = &.{ "name", "cost", "elite" },
+    .types = &.{ .text, .number, .bool },
+};
+const stats_def: value.ItemDef = .{
+    .names = &.{ "stat", "value" },
+    .types = &.{ .text, .number },
+};
+const tags_def: value.ItemDef = .{ .names = &.{"tag"}, .types = &.{.text} };
+
+fn builtinLookup(_: *anyopaque, name: []const u8) ?Value {
+    const eq = std.mem.eql;
+    if (eq(u8, name, "level")) return .{ .number = 4 };
+    if (eq(u8, name, "units")) return .{ .list = &.{
+        &.{ .{ .text = "Elf" }, .{ .number = 3 }, .{ .bool = false } },
+        &.{ .{ .text = "Orc" }, .{ .number = 5 }, .{ .bool = true } },
+        &.{ .{ .text = "Imp" }, .{ .number = 1 }, .{ .bool = true } },
+    } };
+    if (eq(u8, name, "stats")) return .{ .list = &.{
+        &.{ .{ .text = "Speed" }, .{ .number = 7 } },
+        &.{ .{ .text = "Power" }, .{ .number = 2 } },
+    } };
+    if (eq(u8, name, "tags")) return .{ .list = &.{ &.{.{ .text = "Fire" }}, &.{.{ .text = "Flying" }} } };
+    if (eq(u8, name, "none") or eq(u8, name, "no_stats")) return .{ .list = &.{} };
+    return null;
+}
+
+const BuiltinFixture = struct {
+    scope: Scope,
+    env: Env,
+
+    fn eval(f: *BuiltinFixture, src: []const u8) !Value {
+        var problem: ?Problem = null;
+        const n = try parse(f.scope.arena, src, 0, &problem);
+        var c: Checker = .{ .scope = &f.scope, .problem = &problem };
+        _ = c.check(n) catch |e| {
+            std.debug.print("{s}: {s}\n", .{ src, problem.?.message });
+            return e;
+        };
+        return f.env.eval(n);
+    }
+
+    fn checkCode(f: *BuiltinFixture, src: []const u8) !u16 {
+        var problem: ?Problem = null;
+        const n = try parse(f.scope.arena, src, 0, &problem);
+        var c: Checker = .{ .scope = &f.scope, .problem = &problem };
+        if (c.check(n)) |_| return 0 else |_| return problem.?.code;
+    }
+
+    fn evalCode(f: *BuiltinFixture, src: []const u8) !u16 {
+        f.env.problem = null;
+        if (f.eval(src)) |_| return 0 else |e| switch (e) {
+            error.Eval => return f.env.problem.?.code,
+            else => return e,
+        }
+    }
+};
+
+fn builtinFixture(a: Allocator, dummy: *u8) BuiltinFixture {
+    return .{
+        .scope = .{
+            .arena = a,
+            .params = &.{
+                .{ .name = "level", .ty = .number },
+                .{ .name = "units", .ty = .{ .list = &units_def } },
+                .{ .name = "stats", .ty = .{ .list = &stats_def } },
+                .{ .name = "tags", .ty = .{ .list = &tags_def } },
+                .{ .name = "none", .ty = .{ .list = &tags_def } },
+                .{ .name = "no_stats", .ty = .{ .list = &stats_def } },
+                // A param may share a built-in function's name.
+                .{ .name = "sum", .ty = .number },
+            },
+            .layers = null,
+        },
+        .env = .{
+            .arena = a,
+            .canvas_w = 200,
+            .canvas_h = 400,
+            .card_id = "007",
+            .render_index = 0,
+            .render_date = "2026-10-15",
+            .render_time = "18:30:00",
+            .render_now = "2026-10-15T16:30:00Z",
+            .ctx = dummy,
+            .lookup = builtinLookup,
+            .layerRef = testRef,
+            .avgColor = testAvg,
+        },
+    };
+}
+
+test "built-in functions: numbers, text, dates, colours" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expectEqual(@as(f64, 1), (try f.eval("sin(90)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("cos(90)")).number);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("sqrt(9)")).number);
+    try testing.expectEqual(@as(f64, 8), (try f.eval("pow(2, 3)")).number);
+    try testing.expectEqual(@as(f64, 50), (try f.eval("remap(5, 0, 10, 0, 100)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("wrap(-1, 3)")).number);
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("sqrt(-1)"));
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("remap(1, 2, 2, 0, 1)"));
+
+    try testing.expect((try f.eval("starts_with(card.id, '00')")).bool);
+    try testing.expectEqualStrings("007", (try f.eval("pad_start('7', 3, '0')")).text);
+    try testing.expectEqualStrings("★★★", (try f.eval("repeat('★', 3)")).text);
+    try testing.expectEqualStrings("Water", (try f.eval("part('Fire/Water', '/', 1)")).text);
+    try testing.expectEqualStrings("XIV", (try f.eval("roman(level + 10)")).text);
+    try testing.expectEqualStrings("ÉCLAIR", (try f.eval("upper('éclair')")).text);
+    try testing.expectEqual(@as(u16, 3107), try f.evalCode("roman(0)"));
+    try testing.expectEqual(@as(u16, 3106), try f.evalCode("repeat('ab', 6000)"));
+
+    try testing.expectEqualStrings("15 Oct 2026", (try f.eval("date_fmt(render.date, 'D MMM YYYY')")).text);
+    try testing.expectEqual(@as(f64, 18), (try f.eval("hour(render.time)")).number);
+    try testing.expectEqual(@as(f64, 4), (try f.eval("weekday(render.date)")).number);
+    try testing.expectEqualStrings("2026-10-25", (try f.eval("add_days(render.date, 10)")).text);
+    try testing.expectEqual(@as(f64, 77), (try f.eval("days_between(render.date, '2026-12-31')")).number);
+    try testing.expectEqualStrings("2026-10-15T11:30:00Z", (try f.eval("add_hours(render.now, -5)")).text);
+    try testing.expectEqual(@as(u16, 3105), try f.evalCode("year('15.10.2026')"));
+
+    try testing.expect((try f.eval("hsl(0, 100, 50) == #FF0000")).bool);
+    try testing.expect((try f.eval("readable(#111111) == #FFFFFF")).bool);
+    try testing.expect((try f.eval("readable(#EEEEEE) == #000000")).bool);
+
+    const r1 = (try f.eval("rand(card.id, 1)")).number;
+    try testing.expect(r1 >= 0 and r1 < 1);
+    try testing.expectEqual(r1, (try f.eval("rand(card.id, 1)")).number);
+    const k = (try f.eval("rand_int(1, 6, card.id)")).number;
+    try testing.expect(k >= 1 and k <= 6 and k == @floor(k));
+    try testing.expect((try f.eval("pick(card.id, 'a', 'b') in ['a', 'b']")).bool);
+
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sin('a')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("rand()"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("pick(1, 'a', 2)"));
+}
+
+test "built-in functions: lists" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var dummy: u8 = 0;
+    var f = builtinFixture(arena_state.allocator(), &dummy);
+
+    try testing.expect((try f.eval("has(units, 'Orc')")).bool);
+    try testing.expect(!(try f.eval("has(units, 'Elk')")).bool);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("index_of(units, 'Orc')")).number);
+    try testing.expectEqual(@as(f64, -1), (try f.eval("index_of(units, 'Elk')")).number);
+    try testing.expectEqual(@as(f64, 7), (try f.eval("get(stats, 'Speed', 0)")).number);
+    try testing.expectEqual(@as(f64, 0), (try f.eval("get(stats, 'Luck', 0)")).number);
+    try testing.expectEqual(@as(f64, 5), (try f.eval("get(units, 'Orc', 'cost', 0)")).number);
+    try testing.expectEqual(@as(f64, 9), (try f.eval("sum(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 9), (try f.eval("sum(stats)")).number);
+    try testing.expectEqual(@as(f64, 3), (try f.eval("avg(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 1), (try f.eval("min(units, 'cost')")).number);
+    try testing.expectEqual(@as(f64, 7), (try f.eval("max(stats)")).number);
+    try testing.expectEqual(@as(f64, 4), (try f.eval("max(level, 2)")).number);
+    try testing.expectEqual(@as(f64, 2), (try f.eval("count(units, 'elite', true)")).number);
+    try testing.expectEqualStrings("Fire, Flying", (try f.eval("join(tags, ', ')")).text);
+    try testing.expectEqualStrings("3/5/1", (try f.eval("join(units, 'cost', '/')")).text);
+    try testing.expectEqualStrings("Imp", (try f.eval("last(units).name")).text);
+    // A param named like a built-in is still a plain name.
+    try testing.expectEqual(@as(u16, 0), try f.checkCode("sum + 1"));
+
+    try testing.expectEqual(@as(u16, 3103), try f.evalCode("avg(no_stats)"));
+    try testing.expectEqual(@as(u16, 3102), try f.evalCode("last(none).tag"));
+    try testing.expectEqual(@as(u16, 3002), try f.checkCode("sum(units, 'cots')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(units, 'name')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(units)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("get(units, 'Orc', 0)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("get(stats, 'Speed', 'x')"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("count(units, 'elite', 1)"));
+    try testing.expectEqual(@as(u16, 3003), try f.checkCode("sum(level)"));
+}
+
+test "a design function hides a built-in of the same name" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const scope: Scope = .{
+        .arena = a,
+        .params = &.{.{ .name = "level", .ty = .number }},
+        .functions = &.{.{ .name = "sign", .args = &.{.{ .name = "t", .ty = .text }}, .ret = .text }},
+        .layers = null,
+    };
+    try testing.expect((try testCheck(a, "sign('x')", &scope)) == .text);
+    try expectProblem(a, "sign(level)", &scope, 3003);
 }
