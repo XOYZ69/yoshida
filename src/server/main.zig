@@ -2,8 +2,10 @@
 //! sets on the server ("hybrid" mode for home labs).
 //!
 //!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
-//!   POST /api/render         {"files": {path: base64}, "set", "date", "format": "png"|"png16"|"pdf"}
+//!   POST /api/render         {"files": {path: base64}, "set", "date", "now", "utc_offset", "format": "png"|"png16"|"pdf"}
 //!                            -> application/zip with <set>/<card id>.png, or 422 with diagnostics
+//!                            "now" is a UTC instant (YYYY-MM-DDTHH:MM:SSZ) and "utc_offset" the hours (-14 to 14)
+//!                            that replace the project's; with neither "date" nor "now" the server's clock is used
 //!                            An `x-yoshida-job: <hex id>` header makes its progress readable:
 //!   GET  /api/render/progress?job=<hex id>
 //!                            {"found", "stage", "done", "total"} (stage: receiving, loading,
@@ -274,6 +276,8 @@ const Job = struct {
     fs: *y.project.MemFs,
     set: *const y.project.Set,
     date: []const u8,
+    now: ?[]const u8,
+    utc_offset: ?f64,
     sixteen: bool,
     pdf: bool = false,
     /// Cards with index % stride == offset belong to this job.
@@ -293,7 +297,7 @@ const Job = struct {
         var i = job.offset;
         while (i < job.set.cards.len) : (i += job.stride) {
             defer job.cardDone();
-            var bmp = (y.render.renderCard(job.gpa, &assets, job.set, i, .{ .date = job.date }, &job.diags) catch {
+            var bmp = (y.render.renderCard(job.gpa, &assets, job.set, i, .{ .date = job.date, .now = job.now, .utc_offset = job.utc_offset }, &job.diags) catch {
                 job.failed = true;
                 return;
             }) orelse continue;
@@ -348,6 +352,18 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     if (files.data != .object) return jsonError(req, .bad_request, "\"files\" must be an object of path to base64");
     const set_name = if (doc.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
     const date = if (doc.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+    var now: ?[]const u8 = null;
+    if (doc.get("now")) |n| {
+        if (n.data != .string or !validUtcInstant(n.data.string)) return jsonError(req, .bad_request, "\"now\" must be a UTC instant like 2026-10-15T09:30:00Z");
+        now = n.data.string;
+    }
+    var utc_offset: ?f64 = null;
+    if (doc.get("utc_offset")) |o| {
+        if (o.data != .number or !(o.data.number >= -14 and o.data.number <= 14)) return jsonError(req, .bad_request, "\"utc_offset\" must be a number of hours from -14 to 14");
+        utc_offset = o.data.number;
+    }
+    // Neither date nor now: the render happens at the server's current UTC instant.
+    if (now == null and doc.get("date") == null) now = try utcNow(io, arena);
     const sixteen = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "png16")) else false;
     const want_pdf = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "pdf")) else false;
 
@@ -404,7 +420,7 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     const job_arenas = try arena.alloc(std.heap.ArenaAllocator, n_jobs);
     for (jobs, 0..) |*job, j| {
         job_arenas[j] = std.heap.ArenaAllocator.init(gpa);
-        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()), .progress = progress, .n = req_n };
+        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .now = now, .utc_offset = utc_offset, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()), .progress = progress, .n = req_n };
     }
     defer for (job_arenas) |*a| a.deinit();
     for (jobs, 0..) |*job, j| {
@@ -455,6 +471,38 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         .{ .name = "content-type", .value = "application/zip" },
         .{ .name = "content-disposition", .value = disposition },
     } });
+}
+
+/// The current UTC instant as `YYYY-MM-DDTHH:MM:SSZ` (seconds precision).
+fn utcNow(io: Io, arena: Allocator) ![]const u8 {
+    const ns = Io.Clock.real.now(io).nanoseconds;
+    const secs: u64 = @intCast(@max(0, @divFloor(ns, std.time.ns_per_s)));
+    const es: std.time.epoch.EpochSeconds = .{ .secs = secs };
+    const yd = es.getEpochDay().calculateYearDay();
+    const md = yd.calculateMonthDay();
+    const ds = es.getDaySeconds();
+    return std.fmt.allocPrint(arena, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{
+        yd.year,              md.month.numeric(),      md.day_index + 1,
+        ds.getHoursIntoDay(), ds.getMinutesIntoHour(), ds.getSecondsIntoMinute(),
+    });
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` with a real calendar date and time of day.
+fn validUtcInstant(s: []const u8) bool {
+    const shape = "dddd-dd-ddTdd:dd:ddZ";
+    if (s.len != shape.len) return false;
+    for (s, shape) |ch, p| {
+        const ok = if (p == 'd') std.ascii.isDigit(ch) else ch == p;
+        if (!ok) return false;
+    }
+    const year = std.fmt.parseInt(u16, s[0..4], 10) catch return false;
+    const month = std.fmt.parseInt(u8, s[5..7], 10) catch return false;
+    const day = std.fmt.parseInt(u8, s[8..10], 10) catch return false;
+    const hour = std.fmt.parseInt(u8, s[11..13], 10) catch return false;
+    const minute = std.fmt.parseInt(u8, s[14..16], 10) catch return false;
+    const second = std.fmt.parseInt(u8, s[17..19], 10) catch return false;
+    if (month < 1 or month > 12 or day < 1 or hour > 23 or minute > 59 or second > 59) return false;
+    return day <= std.time.epoch.getDaysInMonth(year, @enumFromInt(month));
 }
 
 fn diagnosticsResponse(arena: Allocator, req: *std.http.Server.Request, diags: *y.diag.List) !void {

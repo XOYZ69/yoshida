@@ -14,6 +14,13 @@
 //!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
 //!   the value of every node of `src` evaluated in place of that field.
 //!
+//! The render clock is set by the optional "now" (a UTC instant,
+//! `YYYY-MM-DDTHH:MM:SSZ`) and "utc_offset" (hours, -14 to 14; other values
+//! are ignored) fields of render, pdf, check_cards, pdf_page and eval. With
+//! "now", render.date and render.time come from it plus the offset (the
+//! project's utc_offset unless "utc_offset" is given). Without it, "date" is
+//! used at midnight. The page supplies the instant: this module has no clock.
+//!
 //! Each request leaves a JSON result and an optional binary result (pixels or
 //! a PNG) that the page reads through the result_* exports.
 
@@ -91,6 +98,21 @@ export fn request(ptr: [*]const u8, len: usize) i32 {
     return handle(arena_state.allocator(), ptr[0..len]) catch -1;
 }
 
+/// The optional render clock of a request: "now" (UTC instant) and
+/// "utc_offset" (hours, -14 to 14). Anything else is left out.
+const Clock = struct { now: ?[]const u8 = null, utc_offset: ?f64 = null };
+
+fn clockOf(req: *const y.json.Node) Clock {
+    var c: Clock = .{};
+    if (req.get("now")) |n| {
+        if (n.data == .string) c.now = n.data.string;
+    }
+    if (req.get("utc_offset")) |o| {
+        if (o.data == .number and o.data.number >= -14 and o.data.number <= 14) c.utc_offset = o.data.number;
+    }
+    return c;
+}
+
 fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
     var aw: std.Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
@@ -106,6 +128,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         },
     };
     const op = if (req.get("op")) |o| (if (o.data == .string) o.data.string else "") else "";
+    const clock = clockOf(&req);
 
     if (std.mem.eql(u8, op, "info")) {
         try w.print("{{\"version\":\"{s}\",\"format\":{d}}}", .{ y.version, y.format_version });
@@ -153,7 +176,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         var canvas_w: u32 = 0;
         var canvas_h: u32 = 0;
         if (proj.findSet(set_name)) |set| {
-            if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .preview = preview, .outline = if (want_layout) &outline else null, .scale = scale, .filter = filter }, &diags)) |bmp_const| {
+            if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = preview, .outline = if (want_layout) &outline else null, .scale = scale, .filter = filter }, &diags)) |bmp_const| {
                 var bmp = bmp_const;
                 defer bmp.deinit(gpa);
                 width = bmp.w;
@@ -203,7 +226,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         const src = if (req.get("src")) |s| (if (s.data == .string) s.data.string else "") else "";
         const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
         const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
-        try y.exprapi.writeEval(gpa, arena, w, getAssets(), set, field, src, .{ .card = card_index, .date = date });
+        try y.exprapi.writeEval(gpa, arena, w, getAssets(), set, field, src, .{ .card = card_index, .date = date, .now = clock.now, .utc_offset = clock.utc_offset });
         return 0;
     }
 
@@ -224,7 +247,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             var pdf = try y.pdf.Writer.init(gpa);
             defer pdf.deinit();
             for (0..set.cards.len) |i| {
-                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .preview = dry, .dry = dry }, &diags)) orelse continue;
+                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = dry, .dry = dry }, &diags)) orelse continue;
                 defer bmp.deinit(gpa);
                 if (dry) continue;
                 if (marks) {
@@ -263,7 +286,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         };
-        if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date }, &diags)) |bmp_const| {
+        if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset }, &diags)) |bmp_const| {
             var bmp = bmp_const;
             defer bmp.deinit(gpa);
             if (marks) {

@@ -10,8 +10,10 @@ const usage =
     \\
     \\Usage:
     \\  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+    \\                            [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
     \\  yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
-    \\                            [--date YYYY-MM-DD] [--16bit] [--preview]
+    \\                            [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
+    \\                            [--utc-offset HOURS] [--16bit] [--preview]
     \\                            [--offline] [--pdf] [--crop-marks]
     \\                            [--format text|json]
     \\  yoshida fmt    <project or file>  [--check]
@@ -24,6 +26,10 @@ const usage =
     \\        --offline turns that off. --pdf writes <out>/<set>.pdf instead,
     \\        one page per card; --crop-marks adds a margin with crop marks
     \\        at the trim line (canvas.bleed inside the edge).
+    \\clock   --now is the UTC instant the cards are rendered at (render.now,
+    \\        render.date, render.time). Without --now or --date it is the
+    \\        current UTC time; --date alone pins the local date at midnight.
+    \\        --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
     \\fmt     rewrites JSON files in the canonical layout; --check only lists
     \\        the files that are not formatted (exit status 1 if any).
     \\
@@ -38,6 +44,8 @@ const Args = struct {
     card: ?[]const u8 = null,
     out: ?[]const u8 = null,
     date: ?[]const u8 = null,
+    now: ?[]const u8 = null,
+    utc_offset: ?[]const u8 = null,
     sixteen: bool = false,
     preview: bool = false,
     json: bool = false,
@@ -81,6 +89,22 @@ pub fn main(init: std.process.Init) !u8 {
         try err.print(usage, .{ y.version, y.format_version });
         return 2;
     }
+    if (args.now) |n| if (!validUtcInstant(n)) {
+        try err.print("error: --now must be a UTC instant like 2026-10-15T09:30:00Z, got '{s}'\n", .{n});
+        return 2;
+    };
+    var utc_offset: ?f64 = null;
+    if (args.utc_offset) |s| {
+        utc_offset = parseOffset(s) orelse {
+            try err.print("error: --utc-offset must be a number of hours from -14 to 14, got '{s}'\n", .{s});
+            return 2;
+        };
+    }
+    // One clock for the whole run: the current UTC instant unless the
+    // render is pinned with --date alone (then the date is local midnight).
+    const instant = try utcNow(io, arena);
+    const now: ?[]const u8 = args.now orelse if (args.date == null) instant else null;
+    const date = args.date orelse instant[0..10];
 
     var disk = DiskFs.open(io, arena, args.project.?) catch |e| {
         try err.print("error: cannot open project folder '{s}': {s}\n", .{ args.project.?, @errorName(e) });
@@ -103,7 +127,6 @@ pub fn main(init: std.process.Init) !u8 {
     if (!is_render and diags.errorCount() == 0) {
         // Errors that depend on card data (layer limit, missing images,
         // indexes out of range) only show up while a card is evaluated.
-        const date = args.date orelse try today(io, arena);
         var assets = y.render.Assets.init(gpa, disk.vfs());
         defer assets.deinit();
         for (proj.sets) |*set| {
@@ -111,14 +134,13 @@ pub fn main(init: std.process.Init) !u8 {
             if (!set.ok) continue;
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
-                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .dry = true }, &diags)) orelse continue;
+                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .dry = true }, &diags)) orelse continue;
                 bmp.deinit(gpa);
                 checked_cards += 1;
             }
         }
     }
     if (is_render and diags.errorCount() == 0) {
-        const date = args.date orelse try today(io, arena);
         const out_root = args.out orelse try std.fs.path.join(arena, &.{ args.project.?, "out" });
         var assets = y.render.Assets.init(gpa, disk.vfs());
         defer assets.deinit();
@@ -139,7 +161,7 @@ pub fn main(init: std.process.Init) !u8 {
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
                 const errors_before = diags.errorCount();
-                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .preview = args.preview }, &diags)) orelse continue;
+                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview }, &diags)) orelse continue;
                 const card_errors = diags.errorCount() - errors_before;
                 defer bmp.deinit(gpa);
                 if (args.crop_marks) {
@@ -270,7 +292,7 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             if (i + 1 >= argv.len) return error.MissingOptionValue;
             i += 1;
             const v = argv[i];
-            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "format")) {
+            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "format")) {
                 if (std.mem.eql(u8, v, "json")) a.json = true else if (!std.mem.eql(u8, v, "text")) return error.UnknownFormat;
             } else return error.UnknownOption;
         } else if (std.mem.eql(u8, s, "-h")) {
@@ -284,13 +306,42 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
     return a;
 }
 
-fn today(io: Io, arena: Allocator) ![]const u8 {
+/// The current UTC instant as `YYYY-MM-DDTHH:MM:SSZ` (seconds precision).
+fn utcNow(io: Io, arena: Allocator) ![]const u8 {
     const ns = Io.Clock.real.now(io).nanoseconds;
     const secs: u64 = @intCast(@max(0, @divFloor(ns, std.time.ns_per_s)));
     const es: std.time.epoch.EpochSeconds = .{ .secs = secs };
     const yd = es.getEpochDay().calculateYearDay();
     const md = yd.calculateMonthDay();
-    return std.fmt.allocPrint(arena, "{d:0>4}-{d:0>2}-{d:0>2}", .{ yd.year, md.month.numeric(), md.day_index + 1 });
+    const ds = es.getDaySeconds();
+    return std.fmt.allocPrint(arena, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{
+        yd.year,              md.month.numeric(),      md.day_index + 1,
+        ds.getHoursIntoDay(), ds.getMinutesIntoHour(), ds.getSecondsIntoMinute(),
+    });
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ` with a real calendar date and time of day.
+fn validUtcInstant(s: []const u8) bool {
+    const shape = "dddd-dd-ddTdd:dd:ddZ";
+    if (s.len != shape.len) return false;
+    for (s, shape) |ch, p| {
+        const ok = if (p == 'd') std.ascii.isDigit(ch) else ch == p;
+        if (!ok) return false;
+    }
+    const year = std.fmt.parseInt(u16, s[0..4], 10) catch return false;
+    const month = std.fmt.parseInt(u8, s[5..7], 10) catch return false;
+    const day = std.fmt.parseInt(u8, s[8..10], 10) catch return false;
+    const hour = std.fmt.parseInt(u8, s[11..13], 10) catch return false;
+    const minute = std.fmt.parseInt(u8, s[14..16], 10) catch return false;
+    const second = std.fmt.parseInt(u8, s[17..19], 10) catch return false;
+    if (month < 1 or month > 12 or day < 1 or hour > 23 or minute > 59 or second > 59) return false;
+    return day <= std.time.epoch.getDaysInMonth(year, @enumFromInt(month));
+}
+
+/// A UTC offset in hours from -14 to 14 (NaN is rejected too).
+fn parseOffset(s: []const u8) ?f64 {
+    const v = std.fmt.parseFloat(f64, s) catch return null;
+    return if (v >= -14 and v <= 14) v else null;
 }
 
 /// A project folder on disk, read lazily and cached for the whole run.
