@@ -1,0 +1,16 @@
+name: Maintenance
+description: Tooling, CI, refactoring or repo housekeeping
+title: "chore: "
+labels: ["maintenance"]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What needs doing?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What it unblocks or improves.
