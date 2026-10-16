@@ -10,6 +10,7 @@ The GitHub Actions workflows live in `.github/workflows/`. They share the Zig se
 | `ci.yml` | every pull request, manually, and when called by `deploy.yml` | Checks and tests, below |
 | `deploy.yml` | every push to `master`, every published, edited or deleted release, and manually | Runs all of `ci.yml` first, then builds the site and publishes it to GitHub Pages |
 | `release.yml` | every successful `deploy.yml` run on `master`, and manually | Publishes a GitHub release when the version has no tag yet, see [Releases](#releases) |
+| `pr-title.yml` | every pull request to `master` | Fails unless the PR title is conventional (`type(scope): description`) and sets the matching type label |
 | `release-notes-preview.yml` | every pull request to `master` | Comments the release notes the PR will produce |
 
 ## `ci.yml`
@@ -86,8 +87,19 @@ To release: bump on a branch, merge the pull request to `master`, and wait. `rel
 1. It runs after every successful `deploy.yml` run on `master`, on the commit that was deployed.
 2. If the version in `build.zig.zon` already has a tag (`v0.5.0`, or `0.5.0` like the older releases), it stops.
 3. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
-4. It writes the notes with `.github/scripts/release-notes.mjs release` (the categories from `.github/release.yml` plus the `release-note` blocks from the PR bodies), then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
+4. It writes the notes with `.github/scripts/release-notes.mjs release`, then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
 5. It starts `deploy.yml`, so the site gets the new release page. A release created by a workflow does not trigger `deploy.yml` by itself.
+
+### Release notes
+
+The notes are built from the pull requests merged since the last release. Each PR becomes one line, put into a section by the type in its title: `feat` is New features, `fix` Bug fixes, `perf` Performance, `docs` Documentation, `refactor`, `chore`, `ci`, `build`, `test` and `style` Maintenance, and `!` before the colon Breaking changes (sections are defined in `.github/release.yml`). `pr-title.yml` rejects titles without a type, so every PR lands in the right section. PRs with the `skip-changelog` label are left out.
+
+Two optional extras make a release read well:
+
+- A `release-note` block in a PR body (see the PR template) adds a sentence under **Highlights**.
+- A file `.github/release-intro/<version>.md`, for example `.github/release-intro/0.7.0.md`, becomes the introduction at the top of that release. Add it in the version bump PR.
+
+The release workflow does not need labels: the title decides. The preview comment on each PR shows exactly what its line will look like.
 
 To retry a failed release, run `release.yml` manually from the Actions tab. It releases the version on the head of `master` if that version has no tag yet.
 
