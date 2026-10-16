@@ -19,7 +19,7 @@ Designs are simple json files that are easy to share, modify and abuse as much a
   <img src="samples/builder-v04-dark-params.png" alt="The yoshida editor" width="100%">
 </p>
 
-> The full documentation lives on the [docs site](https://xoyz69.github.io/yoshida/docs/).
+> The full documentation lives on the [docs site](https://yoshida.xoyz.dev/docs/).
 
 ## Features
 
@@ -67,7 +67,7 @@ cd web && npm install
 npm run wasm && npm run examples && npm run dev    # editor on http://localhost:5173
 ```
 
-More in [Building from Source](https://xoyz69.github.io/yoshida/docs/building-from-source/).
+More in [Building from Source](https://yoshida.xoyz.dev/docs/building-from-source/).
 
 ## License
 
@@ -77,30 +77,30 @@ yoshida is released under the [MIT License](LICENSE). Contributions are welcome,
 
 yoshida bundles a few small libraries so that it builds without any C dependencies installed:
 
-| Library                                                  | Used for                              | License                   |
-| -------------------------------------------------------- | ------------------------------------- | ------------------------- |
-| [stb_image](https://github.com/nothings/stb)             | Loading PNG, JPEG, GIF and BMP images | Public domain / MIT       |
-| [stb_truetype](https://github.com/nothings/stb)          | Reading fonts and drawing text        | Public domain / MIT       |
-| [simplewebp](https://github.com/MikuAuahDark/simplewebp) | Loading WebP images                   | BSD-3-Clause              |
-| [Lato](https://www.latofonts.com)                        | Default font                          | SIL Open Font License 1.1 |
+| Library                                                              | Used for                                             | License                   |
+| -------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------- |
+| [stb_image](https://github.com/nothings/stb)                         | Loading PNG, JPEG, GIF and BMP images                | Public domain / MIT       |
+| [stb_truetype](https://github.com/nothings/stb)                      | Reading fonts and drawing text                       | Public domain / MIT       |
+| [simplewebp](https://github.com/MikuAuahDark/simplewebp)             | Loading WebP images                                  | BSD-3-Clause              |
+| [Lato](https://www.latofonts.com)                                    | Default font                                         | SIL Open Font License 1.1 |
 | [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (subset) | Fallback for arrows, shapes, stars and other symbols | SIL Open Font License 1.1 |
 
 The C libraries are single-header files in [`src/c/`](src/c). Why they are large and how to update them is described in [`src/c/README.md`](src/c/README.md).
 
 ## Documentation
 
-The **[documentation](https://xoyz69.github.io/yoshida/docs/)** has a page for every feature:
+The **[documentation](https://yoshida.xoyz.dev/docs/)** has a page for every feature:
 
-|                                                                                             |                                                   |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [Getting Started](https://xoyz69.github.io/yoshida/docs/getting-started/)                                               | First card, in the editor and on the command line |
-| [Command Line](https://xoyz69.github.io/yoshida/docs/command-line/) · [Server and Docker](https://xoyz69.github.io/yoshida/docs/server-and-docker/) | Options, exit codes, the HTTP API                 |
-| [Designs](https://xoyz69.github.io/yoshida/docs/designs/) · [Params](https://xoyz69.github.io/yoshida/docs/params/) · [Layers](https://xoyz69.github.io/yoshida/docs/layers/)   | The file format                                   |
-| [Expressions](https://xoyz69.github.io/yoshida/docs/expressions/) · [Card Data](https://xoyz69.github.io/yoshida/docs/card-data/)                   | Formulas, templates, JSON and CSV                 |
-| [Builder](https://xoyz69.github.io/yoshida/docs/builder/)                                                               | The visual editor, panel by panel, with shortcuts |
-| [Diagnostics](https://xoyz69.github.io/yoshida/docs/diagnostics/)                                                       | Every error code and how to fix it                |
-| [Architecture](https://xoyz69.github.io/yoshida/docs/architecture/)                                                     | Core, WebAssembly, server                         |
-| [Contributing](https://xoyz69.github.io/yoshida/docs/contributing/) · [Testing](https://xoyz69.github.io/yoshida/docs/testing/)                         | Setup, checks, PR titles, releases                |
-| [Known Gaps](https://xoyz69.github.io/yoshida/docs/known-gaps/) · [Privacy](https://xoyz69.github.io/yoshida/docs/saving-images-and-privacy/)                     | What is missing, and where your data goes         |
+|                                                                                                                                                       |                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/)                                                                                     | First card, in the editor and on the command line |
+| [Command Line](https://yoshida.xoyz.dev/docs/command-line/) · [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/)                   | Options, exit codes, the HTTP API                 |
+| [Designs](https://yoshida.xoyz.dev/docs/designs/) · [Params](https://yoshida.xoyz.dev/docs/params/) · [Layers](https://yoshida.xoyz.dev/docs/layers/) | The file format                                   |
+| [Expressions](https://yoshida.xoyz.dev/docs/expressions/) · [Card Data](https://yoshida.xoyz.dev/docs/card-data/)                                     | Formulas, templates, JSON and CSV                 |
+| [Builder](https://yoshida.xoyz.dev/docs/builder/)                                                                                                     | The visual editor, panel by panel, with shortcuts |
+| [Diagnostics](https://yoshida.xoyz.dev/docs/diagnostics/)                                                                                             | Every error code and how to fix it                |
+| [Architecture](https://yoshida.xoyz.dev/docs/architecture/)                                                                                           | Core, WebAssembly, server                         |
+| [Contributing](https://yoshida.xoyz.dev/docs/contributing/) · [Testing](https://yoshida.xoyz.dev/docs/testing/)                                       | Setup, checks, PR titles, releases                |
+| [Known Gaps](https://yoshida.xoyz.dev/docs/known-gaps/) · [Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/)                         | What is missing, and where your data goes         |
 
 Working projects are in [`examples/`](examples): a full poker deck (`poker`) and a printable party board (`board-game`).

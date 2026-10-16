@@ -2,7 +2,7 @@
 
 Thanks for helping. Bug reports, feature wishes, docs fixes and code are all welcome. For anything bigger than a small fix, open an issue first so we can agree on the direction before you spend time on it.
 
-The full guide, with the architecture and the details behind each step, is on the [docs site](https://xoyz69.github.io/yoshida/docs/building-from-source/). This page is the short version.
+The full guide, with the architecture and the details behind each step, is on the [docs site](https://yoshida.xoyz.dev/docs/building-from-source/). This page is the short version.
 
 ## Set up
 
@@ -14,11 +14,11 @@ zig build                           # CLI and server in zig-out/bin
 cd web && npm ci && npm run wasm && npm run examples && npm run dev
 ```
 
-See [Building from Source](https://xoyz69.github.io/yoshida/docs/building-from-source/) for cross-compiling, the WASM module and the website.
+See [Building from Source](https://yoshida.xoyz.dev/docs/building-from-source/) for cross-compiling, the WASM module and the website.
 
 ## Before you open a pull request
 
-Run what CI runs (see [CI and Deployment](https://xoyz69.github.io/yoshida/docs/ci-and-deployment/)):
+Run what CI runs (see [CI and Deployment](https://yoshida.xoyz.dev/docs/ci-and-deployment/)):
 
 ```sh
 zig fmt --check build.zig src
@@ -40,7 +40,7 @@ Changes to a design or example file: format them with `yoshida fmt`. Changes to 
 
 ## Releases
 
-A release happens when the version in `build.zig.zon` changes on `master`. Bump it with `node scripts/version.mjs minor` (or `patch`, `major`, or an exact version) in its own PR. To add a hand-written introduction to the release notes, add `.github/release-intro/<version>.md` in that PR. Details: [Releases](https://xoyz69.github.io/yoshida/docs/ci-and-deployment/#releases).
+A release happens when the version in `build.zig.zon` changes on `master`. Bump it with `node scripts/version.mjs minor` (or `patch`, `major`, or an exact version) in its own PR. To add a hand-written introduction to the release notes, add `.github/release-intro/<version>.md` in that PR. Details: [Releases](https://yoshida.xoyz.dev/docs/ci-and-deployment/#releases).
 
 ## Formatting
 
@@ -48,4 +48,4 @@ A release happens when the version in `build.zig.zon` changes on `master`. Bump 
 
 ## License
 
-By contributing you agree that your contribution is licensed under the [MIT License](LICENSE). Bundled fonts and libraries keep their own licenses, listed in [Third-Party Notices](https://xoyz69.github.io/yoshida/docs/third-party-notices/).
+By contributing you agree that your contribution is licensed under the [MIT License](LICENSE). Bundled fonts and libraries keep their own licenses, listed in [Third-Party Notices](https://yoshida.xoyz.dev/docs/third-party-notices/).
