@@ -72,10 +72,10 @@ Before opening a pull request:
 zig fmt --check build.zig src
 zig build test
 ./zig-out/bin/yoshida fmt --check examples
-cd web && npm run check
+cd web && npm run check && npm run test:unit
 ```
 
-These are the same steps [CI](@/docs/ci-and-deployment.md) runs.
+The browser tests are described in [Testing](@/docs/testing.md). These are the same steps [CI](@/docs/ci-and-deployment.md) runs.
 
 ## The release bundle
 

@@ -167,8 +167,14 @@ path = "docs/saving-images-and-privacy.md"
 title = "Contribute"
 blurb = "Build yoshida yourself and learn how the pieces fit together."
 [[group.item]]
+title = "Contributing"
+path = "docs/contributing.md"
+[[group.item]]
 title = "Building from Source"
 path = "docs/building-from-source.md"
+[[group.item]]
+title = "Testing"
+path = "docs/testing.md"
 [[group.item]]
 title = "CI and Deployment"
 path = "docs/ci-and-deployment.md"

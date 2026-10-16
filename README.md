@@ -100,5 +100,7 @@ The **[documentation](https://xoyz69.github.io/yoshida/docs/)** has a page for e
 | [Builder](https://xoyz69.github.io/yoshida/docs/builder/)                                                               | The visual editor, panel by panel, with shortcuts |
 | [Diagnostics](https://xoyz69.github.io/yoshida/docs/diagnostics/)                                                       | Every error code and how to fix it                |
 | [Architecture](https://xoyz69.github.io/yoshida/docs/architecture/)                                                     | Core, WebAssembly, server                         |
+| [Contributing](https://xoyz69.github.io/yoshida/docs/contributing/) · [Testing](https://xoyz69.github.io/yoshida/docs/testing/)                         | Setup, checks, PR titles, releases                |
+| [Known Gaps](https://xoyz69.github.io/yoshida/docs/known-gaps/) · [Privacy](https://xoyz69.github.io/yoshida/docs/saving-images-and-privacy/)                     | What is missing, and where your data goes         |
 
 Working projects are in [`examples/`](examples): a full poker deck (`poker`) and a printable party board (`board-game`).

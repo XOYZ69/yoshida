@@ -12,10 +12,11 @@ The GitHub Actions workflows live in `.github/workflows/`. They share the Zig se
 | `release.yml` | every successful `deploy.yml` run on `master`, and manually | Publishes a GitHub release when the version has no tag yet, see [Releases](#releases) |
 | `pr-title.yml` | every pull request to `master` | Fails unless the PR title is conventional (`type(scope): description`) and sets the matching type label |
 | `release-notes-preview.yml` | every pull request to `master` | Comments the release notes the PR will produce |
+| `labeler.yml` | every pull request to `master` | Adds `area/*` labels from the files the PR changes (`.github/labeler.yml`) |
 
 ## `ci.yml`
 
-Three jobs:
+Five jobs. A pull request that only changes docs, the website content or repo metadata skips the target builds and the browser tests (job **Changed files** decides); pushes, manual runs and releases always run everything.
 
 **Core and CLI**
 
@@ -29,7 +30,9 @@ Three jobs:
 
 **Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`.
 
-**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `vite build`, install Chromium for Playwright, then the end-to-end tests `web/tests/ui.mjs` and `web/tests/ui-organise.mjs` against `vite preview`. Screenshots of a failed run are uploaded as the `ui-test-results` artifact (kept 7 days).
+**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `npm run test:unit`, `vite build`, install Chromium for Playwright, then `npm run test:ui` (every `web/tests/ui*.mjs` file, see [Testing](@/docs/testing.md)) against `vite preview`. Screenshots of a failed run are uploaded as the `ui-test-results` artifact (kept 7 days).
+
+**Website**: builds the site with Zola, which fails on any broken internal link or anchor in the docs.
 
 Pull-request runs cancel older runs of the same PR.
 
