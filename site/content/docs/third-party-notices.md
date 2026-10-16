@@ -13,6 +13,7 @@ description = "Licences of the fonts and libraries yoshida ships with."
 | simplewebp (Miku AuahDark) | WebP decoding | BSD-3-Clause (notice in `src/c/simplewebp.h`) |
 | Lato (Łukasz Dziedzic) | Bundled default font | SIL Open Font License 1.1 (`src/core/assets/OFL.txt`) |
 | Noto Sans Symbols 2 (The Noto Project Authors), subset | Bundled fallback font for arrows, shapes, stars and other symbols | SIL Open Font License 1.1 (`src/core/assets/NotoSansSymbols2-OFL.txt`) |
+| Inter (The Inter Project Authors), Fraunces (The Fraunces Project Authors), JetBrains Mono (JetBrains) | Fonts of this website (`site/static/fonts`) | SIL Open Font License 1.1 |
 | Svelte | Web editor UI | MIT |
 | CodeMirror 6, Lezer | Code editor in the Advanced view and the expression fields | MIT |
 | fflate | Zip files in the browser | MIT |

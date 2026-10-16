@@ -69,6 +69,10 @@ npm run wasm && npm run examples && npm run dev    # editor on http://localhost:
 
 More in [Building from Source](https://xoyz69.github.io/yoshida/docs/building-from-source/).
 
+## License
+
+yoshida is released under the [MIT License](LICENSE). Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Third-party code
 
 yoshida bundles a few small libraries so that it builds without any C dependencies installed:
