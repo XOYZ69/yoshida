@@ -15,8 +15,12 @@ Design your cards and just apply the data, press export and happy playing, print
 
 Designs are simple json files that are easy to share, modify and abuse as much as you want.
 
+<!-- The same screenshot as the docs, retaken with `npm run docs:screenshots` in web/. -->
 <p align="center">
-  <img src="samples/builder-v04-dark-params.png" alt="The yoshida editor" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/static/docs/images/editor-params-dark.png">
+    <img src="site/static/docs/images/editor-params-light.png" alt="The yoshida editor with the poker deck open" width="100%">
+  </picture>
 </p>
 
 > The full documentation lives on the [docs site](https://yoshida.xoyz.dev/docs/).
@@ -52,7 +56,7 @@ yoshida render examples/poker --out out
 
 ## Project files
 
-The editor exports a whole project (designs, card files, images and fonts) as a single `.yoshida` file. It is a zip container, like `.docx`, so you can share it, open it again with **Open project file…** or by dropping it on the editor, and unpack it with any archive tool after renaming it to `.zip`. Plain `.zip` projects from older exports still open. See [FORMAT.md](FORMAT.md#project-file-yoshida).
+The editor exports a whole project (designs, card files, images and fonts) as a single `.yoshida` file. It is a zip container, like `.docx`, so you can share it, open it again with **Open project file…** or by dropping it on the editor, and unpack it with any archive tool after renaming it to `.zip`. Plain `.zip` projects from older exports still open. See [Saving, Images and Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/#export-and-open-a-project-file).
 
 ## Build from source
 

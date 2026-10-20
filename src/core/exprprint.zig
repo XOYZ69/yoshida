@@ -1,4 +1,5 @@
-//! Canonical pretty-printer for the expression language (FORMAT.md section 6).
+//! Canonical pretty-printer for the expression language
+//! (docs: site/content/docs/expressions.md).
 //!
 //! The printer works from the parsed tree, so spacing, parentheses and
 //! breaks come out the same whatever the author wrote. Literals keep their

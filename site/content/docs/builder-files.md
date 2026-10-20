@@ -18,7 +18,7 @@ The **Files** tab shows the project's files as a folder tree.
 Right-click for: open, rename, duplicate, upload here, new folder, delete (which tells you what uses the file).
 
 - **Drag files onto a folder** to move them, or **drop files from your computer** onto a folder.
-- Dropping files on the window outside the tree sorts them by type: images go to `assets/images/`, fonts to `assets/fonts/`, `*.design.json` to `designs/`, `*.cards.*` to `cards/`, and a dropped `.zip` opens as a project.
+- Dropping files on the window outside the tree sorts them by type: images go to `assets/images/`, fonts to `assets/fonts/`, `*.design.json` to `designs/`, `*.cards.*` to `cards/`, and a single dropped `.yoshida` project file (or a `.zip` from an older export) opens as a project.
 - Empty folders are kept with a hidden `.keep` file.
 
 ## Renames rewrite references

@@ -57,5 +57,5 @@ Hovering a button or a field shows what it does in a tooltip drawn like the expr
 - [Expression editor](@/docs/builder-expression-editor.md): highlighting, completion, reference
 - [Shortcuts](@/docs/builder-shortcuts.md)
 
-<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="539">
-<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="539">
+<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="596">
+<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="596">

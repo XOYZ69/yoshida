@@ -41,7 +41,7 @@ src/core/        the I/O-free core (module "yoshida")
   api.zig          JSON project summary and layer layout shared by WASM and server
   fmt.zig          canonical JSON formatter (yoshida fmt)
   c.zig            bindings and the libc shims the C code needs
-  assets/          bundled default font (Lato, OFL)
+  assets/          bundled fonts: Lato (default) and a Noto Sans Symbols 2 subset (symbol fallback), both OFL
 src/c/           stb_image, stb_truetype (public domain / MIT) and simplewebp (BSD-3-Clause), compiled without libc
 src/cli/         CLI
 src/server/      HTTP server and zip writer
@@ -49,7 +49,8 @@ src/wasm/        WebAssembly exports: main.zig (yoshida.wasm) and expr.zig (expr
 schema/          JSON Schemas for the three file kinds
 scripts/         release.sh (cross-compiled bundle) and the start scripts it ships;
                  version.mjs (bump and check the version, see Releases in CI and Deployment);
-                 releases-to-zola.py and wiki-to-zola.py (website content);
+                 releases-to-zola.py (release pages for the website, run by deploy.yml);
+                 wiki-to-zola.py (one-off migration of the former GitHub wiki, kept for reference);
                  gh-labels.sh (creates the repository labels);
                  font-catalog.mjs (rebuilds web/public/fonts/google-fonts.json)
 web/             Svelte 5 + Vite + TypeScript editor

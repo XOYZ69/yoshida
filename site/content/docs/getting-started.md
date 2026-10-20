@@ -36,7 +36,7 @@ Then open <http://localhost:8080/editor/> (the landing page is at `/`, the docs 
 
 ## Option 3: the hosted editor
 
-If the repository publishes to GitHub Pages, the editor is available at `https://<user>.github.io/<repo>/`. Everything runs in your browser; see [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) and [CI and Deployment](@/docs/ci-and-deployment.md).
+The editor is online at <https://yoshida.xoyz.dev/editor/>, nothing to install. A fork that publishes to GitHub Pages gets its own copy at `https://<user>.github.io/<repo>/editor/`. Everything runs in your browser; see [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) and [CI and Deployment](@/docs/ci-and-deployment.md).
 
 ## Your first card in the editor
 

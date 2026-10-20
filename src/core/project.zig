@@ -1,5 +1,7 @@
-//! Projects (FORMAT.md sections 1 and 7): the virtual file system, the
-//! manifest, card data in JSON and CSV, and how sets pair cards with designs.
+//! Projects: the virtual file system, the manifest, card data in JSON and
+//! CSV, and how sets pair cards with designs
+//! (docs: site/content/docs/project-layout-and-manifest.md and
+//! site/content/docs/card-data.md).
 
 const std = @import("std");
 const json = @import("json.zig");

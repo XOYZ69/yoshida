@@ -1,9 +1,10 @@
 // Project paths: the folder tree for the file browser, and finding or
 // rewriting the places that refer to a file when it is renamed, moved or
 // deleted. Every path in a project file is relative to the project root
-// (FORMAT.md section 1), so a reference is a JSON string (or CSV cell) equal
-// to the path. Path templates such as "cards/{card_type}.png" cannot be
-// rewritten; they are reported so the user can fix them.
+// (docs: site/content/docs/project-layout-and-manifest.md), so a reference
+// is a JSON string (or CSV cell) equal to the path. Path templates such as
+// "cards/{card_type}.png" cannot be rewritten; they are reported so the user
+// can fix them.
 
 import {
 	bytesOf,

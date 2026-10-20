@@ -16,7 +16,7 @@ The C libraries (stb_image, stb_truetype, simplewebp) are included in `src/c/` a
 ```sh
 zig build test                        # core unit tests
 zig build -Doptimize=ReleaseFast      # zig-out/bin/yoshida and zig-out/bin/yoshida-server
-zig build wasm                        # zig-out/web/yoshida.wasm
+zig build wasm                        # zig-out/web/yoshida.wasm and expr.wasm
 
 ./zig-out/bin/yoshida check examples/poker
 ./zig-out/bin/yoshida render examples/poker --out out --date 2026-10-11
@@ -39,11 +39,12 @@ cd web
 npm install
 npm run wasm        # builds the WASM module and copies it into public/
 npm run examples    # copies ../examples into public/examples
-npm run dev         # http://localhost:5173 (proxies /api to localhost:8080)
+npm run dev         # http://localhost:5173 (proxies /api to localhost:8080), keeps running
 npm run build       # static site in web/dist, deployable to any static host
 npm run check       # svelte-check (types)
-npm run test:ui     # end-to-end tests in Chromium (see CI and Deployment)
 ```
+
+Run `npm run dev` in its own terminal, since it keeps running. The end-to-end tests (`npm run test:ui`) need Playwright's Chromium (`npx playwright install chromium`, once) and the built editor on port 4173 (`npx vite preview --port 4173 --strictPort`); see [Testing](@/docs/testing.md).
 
 For `npm run dev` with server rendering, also run the server in another terminal: `./zig-out/bin/yoshida-server --port 8080 --web web/dist`.
 
@@ -69,13 +70,15 @@ docker run -p 8080:8080 yoshida
 Before opening a pull request:
 
 ```sh
+node scripts/version.mjs check
 zig fmt --check build.zig src
 zig build test
+zig build
 ./zig-out/bin/yoshida fmt --check examples
-cd web && npm run check && npm run test:unit
+cd web && npm run wasm && npm run check && npm run test:unit
 ```
 
-The browser tests are described in [Testing](@/docs/testing.md). These are the same steps [CI](@/docs/ci-and-deployment.md) runs.
+[CI](@/docs/ci-and-deployment.md) runs these steps too, and also checks and renders every example, builds the editor, runs the browser tests and builds the website with Zola (which fails on a broken link or anchor), all described in [Testing](@/docs/testing.md).
 
 ## The release bundle
 
@@ -83,7 +86,7 @@ The browser tests are described in [Testing](@/docs/testing.md). These are the s
 scripts/release.sh release
 ```
 
-Runs the tests, builds the web editor and the website (editor in `web/editor/`, as in Docker), cross-compiles the CLI and server for five platforms, and copies the examples, schemas, `README.md`, `THIRD_PARTY.md` (from [Third-Party Notices](@/docs/third-party-notices.md)) and the start scripts (`start.sh`, `start.bat`, `start.command`) next to them.
+Runs the tests, builds the web editor and the website (editor in `web/editor/`, as in Docker), cross-compiles the CLI and server for five platforms, and copies the examples, schemas, `README.md`, `LICENSE`, `THIRD_PARTY.md` (from [Third-Party Notices](@/docs/third-party-notices.md)) and the start scripts (`start.sh`, `start.bat`, `start.command`) next to them.
 
 ## Project layout
 

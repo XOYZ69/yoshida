@@ -1,5 +1,6 @@
 //! Fonts (stb_truetype) and text layout: line breaks, greedy word wrap,
-//! alignment, justification and max_lines truncation (FORMAT.md section 5.5).
+//! alignment, justification and max_lines truncation
+//! (docs: site/content/docs/layer-text.md).
 
 const std = @import("std");
 const c = @import("c.zig");

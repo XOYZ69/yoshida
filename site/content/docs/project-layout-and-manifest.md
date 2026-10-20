@@ -17,6 +17,8 @@ my-cards/
 
 The tool finds files by their endings (`.design.json`, `.cards.json`, `.cards.csv`), wherever they are in the project, so the `designs/` and `cards/` folders are a convention, not a requirement. The editor creates and uses them.
 
+Folders named `.git`, `.yoshida`, `node_modules` or `out` are skipped at any depth when a project is read, by the command line and by the editor (opening a folder, a `.yoshida` file or a `.zip`). Files in them are not listed, so designs and card files there are not found by their endings, and cards rendered to the default `out/` folder are not read back. The editor leaves these files out of the project entirely. The command line still reads a file there when `yoshida.json` or a design names its path, so keep fonts, images and set files out of these folders. The command line also skips `zig-out` and `.zig-cache`.
+
 All files are UTF-8 without a byte-order mark. JSON follows RFC 8259: no comments and no trailing commas. Use the `note` field (any object accepts one) for comments.
 
 Every JSON file has `"format": 1`. Missing is error 1104, an unsupported version is 1105. A `"$schema"` key is allowed at the top of a file and ignored (see [Formatting and Schemas](@/docs/formatting-and-schemas.md)).
@@ -86,7 +88,7 @@ Images and fonts can live anywhere. Reference them by project path, for example 
 
 ## Several designs in one project
 
-Put each design in `designs/`, give each its own card file, and the project has one set per pair. The editor's **+ Design** button creates a blank design together with its card file. The **Design** picker in the toolbar switches between them.
+Put each design in `designs/`, give each its own card file, and the project has one set per pair. The editor's **New design…** command (in the project menu, or at the end of the **Design** picker in the toolbar) creates a blank design together with its card file. The **Design** picker switches between them.
 
 ## `.yoshida/`
 

@@ -3,7 +3,7 @@ title = "Testing"
 description = "The test suites, what each one covers and how to run a single one."
 +++
 
-There are four kinds of checks. CI runs all of them (see [CI and Deployment](@/docs/ci-and-deployment.md)).
+There are five kinds of checks. CI runs all of them (see [CI and Deployment](@/docs/ci-and-deployment.md)).
 
 ## Core: `zig build test`
 
@@ -41,8 +41,9 @@ Chromium driven by Playwright against the built editor. `test:ui` runs every `te
 
 ```sh
 cd web
+npx playwright install chromium   # once; npm ci does not download a browser
 npm run wasm && npm run examples && npm run build
-npx vite preview --port 4173 &
+npx vite preview --port 4173 --strictPort &
 node tests/ui-organise.mjs http://localhost:4173/
 ```
 

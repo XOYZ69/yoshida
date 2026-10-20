@@ -41,7 +41,7 @@ Pull-request runs cancel older runs of the same PR.
 On every push to `master`:
 
 1. Run `ci.yml` as a reusable workflow.
-2. **Build the site**: Zig, Node 22, `npm ci`, `npm run wasm`, `npm run examples -- --public`, `npm run build`, upload `web/dist` as the Pages artifact.
+2. **Build the site**: build the editor (Zig, Node 22, `npm ci`, `npm run wasm`, `npm run examples -- --public`, `npm run build`), write one page per GitHub release with `scripts/releases-to-zola.py`, build the website with Zola using the Pages URL as base URL, copy the editor into `editor/`, and upload the result as the Pages artifact.
 3. **Deploy** to GitHub Pages.
 
 Only one deployment runs at a time; a newer push waits instead of cancelling a deployment that is already running.
@@ -50,7 +50,7 @@ Only one deployment runs at a time; a newer push waits instead of cancelling a d
 
 In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-The site works from the Pages sub-path (`https://<user>.github.io/<repo>/`) because the build uses relative URLs. The default branch is assumed to be `master`; if yours is `main`, change `branches: [master]` in `deploy.yml`.
+The project's site is published at <https://yoshida.xoyz.dev/>, a custom domain set under **Settings → Pages → Custom domain** (with a CNAME record at the DNS provider). The build takes its base URL from the Pages settings, so it works the same on a custom domain and on the default `https://<user>.github.io/<repo>/` of a fork. The default branch is assumed to be `master`; if yours is `main`, change `branches: [master]` in `deploy.yml`.
 
 ### What the public site contains
 
@@ -62,12 +62,13 @@ The public build copies the examples with `npm run examples -- --public`, which 
 
 ```sh
 cd web
+npx playwright install chromium   # once; npm ci does not download a browser
 npm run wasm && npm run examples && npm run build
-npx vite preview --port 4173 &
+npx vite preview --port 4173 --strictPort &
 npm run test:ui
 ```
 
-`npm run test:ui` runs `tests/ui.mjs` and `tests/ui-organise.mjs` with Playwright in Chromium. Pass the preview URL as an argument if it is not the default.
+`npm run test:ui` runs every `tests/ui*.mjs` file (listed in [Testing](@/docs/testing.md)) with Playwright in Chromium, one after another, until one fails. If the preview is not on `http://localhost:4173/`, set `BASE_URL` (`BASE_URL=http://localhost:5000/ npm run test:ui`); an argument after `--` only reaches the last file.
 
 ## Releases
 
@@ -81,21 +82,21 @@ node scripts/version.mjs minor        # 0.4.0 -> 0.5.0 (also: major, patch, or a
 node scripts/version.mjs check        # fail if a copy differs from build.zig.zon
 ```
 
-After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag is `v` plus the version.
+After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag names the version (`v0.6.0`; a bare `0.6.0` is accepted too).
 
 ### Publishing a release
 
 To release: bump on a branch, merge the pull request to `master`, and wait. `release.yml` does the rest:
 
 1. It runs after every successful `deploy.yml` run on `master`, on the commit that was deployed.
-2. If the version in `build.zig.zon` already has a tag (`v0.5.0`, or `0.5.0` like the older releases), it stops.
+2. If the version in `build.zig.zon` already has a tag, either `v<version>` (such as `v0.6.0`) or the bare `<version>` that releases up to 0.4.0 used (such as `0.4.0`), it stops.
 3. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
 4. It writes the notes with `.github/scripts/release-notes.mjs release`, then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
 5. It starts `deploy.yml`, so the site gets the new release page. A release created by a workflow does not trigger `deploy.yml` by itself.
 
 ### Release notes
 
-The notes are built from the pull requests merged since the last release. Each PR becomes one line, put into a section by the type in its title: `feat` is New features, `fix` Bug fixes, `perf` Performance, `docs` Documentation, `refactor`, `chore`, `ci`, `build`, `test` and `style` Maintenance, and `!` before the colon Breaking changes (sections are defined in `.github/release.yml`). `pr-title.yml` rejects titles without a type, so every PR lands in the right section. PRs with the `skip-changelog` label are left out.
+The notes are built from the pull requests merged since the last release. Each PR becomes one line, put into a section by the type in its title: `feat` is New features, `fix` Bug fixes, `perf` Performance, `docs` Documentation, `refactor`, `chore`, `ci`, `build`, `test`, `style` and `revert` Maintenance, and `!` before the colon Breaking changes (sections are defined in `.github/release.yml`). `pr-title.yml` rejects titles without a type, so every PR lands in the right section. PRs with the `skip-changelog` label are left out.
 
 Two optional extras make a release read well:
 
@@ -108,6 +109,6 @@ To retry a failed release, run `release.yml` manually from the Actions tab. It r
 
 ### Release bundle
 
-`scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
+`scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, `LICENSE`, and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
 
 The bundle contains the full examples, including their fonts. `release.yml` refuses to publish while `examples/.public-exclude` lists any file, because those files are not meant to be shared; a bundle built from such examples is **for private use only**.

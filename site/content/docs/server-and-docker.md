@@ -52,6 +52,7 @@ The image sets `YOSHIDA_WEB=/web` and `YOSHIDA_PORT=8080` and exposes port 8080.
 services:
   yoshida:
     build: .
+    container_name: yoshida
     image: yoshida:latest
     ports:
       - "8080:8080"

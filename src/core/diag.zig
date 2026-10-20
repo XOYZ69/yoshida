@@ -1,5 +1,5 @@
 //! Diagnostics: every problem the core finds, in one shape for the CLI, the
-//! editor and the server (FORMAT.md section 9).
+//! editor and the server (docs: site/content/docs/diagnostics.md).
 
 const std = @import("std");
 const json = @import("json.zig");

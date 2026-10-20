@@ -250,7 +250,8 @@ function argTypes(args: Json | undefined): [string, string][] {
 }
 
 // A function body sees its arguments, params, constants and the functions
-// before it; not layers or repeat names (FORMAT.md 6.8).
+// before it; not layers or repeat names
+// (docs: site/content/docs/expressions-constants-and-functions.md).
 function functionScope(name: string, fn: Obj): CompletionContext {
 	const at = functions.findIndex(([n]) => n === name);
 	return {

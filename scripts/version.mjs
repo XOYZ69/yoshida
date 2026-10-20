@@ -113,7 +113,7 @@ function set(arg) {
 			// git grep exits 1 when nothing matches, or git is not available.
 		}
 	}
-	console.log(`Next: commit, merge to master, then publish a GitHub release tagged v${version}.`);
+	console.log(`Next: commit, open a pull request and merge it to master; after Deploy succeeds, release.yml tags v${version} and publishes the release with the bundle.`);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);

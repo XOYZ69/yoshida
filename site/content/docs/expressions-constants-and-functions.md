@@ -44,7 +44,7 @@ Layers use them like params and built-in functions:
 | --- | --- |
 | `args` | The arguments: an object of name to type (`number`, `text`, `bool`, `color`), in order, or an array of names (all numbers): `["i", "j"]` |
 | `expr` | The body: an expression with the arguments, params, constants and the functions **above** this one |
-| `note` | A comment |
+| `note` | A description of the function, shown in the editor |
 
 - Call a function like a built-in one: `tile_x(i)`. The number and types of the arguments are checked when the design loads (error 3003).
 - The return type is the type of `expr`.
@@ -61,3 +61,5 @@ A name may equal a built-in function's name. A constant with such a name works, 
 ## In the editor
 
 With nothing selected, the inspector lists the design's constants and functions with fields to change them, and **Add** buttons. Expression fields suggest them as you type. See [Builder: Inspector](@/docs/builder-inspector.md).
+
+A function's `note` is its description in expression fields: the suggestion list, the tooltip when you hover a call and the signature help show it. Without a note they show "A design function".

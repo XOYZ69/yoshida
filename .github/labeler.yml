@@ -5,19 +5,19 @@ area/web-editor:
       - any-glob-to-any-file: web/**
 area/core:
   - changed-files:
-      - any-glob-to-any-file: [src/core/**, src/c/**]
+      - any-glob-to-any-file: [src/core/**, src/c/**, build.zig, build.zig.zon]
 area/cli:
   - changed-files:
       - any-glob-to-any-file: src/cli/**
 area/server:
   - changed-files:
-      - any-glob-to-any-file: [src/server/**, Dockerfile, compose.yaml]
+      - any-glob-to-any-file: [src/server/**, Dockerfile, compose.yaml, .dockerignore]
 area/wasm:
   - changed-files:
       - any-glob-to-any-file: src/wasm/**
 area/format:
   - changed-files:
-      - any-glob-to-any-file: [schema/**, examples/**, FORMAT.md]
+      - any-glob-to-any-file: [schema/**, examples/**]
 area/docs:
   - changed-files:
       - any-glob-to-any-file: [site/**, README.md, '*.md']

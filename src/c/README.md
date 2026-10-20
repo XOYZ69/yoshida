@@ -41,3 +41,4 @@ binaries.
 ## Other bundled third-party files
 
 - `../core/assets/Lato-Regular.ttf`: default font, SIL Open Font License 1.1 (`../core/assets/OFL.txt`), <https://www.latofonts.com>.
+- `../core/assets/NotoSansSymbols2-Subset.ttf`: fallback font for arrows, shapes, stars and other symbols (a subset of Noto Sans Symbols 2), SIL Open Font License 1.1 (`../core/assets/NotoSansSymbols2-OFL.txt`), <https://github.com/notofonts/symbols>.

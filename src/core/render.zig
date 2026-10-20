@@ -1,6 +1,7 @@
 //! Renders one card: evaluates every layer for the card's values (resolving
 //! `@layer` references lazily, with cycle detection), draws, applies effects
-//! and composites (FORMAT.md sections 5 and 8).
+//! and composites (docs: site/content/docs/layers.md and
+//! site/content/docs/rendering-model.md).
 
 const std = @import("std");
 const c = @import("c.zig");

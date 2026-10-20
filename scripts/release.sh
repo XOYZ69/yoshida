@@ -38,7 +38,7 @@ done
 rm -rf zig-out/bin
 zig build -Doptimize=ReleaseFast
 
-cp -r examples schema README.md "$OUT/"
+cp -r examples schema README.md LICENSE "$OUT/"
 # The notices live on the docs page; ship them as plain Markdown (front matter
 # turned into a heading, Zola's raw markers removed). The bundle's site has them at /docs/third-party-notices/.
 sed -e '1,/^+++$/{s/^title = "\(.*\)"$/# \1/p;d;}' -e 's/{% *raw *%}//g; s/{% *endraw *%}//g' \

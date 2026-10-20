@@ -2,7 +2,7 @@
 
 Thanks for helping. Bug reports, feature wishes, docs fixes and code are all welcome. For anything bigger than a small fix, open an issue first so we can agree on the direction before you spend time on it.
 
-The full guide, with the architecture and the details behind each step, is on the [docs site](https://yoshida.xoyz.dev/docs/building-from-source/). This page is the short version.
+The full guide is the [Contributing page](https://yoshida.xoyz.dev/docs/contributing/) on the docs site. This page is the short version.
 
 ## Set up
 
@@ -21,12 +21,20 @@ See [Building from Source](https://yoshida.xoyz.dev/docs/building-from-source/) 
 Run what CI runs (see [CI and Deployment](https://yoshida.xoyz.dev/docs/ci-and-deployment/)):
 
 ```sh
+node scripts/version.mjs check
 zig fmt --check build.zig src
 zig build test
+zig build
 ./zig-out/bin/yoshida fmt --check examples
-cd web && npm run check && npm run test:unit && npm run build && npm run test:ui
-node scripts/version.mjs check
+for e in examples/*/; do ./zig-out/bin/yoshida check "$e"; done
+for e in examples/*/; do ./zig-out/bin/yoshida render "$e" --offline --out "out/$(basename "$e")"; done
+(cd site && zola build --output-dir ../public)   # fails on a broken link or anchor
+cd web
+npm run wasm && npm run examples
+npm run check && npm run test:unit && npm run build
 ```
+
+The browser tests need Playwright's Chromium once (`npx playwright install chromium`) and the built editor running on port 4173: start `npx vite preview --port 4173 --strictPort` in `web/` in a second terminal, then run `npm run test:ui`. [Testing](https://yoshida.xoyz.dev/docs/testing/) explains each suite and how to run a single file.
 
 Changes to a design or example file: format them with `yoshida fmt`. Changes to the format or an expression function: update the matching page in `site/content/docs/`.
 

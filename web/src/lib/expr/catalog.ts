@@ -1,8 +1,8 @@
-// What the yoshida expression language offers (FORMAT.md section 6): the
-// functions with signatures and docs, built-in names, the fields of each
-// layer kind that `@id.<field>` can read, units and operators. Used by the
-// expression input for completion, signature help, the reference popover
-// and highlighting.
+// What the yoshida expression language offers
+// (docs: site/content/docs/expressions.md): the functions with signatures
+// and docs, built-in names, the fields of each layer kind that
+// `@id.<field>` can read, units and operators. Used by the expression input
+// for completion, signature help, the reference popover and highlighting.
 
 /** The type a field needs; used to rank suggestions. */
 export type Expect =
@@ -848,7 +848,10 @@ export function typeLabel(type: string, item?: Record<string, string>): string {
 	return type;
 }
 
-/** The field a list is looked up by (`list.Key`): its first text field (FORMAT.md 6.3.1). */
+/**
+ * The field a list is looked up by (`list.Key`): its first text field
+ * (docs: site/content/docs/expressions-list-lookup.md).
+ */
 export function keyField(
 	item: Record<string, string> | undefined,
 ): string | undefined {

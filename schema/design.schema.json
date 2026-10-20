@@ -16,11 +16,11 @@
       "additionalProperties": false,
       "properties": {
         "width": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "height": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "background": {
@@ -62,7 +62,7 @@
     },
     "consts": {
       "type": "object",
-      "description": "Named values every layer can use (FORMAT.md section 6)",
+      "description": "Named values every layer can use, see https://yoshida.xoyz.dev/docs/expressions-constants-and-functions/#constants",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "additionalProperties": {
         "description": "Number, true/false or an expression",
@@ -71,7 +71,7 @@
     },
     "functions": {
       "type": "object",
-      "description": "Named formulas with arguments (FORMAT.md section 6)",
+      "description": "Named formulas with arguments, see https://yoshida.xoyz.dev/docs/expressions-constants-and-functions/#functions",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "additionalProperties": {
         "type": "object",
@@ -207,7 +207,7 @@
           "additionalProperties": false,
           "properties": {
             "count": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "each": { "type": "string" },
@@ -230,11 +230,11 @@
                 "enum": ["top", "bottom", "left", "right"]
               },
               "length": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "strength": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               }
             }
@@ -245,11 +245,11 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "y": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "w": {
@@ -265,7 +265,7 @@
           "type": "string"
         },
         "radius": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "stroke": {
@@ -277,7 +277,7 @@
               "type": "string"
             },
             "width": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "dash": {
@@ -312,18 +312,18 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "y": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             }
           }
         },
         "font": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
         "size": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "color": {
@@ -334,15 +334,15 @@
           "enum": ["left", "center", "right", "justify"]
         },
         "wrap": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "line_spacing": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "max_lines": {
-          "description": "Number literal or expression (FORMAT.md section 6)",
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
           "type": ["number", "string"]
         },
         "max_width": {
@@ -375,11 +375,11 @@
           "additionalProperties": false,
           "properties": {
             "start": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "end": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "pie": { "type": "boolean" }
@@ -410,11 +410,11 @@
           "additionalProperties": false,
           "properties": {
             "x": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             },
             "y": {
-              "description": "Number literal or expression (FORMAT.md section 6)",
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
               "type": ["number", "string"]
             }
           }
@@ -448,11 +448,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "w": {
@@ -468,7 +468,7 @@
                 "type": "string"
               },
               "radius": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "stroke": {
@@ -480,7 +480,7 @@
                     "type": "string"
                   },
                   "width": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "dash": {
@@ -524,11 +524,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "w": {
@@ -552,7 +552,7 @@
                     "type": "string"
                   },
                   "width": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "dash": {
@@ -575,11 +575,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "start": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "end": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "pie": { "type": "boolean" }
@@ -632,7 +632,7 @@
                     "type": "string"
                   },
                   "width": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "dash": {
@@ -673,11 +673,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "w": {
@@ -716,18 +716,18 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   }
                 }
               },
               "font": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
               "size": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "color": {
@@ -738,15 +738,15 @@
                 "enum": ["left", "center", "right", "justify"]
               },
               "wrap": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "line_spacing": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "max_lines": {
-                "description": "Number literal or expression (FORMAT.md section 6)",
+                "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
               },
               "max_width": {
@@ -771,7 +771,7 @@
                     "type": "string"
                   },
                   "width": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   }
                 }
@@ -808,11 +808,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "w": {
@@ -857,11 +857,11 @@
                 "additionalProperties": false,
                 "properties": {
                   "x": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   },
                   "y": {
-                    "description": "Number literal or expression (FORMAT.md section 6)",
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                     "type": ["number", "string"]
                   }
                 }
