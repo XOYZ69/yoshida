@@ -39,7 +39,7 @@ jobs:
       release: ${{ steps.version.outputs.release }}
     steps:
       # The commit that was deployed, not whatever master is by now.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -76,7 +76,7 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
       SHA: ${{ needs.version.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.sha }}
 

@@ -30,7 +30,7 @@ jobs:
     needs: checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A release tag must name the version in build.zig.zon (v0.5.0 for 0.5.0).
       - name: Release tag matches the version

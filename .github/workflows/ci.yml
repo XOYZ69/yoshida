@@ -51,7 +51,7 @@ jobs:
     name: Core and CLI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zig
 
       # build.zig.zon holds the version; the copies in web/ and the docs
@@ -102,7 +102,7 @@ jobs:
       matrix:
         target: [x86_64-linux-musl, aarch64-linux-musl, x86_64-macos, aarch64-macos, x86_64-windows-gnu]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zig
       - run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dstrip=true
 
@@ -115,7 +115,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zig
       - uses: actions/setup-node@v4
         with:
@@ -160,7 +160,7 @@ jobs:
     name: Website
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Zola
         run: |
