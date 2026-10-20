@@ -85,7 +85,7 @@ jobs:
           zola build --base-url "https://${BASE_URL#*://}" --output-dir ../public
           cp -r ../web/dist ../public/editor
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
