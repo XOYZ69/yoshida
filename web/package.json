@@ -2,7 +2,7 @@
 	"name": "yoshida-editor",
 	"private": true,
 	"license": "MIT",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"type": "module",
 	"scripts": {
 		"wasm": "cd .. && zig build wasm && mkdir -p web/public && cp zig-out/web/yoshida.wasm web/public/yoshida.wasm && cp zig-out/web/expr.wasm web/public/expr.wasm",
