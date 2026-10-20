@@ -1,4 +1,4 @@
-//! Loads and checks a design file (FORMAT.md sections 3 to 5). Every
+//! Loads and checks a design file (docs: site/content/docs/designs.md). Every
 //! expression is parsed and type-checked here, before anything is drawn.
 
 const std = @import("std");

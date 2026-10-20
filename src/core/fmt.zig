@@ -1,7 +1,7 @@
-//! Canonical JSON layout (FORMAT.md, "Canonical formatting"), the same rules
-//! as the editor's formatter: 2 spaces, LF, trailing newline, key order as
-//! written, and objects or arrays of scalars (or arrays of arrays of
-//! scalars) on one line when they fit in 100 columns.
+//! Canonical JSON layout (docs: site/content/docs/formatting-and-schemas.md),
+//! the same rules as the editor's formatter: 2 spaces, LF, trailing newline,
+//! key order as written, and objects or arrays of scalars (or arrays of
+//! arrays of scalars) on one line when they fit in 100 columns.
 
 const std = @import("std");
 const json = @import("json.zig");

@@ -1,0 +1,26 @@
+# Area labels for pull requests, from the files they change.
+# Run by .github/workflows/labeler.yml; the labels are created by scripts/gh-labels.sh.
+area/web-editor:
+  - changed-files:
+      - any-glob-to-any-file: web/**
+area/core:
+  - changed-files:
+      - any-glob-to-any-file: [src/core/**, src/c/**, build.zig, build.zig.zon]
+area/cli:
+  - changed-files:
+      - any-glob-to-any-file: src/cli/**
+area/server:
+  - changed-files:
+      - any-glob-to-any-file: [src/server/**, Dockerfile, compose.yaml, .dockerignore]
+area/wasm:
+  - changed-files:
+      - any-glob-to-any-file: src/wasm/**
+area/format:
+  - changed-files:
+      - any-glob-to-any-file: [schema/**, examples/**]
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file: [site/**, README.md, '*.md']
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file: [.github/**, scripts/**]

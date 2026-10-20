@@ -1,5 +1,5 @@
-//! The expression language (FORMAT.md section 6): lexer, Pratt parser, type
-//! checker, evaluator and `{}` templates.
+//! The expression language (docs: site/content/docs/expressions.md): lexer,
+//! Pratt parser, type checker, evaluator and `{}` templates.
 
 const std = @import("std");
 const value = @import("value.zig");

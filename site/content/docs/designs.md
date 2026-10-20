@@ -25,7 +25,7 @@ A design file (`*.design.json`) describes one card layout: the canvas, the fonts
 | `canvas.background` | color | no | `#00000000` | Transparent by default |
 | `canvas.dpi` | number | no | none | Print resolution, stored in PNG files and used for the PDF page size. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md#png-files) |
 | `canvas.bleed` | number | no | `0` | Pixels on every side that are cut off after printing. Crop marks and the PDF trim box sit this far inside the edge |
-| `fonts` | object of name to path | no | `{}` | Font families for text layers |
+| `fonts` | object of name to path or `{ path, note }` | no | `{}` | Font families for text layers |
 | `params` | object of name to param | no | `{}` | See [Params](@/docs/params.md) |
 | `consts` | object of name to value | no | `{}` | Named values. See [Constants and functions](@/docs/expressions-constants-and-functions.md) |
 | `functions` | object of name to function | no | `{}` | Named formulas with arguments. See [Constants and functions](@/docs/expressions-constants-and-functions.md) |
@@ -56,6 +56,7 @@ The canvas cannot use `%`, `vw` or `vh` (it is being defined, error 3006) and ca
 
 - Names follow the identifier rule `[a-z_][a-z0-9_]*`.
 - Values are project paths to TrueType or OpenType files.
+- A value can also be an object with a `path` and an optional `note`, for example `"body": { "path": "assets/fonts/Body.ttf", "note": "Body text for rules cards" }`. The note is a comment for editors and does not change the rendering. A missing `path` is error 1102, and any other key is error 1101.
 - A font named `default` is built in (Lato, SIL Open Font License). You may override it by declaring `default` yourself.
 - A text layer picks a font with `"font": "body"`. A name that is not declared is error 4004.
 - A font file that is missing or not a TrueType/OpenType font is warning 4005 and the default font is used for that name.

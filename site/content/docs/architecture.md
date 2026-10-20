@@ -41,13 +41,17 @@ src/core/        the I/O-free core (module "yoshida")
   api.zig          JSON project summary and layer layout shared by WASM and server
   fmt.zig          canonical JSON formatter (yoshida fmt)
   c.zig            bindings and the libc shims the C code needs
-  assets/          bundled default font (Lato, OFL)
+  assets/          bundled fonts: Lato (default) and a Noto Sans Symbols 2 subset (symbol fallback), both OFL
 src/c/           stb_image, stb_truetype (public domain / MIT) and simplewebp (BSD-3-Clause), compiled without libc
 src/cli/         CLI
 src/server/      HTTP server and zip writer
 src/wasm/        WebAssembly exports: main.zig (yoshida.wasm) and expr.zig (expr.wasm, parser and printer only)
 schema/          JSON Schemas for the three file kinds
 scripts/         release.sh (cross-compiled bundle) and the start scripts it ships;
+                 version.mjs (bump and check the version, see Releases in CI and Deployment);
+                 releases-to-zola.py (release pages for the website, run by deploy.yml);
+                 wiki-to-zola.py (one-off migration of the former GitHub wiki, kept for reference);
+                 gh-labels.sh (creates the repository labels);
                  font-catalog.mjs (rebuilds web/public/fonts/google-fonts.json)
 web/             Svelte 5 + Vite + TypeScript editor
 examples/        poker deck and party board game
@@ -91,5 +95,5 @@ The editor never parses expressions itself for rendering; it asks the core. The 
 ## Testing
 
 - `zig build test`: unit tests in the core (parsers, formatter, loader, expressions, rendering).
-- `web/tests/ui.mjs` and `web/tests/ui-organise.mjs`: end-to-end tests in Chromium with Playwright.
+- `npm run test:unit` and `npm run test:ui` in `web/`: unit checks and end-to-end tests in Chromium with Playwright, see [Testing](@/docs/testing.md).
 - CI also checks that the examples format, check and render. See [CI and Deployment](@/docs/ci-and-deployment.md).

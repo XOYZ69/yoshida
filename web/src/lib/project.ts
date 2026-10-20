@@ -146,9 +146,9 @@ export function download(
 // ---------------------------------------------------------------- formatter
 
 /**
- * Canonical JSON layout (FORMAT.md, "Canonical formatting"): 2 spaces, LF,
- * trailing newline, and objects or arrays of scalars on one line when they
- * fit in 100 columns. Key order is kept as written.
+ * Canonical JSON layout (docs: site/content/docs/formatting-and-schemas.md):
+ * 2 spaces, LF, trailing newline, and objects or arrays of scalars on one
+ * line when they fit in 100 columns. Key order is kept as written.
  */
 export function formatJson(value: unknown): string {
 	return `${fmt(value, 0)}\n`;

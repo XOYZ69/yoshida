@@ -39,7 +39,9 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: node scripts/version.mjs check --tag "$TAG"
 
-      # Editor: same steps as before, output in web/dist.
+      # Editor: WASM core and Vite build, output in web/dist. Unlike the CI
+      # web job, --public leaves out the files listed in
+      # examples/.public-exclude (fonts that may not be redistributed).
       - uses: ./.github/actions/setup-zig
       - uses: actions/setup-node@v4
         with:

@@ -1,6 +1,7 @@
 name: Feature wish
 description: Something you would like yoshida to do
-labels: ["feature_wish"]
+title: "feat: "
+labels: ["enhancement"]
 body:
   - type: textarea
     id: wish

@@ -38,7 +38,7 @@ export type Param = {
 	max_length?: number;
 	label?: string;
 	note?: string;
-	/** Editor section (FORMAT.md section 4). */
+	/** Editor section (docs: site/content/docs/params.md). */
 	group?: string;
 	options?: string[];
 	/** List item fields: name → type (`enum` for enum fields). */

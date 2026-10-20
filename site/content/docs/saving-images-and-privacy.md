@@ -9,10 +9,10 @@ Every change is saved automatically in the browser's storage (IndexedDB), with *
 
 - Closing the tab loses nothing. The last project opens again on the next visit, and the **project menu** lists every saved project.
 - An example is only saved once you change it, and opening an example from the menu always gives a fresh copy.
-- The editor asks the browser to keep this storage (`navigator.storage.persist()`), but **clearing site data still deletes it**. Export a zip to keep a copy.
+- The editor asks the browser to keep this storage (`navigator.storage.persist()`), but **clearing site data still deletes it**. Use **Export project file** (project menu) to keep a copy.
 
-<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="539">
-<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="539">
+<img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="596">
+<img class="only-dark" src="../images/editor-project-menu-dark.png" alt="The project menu" width="509" height="596">
 
 ## The project menu
 
@@ -29,9 +29,11 @@ Next to it the editor shows whether the project is saved in this browser.
 - **Open a folder**: read and write in Chromium-based browsers (Chrome, Edge), read-only elsewhere.
 - **Save to folder…** (Chromium, in the project menu): write the whole project to a folder you pick and keep saving there; a **Save** button in the top bar then writes the changed files. The result is a normal project folder you can render with the [command line](@/docs/command-line.md) or commit to git.
 
-## Export and open a zip
+## Export and open a project file
 
 **Export project file** (project menu) downloads the whole project as `<name>.yoshida`, a zip with one folder inside, files at their project paths (images and fonts as files, not base64). It opens again with *Open project file…* (or by dropping it on the window); unpacked, it is a normal project folder for the CLI and the server.
+
+The project file is an ordinary zip with the media type `application/vnd.yoshida+zip`, so renaming it to `.zip` lets any archive tool open it. When opening, the editor removes a single top folder and uses its name as the project name. *Open project file…* also accepts a plain `.zip` of a project folder, such as an older export.
 
 ## Images
 
@@ -73,8 +75,8 @@ That is a 63 x 88 mm poker card with 3 mm bleed: 744 + 2 x 35 by 1039 + 2 x 35 p
 - **Google Fonts** in the [Fonts window](@/docs/builder-fonts.md) is off until you allow it. Once allowed, the browser contacts `fonts.googleapis.com`, `fonts.gstatic.com` and `raw.githubusercontent.com`. Google receives your IP address and the preview text. Project files are not sent. The choice is remembered in this browser, and you can turn it off in the Fonts window.
 - The only upload is the optional **Render on server** export (ZIP and PDF). The switch appears only when the editor is served by `yoshida-server` with rendering enabled, and nothing is sent unless you switch it on. The progress window then logs what is uploaded and where. See [Server and Docker](@/docs/server-and-docker.md).
 - Images given as `https://` URLs are downloaded by your browser directly from the site that hosts them.
-- The hosted editor on GitHub Pages is a static site: it has no backend that could receive your data. See [CI and Deployment](@/docs/ci-and-deployment.md).
+- The hosted editor at <https://yoshida.xoyz.dev/editor/> is a static site on GitHub Pages: it has no backend that could receive your data. See [CI and Deployment](@/docs/ci-and-deployment.md).
 
 ## Fonts and licenses
 
-Fonts you add stay in your project. The [Fonts window](@/docs/builder-fonts.md) shows each font's license and warns when a license file is missing or limits sharing. That is not legal advice. Make sure you may use and redistribute your fonts before you share a project or a zip. The fonts in the examples are listed with their licenses in [Third-Party Notices](@/docs/third-party-notices.md).
+Fonts you add stay in your project. The [Fonts window](@/docs/builder-fonts.md) shows each font's license and warns when a license file is missing or limits sharing. That is not legal advice. Make sure you may use and redistribute your fonts before you share a project folder or a `.yoshida` project file. The fonts in the examples are listed with their licenses in [Third-Party Notices](@/docs/third-party-notices.md).

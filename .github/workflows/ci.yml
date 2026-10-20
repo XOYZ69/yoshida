@@ -16,6 +16,37 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A pull request that only touches docs, the website content or repo
+  # metadata does not need the five-target build or the browser tests. The
+  # core job still runs (it checks the version copies in the docs). Skipped
+  # jobs count as passed for required checks. Pushes and manual runs always
+  # run everything.
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - name: Does the pull request touch code?
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
+          other='^(site/|[^/]+\.md$|LICENSE$|\.github/(ISSUE_TEMPLATE/|release-intro/|scripts/release-notes\.mjs$|CODEOWNERS$|dependabot\.yml$|labeler\.yml$|pull_request_template\.md$|release\.yml$|workflows/(pr-title|labeler|release-notes-preview)\.yml$))'
+          if printf '%s\n' "$files" | grep -qvE "$other"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only docs and repo metadata changed: skipping the target builds and browser tests"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   core:
     name: Core and CLI
     runs-on: ubuntu-latest
@@ -63,6 +94,8 @@ jobs:
 
   targets:
     name: Build ${{ matrix.target }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -75,6 +108,8 @@ jobs:
 
   web:
     name: Web editor
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

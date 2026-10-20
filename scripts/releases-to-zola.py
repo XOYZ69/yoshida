@@ -11,6 +11,7 @@ on the next build. Release bodies are GitHub-flavoured Markdown, wrapped in
 {% raw %} so Zola does not read braces in them as template tags.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -19,10 +20,32 @@ def toml_str(s: str) -> str:
     return json.dumps(s, ensure_ascii=False)
 
 
+def linkify(body: str) -> str:
+    """Turns the bare pull request and compare URLs and @names that GitHub's
+    generated notes contain (older releases) into Markdown links, as GitHub
+    shows them. Text that is already a link is left alone."""
+    body = re.sub(
+        r'(?<![\](<"])https://github\.com/[\w.-]+/[\w.-]+/pull/(\d+)',
+        lambda m: f"[#{m.group(1)}]({m.group(0)})",
+        body,
+    )
+    body = re.sub(
+        r'(?<![\](<"])https://github\.com/[\w.-]+/[\w.-]+/compare/(\S+?)(?=\s|$|\))',
+        lambda m: f"[{m.group(1)}]({m.group(0)})",
+        body,
+    )
+    return re.sub(
+        r"(?<![\w\[/])@([A-Za-z0-9-]+)(?![\w\]/-])",
+        lambda m: f"[@{m.group(1)}](https://github.com/{m.group(1)})",
+        body,
+    )
+
+
 def protect_body(body: str) -> str:
-    """Normalizes newlines and wraps the body in {% raw %}: Zola reads "{{",
-    "{%" and "{#" in page content as Tera tags, and release notes are free text."""
-    body = body.replace("\r\n", "\n").replace("{% endraw %}", "{ % endraw % }")
+    """Normalizes newlines, links bare GitHub URLs and wraps the body in
+    {% raw %}: Zola reads "{{", "{%" and "{#" in page content as Tera tags,
+    and release notes are free text."""
+    body = linkify(body.replace("\r\n", "\n")).replace("{% endraw %}", "{ % endraw % }")
     return "{% raw %}" + body + "{% endraw %}" if body else body
 
 

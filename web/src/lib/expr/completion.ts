@@ -344,8 +344,9 @@ const identRe = /^[A-Za-z_][A-Za-z0-9_]*$/;
 type ListParam = CompletionContext["params"][number];
 
 /**
- * Keys of a list param as options (FORMAT.md 6.3.1). After a dot, keys that
- * are not names are written in brackets instead: `list["Two words"]`.
+ * Keys of a list param as options
+ * (docs: site/content/docs/expressions-list-lookup.md). After a dot, keys
+ * that are not names are written in brackets instead: `list["Two words"]`.
  * `quote` is set inside `list["...`: the option then closes the bracket.
  */
 function keyOpts(

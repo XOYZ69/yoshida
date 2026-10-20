@@ -22,12 +22,12 @@ The functions are grouped by what they work on. The table below lists every grou
 | Function | Signature | Notes |
 | --- | --- | --- |
 | `min`, `max` | `(number, number, ...) -> number` | Any number of arguments. When the first argument is a list, see [Lists](@/docs/expressions-functions-lists.md) |
-| `clamp` | `(value, lo, hi) -> number` | The middle of the three values; the CSS order `clamp(lo, value, hi)` also works |
+| `clamp` | `(value, lo, hi) -> number` | The middle of the three values; the CSS order `clamp(lo, value, hi)` also works. With `lo` above `hi` it is not an error and still gives the middle value: `clamp(10, 5, 0)` is `5` |
 | `abs`, `floor`, `ceil` | `(number) -> number` | |
-| `round` | `(number, digits = 0) -> number` | Halves away from zero, on the decimal digits: `round(1.005, 2)` is `1.01`. `digits` may be negative: `round(1234.5, -2)` is `1200` |
+| `round` | `(number, digits = 0) -> number` | Halves away from zero, on the decimal digits: `round(1.005, 2)` is `1.01`. `digits` may be negative: `round(1234.5, -2)` is `1200`. `digits` is rounded to a whole number and limited to -15 to 15 |
 | `len` | `(list or text) -> number` | Items in a list, characters in text |
 | `upper`, `lower`, `trim` | `(text) -> text` | See below for `upper` and `lower` |
-| `fmt` | `(number, decimals) -> text` | `fmt(0.5, 2)` is `0.50`. Rounds as `round` does, and never prints `-0.00` |
+| `fmt` | `(number, decimals) -> text` | `fmt(0.5, 2)` is `0.50`. Rounds as `round` does, and never prints `-0.00`. `decimals` is rounded to a whole number and kept between 0 and 15 |
 | `avg_color` | `(image) -> color` | Average of the opaque pixels of an image param |
 | `mix` | `(color, color, t) -> color` | Linear blend, `t` from 0 to 1 |
 | `with_alpha` | `(color, a) -> color` | `a` from 0 (transparent) to 1 |

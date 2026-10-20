@@ -13,11 +13,12 @@ description = "Licences of the fonts and libraries yoshida ships with."
 | simplewebp (Miku AuahDark) | WebP decoding | BSD-3-Clause (notice in `src/c/simplewebp.h`) |
 | Lato (Łukasz Dziedzic) | Bundled default font | SIL Open Font License 1.1 (`src/core/assets/OFL.txt`) |
 | Noto Sans Symbols 2 (The Noto Project Authors), subset | Bundled fallback font for arrows, shapes, stars and other symbols | SIL Open Font License 1.1 (`src/core/assets/NotoSansSymbols2-OFL.txt`) |
+| Inter (The Inter Project Authors), Fraunces (The Fraunces Project Authors), JetBrains Mono (The JetBrains Mono Project Authors) | Fonts of this website (`site/static/fonts`) | SIL Open Font License 1.1 (`site/static/fonts/*-OFL.txt` in the repository, `/fonts/*-OFL.txt` on the website, `web/fonts/*-OFL.txt` in the release bundle) |
 | Svelte | Web editor UI | MIT |
 | CodeMirror 6, Lezer | Code editor in the Advanced view and the expression fields | MIT |
 | fflate | Zip files in the browser | MIT |
 
-The JavaScript packages are bundled into `web/assets/*.js` by Vite. Their full license texts are in `web/node_modules/<package>/LICENSE` after `npm install`.
+The JavaScript packages are bundled by Vite into the editor's `assets/*.js` (`web/dist/assets/` in a source build, `web/editor/assets/` in the release bundle, `/editor/assets/` on the website). Their full license texts are in `web/node_modules/<package>/LICENSE` after `npm install`.
 
 ## Example fonts
 

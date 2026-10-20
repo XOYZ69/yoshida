@@ -8,7 +8,7 @@ description = "The HTTP API of yoshida-server."
 | Method and path         | Request                                                                    | Response                                                                               |
 | ----------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `GET /api/capabilities` |                                                                            | `{ "version", "format", "render", "max_cards", "max_body_mb" }`                        |
-| `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "format": "png" \| "png16" \| "pdf" }` | `application/zip` with `<set>/<card id>.png` (or `application/pdf` for `pdf`), or 422 with `{ "error", "diagnostics" }` |
+| `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "now", "utc_offset", "format": "png" \| "png16" \| "pdf" }` | `application/zip` with `<set>/<card id>.png` (or `application/pdf` for `pdf`), or 422 with `{ "error", "diagnostics" }` |
 | `GET /api/render/progress?job=<id>` |                                                               | `{ "found", "stage", "done", "total" }` for a render sent with `x-yoshida-job: <id>` |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 
@@ -20,7 +20,7 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 
 ```json
 {
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"format": 1,
 	"render": true,
 	"max_cards": 1000,

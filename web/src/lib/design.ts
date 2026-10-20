@@ -226,8 +226,9 @@ const mergedKeys = new Set(["box", "at", "stroke", "repeat", "arc", "shape"]);
 const ownKeys = new Set(["id", "extends", "note"]);
 
 /**
- * The layer with its `extends` chain applied (FORMAT.md 5.8): objects merge
- * key by key, everything else is replaced, id/extends/note are not inherited.
+ * The layer with its `extends` chain applied: objects merge key by key,
+ * everything else is replaced, id/extends/note are not inherited
+ * (docs: site/content/docs/extends.md).
  */
 export function effectiveLayer(
 	doc: Obj,

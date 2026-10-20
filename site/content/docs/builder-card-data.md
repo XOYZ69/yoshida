@@ -39,5 +39,5 @@ Below the list is the form for the selected card, built from the params and show
 
 The **Card** picker in the toolbar steps through cards with the arrows; the middle opens a searchable list that stays fast with thousands of cards.
 
-<img class="only-light" src="../images/editor-card-picker-light.png" alt="The card picker" width="422" height="279">
-<img class="only-dark" src="../images/editor-card-picker-dark.png" alt="The card picker" width="422" height="279">
+<img class="only-light" src="../images/editor-card-picker-light.png" alt="The card picker" width="471" height="279">
+<img class="only-dark" src="../images/editor-card-picker-dark.png" alt="The card picker" width="471" height="279">

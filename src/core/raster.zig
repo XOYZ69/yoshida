@@ -1,5 +1,6 @@
 //! Pixels: premultiplied 16-bit RGBA bitmaps, anti-aliased shapes, image
-//! sampling, effects, compositing and PNG encoding (FORMAT.md section 8).
+//! sampling, effects, compositing and PNG encoding
+//! (docs: site/content/docs/rendering-model.md).
 
 const std = @import("std");
 const Color = @import("value.zig").Color;

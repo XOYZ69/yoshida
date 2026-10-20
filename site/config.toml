@@ -1,6 +1,8 @@
 # Site for yoshida: landing page, docs (former wiki) and release notes.
 # The web editor is built separately by Vite and copied to /editor/.
-base_url = "https://xoyz69.github.io/yoshida"
+# Used by local builds. deploy.yml passes the GitHub Pages URL with --base-url,
+# so the published site follows the domain set under Settings -> Pages.
+base_url = "https://yoshida.xoyz.dev"
 title = "yoshida"
 description = "Design cards with layers and formulas. Fill them from a spreadsheet. Get PNGs."
 default_language = "en"
