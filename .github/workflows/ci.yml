@@ -150,7 +150,7 @@ jobs:
 
       - name: Keep screenshots of a failed run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-test-results
           path: web/test-results/
