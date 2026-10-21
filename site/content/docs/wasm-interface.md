@@ -15,7 +15,7 @@ The core is built as `yoshida.wasm` (`zig build wasm`, target `wasm32-freestandi
 | `vfs_clear()`                                     | Remove all files                                             |
 | `request(ptr, len)`                               | Send a JSON request; returns 0 on success, non-zero on error |
 | `result_json_ptr()`, `result_json_len()`          | Read the JSON answer                                         |
-| `result_bin_ptr()`, `result_bin_len()`            | Read the binary answer (an image)                            |
+| `result_bin_ptr()`, `result_bin_len()`            | Read the binary answer (an image, an SVG or a PDF file)      |
 
 Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 JSON string, read the JSON (and the binary, for renders) from the result pointers.
 
@@ -26,8 +26,10 @@ Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 J
 { "op": "check" }
 { "op": "render", "set": "name", "card": 0, "date": "2026-10-07",
   "preview": true, "format": "rgba", "layout": true }
+{ "op": "svg", "set": "name", "card": 0, "date": "2026-10-07", "scale": 2 }
 { "op": "check_cards", "set": "name", "date": "2026-10-07" }
-{ "op": "pdf", "set": "name", "date": "2026-10-07", "crop_marks": false }
+{ "op": "pdf", "set": "name", "date": "2026-10-07", "crop_marks": false,
+  "vector": false }
 { "op": "scope", "set": "name", "path": "/layers/3/fill" }
 { "op": "eval", "set": "name", "card": 0, "date": "2026-10-07",
   "path": "/layers/3/fill", "src": "kind == 'dare' ? c_dare : c_plain" }
@@ -53,6 +55,8 @@ Returns `{ "diagnostics": [...], "project": {...} }`. The project summary lists 
 | `preview` | `true`         | Missing or undecodable images become a placeholder and a warning                   |
 | `format`  | `"rgba"`       | `rgba` (raw 8-bit RGBA for a canvas), `png` or `png16`                             |
 | `layout`  | `false`        | Also return the resolved bounds of every layer                                     |
+| `scale`   | `1`            | Bitmap pixels per canvas pixel. Below 1 a smaller preview render; above 1 a larger export. Each side of the bitmap must stay within 10000 pixels (else error 5001 and no image). Layout and expressions stay in canvas pixels |
+| `compression` | `"default"` | PNG deflate effort: `fast`, `default` or `smallest`. The pixels are the same      |
 
 The answer's JSON is:
 
@@ -60,13 +64,20 @@ The answer's JSON is:
 {
 	"width": 842,
 	"height": 1228,
+	"canvas_width": 842,
+	"canvas_height": 1228,
+	"dpi": 300,
 	"diagnostics": [],
 	"missing_urls": [],
 	"layout": []
 }
 ```
 
-and the binary result holds the pixels or the PNG file. `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
+and the binary result holds the pixels or the PNG file. `width` and `height` are the bitmap's size (the canvas times `scale`), `dpi` is `canvas.dpi` times `scale` (0 when the design has none). `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
+
+### `svg`
+
+The card as an [SVG file](@/docs/command-line.md#svg) (the binary result). `set`, `card`, `date`, `now` and `utc_offset` work as for `render`; missing images are errors, as in an export. `scale` (a number from 1 to 4, default 2, clamped) is the resolution in pixels per canvas pixel of the parts that stay pixels: layers and groups with a `sharpen`, `detail`, `edge_enhance` or `find_edges` effect. The answer's JSON is `{ "width", "height", "diagnostics", "missing_urls" }`, with the canvas size in pixels.
 
 ### `check_cards`
 
@@ -74,7 +85,9 @@ Evaluates every card of the set without drawing (like `yoshida check`) and retur
 
 ### `pdf`
 
-Renders every card of the set into one PDF (the binary result) and returns `{ "pages": n, "diagnostics": [...] }`. With `"crop_marks": true`, each page gets a margin with crop marks at the trim line.
+Renders every card of the set into one PDF (the binary result) and returns `{ "pages": n, "diagnostics": [...] }`. With `"crop_marks": true`, each page gets a margin with crop marks at the trim line. By default each card is an image on its page, and `"scale"` (default 1) renders the page images that many times larger. With `"vector": true` the pages are drawn as vectors, like the `svg` request, and `scale` works as there. The page size does not change with the scale.
+
+The same PDF can be built one page per request, so the page can show progress and stop between cards (the editor does this): `{ "op": "pdf_begin" }`, then `{ "op": "pdf_page", "set", "card", "date", "now", "crop_marks", "vector", "scale" }` per card (answers `{ "pages", "diagnostics" }`), then `{ "op": "pdf_finish" }` (the PDF as the binary result).
 
 ### `scope`
 
@@ -138,5 +151,5 @@ All spans are UTF-16 offsets, the way JavaScript counts string positions.
 
 ## Notes
 
-- The module is deterministic: the same files, set, card and date give the same bytes as the CLI and the server.
+- The module is deterministic: the same files, set, card and date give the same bytes as the CLI and the server, for SVG and vector PDF files too.
 - Unknown `op` values answer `{ "error": "unknown op" }`.

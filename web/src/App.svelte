@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { zipSync } from "fflate";
+	import { unzipSync, zipSync } from "fflate";
 	import { onMount, setContext } from "svelte";
 	import type { GotoTarget } from "./lib/builder/complete";
 	import Inspector from "./lib/builder/Inspector.svelte";
@@ -67,6 +67,7 @@
 		type Param,
 		renderClock,
 		type RenderResult,
+		type SetInfo,
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
 	import { LIVE_CONTEXT, type LiveContext } from "./lib/expr/live";
@@ -137,6 +138,20 @@
 	import CardList from "./lib/ui/CardList.svelte";
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
+	import ExportDialog from "./lib/ui/ExportDialog.svelte";
+	import {
+		canEncodeWebp,
+		cleanSettings,
+		designHasBleed,
+		type ExportFormat,
+		type ExportSettings,
+		formatLabels,
+		imagePath,
+		pdfPath,
+		type PlanSet,
+		planExport,
+		setJpegDpi,
+	} from "./lib/exportPlan";
 	import {
 		type DragPreview,
 		dragLabels,
@@ -3002,6 +3017,147 @@
 	};
 
 	/**
+	 * Posts one render request (`body`, for a set of `n` cards) to the
+	 * server and follows its progress on `run`: `at` are the run's upload,
+	 * render and download steps. `ctl.abort` cancels it.
+	 */
+	function postRender(
+		run: Run,
+		body: string,
+		n: number,
+		at: [number, number, number],
+		ctl: { abort?: () => void },
+	): Promise<{ status: number; blob: Blob }> {
+		const [upStep, renderStep, downStep] = at;
+		const url = new URL("api/render", document.baseURI).href;
+		const job = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+			b.toString(16).padStart(2, "0"),
+		).join("");
+		const xhr = new XMLHttpRequest();
+		let poll: ReturnType<typeof setInterval> | undefined;
+		const stopPoll = () => clearInterval(poll);
+		ctl.abort = () => {
+			stopPoll();
+			xhr.abort();
+		};
+		run.step(upStep, formatBytes(body.length));
+		run.log(`Uploading ${formatBytes(body.length)} to ${url} (job ${job})`);
+		const t0 = Date.now();
+		let tRender = 0;
+		let lastStage = "";
+		/** The upload is complete: the server works now (upload events, or the server's own stage, say so). */
+		const uploaded = () => {
+			if (tRender) return;
+			tRender = Date.now();
+			run.log(`Uploaded in ${formatMs(tRender - t0)}`);
+			run.step(renderStep, `0 / ${n}`);
+			run.log(`The server is rendering ${n} card(s)`);
+		};
+		const startPoll = () => {
+			poll = setInterval(async () => {
+				try {
+					const res = await fetch(`api/render/progress?job=${job}`, {
+						cache: "no-store",
+					});
+					if (!res.ok) return;
+					const p = await res.json();
+					if (!p.found || !run.live || xhr.readyState >= 2) return;
+					if (p.stage !== "receiving") uploaded();
+					if (p.stage !== lastStage) {
+						lastStage = p.stage;
+						run.log(`Server: ${serverStages[p.stage] ?? p.stage}`);
+					}
+					if (p.total) {
+						run.count(p.done, p.total);
+						run.detail(renderStep, `${p.done} / ${p.total}`);
+					}
+				} catch {
+					// Progress is optional (older servers do not report it).
+				}
+			}, 400);
+		};
+		return new Promise<{ status: number; blob: Blob }>((resolve, reject) => {
+			xhr.open("POST", "api/render");
+			xhr.responseType = "blob";
+			xhr.setRequestHeader("content-type", "application/json");
+			xhr.setRequestHeader("x-yoshida-job", job);
+			xhr.upload.onprogress = (e) => {
+				if (!e.lengthComputable) return;
+				run.fraction(e.loaded / e.total);
+				run.detail(
+					upStep,
+					`${formatBytes(e.loaded)} of ${formatBytes(e.total)}`,
+				);
+			};
+			xhr.upload.onload = uploaded;
+			xhr.onreadystatechange = () => {
+				if (xhr.readyState !== XMLHttpRequest.HEADERS_RECEIVED) return;
+				stopPoll();
+				if (tRender)
+					run.log(
+						`Server answered ${xhr.status} after ${formatMs(Date.now() - tRender)} of rendering`,
+					);
+				if (xhr.status === 200) run.step(downStep);
+			};
+			xhr.onprogress = (e) => {
+				if (xhr.status !== 200) return;
+				if (e.lengthComputable) {
+					run.fraction(e.loaded / e.total);
+					run.detail(
+						downStep,
+						`${formatBytes(e.loaded)} of ${formatBytes(e.total)}`,
+					);
+				}
+			};
+			xhr.onload = () => resolve({ status: xhr.status, blob: xhr.response });
+			xhr.onerror = () =>
+				reject(new Error(`could not reach the server at ${url}`));
+			xhr.onabort = () => reject(new DOMException("cancelled", "AbortError"));
+			xhr.send(body);
+			startPoll();
+		}).finally(stopPoll);
+	}
+
+	/** The message (and problems) of a server answer that is not 200. */
+	async function serverFailure(res: { status: number; blob: Blob }) {
+		const text = await res.blob.text();
+		let err: { error?: string; diagnostics?: Diagnostic[] };
+		try {
+			err = JSON.parse(text);
+		} catch {
+			err = { error: text.slice(0, 200) || `HTTP ${res.status}` };
+		}
+		if (err.diagnostics) showDiagnostics(err.diagnostics);
+		return (
+			`The server could not render: ${err.error ?? res.status}` +
+			(err.diagnostics?.length
+				? ` (${err.diagnostics.length} problem(s), see the problems panel)`
+				: "")
+		);
+	}
+
+	/** The project's files as the JSON of a render request's "files". */
+	const filesJson = () =>
+		JSON.stringify(Object.fromEntries([...files].map(([p, d]) => [p, b64(d)])));
+
+	/**
+	 * A render request for the project (`fj`: its files from `filesJson`);
+	 * null (and the run failed) when it is too big for the server.
+	 */
+	function serverBody(run: Run, req: object, fj = filesJson()): string | null {
+		const body = `{"files":${fj},${JSON.stringify(req).slice(1)}`;
+		const limit = (server?.max_body_mb ?? 0) * 1024 * 1024;
+		if (limit && body.length > limit) {
+			run.fail(
+				`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
+			);
+			status = "Server render refused: the project is too big for this server.";
+			return null;
+		}
+		return body;
+	}
+
+	/**
 	 * Renders the whole set on the yoshida server this editor is served from:
 	 * uploads the project, follows the server's progress, downloads the result.
 	 */
@@ -3024,18 +3180,9 @@
 				["Save", 2],
 			],
 		);
-		const job = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
-			b.toString(16).padStart(2, "0"),
-		).join("");
-		const xhr = new XMLHttpRequest();
-		let poll: ReturnType<typeof setInterval> | undefined;
-		const stopPoll = () => clearInterval(poll);
-		run.onCancel(() => {
-			stopPoll();
-			xhr.abort();
-		});
+		const ctl: { abort?: () => void } = {};
+		run.onCancel(() => ctl.abort?.());
 		busy = "Rendering on the server…";
-		const url = new URL("api/render", document.baseURI).href;
 		try {
 			run.step(0);
 			const raw = [...files.values()].reduce((a, d) => a + d.length, 0);
@@ -3044,128 +3191,12 @@
 			);
 			// Let the overlay draw before the (blocking) encoding.
 			await new Promise((r) => setTimeout(r, 30));
-			const body = JSON.stringify({
-				files: Object.fromEntries(
-					[...files].map(([p, d]) => [p, b64(d)]),
-				),
-				set: name,
-				...clock,
-				format,
-			});
-			const limit = (server?.max_body_mb ?? 0) * 1024 * 1024;
-			if (limit && body.length > limit) {
-				run.fail(
-					`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
-				);
-				status =
-					"Server render refused: the project is too big for this server.";
-				return;
-			}
-			run.step(1, formatBytes(body.length));
-			run.log(
-				`Uploading ${formatBytes(body.length)} to ${url} (job ${job})`,
-			);
+			const body = serverBody(run, { set: name, ...clock, format });
+			if (!body) return;
 			const t0 = Date.now();
-			let tRender = 0;
-			let lastStage = "";
-			/** The upload is complete: the server works now (upload events, or the server's own stage, say so). */
-			const uploaded = () => {
-				if (tRender) return;
-				tRender = Date.now();
-				run.log(`Uploaded in ${formatMs(tRender - t0)}`);
-				run.step(2, `0 / ${n}`);
-				run.log(`The server is rendering ${n} card(s)`);
-			};
-			const startPoll = () => {
-				poll = setInterval(async () => {
-					try {
-						const res = await fetch(
-							`api/render/progress?job=${job}`,
-							{
-								cache: "no-store",
-							},
-						);
-						if (!res.ok) return;
-						const p = await res.json();
-						if (!p.found || !run.live || xhr.readyState >= 2)
-							return;
-						if (p.stage !== "receiving") uploaded();
-						if (p.stage !== lastStage) {
-							lastStage = p.stage;
-							run.log(
-								`Server: ${serverStages[p.stage] ?? p.stage}`,
-							);
-						}
-						if (p.total) {
-							run.count(p.done, p.total);
-							run.detail(2, `${p.done} / ${p.total}`);
-						}
-					} catch {
-						// Progress is optional (older servers do not report it).
-					}
-				}, 400);
-			};
-			const res = await new Promise<{ status: number; blob: Blob }>(
-				(resolve, reject) => {
-					xhr.open("POST", "api/render");
-					xhr.responseType = "blob";
-					xhr.setRequestHeader("content-type", "application/json");
-					xhr.setRequestHeader("x-yoshida-job", job);
-					xhr.upload.onprogress = (e) => {
-						if (!e.lengthComputable) return;
-						run.fraction(e.loaded / e.total);
-						run.detail(
-							1,
-							`${formatBytes(e.loaded)} of ${formatBytes(e.total)}`,
-						);
-					};
-					xhr.upload.onload = uploaded;
-					xhr.onreadystatechange = () => {
-						if (xhr.readyState !== XMLHttpRequest.HEADERS_RECEIVED)
-							return;
-						stopPoll();
-						if (tRender)
-							run.log(
-								`Server answered ${xhr.status} after ${formatMs(Date.now() - tRender)} of rendering`,
-							);
-						if (xhr.status === 200) run.step(3);
-					};
-					xhr.onprogress = (e) => {
-						if (xhr.status !== 200) return;
-						if (e.lengthComputable) {
-							run.fraction(e.loaded / e.total);
-							run.detail(
-								3,
-								`${formatBytes(e.loaded)} of ${formatBytes(e.total)}`,
-							);
-						}
-					};
-					xhr.onload = () =>
-						resolve({ status: xhr.status, blob: xhr.response });
-					xhr.onerror = () =>
-						reject(
-							new Error(`could not reach the server at ${url}`),
-						);
-					xhr.onabort = () =>
-						reject(new DOMException("cancelled", "AbortError"));
-					xhr.send(body);
-					startPoll();
-				},
-			);
+			const res = await postRender(run, body, n, [1, 2, 3], ctl);
 			if (res.status !== 200) {
-				const text = await res.blob.text();
-				let err: { error?: string; diagnostics?: Diagnostic[] };
-				try {
-					err = JSON.parse(text);
-				} catch {
-					err = { error: text.slice(0, 200) || `HTTP ${res.status}` };
-				}
-				if (err.diagnostics) showDiagnostics(err.diagnostics);
-				const msg =
-					`The server could not render: ${err.error ?? res.status}` +
-					(err.diagnostics?.length
-						? ` (${err.diagnostics.length} problem(s), see the problems panel)`
-						: "");
+				const msg = await serverFailure(res);
 				status = msg;
 				run.fail(msg);
 				return;
@@ -3188,7 +3219,331 @@
 				run.fail(status);
 			}
 		} finally {
-			stopPoll();
+			busy = "";
+		}
+	}
+
+	// ------------------------------------------------------- export dialog
+
+	const EXPORT_PREF = "yoshida.export";
+	let exportOpen = $state(false);
+	let exportButton: HTMLButtonElement | undefined = $state();
+	let exportSettings = $state(cleanSettings(loadPref(EXPORT_PREF, {})));
+	/** Whether this browser can write WebP; null until checked. */
+	let webpOk = $state<boolean | null>(null);
+	const planSets = $derived<PlanSet[]>(
+		sets.map((x) => ({
+			name: x.name,
+			label: x.design_name,
+			ok: x.ok,
+			cards: x.cards.map((c) => c.id),
+		})),
+	);
+	/** Canvas size for the dialog: the last render's, else the design's literal size. */
+	const exportCanvas = $derived(
+		lastRender?.canvas_width && lastRender.canvas_height
+			? { w: lastRender.canvas_width, h: lastRender.canvas_height }
+			: canvasSize,
+	);
+
+	function openExport() {
+		exportOpen = true;
+		if (webpOk === null) canEncodeWebp().then((ok) => (webpOk = ok));
+	}
+
+	function closeExport() {
+		exportOpen = false;
+		requestAnimationFrame(() => exportButton?.focus());
+	}
+
+	/** Crop marks for a set's PDF: the dialog's choice, or on when the design has a bleed. */
+	function cropMarksFor(set: SetInfo, mode: ExportSettings["cropMarks"]) {
+		if (mode !== "auto") return mode === "on";
+		const d = files.get(set.design);
+		return designHasBleed(d ? new TextDecoder().decode(d) : undefined);
+	}
+
+	const mimeOf: Record<string, string> = {
+		png: "image/png",
+		jpg: "image/jpeg",
+		webp: "image/webp",
+		svg: "image/svg+xml",
+		pdf: "application/pdf",
+	};
+
+	/**
+	 * Exports with the dialog's settings: card images and PDFs, rendered in
+	 * this browser or (whole designs, PNG / SVG / PDF) on the server; one
+	 * file downloads as it is, more go into one ZIP.
+	 */
+	async function exportWith(st: ExportSettings) {
+		exportSettings = st;
+		savePref(EXPORT_PREF, st);
+		closeExport();
+		const plan = planExport(st, projectName, planSets, setName, cardIndex);
+		if (!plan.files) return;
+		const clock = renderClock();
+		const scale = st.scale;
+		// Whole designs go to the server as one request per set and format;
+		// JPEG and WebP are encoded by the browser, so they render here.
+		const viaServer = onServer && st.scope !== "card";
+		const remote: ExportFormat[] = viaServer
+			? (["png", "svg", "pdf"] as const).filter((f) => st.formats.includes(f))
+			: [];
+		const localPng =
+			plan.imageFormats.includes("png") && !remote.includes("png");
+		const localSvg =
+			plan.imageFormats.includes("svg") && !remote.includes("svg");
+		const localPdf = plan.pdf && !remote.includes("pdf");
+		const encodings = [
+			...(plan.imageFormats.includes("jpeg")
+				? [
+						{
+							type: "image/jpeg" as const,
+							quality: st.jpegQuality / 100,
+							background: st.jpegBackground,
+						},
+					]
+				: []),
+			...(plan.imageFormats.includes("webp")
+				? [
+						{
+							type: "image/webp" as const,
+							// Chromium writes lossless WebP at quality 1.
+							quality: st.webpLossless ? 1 : st.webpQuality / 100,
+						},
+					]
+				: []),
+		];
+		const passes =
+			(localPng ? 1 : 0) +
+			(encodings.length ? 1 : 0) +
+			(localSvg ? 1 : 0) +
+			(localPdf ? 1 : 0);
+		const units = plan.cards * passes;
+		const steps: [string, number][] = [
+			...(remote.length
+				? ([
+						["Pack the project", 3],
+						["Upload to the server", 10],
+						["Render on the server", passes ? 50 : 77],
+						["Download the result", 8],
+					] as [string, number][])
+				: []),
+			...(passes
+				? ([["Render in this browser", remote.length ? 27 : 94]] as [
+						string,
+						number,
+					][])
+				: []),
+			["Pack the zip", plan.zip ? 4 : 0.5],
+			["Save", 2],
+		];
+		const at = { local: remote.length ? 4 : 0, pack: steps.length - 2 };
+		const run = new Run(
+			plan.zip
+				? `Exporting ${plan.files} files into ${plan.fileName}`
+				: `Exporting ${plan.fileName}`,
+			steps,
+			// Each card is rendered once per pass (PNG, JPEG and WebP, SVG, PDF).
+			passes > 1 ? "renders" : "cards",
+		);
+		let stop = false;
+		const ctl: { abort?: () => void } = {};
+		run.onCancel(() => {
+			stop = true;
+			ctl.abort?.();
+		});
+		const cancelled = () => {
+			status = "Export cancelled.";
+		};
+		busy = "Exporting…";
+		const out: Record<string, Uint8Array> = {};
+		const diagnostics: Diagnostic[] = [];
+		const t0 = Date.now();
+		try {
+			if (plan.skipped.length)
+				run.log(`Skipped (they have errors): ${plan.skipped.join(", ")}`);
+			if (remote.length) {
+				run.step(0);
+				run.log(`Packing ${files.size} file(s) of '${projectName}'`);
+				await new Promise((r) => setTimeout(r, 30));
+				const fj = filesJson();
+				for (const [ti, t] of plan.targets.entries()) {
+					const info = sets.find((x) => x.name === t.set);
+					if (!info) continue;
+					for (const f of remote) {
+						if (stop) return cancelled();
+						const req = {
+							set: t.set,
+							...clock,
+							format: f === "png" && st.pngDepth === 16 ? "png16" : f,
+							scale,
+							...(f === "png" ? { compression: st.pngCompression } : {}),
+							...(f === "pdf"
+								? {
+										crop_marks: cropMarksFor(info, st.cropMarks),
+										vector: st.pdfVector,
+									}
+								: {}),
+						};
+						run.log(
+							`Design ${ti + 1} of ${plan.targets.length}: '${info.design_name}' as ${formatLabels[f]} on the server`,
+						);
+						const body = serverBody(run, req, fj);
+						if (!body) return;
+						const res = await postRender(
+							run,
+							body,
+							t.cards.length,
+							[1, 2, 3],
+							ctl,
+						);
+						if (res.status !== 200) {
+							const msg = await serverFailure(res);
+							status = msg;
+							run.fail(msg);
+							return;
+						}
+						const bytes = new Uint8Array(await res.blob.arrayBuffer());
+						if (f === "pdf") out[pdfPath(t.set)] = bytes;
+						else
+							for (const [name, data] of Object.entries(unzipSync(bytes))) {
+								// Entries are <set>/<card id>.<ext> or <card id>.<ext>.
+								const base = name.slice(name.lastIndexOf("/") + 1);
+								if (base) out[`${t.set}/${base}`] = data;
+							}
+					}
+				}
+			}
+			if (passes) {
+				run.step(at.local, `0 / ${units}`);
+				run.log(`Rendering ${plan.cards} card(s) at ${scale}x in this browser`);
+				const per = fullCardEstimate();
+				run.perUnit(per ? per * scale * scale : null);
+				let done = 0;
+				const tick = () => {
+					done++;
+					run.count(done, units);
+					run.detail(at.local, `${done} / ${units}`);
+				};
+				run.count(0, units);
+				for (const t of plan.targets) {
+					const info = sets.find((x) => x.name === t.set);
+					if (!info) continue;
+					const base = { set: t.set, ...clock, preview: false, scale };
+					for (const i of t.cards) {
+						const id = info.cards[i].id;
+						if (localPng) {
+							const r = await engine.render({
+								...base,
+								card: i,
+								format: st.pngDepth === 16 ? "png16" : "png",
+								compression: st.pngCompression,
+							});
+							if (stop) return cancelled();
+							diagnostics.push(...r.diagnostics);
+							if (r.bin.length) out[imagePath(t.set, id, "png")] = r.bin;
+							tick();
+						}
+						if (encodings.length) {
+							const r = await engine.encode({ ...base, card: i }, encodings);
+							if (stop) return cancelled();
+							diagnostics.push(...r.diagnostics);
+							encodings.forEach((e, k) => {
+								const data = r.files[k];
+								if (!data?.length) return;
+								if (e.type === "image/jpeg")
+									out[imagePath(t.set, id, "jpeg")] = setJpegDpi(
+										data,
+										r.dpi ?? 0,
+									);
+								else out[imagePath(t.set, id, "webp")] = data;
+							});
+							tick();
+						}
+						if (localSvg) {
+							const r = await engine.svg({
+								set: t.set,
+								card: i,
+								...clock,
+								scale,
+							});
+							if (stop) return cancelled();
+							diagnostics.push(...r.diagnostics);
+							if (r.bin.length) out[imagePath(t.set, id, "svg")] = r.bin;
+							tick();
+						}
+					}
+					if (localPdf) {
+						const marks = cropMarksFor(info, st.cropMarks);
+						await engine.pdfBegin();
+						for (const i of t.cards) {
+							const r = await engine.pdfPage({
+								set: t.set,
+								card: i,
+								...clock,
+								crop_marks: marks,
+								scale,
+								...(st.pdfVector ? { vector: true } : {}),
+							});
+							if (stop) {
+								await engine.pdfFinish();
+								return cancelled();
+							}
+							diagnostics.push(...r.diagnostics);
+							tick();
+						}
+						const r = await engine.pdfFinish();
+						if (r.bin.length) out[pdfPath(t.set)] = r.bin;
+					}
+				}
+				if (scale === 1 && localPng && passes === 1)
+					perCardMs = (Date.now() - t0) / Math.max(1, plan.cards);
+				run.log(`Rendered in ${formatMs(Date.now() - t0)}`);
+			}
+			// Problems in a design come back with every card; keep one of each.
+			const seen = new Set<string>();
+			const problems = diagnostics.filter((d) => {
+				const key = JSON.stringify(d);
+				if (seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			});
+			const names = Object.keys(out);
+			if (!names.length) {
+				if (problems.length) showDiagnostics(problems);
+				run.fail("Nothing was drawn; see the problems panel.");
+				return;
+			}
+			run.step(at.pack);
+			await new Promise((r) => setTimeout(r, 0));
+			let fileName = plan.fileName;
+			let bytes: Uint8Array;
+			if (plan.zip) bytes = zipSync(out, { level: 0 });
+			else {
+				bytes = out[names[0]];
+				fileName = plan.fileName;
+			}
+			run.step(at.pack + 1, formatBytes(bytes.length));
+			const ext = fileName.slice(fileName.lastIndexOf(".") + 1);
+			download(fileName, bytes, mimeOf[ext] ?? "application/zip");
+			const errs = errorCount(problems);
+			status =
+				`Exported ${names.length} file(s)` +
+				(errs ? ` with ${errs} error(s)` : "") +
+				(plan.skipped.length
+					? `; skipped ${plan.skipped.length} design(s) with errors`
+					: "");
+			if (errs) {
+				showDiagnostics(problems);
+				run.log(`${errs} error(s); see the problems panel`, "error");
+			}
+			run.finish(`Saved ${fileName} (${formatBytes(bytes.length)})`);
+		} catch (e) {
+			if ((e as Error).name === "AbortError") cancelled();
+			else run.fail(`Could not export: ${(e as Error).message}`);
+		} finally {
 			busy = "";
 		}
 	}
@@ -3548,6 +3903,14 @@
 							0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
 							? ', rendered on the server'
 							: ''}">PDF</button
+					>
+					<button
+						bind:this={exportButton}
+						onclick={openExport}
+						disabled={!!busy || !sets.length}
+						aria-haspopup="dialog"
+						title="More formats and options: JPEG, WebP, SVG, vector PDF, 16-bit PNG, a higher resolution, crop marks, or every design at once"
+						>Export…</button
 					>
 				</span>
 				{#if server?.render}
@@ -3935,6 +4298,21 @@
 			/>
 		</footer>
 	</div>
+{/if}
+
+{#if exportOpen}
+	<ExportDialog
+		initial={exportSettings}
+		project={projectName}
+		sets={planSets}
+		current={setName}
+		card={cardIndex}
+		canvas={exportCanvas}
+		webp={webpOk}
+		server={onServer}
+		onexport={exportWith}
+		onclose={closeExport}
+	/>
 {/if}
 
 {#if settingsOpen}

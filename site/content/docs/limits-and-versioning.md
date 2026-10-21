@@ -8,6 +8,7 @@ description = "Size limits, the layer limit and how the format is versioned."
 | What                                            | Limit                               | Error    |
 | ----------------------------------------------- | ----------------------------------- | -------- |
 | Canvas                                          | 10000 x 10000 pixels                | 5001     |
+| Rendered image at an export resolution (canvas x resolution) | 10000 pixels per side  | 5001     |
 | Visible layers drawn per card, after `repeat` expansion (checked per card) | 500 | 5001 |
 | Iterations of one `repeat`                      | 1000                                | 5001     |
 | Group nesting                                   | 16 levels                           | 5001     |
@@ -17,6 +18,8 @@ description = "Size limits, the layer limit and how the format is versioned."
 | Server: request body                            | 200 MB by default (`--max-body-mb`) | HTTP 413 |
 
 Only **visible** layers count toward the 500-layer limit: every visible repeat iteration is one layer, hidden layers and hidden iterations are free, and a visible group counts as one plus its visible layers. The limit depends on card data, so it is evaluated per card: `yoshida check` (and **Check all** in the editor) evaluates every card and reports the cards over it, naming the layers that use most of the budget. When rendering such a card, the layers up to the limit are drawn, the PNG is written and marked as written with errors, and the run exits with status 1. See [Repeat](@/docs/repeat.md#the-layer-limit).
+
+Exports at a higher resolution (the editor's [export dialog](@/docs/builder.md#export-dialog), `yoshida render --scale`, the server's `"scale"`) render the canvas that many times larger, and the rendered image must stay within 10000 pixels per side too: a 4961 x 3508 canvas can be exported at 2x (9922 x 7016) but not at 3x. A card over it is not drawn and gets error 5001; the export dialog disables those resolutions. SVG files and vector PDFs are not bound by it: they use the resolution only for the parts that stay pixels, which are drawn at a lower resolution when the area is very large.
 
 The server can lower the card and body limits, not raise the core limits. See [Server and Docker](@/docs/server-and-docker.md).
 

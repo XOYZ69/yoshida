@@ -41,6 +41,11 @@ type Msg = { id: number } & (
 	| { op: "remove"; path: string }
 	| { op: "check" }
 	| { op: "render"; args: object }
+	| { op: "encode"; args: object; encodings: Encoding[] }
+	| { op: "pdfBegin" }
+	| { op: "pdfPage"; args: object }
+	| { op: "pdfFinish" }
+	| { op: "svg"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
 	| { op: "checkCards"; set: string; date: string; now: string }
 	| { op: "scope"; set: string; path: string }
@@ -60,8 +65,63 @@ type Msg = { id: number } & (
 			now: string;
 			crop_marks: boolean;
 			cards: number;
+			vector?: boolean;
+			scale?: number;
 	  }
 );
+
+/** A browser image format for the `encode` op. */
+type Encoding = {
+	type: "image/jpeg" | "image/webp";
+	/** 0 to 1; 1 makes Chromium write lossless WebP. */
+	quality: number;
+	/** Painted under the card first (JPEG has no transparency). */
+	background?: string;
+};
+
+/** Encodes straight RGBA pixels with the browser's image encoders. */
+async function encodeRgba(
+	rgba: Uint8Array,
+	w: number,
+	h: number,
+	encodings: Encoding[],
+): Promise<Uint8Array[]> {
+	const pixels = new ImageData(
+		new Uint8ClampedArray(
+			rgba.buffer as ArrayBuffer,
+			rgba.byteOffset,
+			rgba.length,
+		),
+		w,
+		h,
+	);
+	const canvas = new OffscreenCanvas(w, h);
+	const ctx = canvas.getContext("2d");
+	if (!ctx) throw new Error("this browser cannot encode images");
+	// drawImage blends over the background; putImageData would replace it.
+	const bitmap = await createImageBitmap(pixels);
+	const out: Uint8Array[] = [];
+	try {
+		for (const e of encodings) {
+			ctx.clearRect(0, 0, w, h);
+			if (e.background) {
+				ctx.fillStyle = e.background;
+				ctx.fillRect(0, 0, w, h);
+				ctx.drawImage(bitmap, 0, 0);
+			} else ctx.putImageData(pixels, 0, 0);
+			const blob = await canvas.convertToBlob({
+				type: e.type,
+				quality: e.quality,
+			});
+			if (blob.type !== e.type)
+				throw new Error(`this browser cannot encode ${e.type}`);
+			out.push(new Uint8Array(await blob.arrayBuffer()));
+		}
+	} finally {
+		bitmap.close();
+	}
+	return out;
+}
 
 function withBytes<T>(bytes: Uint8Array, fn: (ptr: number) => T): T {
 	const x = wasm!;
@@ -117,13 +177,13 @@ async function fetchMissing(urls: string[]): Promise<boolean> {
 	return any;
 }
 
-async function render(args: object) {
-	let r = request({ op: "render", ...args });
+async function render(args: object, op: "render" | "svg" = "render") {
+	let r = request({ op, ...args });
 	if (
 		r.json.missing_urls?.length &&
 		(await fetchMissing(r.json.missing_urls))
 	) {
-		r = request({ op: "render", ...args });
+		r = request({ op, ...args });
 	}
 	return r;
 }
@@ -157,6 +217,32 @@ async function handle(
 			return { result: request({ op: "check" }).json };
 		case "render": {
 			const r = await render(msg.args);
+			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
+		}
+		case "encode": {
+			// One render as pixels, then every browser format from them.
+			const r = await render({ ...msg.args, format: "rgba" });
+			const w = Number(r.json.width);
+			const h = Number(r.json.height);
+			const files =
+				r.bin.length && w && h
+					? await encodeRgba(r.bin, w, h, msg.encodings)
+					: [];
+			return {
+				result: { ...r.json, files },
+				transfer: files.map((f) => f.buffer),
+			};
+		}
+		case "pdfBegin":
+			return { result: request({ op: "pdf_begin" }).json };
+		case "pdfPage":
+			return { result: request({ op: "pdf_page", ...msg.args }).json };
+		case "pdfFinish": {
+			const r = request({ op: "pdf_finish" });
+			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
+		}
+		case "svg": {
+			const r = await render(msg.args, "svg");
 			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
 		}
 		case "renderAll": {
@@ -204,6 +290,8 @@ async function handle(
 					date: msg.date,
 					now: msg.now,
 					crop_marks: msg.crop_marks,
+					vector: msg.vector,
+					scale: msg.scale,
 				});
 				// Problems in the design come back with every page; keep one of each.
 				for (const d of page.json.diagnostics ?? []) {

@@ -11,8 +11,8 @@ yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
 yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                           [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
                           [--utc-offset HOURS] [--16bit] [--preview]
-                          [--offline] [--pdf] [--crop-marks]
-                          [--format text|json]
+                          [--offline] [--pdf] [--crop-marks] [--svg]
+                          [--vector] [--scale N] [--format text|json]
 yoshida fmt    <project or file>  [--check]
 yoshida version
 ```
@@ -30,7 +30,7 @@ set tour: designs/tour.design.json, 2 card(s)
 
 ## `yoshida render`
 
-Renders cards to PNG files at `<out>/<set>/<card id>.png`. A project with several sets (one per card file, see [Project Layout and Manifest](@/docs/project-layout-and-manifest.md)) renders all of them unless you pick one.
+Renders cards to PNG files at `<out>/<set>/<card id>.png`, or to [SVG files](#svg) or [one PDF per set](#pdf). A project with several sets (one per card file, see [Project Layout and Manifest](@/docs/project-layout-and-manifest.md)) renders all of them unless you pick one.
 
 | Option              | Meaning                                                                                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,6 +45,9 @@ Renders cards to PNG files at `<out>/<set>/<card id>.png`. A project with severa
 | `--offline`         | Do not download `https://` and `http://` images                                                                                                                                       |
 | `--pdf`             | Write one PDF per set, `<out>/<set>.pdf`, one page per card, instead of PNG files. See [PDF](#pdf)                                                                                    |
 | `--crop-marks`      | Put each card on a white sheet with crop marks at the trim line (`canvas.bleed` inside the edge). Works for PNG and PDF                                                               |
+| `--svg`             | Write one SVG file per card, `<out>/<set>/<card id>.svg`, instead of PNG files. See [SVG](#svg)                                                                                    |
+| `--vector`          | With `--pdf`: draw the pages as vectors instead of images. See [PDF](#pdf)                                                                                                            |
+| `--scale N`         | Render at N times the canvas size, 1 to 4 (default 1), for sharper print. The printed size stays the same: the PNG dpi is `canvas.dpi` times N and PDF pages keep their size. A side over 10000 pixels is error 5001. With `--svg` or `--vector` it is the resolution of the parts that stay pixels (default 2). See [Resolution](@/docs/saving-images-and-privacy.md#resolution) |
 | `--format json`     | Print one JSON document (diagnostics, sets, written files, files with errors) instead of text                                                                                         |
 
 ### Where the files go
@@ -77,9 +80,29 @@ yoshida render examples/board-game --out out --pdf
 ```
 
 - One page per card, in card order; `--card` and `--set` pick cards as for PNG.
-- The page size is the canvas at `canvas.dpi` (a 2340 px wide card at 200 dpi is 297 mm). Without `canvas.dpi`, one pixel is one point (1/72 inch).
+- The page size is the canvas at `canvas.dpi` (a 2340 px wide card at 200 dpi is 297 mm). Without `canvas.dpi`, one canvas pixel is one point (1/72 inch). `--scale` does not change it: the page holds a sharper image.
 - The card is the BleedBox, and the TrimBox is `canvas.bleed` inside it, so print dialogs and print shops know where to cut. With `--crop-marks` the page grows by a margin with the marks.
 - The card is stored as an 8-bit image with transparency.
+- With `--vector` the card is drawn as vectors instead, as in an [SVG file](#svg): shapes and text stay sharp at any zoom, and the file is usually much smaller. Page size, boxes and crop marks are the same as for the image PDF, and `--scale` sets the resolution of the parts that stay pixels (default 2).
+
+```sh
+yoshida render examples/poker --set numbers --out out --pdf --vector
+# wrote out/numbers.pdf (40 page(s))
+```
+
+### SVG
+
+```sh
+yoshida render examples/poker --set courts --card JC --out out --svg
+# wrote out/courts/JC.svg (750 x 1050)
+```
+
+- One SVG file per card. With `canvas.dpi` its size is the printed size in millimetres, otherwise the canvas size in pixels; the `viewBox` is the canvas in pixels either way.
+- Shapes are paths with true curves. Text becomes the outlines of its letters: it looks the same everywhere without the font, but it cannot be selected or searched.
+- Images are embedded as PNG or JPEG data, see [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md#svg-and-vector-pdf).
+- Rotation, opacity and the `crop` and `fade` [effects](@/docs/effects.md) stay vectors. The filters `sharpen`, `detail`, `edge_enhance` and `find_edges` have no vector form: a layer or group with one of them is drawn as pixels at the export resolution (`--scale`; 2x when not given) and embedded as an image.
+- `--crop-marks` and `--16bit` do not apply to SVG files.
+- Any viewer draws anti-aliasing and scaled images a little differently from yoshida's own renderer, so an SVG is very close to the PNG, not identical. See [Known Gaps](@/docs/known-gaps.md#output).
 
 ### Images from the web
 
@@ -87,7 +110,7 @@ Image paths that are `https://` or `http://` URLs are downloaded once per run. U
 
 ### Reproducible output
 
-The same project, card data, `--now` (or `--date`) and offset give the same pixels on every platform and in every front end. Without `--now` or `--date`, the render uses the clock when the command starts, so `render.date` is today's date in the offset time zone.
+The same project, card data, `--now` (or `--date`) and offset give the same pixels on every platform and in every front end, and the same bytes for SVG and PDF files. Without `--now` or `--date`, the render uses the clock when the command starts, so `render.date` is today's date in the offset time zone.
 
 ### JSON output
 
