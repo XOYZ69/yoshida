@@ -4074,6 +4074,9 @@
 		min-width: 0;
 		min-height: 0;
 	}
+	/* Panels are columns, so the Files panel can fill the free height and
+	   scroll its tree only. */
+	.files,
 	.left {
 		display: flex;
 		flex-direction: column;
@@ -4106,8 +4109,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		position: sticky;
-		bottom: 0;
+		flex: none;
 		background: var(--bg);
 	}
 	.file-name {
@@ -4116,7 +4118,8 @@
 	}
 	.file-preview {
 		max-width: 100%;
-		max-height: 180px;
+		/* Leaves room for the file tree on short windows. */
+		max-height: min(180px, 25vh);
 		object-fit: contain;
 		align-self: center;
 		background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 12px
@@ -4468,6 +4471,15 @@
 		.left,
 		.right {
 			max-height: 50vh;
+		}
+		/* The Files panel takes its whole share, so its tree has room to
+		   scroll between the bar and the footer. */
+		.files:has(:global(.browser)),
+		.left:has(:global(.browser)) {
+			height: 50vh;
+		}
+		.file-preview {
+			max-height: 10vh;
 		}
 		/* Without splitters the stacked panels need their own dividers. */
 		.files,

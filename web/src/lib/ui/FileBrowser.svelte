@@ -439,10 +439,11 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
 </div>
 
 <style>
+  /* Fills the panel; only the tree scrolls, between the bar and the total. */
   .browser {
     display: flex;
     flex-direction: column;
-    min-height: 0;
+    flex: 1 0 auto;
   }
   .bar {
     display: flex;
@@ -482,8 +483,9 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     list-style: none;
     margin: 0;
     padding: 2px 0 24px;
-    flex: 1;
-    min-height: 80px;
+    flex: 1 1 0;
+    min-height: 96px;
+    overflow: auto;
   }
   .ftree.drop-root {
     outline: 2px dashed var(--accent);
@@ -520,6 +522,10 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
   }
   .row:hover {
     background: var(--hover);
+  }
+  /* Rows sit flush in the scrolling tree: draw their focus ring inside. */
+  .row:focus-visible {
+    outline-offset: -2px;
   }
   .icon {
     width: 18px;
@@ -594,9 +600,6 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
   }
   .total {
     flex: none;
-    position: sticky;
-    bottom: 0;
-    background: var(--bg);
     padding: 6px 12px;
     border-top: 1px solid var(--line);
     font-size: 11px;

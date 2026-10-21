@@ -61,6 +61,7 @@ node tests/ui-organise.mjs http://localhost:4173/
 | `ui-formula.mjs` | the formula editor window |
 | `ui-fonts.mjs` | the Fonts window, Google Fonts import, uploads |
 | `ui-rename.mjs` | renaming fonts and design functions |
+| `ui-files.mjs` | the Files panel layout on a short window |
 
 A failed run writes screenshots to `web/test-results/`; CI uploads them as the `ui-test-results` artifact. When you change an example, update the tests that read it: several look for specific cards, layers and values of the poker and board game examples.
 

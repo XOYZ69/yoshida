@@ -12,6 +12,7 @@ The **Files** tab shows the project's files as a folder tree.
 
 - Image **thumbnails**, file sizes, and how many files refer to each file.
 - Folders. **Clicking a folder** makes it the place uploads go (the upload button and **Add files** in the project menu use it; without a choice, images go to `assets/images/`). Clicking a file does not change that.
+- Only the tree scrolls: the search field stays at the top, and the file total and the selected file's details stay at the bottom.
 
 ## Actions
 
