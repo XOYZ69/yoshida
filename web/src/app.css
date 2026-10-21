@@ -31,6 +31,16 @@
 	--logo-card-2: light-dark(#9db5fb, #3f5597);
 	--logo-card-3: light-dark(#c9d7fd, #2c3757);
 	--logo-ink: light-dark(#ffffff, #1b1b1f);
+	/* File type icons in the Files tab (editor only). Each one is at least
+	   3:1 against --bg, --hover and --sel in both themes. */
+	--file-design: light-dark(#3b6cf6, #6e93ff);
+	--file-cards: light-dark(#2f8a3e, #5cc46c);
+	--file-json: light-dark(#a5650a, #e8a93c);
+	--file-font: light-dark(#8a4fd6, #b48cff);
+	--file-markdown: light-dark(#0f8a8a, #3cc4c0);
+	--file-pdf: light-dark(#c8321f, #ff6b5c);
+	--file-text: light-dark(#5d6878, #9eabbc);
+	--file-image: light-dark(#c2387a, #f07ab0);
 	--mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 

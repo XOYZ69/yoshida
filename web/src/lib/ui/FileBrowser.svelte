@@ -5,10 +5,11 @@
 // there. Renames and moves rewrite the references to the file (the parent
 // does that through `onrename`).
 
+import { type FileType, fileType } from "../filetypes";
 import { buildTree, dirOf, join, nameError, type TreeNode } from "../paths";
 import { type Files, isImage } from "../project";
 import { formatSize } from "../store";
-import Icon, { type IconName, isIcon } from "./Icon.svelte";
+import Icon, { type IconName } from "./Icon.svelte";
 import { askText, type MenuItem, openMenu } from "./overlay.svelte";
 
 let {
@@ -146,6 +147,8 @@ $effect(() => {
 $effect(() => () => {
 	for (const u of urlCache.values()) URL.revokeObjectURL(u);
 });
+/** Thumbnail URLs the browser could not decode; those files show the image icon. */
+let broken = $state(new Set<string>());
 
 let list: HTMLUListElement | undefined = $state();
 $effect(() => {
@@ -166,14 +169,31 @@ $effect(() => {
 	);
 });
 
-/** A shared icon, or a short text badge for font and JSON files. */
-function icon(n: TreeNode): IconName | string {
+const typeIcons: Record<FileType, IconName> = {
+	design: "design",
+	cards: "table",
+	json: "braces",
+	font: "font",
+	markdown: "markdown",
+	pdf: "pdf",
+	text: "file-text",
+	image: "image",
+	file: "file",
+};
+
+function iconOf(n: TreeNode): IconName {
 	if (n.dir) return folded.has(n.path) && !query ? "folder" : "folder-open";
-	if (/\.design\.json$/i.test(n.name)) return "design";
-	if (/\.cards\.(json|csv)$/i.test(n.name)) return "table";
-	if (/\.(ttf|otf)$/i.test(n.name)) return "Aa";
-	if (/\.json$/i.test(n.name)) return "{}";
-	return "file";
+	return typeIcons[fileType(n.path)];
+}
+
+/** Gives the name the full path as a tooltip, only when it is cut off. */
+function fitTitle(e: MouseEvent, path: string) {
+	const name = (e.currentTarget as HTMLElement).querySelector<HTMLElement>(
+		".name",
+	);
+	const label = name?.querySelector(".label");
+	if (name && label)
+		name.title = label.scrollWidth > label.clientWidth ? path : "";
 }
 
 function click(n: TreeNode) {
@@ -374,9 +394,18 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     <button title="Upload files to {folder ? `${folder}/` : 'the project root'}" aria-label="Upload files" onclick={() => onupload(folder)}><Icon name="upload" /></button>
     <button title="New folder in {folder ? `${folder}/` : 'the project root'}" aria-label="New folder" onclick={() => newFolder(folder)}><Icon name="folder-plus" /></button>
   </div>
-  <div class="target" title="Uploads and new folders go here. Click a folder to change it.">
-    Adding to <span class="mono">{folder ? `${folder}/` : 'project root'}</span>
-    {#if folder}<button class="link" onclick={() => (folder = '')}>root</button>{/if}
+  <div
+    class="target"
+    title={folder
+      ? 'Uploads and new folders go here. Click a folder to change it.'
+      : 'Uploads and new folders go here. Click a folder to change it. Without one, Add files in the project menu sorts files by type.'}>
+    <span class="target-icon"><Icon name="folder" /></span>
+    {#if folder}
+      <span class="where">Uploads go to <span class="mono">{folder}/</span></span>
+      <button class="reset" title="Upload to the project root instead" aria-label="Use the project root" onclick={() => (folder = '')}><Icon name="close" /></button>
+    {:else}
+      <span class="where">Uploads go to the project root</span>
+    {/if}
   </div>
   <ul
     bind:this={list}
@@ -396,6 +425,8 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
       {@const by = usedBy.get(n.path) ?? []}
       {@const pr = nodeProblems.get(n.path) ?? noProblems}
       {@const worst = pr.errors ? 'err' : pr.warnings ? 'warn' : ''}
+      {@const type = n.dir ? 'folder' : fileType(n.path)}
+      {@const thumb = n.dir ? undefined : thumbs.get(n.path)}
       <li
         role="treeitem"
         aria-selected={n.dir ? folder === n.path && !selected : selected === n.path}
@@ -404,6 +435,7 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
         class:sel={n.dir ? folder === n.path && !selected : selected === n.path}
         class:flash={highlight === n.path}
         class:drop={n.dir && dropDir === n.path}
+        class:upload-dir={n.dir && folder === n.path}
         style:--depth={r.depth}
         draggable="true"
         ondragstart={(e) => {
@@ -418,15 +450,19 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
         ondragover={(e) => over(e, n)}
         ondrop={(e) => dropOn(e, n)}
         oncontextmenu={(e) => menu(e, n)}>
-        <button class="row" onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)}>
-          {#if !n.dir && thumbs.has(n.path)}
-            <img class="thumb" src={thumbs.get(n.path)} alt="" loading="lazy" />
+        <button class="row" onmouseenter={(e) => fitTitle(e, n.path)} onclick={() => click(n)} ondblclick={() => !n.dir && rename(n)}>
+          {#if thumb && !broken.has(thumb)}
+            <img
+              class="thumb"
+              src={thumb}
+              alt=""
+              loading="lazy"
+              data-type={type}
+              onerror={() => (broken = new Set(broken).add(thumb))} />
           {:else}
-            {@const ic = icon(n)}
-            <span class="icon" class:dir={n.dir}>{#if isIcon(ic)}<Icon name={ic} />{:else}{ic}{/if}</span>
+            <span class="icon" data-type={type}><Icon name={iconOf(n)} /></span>
           {/if}
-          <span class="name" class:err={worst === 'err'} class:warn={worst === 'warn'} title={n.path}><span class="label">{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>{#if worst}<span class="problem" title={problemText(pr, n.dir)} role="img" aria-label={problemText(pr, n.dir)}><Icon name={pr.errors ? 'close' : 'alert'} /></span>{/if}</span>
-          <span class="uses" title={count ? `Used by:\n${by.join('\n')}` : undefined}>{count ? `${count}↩` : ''}</span>
+          <span class="name" class:err={worst === 'err'} class:warn={worst === 'warn'}><span class="label">{n.name}{#if saveTarget && dirty.has(n.path)}<span class="unsaved" title="Not saved to {saveTarget} yet" role="img" aria-label="Not saved"></span>{/if}</span>{#if worst}<span class="problem" title={problemText(pr, n.dir)} role="img" aria-label={problemText(pr, n.dir)}><Icon name={pr.errors ? 'close' : 'alert'} /></span>{/if}{#if count}<span class="uses" title={`Used by:\n${by.join('\n')}`}>{count}↩</span>{/if}</span>
           <span class="size" title={n.dir ? `${fileCount(n)} file${fileCount(n) === 1 ? '' : 's'}` : undefined}>{formatSize(n.size)}</span>
         </button>
       </li>
@@ -461,23 +497,45 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
   .target {
     font-size: 11px;
     color: var(--muted);
-    padding: 0 12px 6px;
+    padding: 0 8px 4px 12px;
     display: flex;
     gap: 4px;
-    align-items: baseline;
+    align-items: center;
+    min-height: 24px;
     white-space: nowrap;
     overflow: hidden;
   }
-  .mono {
-    font-family: var(--mono);
+  .target-icon {
+    flex: none;
+    color: var(--accent);
+  }
+  .where {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .link {
+  .mono {
+    font-family: var(--mono);
+    color: var(--fg);
+  }
+  .reset {
     all: unset;
-    color: var(--accent);
+    flex: none;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    color: var(--muted);
     cursor: pointer;
-    text-decoration: underline;
+  }
+  .reset:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .reset :global(svg) {
+    width: 12px;
+    height: 12px;
   }
   .ftree {
     list-style: none;
@@ -491,59 +549,96 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     outline: 2px dashed var(--accent);
     outline-offset: -2px;
   }
+  /* One faint guide line per level, under the parent folders' icons. The
+     colors below set only background-color so the lines stay. */
   li {
-    padding-left: calc(var(--depth, 0) * 14px);
+    background-image: repeating-linear-gradient(
+      to right,
+      transparent 0 7px,
+      var(--line) 7px 8px,
+      transparent 8px 10px
+    );
+    background-size: calc(var(--depth, 0) * 10px) 100%;
+    background-position: 12px 0;
+    background-repeat: no-repeat;
   }
   li.sel {
-    background: var(--sel);
+    background-color: var(--sel);
   }
   li.drop {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
   }
   li.flash {
     animation: flash 1.6s ease-out;
   }
   @keyframes flash {
     from {
-      background: color-mix(in srgb, var(--accent) 40%, transparent);
+      background-color: color-mix(in srgb, var(--accent) 40%, transparent);
     }
+  }
+  /* The folder uploads go to, matching the line above the tree. */
+  li.upload-dir .row {
+    box-shadow: inset 2px 0 var(--accent);
+  }
+  li.upload-dir .icon {
+    color: var(--accent);
   }
   .row {
     all: unset;
     box-sizing: border-box;
     width: 100%;
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) 3em 4.75em;
+    /* The size column has one width at every depth, so the sizes line up. */
+    grid-template-columns: 16px minmax(0, 1fr) 3.5em;
     align-items: center;
     column-gap: 6px;
-    padding: 3px 12px;
+    padding: 3px 12px 3px calc(12px + var(--depth, 0) * 10px);
     cursor: pointer;
     font-size: 13px;
   }
   .row:hover {
-    background: var(--hover);
+    background-color: var(--hover);
   }
   /* Rows sit flush in the scrolling tree: draw their focus ring inside. */
   .row:focus-visible {
     outline-offset: -2px;
   }
   .icon {
-    width: 18px;
-    text-align: center;
-    font-size: 11px;
+    width: 16px;
     color: var(--muted);
-    flex: none;
   }
-  .icon.dir {
-    font-size: 13px;
+  .icon[data-type='design'] {
+    color: var(--file-design);
+  }
+  .icon[data-type='cards'] {
+    color: var(--file-cards);
+  }
+  .icon[data-type='json'] {
+    color: var(--file-json);
+  }
+  .icon[data-type='font'] {
+    color: var(--file-font);
+  }
+  .icon[data-type='markdown'] {
+    color: var(--file-markdown);
+  }
+  .icon[data-type='pdf'] {
+    color: var(--file-pdf);
+  }
+  .icon[data-type='text'] {
+    color: var(--file-text);
+  }
+  .icon[data-type='image'] {
+    color: var(--file-image);
   }
   .thumb {
-    width: 18px;
-    height: 18px;
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
     object-fit: contain;
-    flex: none;
-    background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 6px 6px;
-    border-radius: 2px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 6px 6px;
   }
   .name {
     display: flex;
@@ -585,10 +680,13 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
     background: var(--accent);
     vertical-align: middle;
   }
+  /* Only shown when other files use this one, so it takes no room otherwise. */
   .uses {
+    flex: none;
+    margin-left: auto;
+    padding-left: 6px;
     font-size: 10px;
     color: var(--accent);
-    text-align: right;
     white-space: nowrap;
   }
   .size {

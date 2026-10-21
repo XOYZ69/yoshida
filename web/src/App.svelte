@@ -71,6 +71,7 @@
 	} from "./lib/engine";
 	import { listKeys as listKeysOf } from "./lib/expr/catalog";
 	import { LIVE_CONTEXT, type LiveContext } from "./lib/expr/live";
+	import { describeFile } from "./lib/filetypes";
 	import Problems from "./lib/Problems.svelte";
 	import {
 		baseOf,
@@ -1259,6 +1260,21 @@
 	$effect(() => {
 		const u = filesPreviewUrl;
 		return () => u && URL.revokeObjectURL(u);
+	});
+	/** Pixel size of the previewed image, once the browser has decoded it. */
+	let filesPreviewSize = $state<{ url: string; w: number; h: number } | null>(
+		null,
+	);
+	/** What the selected file is, e.g. "Card data, 40 cards"; images show their pixel size instead. */
+	const filesSelectedKind = $derived.by(() => {
+		const p = filesSelected;
+		const d = p ? files.get(p) : undefined;
+		if (!p || !d) return "";
+		if (filesPreviewUrl) {
+			const s = filesPreviewSize;
+			return s?.url === filesPreviewUrl ? `${s.w} × ${s.h} px` : "Image";
+		}
+		return describeFile(p, d);
 	});
 
 	// ---------------------------------------------------------------- card browser
@@ -3672,17 +3688,30 @@
 	/>
 	{#if mode === "build" && filesSelected && files.has(filesSelected)}
 		{@const f = filesSelected}
+		{@const n = fileUses.get(f) ?? 0}
 		<div class="file-info">
 			<div class="file-name mono" title={f}>{f}</div>
 			{#if filesPreviewUrl}<img
 					class="file-preview"
 					src={filesPreviewUrl}
 					alt={f}
+					onload={(e) => {
+						const img = e.currentTarget as HTMLImageElement;
+						filesPreviewSize = {
+							url: img.src,
+							w: img.naturalWidth,
+							h: img.naturalHeight,
+						};
+					}}
 				/>{/if}
-			<div class="muted small">
-				{formatSize(files.get(f)?.length ?? 0)}{fileUses.get(f)
-					? ` · used by ${fileUses.get(f)} file${fileUses.get(f) === 1 ? "" : "s"}`
-					: " · not referred to by name"}
+			<div class="muted small file-details">
+				{filesSelectedKind} · <span
+					>{formatSize(files.get(f)?.length ?? 0)}</span
+				>{#if n}{" · "}<span
+						class="used-by"
+						title={`Used by:\n${(fileUsedBy.get(f) ?? []).join("\n")}`}
+						>used by {n} file{n === 1 ? "" : "s"}</span
+					>{/if}
 			</div>
 			<div class="row-btns">
 				<button
@@ -4505,6 +4534,10 @@
 	}
 	.small {
 		font-size: 11px;
+	}
+	/* Keeps "61 KB" and "used by 3 files" whole when the line wraps. */
+	.file-details span {
+		white-space: nowrap;
 	}
 	.mono {
 		font-family: var(--mono);
