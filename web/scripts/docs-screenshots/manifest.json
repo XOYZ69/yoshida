@@ -128,5 +128,15 @@
 			"editor-project-menu-light.png",
 			"editor-project-menu-dark.png"
 		]
+	},
+	{
+		"name": "editor-export",
+		"section": "overview",
+		"page": "builder.md",
+		"alt": "The export dialog with PNG and PDF chosen for the poker number cards",
+		"images": [
+			"editor-export-light.png",
+			"editor-export-dark.png"
+		]
 	}
 ]

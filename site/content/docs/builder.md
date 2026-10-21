@@ -36,6 +36,9 @@ While an export or a check runs, a progress window covers the editor (the editor
 
 **Export…** at the end of the export buttons opens a dialog. **Enter** exports, **Escape** closes it. It remembers its settings in this browser.
 
+<img class="only-light" src="../images/editor-export-light.png" alt="The export dialog" width="552" height="664">
+<img class="only-dark" src="../images/editor-export-dark.png" alt="The export dialog" width="552" height="664">
+
 - **What**: **This card**, **This design** (all its cards) or **All designs** (every design of the project; designs with errors are skipped and named in the dialog).
 - **Formats**, one or more:
   - **PNG**: **8 bit** or **16 bit** per channel (16 bit keeps smooth gradients for print and editing; PNG has no 10 bit mode), and **Compression**: **Fast**, **Default** (what the PNG button uses) or **Smallest**. The pixels are the same at every level; only the file size and the time change.
