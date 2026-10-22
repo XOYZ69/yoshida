@@ -14,6 +14,7 @@ const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const raster = @import("raster.zig");
 const text = @import("text.zig");
+const vector = @import("vector.zig");
 const Allocator = std.mem.Allocator;
 const Value = value.Value;
 const Color = value.Color;
@@ -67,9 +68,10 @@ pub const Options = struct {
     /// finds the errors that depend on card data. URL images that are not
     /// in the file system are skipped instead of reported.
     dry: bool = false,
-    /// Proxy render: the bitmap is `scale` times the canvas size (0 < scale
-    /// <= 1). Layout, expressions and the outline stay in canvas pixels, so
-    /// only the pixels get coarser.
+    /// Bitmap pixels per canvas pixel. Below 1 a proxy render for the
+    /// preview, above 1 a larger export; the bitmap must stay within
+    /// `limits.canvas_side` per side. Layout, expressions and the outline
+    /// stay in canvas pixels, so only the pixels get coarser or finer.
     scale: f64 = 1,
     /// Draw only some layers (editor drag preview). Layers that are hidden
     /// by the filter are still evaluated and outlined.
@@ -77,6 +79,9 @@ pub const Options = struct {
     /// Editor live values: evaluates another expression where one field is
     /// evaluated, with the same names and layout (see `Probe`).
     probe: ?*Probe = null,
+    /// Draw into this vector scene instead of pixels (see `renderVector`).
+    /// The returned bitmap is then a placeholder.
+    vector: ?*vector.Scene = null,
 
     pub const Filter = struct {
         ids: []const []const u8,
@@ -388,6 +393,12 @@ const Ctx = struct {
     shrink: std.StringHashMapUnmanaged(f64) = .empty,
     shrink_busy: std.StringHashMapUnmanaged(void) = .empty,
     measuring: bool = false,
+    /// The scene being filled; null while drawing pixels, also inside a
+    /// part of a vector render that is drawn as pixels.
+    scene: ?*vector.Scene = null,
+    /// Set while a part of a vector render is drawn as pixels: where
+    /// `finishLayer` leaves the finished bitmap instead of compositing it.
+    capture: ?*?raster.Bitmap = null,
 
     fn newEnv(ctx: *Ctx) expr.Env {
         return .{
@@ -1268,6 +1279,17 @@ const Ctx = struct {
         // exactly like its children drawn one by one, so they draw straight
         // onto the target without a scratch bitmap.
         if (l.effects.len == 0 and r.opacity >= 1 and r.rotate == 0) return ctx.drawChildren(canvas, l, gi);
+        if (ctx.scene) |sc| return if (hasConvolve(l)) ctx.captureGroup(sc, canvas, l, gi, r) else ctx.emitGroup(sc, canvas, l, gi, r);
+        const bb = ctx.groupBounds(l, r) orelse return;
+        var tmp: ?raster.Bitmap = try ctx.scratch(bb[0], bb[1], bb[2], bb[3]);
+        defer if (tmp) |*t| t.deinit(ctx.gpa);
+        try ctx.drawChildren(&tmp.?, l, gi);
+        try ctx.finishLayer(canvas, l, r, &tmp);
+    }
+
+    /// The canvas rectangle (x0, y0, x1, y1) a group's scratch bitmap
+    /// covers; null when it is empty.
+    fn groupBounds(ctx: *Ctx, l: *const Layer, r: *const Resolved) ?[4]f64 {
         // Effects work on the group's own bounds (like a single layer's);
         // otherwise the children draw onto a canvas-sized bitmap, grown to
         // the bounds when rotation can bring off-canvas parts into view.
@@ -1281,17 +1303,14 @@ const Ctx = struct {
             x1 = @ceil(r.left + r.w + 2);
             y1 = @ceil(r.top + r.h + 2);
         }
-        if (x1 - x0 < 1 or y1 - y0 < 1) return;
-        if ((r.rotate == 0 and l.effects.len == 0) or (x1 - x0) * (y1 - y0) > limits.image_pixels) {
+        if (x1 - x0 < 1 or y1 - y0 < 1) return null;
+        if ((r.rotate == 0 and l.effects.len == 0) or (x1 - x0) * (y1 - y0) * ctx.k * ctx.k > limits.image_pixels) {
             x0 = 0;
             y0 = 0;
             x1 = ctx.canvas_w;
             y1 = ctx.canvas_h;
         }
-        var tmp: ?raster.Bitmap = try ctx.scratch(x0, y0, x1, y1);
-        defer if (tmp) |*t| t.deinit(ctx.gpa);
-        try ctx.drawChildren(&tmp.?, l, gi);
-        try ctx.finishLayer(canvas, l, r, &tmp);
+        return .{ x0, y0, x1, y1 };
     }
 
     /// A transparent bitmap for the canvas rectangle (x0, y0)-(x1, y1), in
@@ -1358,20 +1377,35 @@ const Ctx = struct {
 
     fn drawLayer(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved) Failed!void {
         if (!ctx.countDrawn(ctx.indexOf(l))) return error.Failed;
-        var m: f64 = 2;
-        if (r.stroke) |s| m += s.width / 2;
-        if (l.kind == .text) m += r.size * 0.6 + (if (r.stroke) |s| s.width else 0);
-        const x0 = r.left - m;
-        const y0 = r.top - m;
-        const x1 = r.left + r.w + m;
-        const y1 = r.top + r.h + m;
+        const bb = layerBounds(l, r);
         const rotated = r.rotate != 0;
-        if (!rotated and (x1 <= 0 or y1 <= 0 or x0 >= ctx.canvas_w or y0 >= ctx.canvas_h)) {
+        if (!rotated and (bb[2] <= 0 or bb[3] <= 0 or bb[0] >= ctx.canvas_w or bb[1] >= ctx.canvas_h)) {
             try ctx.report(.hint, 3202, l.pos, null, try ctx.layerMsg(l, "the layer is entirely outside the canvas", .{}), null);
             return;
         }
         if (ctx.opts.dry) return;
-        const direct = l.effects.len == 0 and r.opacity >= 1 and !rotated;
+        if (ctx.scene) |sc| return if (hasConvolve(l)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
+        return ctx.paintLayer(canvas, l, r, bb);
+    }
+
+    /// The canvas rectangle (x0, y0, x1, y1) a layer can draw in: its
+    /// bounds plus room for strokes and glyph overhang.
+    fn layerBounds(l: *const Layer, r: *const Resolved) [4]f64 {
+        var m: f64 = 2;
+        if (r.stroke) |s| m += s.width / 2;
+        if (l.kind == .text) m += r.size * 0.6 + (if (r.stroke) |s| s.width else 0);
+        return .{ r.left - m, r.top - m, r.left + r.w + m, r.top + r.h + m };
+    }
+
+    /// Draws a layer into pixels: straight onto `canvas`, or into a scratch
+    /// bitmap when it has effects, opacity or rotation.
+    fn paintLayer(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved, bb: [4]f64) Failed!void {
+        const x0 = bb[0];
+        const y0 = bb[1];
+        const x1 = bb[2];
+        const y1 = bb[3];
+        const rotated = r.rotate != 0;
+        const direct = l.effects.len == 0 and r.opacity >= 1 and !rotated and ctx.capture == null;
         var tmp: ?raster.Bitmap = null;
         defer if (tmp) |*t| t.deinit(ctx.gpa);
         var target = canvas;
@@ -1380,7 +1414,7 @@ const Ctx = struct {
             var by0 = @floor(y0);
             var bx1 = @ceil(x1);
             var by1 = @ceil(y1);
-            if ((l.effects.len == 0 and !rotated) or (bx1 - bx0) * (by1 - by0) > limits.image_pixels) {
+            if ((l.effects.len == 0 and !rotated) or (bx1 - bx0) * (by1 - by0) * ctx.k * ctx.k > limits.image_pixels) {
                 bx0 = @max(bx0, 0);
                 by0 = @max(by0, 0);
                 bx1 = @min(bx1, ctx.canvas_w);
@@ -1467,23 +1501,39 @@ const Ctx = struct {
     /// A polygon's stroke; open polygons may end in arrowheads, and the line
     /// stops at the base of each head so it does not poke through the tip.
     fn strokeWithArrows(ctx: *Ctx, target: *raster.Bitmap, l: *const Layer, pts_in: []const [2]f32, s: raster.StrokeStyle) Failed!void {
+        const a = try ctx.arrows(l, pts_in, s.width);
+        raster.strokePolyline(target, a.pts, a.closed, s);
+        for (a.heads) |h| if (h) |tri| try raster.fillPolygon(ctx.gpa, target, &tri, s.paint);
+    }
+
+    const Arrows = struct {
+        /// The line to stroke (shortened where a head sits).
+        pts: []const [2]f32,
+        closed: bool,
+        /// Triangles at the end and at the start.
+        heads: [2]?[3][2]f32 = .{ null, null },
+    };
+
+    fn arrows(ctx: *Ctx, l: *const Layer, pts_in: []const [2]f32, width: f32) Allocator.Error!Arrows {
         const arrow = l.stroke.?.arrow;
-        if (arrow == .none or l.closed or pts_in.len < 2) return raster.strokePolyline(target, pts_in, l.closed, s);
+        if (arrow == .none or l.closed or pts_in.len < 2) return .{ .pts = pts_in, .closed = l.closed };
         const pts = try ctx.arena.dupe([2]f32, pts_in);
-        const len = @max(6, s.width * 4);
-        const half = @max(4, s.width * 2.2);
+        // `width` is in bitmap pixels (canvas pixels for a vector scene), so
+        // the minimum head size of 6 by 4 canvas pixels is scaled to match.
+        const k: f32 = @floatCast(ctx.k);
+        const len = @max(6 * k, width * 4);
+        const half = @max(4 * k, width * 2.2);
         const n = pts.len;
-        var heads: [2]?[3][2]f32 = .{ null, null };
+        var out: Arrows = .{ .pts = pts, .closed = false };
         if (arrow == .end or arrow == .both) {
-            heads[0] = raster.arrowHead(pts[n - 1], pts[n - 2], len, half);
+            out.heads[0] = raster.arrowHead(pts[n - 1], pts[n - 2], len, half);
             pts[n - 1] = pullBack(pts[n - 1], pts[n - 2], len * 0.8);
         }
         if (arrow == .start or arrow == .both) {
-            heads[1] = raster.arrowHead(pts[0], pts[1], len, half);
+            out.heads[1] = raster.arrowHead(pts[0], pts[1], len, half);
             pts[0] = pullBack(pts[0], pts[1], len * 0.8);
         }
-        raster.strokePolyline(target, pts, false, s);
-        for (heads) |h| if (h) |tri| try raster.fillPolygon(ctx.gpa, target, &tri, s.paint);
+        return out;
     }
 
     fn finishLayer(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved, tmp: *?raster.Bitmap) Failed!void {
@@ -1515,12 +1565,318 @@ const Ctx = struct {
                 },
             }
         }
+        // A vector render takes the pixels as they are and places them
+        // (rotated, translucent) itself.
+        if (ctx.capture) |out| {
+            out.* = t.*;
+            tmp.* = null;
+            return;
+        }
         if (r.rotate != 0) {
             raster.compositeRotated(canvas, t, @floatCast(r.rotate * std.math.pi / 180), @floatCast(r.pivot[0] * ctx.k), @floatCast(r.pivot[1] * ctx.k), @floatCast(r.opacity));
             return;
         }
         raster.multiplyOpacity(t, @floatCast(r.opacity));
         raster.composite(canvas, t);
+    }
+
+    // ---------------------------------------------------------- vector output
+
+    /// A group's children as items between begin and end items.
+    fn emitGroup(ctx: *Ctx, sc: *vector.Scene, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
+        const bb = ctx.groupBounds(l, r) orelse return;
+        const mark = sc.items.items.len;
+        errdefer sc.items.shrinkRetainingCapacity(mark);
+        const n = try ctx.openFrame(sc, l, r, scratchRect(bb)) orelse return;
+        try ctx.drawChildren(canvas, l, gi);
+        try closeFrame(sc, n);
+    }
+
+    /// A layer as items: shapes, glyphs or an image, inside the groups of
+    /// its effects, rotation and opacity.
+    fn emitLayer(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved, bb: [4]f64) Failed!void {
+        const mark = sc.items.items.len;
+        errdefer sc.items.shrinkRetainingCapacity(mark);
+        const n = try ctx.openFrame(sc, l, r, scratchRect(bb)) orelse return;
+        switch (l.kind) {
+            .group => unreachable,
+            .rect, .ellipse => try ctx.emitBox(sc, l, r),
+            .polygon => try ctx.emitPolygon(sc, l, r),
+            .text => try ctx.emitText(sc, l, r),
+            .image => try ctx.emitImage(sc, l, r),
+        }
+        try closeFrame(sc, n);
+    }
+
+    /// Opens the groups that the layer's crop and fade effects, its
+    /// rotation and its opacity become, outermost first. `rect` is the
+    /// layer's scratch bitmap, which the effects work on (see
+    /// `raster.crop` and `raster.fade`). Returns how many groups were
+    /// opened, null when the crop leaves nothing.
+    fn openFrame(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved, rect: vector.IRect) Failed!?usize {
+        var effects: std.ArrayList(vector.Begin) = .empty;
+        var cur = rect;
+        var e = ctx.newEnv();
+        for (l.effects) |eff| {
+            const len: f32 = @floatCast(try ctx.num(&e, l, eff.length.?));
+            const side: raster.Side = switch (eff.side) {
+                .top => .top,
+                .bottom => .bottom,
+                .left => .left,
+                .right => .right,
+            };
+            if (eff.kind == .crop) {
+                const g = vector.cropGeometry(cur, side, len, @floatCast(l.anchor.fx()), @floatCast(l.anchor.fy())) orelse continue;
+                if (g.keep.w == 0 or g.keep.h == 0) return null;
+                try effects.append(ctx.arena, .{ .crop = .{
+                    .clip = rectCorners(g.keep),
+                    .dx = @floatFromInt(g.to.x - g.keep.x),
+                    .dy = @floatFromInt(g.to.y - g.keep.y),
+                } });
+                cur = g.to;
+            } else if (len > 0) {
+                try effects.append(ctx.arena, .{ .fade = .{ .side = side, .len = len, .rect = rectCorners(cur) } });
+            }
+        }
+        var opened: usize = 0;
+        if (r.rotate != 0 or r.opacity < 1) {
+            try sc.add(.{ .begin = .{ .transform = .{
+                .rotate = @floatCast(r.rotate),
+                .pivot = .{ @floatCast(r.pivot[0]), @floatCast(r.pivot[1]) },
+                .opacity = @floatCast(r.opacity),
+            } } });
+            opened += 1;
+        }
+        // The last effect works on the result of the ones before it.
+        var i = effects.items.len;
+        while (i > 0) : (i -= 1) {
+            try sc.add(.{ .begin = effects.items[i - 1] });
+            opened += 1;
+        }
+        return opened;
+    }
+
+    fn emitBox(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
+        _ = ctx;
+        var b = vector.PathBuilder.init(sc.allocator());
+        const x: f32 = @floatCast(r.left);
+        const y: f32 = @floatCast(r.top);
+        const w: f32 = @floatCast(r.w);
+        const h: f32 = @floatCast(r.h);
+        var fill = true;
+        if (l.kind == .rect) {
+            try b.roundRect(x, y, w, h, @floatCast(r.radius));
+        } else if (r.arc) |a| {
+            // The slice is closed through the centre; a plain arc is only a curve.
+            const pie = l.arc.?.pie;
+            const cx = x + w / 2;
+            const cy = y + h / 2;
+            if (pie) try b.moveTo(.{ cx, cy });
+            try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), !pie);
+            if (pie) try b.close();
+            fill = pie;
+        } else {
+            try b.arc(x + w / 2, y + h / 2, w / 2, h / 2, 0, 360, true);
+            try b.close();
+        }
+        const path = b.finish();
+        if (fill) try addFill(sc, path, r.fill);
+        try addStroke(sc, path, r);
+    }
+
+    fn emitPolygon(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
+        var b = vector.PathBuilder.init(sc.allocator());
+        if (l.closed and r.points.len >= 3) {
+            try b.polyline(r.points, true);
+            try addFill(sc, b.finish(), r.fill);
+        }
+        const s = r.stroke orelse return;
+        if (s.width <= 0 or r.points.len < 2) return;
+        const a = try ctx.arrows(l, r.points, @floatCast(s.width));
+        var line = vector.PathBuilder.init(sc.allocator());
+        try line.polyline(a.pts, a.closed);
+        try addStroke(sc, line.finish(), r);
+        for (a.heads) |head| if (head) |tri| {
+            var hb = vector.PathBuilder.init(sc.allocator());
+            try hb.polyline(&tri, true);
+            try addFill(sc, hb.finish(), s.color);
+        };
+    }
+
+    fn emitText(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
+        _ = ctx;
+        const alignment: text.Align = switch (l.alignment) {
+            .left => .left,
+            .center => .center,
+            .right => .right,
+            .justify => .justify,
+        };
+        const left: f32 = @floatCast(r.left);
+        const top: f32 = @floatCast(r.top);
+        // The outline pass comes first, for every glyph, then the fill.
+        if (r.stroke) |s| if (s.width > 0 and s.color.a > 0) {
+            var pass: GlyphPass = .{ .scene = sc, .color = s.color, .stroke = @floatCast(s.width * 2) };
+            try text.walk(r.font.?, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
+        };
+        if (r.color.a == 0) return;
+        var pass: GlyphPass = .{ .scene = sc, .color = r.color };
+        try text.walk(r.font.?, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
+    }
+
+    fn emitImage(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
+        const img = r.image orelse return;
+        const lf: f32 = @floatCast(r.left);
+        const tf: f32 = @floatCast(r.top);
+        const wf: f32 = @floatCast(r.w);
+        const hf: f32 = @floatCast(r.h);
+        var rect: [4]f32 = .{ lf, tf, wf, hf };
+        if (l.fit != .fill) {
+            const iw: f32 = @floatFromInt(img.w);
+            const ih: f32 = @floatFromInt(img.h);
+            const s = if (l.fit == .contain) @min(wf / iw, hf / ih) else @max(wf / iw, hf / ih);
+            rect = .{ lf + (wf - iw * s) / 2, tf + (hf - ih * s) / 2, iw * s, ih * s };
+        }
+        if (rect[2] <= 0 or rect[3] <= 0) return;
+        const path = (try project.normalize(ctx.arena, r.src)) orelse "";
+        try sc.add(.{ .image = .{
+            .image = img,
+            .bytes = ctx.assets.vfs.read(path) orelse "",
+            .rect = rect,
+            .clip = .{ lf, tf, lf + wf, tf + hf },
+            .smooth = l.smoothing == .bilinear,
+        } });
+    }
+
+    /// A layer with a convolve effect: drawn as pixels at the scene's
+    /// raster scale, placed with its rotation and opacity as vector groups.
+    fn captureLayer(ctx: *Ctx, sc: *vector.Scene, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved, bb: [4]f64) Failed!void {
+        var cap: ?raster.Bitmap = null;
+        errdefer if (cap) |*b| b.deinit(ctx.gpa);
+        var k: f64 = 1;
+        {
+            const saved = ctx.pixelMode(sc, bb[2] - bb[0], bb[3] - bb[1]);
+            defer ctx.restoreMode(saved);
+            k = ctx.k;
+            ctx.capture = &cap;
+            try ctx.paintLayer(canvas, l, r, bb);
+        }
+        try placeCaptured(sc, r, &cap, @floatCast(k));
+    }
+
+    /// The same for a group: its children are drawn as pixels.
+    fn captureGroup(ctx: *Ctx, sc: *vector.Scene, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
+        const bb = ctx.groupBounds(l, r) orelse return;
+        var cap: ?raster.Bitmap = null;
+        errdefer if (cap) |*b| b.deinit(ctx.gpa);
+        var k: f64 = 1;
+        {
+            const saved = ctx.pixelMode(sc, bb[2] - bb[0], bb[3] - bb[1]);
+            defer ctx.restoreMode(saved);
+            k = ctx.k;
+            var tmp: ?raster.Bitmap = try ctx.scratch(bb[0], bb[1], bb[2], bb[3]);
+            defer if (tmp) |*t| t.deinit(ctx.gpa);
+            try ctx.drawChildren(&tmp.?, l, gi);
+            // Only the group's own bitmap is taken, not the children's.
+            ctx.capture = &cap;
+            try ctx.finishLayer(canvas, l, r, &tmp);
+        }
+        try placeCaptured(sc, r, &cap, @floatCast(k));
+    }
+
+    const Mode = struct { scene: ?*vector.Scene, k: f64, capture: ?*?raster.Bitmap };
+
+    /// Switches to drawing pixels for an area of `w` x `h` canvas pixels, at
+    /// the scene's raster scale (lowered for a large area to bound memory).
+    fn pixelMode(ctx: *Ctx, sc: *const vector.Scene, w: f64, h: f64) Mode {
+        const saved: Mode = .{ .scene = ctx.scene, .k = ctx.k, .capture = ctx.capture };
+        const budget: f64 = 8_000_000;
+        ctx.k = @min(sc.raster_scale, @sqrt(budget / @max(1, w * h)));
+        ctx.scene = null;
+        return saved;
+    }
+
+    fn restoreMode(ctx: *Ctx, m: Mode) void {
+        ctx.scene = m.scene;
+        ctx.k = m.k;
+        ctx.capture = m.capture;
+    }
+
+    /// Adds the pixels `finishLayer` left, inside the layer's rotation and
+    /// opacity.
+    fn placeCaptured(sc: *vector.Scene, r: *const Resolved, cap: *?raster.Bitmap, k: f32) Failed!void {
+        const b = cap.* orelse return;
+        const wrapped = r.rotate != 0 or r.opacity < 1;
+        if (wrapped) try sc.add(.{ .begin = .{ .transform = .{
+            .rotate = @floatCast(r.rotate),
+            .pivot = .{ @floatCast(r.pivot[0]), @floatCast(r.pivot[1]) },
+            .opacity = @floatCast(r.opacity),
+        } } });
+        try sc.add(.{ .raster = .{ .bitmap = b, .scale = k } });
+        cap.* = null;
+        if (wrapped) try sc.add(.end);
+    }
+};
+
+fn hasConvolve(l: *const Layer) bool {
+    for (l.effects) |eff| switch (eff.kind) {
+        .crop, .fade => {},
+        else => return true,
+    };
+    return false;
+}
+
+/// The pixel rectangle `Ctx.scratch` makes for a canvas rectangle at scale 1.
+fn scratchRect(bb: [4]f64) vector.IRect {
+    const x0 = @floor(bb[0]);
+    const y0 = @floor(bb[1]);
+    const x1 = @max(x0 + 1, @ceil(bb[2]));
+    const y1 = @max(y0 + 1, @ceil(bb[3]));
+    return .{ .x = @intFromFloat(x0), .y = @intFromFloat(y0), .w = @intFromFloat(x1 - x0), .h = @intFromFloat(y1 - y0) };
+}
+
+fn rectCorners(r: vector.IRect) [4]f32 {
+    return .{ @floatFromInt(r.x), @floatFromInt(r.y), @floatFromInt(@as(i64, r.x) + r.w), @floatFromInt(@as(i64, r.y) + r.h) };
+}
+
+fn closeFrame(sc: *vector.Scene, n: usize) Allocator.Error!void {
+    for (0..n) |_| try sc.add(.end);
+}
+
+fn addFill(sc: *vector.Scene, path: vector.Path, color: Color) Allocator.Error!void {
+    if (color.a == 0) return;
+    try sc.add(.{ .fill = .{ .path = path, .color = color } });
+}
+
+/// The layer's stroke along `path`. Dash patterns are even in length (an
+/// odd pattern repeats twice, as in SVG), and empty when they are all 0.
+fn addStroke(sc: *vector.Scene, path: vector.Path, r: *const Resolved) Allocator.Error!void {
+    const s = r.stroke orelse return;
+    if (s.width <= 0 or s.color.a == 0) return;
+    var period: f32 = 0;
+    for (s.dash) |d| period += d;
+    var dash: []const f32 = &.{};
+    if (s.dash.len > 0 and period > 0.01) {
+        dash = if (s.dash.len % 2 == 1) try std.mem.concat(sc.allocator(), f32, &.{ s.dash, s.dash }) else try sc.allocator().dupe(f32, s.dash);
+    }
+    try sc.add(.{ .stroke = .{ .path = path, .color = s.color, .width = @floatCast(s.width), .dash = dash } });
+}
+
+/// Adds every glyph of a text walk to the scene in one color.
+const GlyphPass = struct {
+    scene: *vector.Scene,
+    color: Color,
+    stroke: f32 = 0,
+
+    fn add(p: *GlyphPass, g: text.Placed) Allocator.Error!void {
+        try p.scene.add(.{ .glyph = .{
+            .font = g.font,
+            .gid = g.font.glyphIndex(g.cp),
+            .x = g.x,
+            .y = g.baseline,
+            .scale = g.scale,
+            .color = p.color,
+            .stroke = p.stroke,
+        } });
     }
 };
 
@@ -1697,10 +2053,17 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     if (!(dpi >= 0 and dpi <= 10000)) dpi = 0;
     bleed = std.math.clamp(bleed, 0, @min(w, h) / 2);
     e = ctx.newEnv();
-    ctx.k = if (opts.scale > 0 and opts.scale < 1) opts.scale else 1;
+    // A vector render has no pixels of its own: it works in canvas pixels,
+    // and the parts it draws as pixels use the scene's raster scale.
+    ctx.scene = if (opts.dry) null else opts.vector;
+    ctx.k = if (ctx.scene == null and opts.scale > 0 and std.math.isFinite(opts.scale)) opts.scale else 1;
     const pw = @max(1, @round(w * ctx.k));
     const ph = @max(1, @round(h * ctx.k));
-    var canvas = if (opts.dry) try raster.Bitmap.init(gpa, 0, 0, 1, 1) else try raster.Bitmap.init(gpa, 0, 0, @intFromFloat(pw), @intFromFloat(ph));
+    if (ctx.scene == null and (pw > limits.canvas_side or ph > limits.canvas_side)) {
+        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "at {d}x the image would be {d} x {d} pixels; the limit is 10000 x 10000", .{ ctx.k, pw, ph }), "choose a lower resolution");
+        return null;
+    }
+    var canvas = if (opts.dry or ctx.scene != null) try raster.Bitmap.init(gpa, 0, 0, 1, 1) else try raster.Bitmap.init(gpa, 0, 0, @intFromFloat(pw), @intFromFloat(ph));
     errdefer canvas.deinit(gpa);
     const filter_only = if (opts.filter) |f| f.mode == .only else false;
     if (d.background != null and !filter_only) {
@@ -1709,7 +2072,15 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => Value{ .color = Color.transparent },
         };
-        canvas.fill(raster.paint(v.color, 1));
+        if (ctx.scene) |sc| {
+            sc.background = if (v.color.a > 0) v.color else null;
+        } else canvas.fill(raster.paint(v.color, 1));
+    }
+    if (ctx.scene) |sc| {
+        sc.width = @intFromFloat(w);
+        sc.height = @intFromFloat(h);
+        sc.dpi = dpi;
+        sc.bleed = bleed;
     }
 
     for (d.layers, 0..) |*l, li| {
@@ -1722,9 +2093,21 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     if (ctx.drawn > limits.layers) try ctx.reportLayerLimit();
     canvas.dpi = dpi * ctx.k;
     canvas.bleed = bleed * ctx.k;
+    canvas.scale = ctx.k;
     canvas.canvas_w = @intFromFloat(w);
     canvas.canvas_h = @intFromFloat(h);
     return canvas;
+}
+
+/// Renders card `index` of `set` into `scene` (a fresh one) as vectors, in
+/// canvas pixels. Everything else about the render is as `renderCard`.
+/// Returns false when nothing could be drawn (the reasons are in `diags`).
+pub fn renderVector(gpa: Allocator, assets: *Assets, set: *const project.Set, index: usize, opts: Options, scene: *vector.Scene, diags: *diag.List) Allocator.Error!bool {
+    var o = opts;
+    o.vector = scene;
+    var placeholder = (try renderCard(gpa, assets, set, index, o, diags)) orelse return false;
+    placeholder.deinit(gpa);
+    return true;
 }
 
 fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed!void {
@@ -1797,19 +2180,30 @@ const test_design =
 ;
 
 fn testRender(gpa: Allocator, opts: Options) !raster.Bitmap {
+    return (try testRenderDesign(gpa, test_design, opts, null)).?;
+}
+
+/// Renders the one card of `design`; null (and the first error code in
+/// `code`) when the card is not drawn.
+fn testRenderDesign(gpa: Allocator, design: []const u8, opts: Options, code: ?*u16) !?raster.Bitmap {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var fs = project.MemFs.init(gpa);
     defer fs.deinit();
-    try fs.put("t.design.json", test_design);
+    try fs.put("t.design.json", design);
     try fs.put("t.cards.json", "{ \"format\": 1, \"design\": \"t.design.json\", \"cards\": [{ \"id\": \"one\" }] }");
     var diags = diag.List.init(arena);
     const proj = try project.load(arena, fs.vfs(), &diags);
     try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
     var assets = Assets.init(gpa, fs.vfs());
     defer assets.deinit();
-    return (try renderCard(gpa, &assets, &proj.sets[0], 0, opts, &diags)).?;
+    const b = try renderCard(gpa, &assets, &proj.sets[0], 0, opts, &diags);
+    if (code) |out| for (diags.items.items) |d| if (d.severity == .err) {
+        out.* = d.code;
+        break;
+    };
+    return b;
 }
 
 fn pixel(b: *const raster.Bitmap, x: usize, y: usize) [4]u16 {
@@ -1840,6 +2234,83 @@ test "proxy render is the full render at a smaller size" {
     try std.testing.expectEqual(pixel(&full, 40, 30), pixel(&half, 20, 15));
 }
 
+test "export at a larger scale is the full render at a larger size" {
+    const gpa = std.testing.allocator;
+    var full = try testRender(gpa, .{});
+    defer full.deinit(gpa);
+    var double = try testRender(gpa, .{ .scale = 2 });
+    defer double.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 400), double.w);
+    try std.testing.expectEqual(@as(u32, 200), double.h);
+    try std.testing.expectEqual(@as(u32, 200), double.canvas_w);
+    try std.testing.expectEqual(@as(f64, 2), double.scale);
+    // Each 1x pixel is close to the average of the 2 x 2 pixels at 2x.
+    var worst: f32 = 0;
+    for (0..full.h) |y| for (0..full.w) |x| for (0..4) |ch| {
+        var sum: f32 = 0;
+        for ([_][2]usize{ .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 1, 1 } }) |o| sum += @floatFromInt(pixel(&double, x * 2 + o[0], y * 2 + o[1])[ch]);
+        worst = @max(worst, @abs(sum / 4 - @as(f32, @floatFromInt(pixel(&full, x, y)[ch]))));
+    };
+    try std.testing.expect(worst < 65535 * 0.35);
+    // Flat areas match: the rect, the stroke's middle, the translucent ellipse.
+    try std.testing.expectEqual(pixel(&full, 40, 30), pixel(&double, 80, 60));
+    try std.testing.expectEqual(pixel(&full, 60, 60), pixel(&double, 120, 120));
+    try std.testing.expectEqual(pixel(&full, 150, 30), pixel(&double, 300, 60));
+}
+
+test "export scale keeps the print size and scales text" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50, "dpi": 300, "bleed": 4, "background": "#FFFFFF" },
+        \\  "layers": [
+        \\    { "id": "t", "type": "text", "text": "Hi", "at": { "x": 10, "y": 10 }, "size": 20, "color": "#000000" }
+        \\  ]
+        \\}
+    ;
+    var one = (try testRenderDesign(gpa, design, .{}, null)).?;
+    defer one.deinit(gpa);
+    var three = (try testRenderDesign(gpa, design, .{ .scale = 3 }, null)).?;
+    defer three.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 300), three.w);
+    try std.testing.expectEqual(@as(f64, 900), three.dpi);
+    try std.testing.expectEqual(@as(f64, 12), three.bleed);
+    // The ink of the text: three times as wide and tall, give or take the
+    // pixel rounding at the edges.
+    const ink = struct {
+        fn box(b: *const raster.Bitmap) [4]usize {
+            var r: [4]usize = .{ b.w, b.h, 0, 0 };
+            for (0..b.h) |y| for (0..b.w) |x| if (pixel(b, x, y)[0] < 32768) {
+                r = .{ @min(r[0], x), @min(r[1], y), @max(r[2], x + 1), @max(r[3], y + 1) };
+            };
+            return r;
+        }
+    }.box;
+    const a = ink(&one);
+    const b = ink(&three);
+    try std.testing.expect(a[2] > a[0] and a[3] > a[1]);
+    for (0..4) |i| {
+        const want: f64 = @floatFromInt(a[i] * 3);
+        const got: f64 = @floatFromInt(b[i]);
+        try std.testing.expect(@abs(got - want) <= 4);
+    }
+}
+
+test "export scale over the side limit is an error" {
+    const gpa = std.testing.allocator;
+    var code: u16 = 0;
+    // 200 x 100 at 60x would be 12000 pixels wide.
+    try std.testing.expect(try testRenderDesign(gpa, test_design, .{ .scale = 60 }, &code) == null);
+    try std.testing.expectEqual(@as(u16, 5001), code);
+    // 50x is exactly 10000 x 5000: allowed (checked without drawing).
+    code = 0;
+    var b = (try testRenderDesign(gpa, test_design, .{ .scale = 50, .dry = true }, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+}
+
 test "layer filter" {
     const gpa = std.testing.allocator;
     var only = try testRender(gpa, .{ .filter = .{ .ids = &.{"g"}, .mode = .only } });
@@ -1863,4 +2334,206 @@ test "plain and translucent groups" {
     const p = pixel(&b, 150, 30);
     try std.testing.expect(p[0] > 32000 and p[0] < 33500);
     try std.testing.expectEqual(@as(u16, 65535), p[1]);
+}
+
+/// A project with one design and one card, and the vector scene of the card.
+/// The scene points into the assets (fonts, images), so they live together.
+const VectorRig = struct {
+    arena_state: std.heap.ArenaAllocator,
+    fs: project.MemFs,
+    assets: Assets,
+    scene: vector.Scene,
+
+    fn init(rig: *VectorRig, gpa: Allocator, design: []const u8) !void {
+        return rig.initWithFiles(gpa, design, &.{});
+    }
+
+    /// `files` are more project files: path, content.
+    fn initWithFiles(rig: *VectorRig, gpa: Allocator, design: []const u8, files: []const [2][]const u8) !void {
+        rig.arena_state = std.heap.ArenaAllocator.init(gpa);
+        rig.fs = project.MemFs.init(gpa);
+        for (files) |f| try rig.fs.put(f[0], f[1]);
+        try rig.fs.put("t.design.json", design);
+        try rig.fs.put("t.cards.json", "{ \"format\": 1, \"design\": \"t.design.json\", \"cards\": [{ \"id\": \"one\" }] }");
+        const arena = rig.arena_state.allocator();
+        var diags = diag.List.init(arena);
+        const proj = try project.load(arena, rig.fs.vfs(), &diags);
+        try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+        rig.assets = Assets.init(gpa, rig.fs.vfs());
+        rig.scene = vector.Scene.init(gpa);
+        try std.testing.expect(try renderVector(gpa, &rig.assets, &proj.sets[0], 0, .{}, &rig.scene, &diags));
+    }
+
+    fn deinit(rig: *VectorRig) void {
+        rig.scene.deinit();
+        rig.assets.deinit();
+        rig.fs.deinit();
+        rig.arena_state.deinit();
+    }
+};
+
+test "vector scene of a plain design" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, test_design);
+    defer rig.deinit();
+    const scene = &rig.scene;
+    try std.testing.expectEqual(@as(u32, 200), scene.width);
+    try std.testing.expect(scene.background.?.eql(Color.white));
+    const items = scene.items.items;
+    // Rect, polyline, then the translucent group around the ellipse.
+    try std.testing.expectEqual(@as(usize, 5), items.len);
+    try std.testing.expect(items[0] == .fill);
+    // Move, four corner cubics joined by three lines, close (the fourth line is implied).
+    try std.testing.expectEqual(@as(usize, 9), items[0].fill.path.cmds.len);
+    try std.testing.expect(items[1] == .stroke);
+    try std.testing.expectEqual(@as(f32, 5), items[1].stroke.width);
+    try std.testing.expectEqual(@as(usize, 4), items[1].stroke.path.cmds.len);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), items[2].begin.transform.opacity, 0.0001);
+    try std.testing.expect(items[3] == .fill);
+    try std.testing.expect(items[4] == .end);
+}
+
+const shapes_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 300, "height": 200 },
+    \\  "layers": [
+    \\    { "id": "pie", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 60, "h": 60 }, "fill": "#00FF00", "arc": { "start": 0, "end": 90 }, "stroke": { "color": "#000000", "width": 2 } },
+    \\    { "id": "curve", "type": "ellipse", "box": { "x": 80, "y": 10, "w": 60, "h": 60 }, "fill": "#00FF00", "arc": { "start": 0, "end": 270, "pie": false }, "stroke": { "color": "#000000", "width": 2, "dash": [5, 3, 2] } },
+    \\    { "id": "line", "type": "polygon", "closed": false, "points": [[10, 100], [100, 100], [100, 150]], "stroke": { "color": "#FF0000", "width": 4, "arrow": "both" } },
+    \\    { "id": "turn", "type": "rect", "box": { "x": 150, "y": 100, "w": 60, "h": 40 }, "fill": "#0000FF", "rotate": 30, "opacity": 0.5 },
+    \\    { "id": "cut", "type": "rect", "box": { "x": 10, "y": 20, "w": 100, "h": 50 }, "fill": "#FF00FF", "effects": [{ "type": "crop", "side": "left", "length": 20 }, { "type": "fade", "side": "right", "length": 30 }] },
+    \\    { "id": "sharp", "type": "rect", "box": { "x": 200, "y": 20, "w": 40, "h": 40 }, "fill": "#FF8800", "rotate": 10, "effects": [{ "type": "sharpen" }] },
+    \\    { "id": "words", "type": "text", "text": "Hi ⚄", "at": { "x": 20, "y": 160 }, "size": 24, "stroke": { "color": "#FFFFFF", "width": 2 } }
+    \\  ]
+    \\}
+;
+
+test "vector scene of arcs, dashes, arrows and effects" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, shapes_design);
+    defer rig.deinit();
+    const scene = &rig.scene;
+    const items = scene.items.items;
+    // The pie is filled, closed through the centre; the curve is only stroked.
+    try std.testing.expect(items[0] == .fill and items[0].fill.path.cmds[0] == .move and items[0].fill.path.cmds[items[0].fill.path.cmds.len - 1] == .close);
+    try std.testing.expect(items[1] == .stroke);
+    try std.testing.expect(items[2] == .stroke);
+    try std.testing.expect(items[2].stroke.dash.len == 6);
+    try std.testing.expectEqualSlices(f32, &.{ 5, 3, 2, 5, 3, 2 }, items[2].stroke.dash);
+    // The polyline with two arrowheads: its stroke, then a triangle at each end.
+    try std.testing.expect(items[3] == .stroke and items[4] == .fill and items[5] == .fill);
+    try std.testing.expectEqual(@as(usize, 4), items[4].fill.path.cmds.len);
+    // Rotation and opacity wrap the rectangle.
+    const turn = items[6].begin.transform;
+    try std.testing.expectEqual(@as(f32, 30), turn.rotate);
+    try std.testing.expectEqual(@as(f32, 0.5), turn.opacity);
+    try std.testing.expectEqual(@as(f32, 150), turn.pivot[0]);
+    try std.testing.expect(items[7] == .fill and items[8] == .end);
+    // The fade is outside the crop (it works on what the crop left): the
+    // scratch bitmap is 104 x 54 at (8, 18); 20 pixels go from the left.
+    const fade = items[9].begin.fade;
+    try std.testing.expectEqual(raster.Side.right, fade.side);
+    try std.testing.expectEqual(@as(f32, 30), fade.len);
+    try std.testing.expectEqualSlices(f32, &.{ 8, 18, 92, 72 }, &fade.rect);
+    const crop = items[10].begin.crop;
+    try std.testing.expectEqualSlices(f32, &.{ 28, 18, 112, 72 }, &crop.clip);
+    try std.testing.expectEqual(@as(f32, -20), crop.dx);
+    try std.testing.expectEqual(@as(f32, 0), crop.dy);
+    try std.testing.expect(items[11] == .fill and items[12] == .end and items[13] == .end);
+    // The convolve effect cannot be a vector: pixels at the raster scale,
+    // still inside the layer's rotation.
+    try std.testing.expect(items[14].begin == .transform);
+    const px = items[15].raster;
+    try std.testing.expectEqual(@as(f32, 2), px.scale);
+    try std.testing.expect(px.bitmap.w > 40 * 2);
+    try std.testing.expect(items[16] == .end);
+    // Text: every glyph's outline pass comes before any fill pass, and the
+    // die face comes from the symbol font.
+    var strokes: usize = 0;
+    var fills: usize = 0;
+    var seen_fill = false;
+    var fonts: [2]?*const text.Font = .{ null, null };
+    for (items[17..]) |it| {
+        const g = it.glyph;
+        if (g.stroke > 0) {
+            try std.testing.expect(!seen_fill);
+            try std.testing.expectEqual(@as(f32, 4), g.stroke);
+            strokes += 1;
+        } else {
+            seen_fill = true;
+            fills += 1;
+        }
+        if (fonts[0] == null) fonts[0] = g.font else if (fonts[0] != g.font) fonts[1] = g.font;
+    }
+    try std.testing.expectEqual(@as(usize, 3), strokes);
+    try std.testing.expectEqual(@as(usize, 3), fills);
+    try std.testing.expect(fonts[1] != null);
+}
+
+test "svg of a vector scene is well formed and repeatable" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, shapes_design);
+    defer rig.deinit();
+    const scene = &rig.scene;
+    const a = try @import("svg.zig").write(gpa, scene);
+    defer gpa.free(a);
+    const b = try @import("svg.zig").write(gpa, scene);
+    defer gpa.free(b);
+    try std.testing.expectEqualStrings(a, b);
+    try @import("svg.zig").expectBalanced(a);
+    try std.testing.expect(std.mem.indexOf(u8, a, "<image x=") != null);
+    // Glyphs are defined once and used per placement.
+    try std.testing.expectEqual(@as(usize, 6), std.mem.count(u8, a, "<use xlink:href=\"#g"));
+    try std.testing.expect(std.mem.count(u8, a, "<path id=\"g") <= 3);
+}
+
+const media_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100 },
+    \\  "layers": [
+    \\    { "id": "photo", "type": "image", "src": "p.png", "box": { "x": 10, "y": 10, "w": 80, "h": 40 }, "fit": "cover", "smoothing": "nearest" },
+    \\    { "id": "pair", "type": "group", "opacity": 0.5, "rotate": 90, "layers": [
+    \\      { "id": "a", "type": "rect", "box": { "x": 100, "y": 10, "w": 20, "h": 20 }, "fill": "#FF0000" },
+    \\      { "id": "b", "type": "image", "src": "p.png", "box": { "x": 130, "y": 10, "w": 40, "h": 40 }, "fit": "contain" }
+    \\    ] }
+    \\  ]
+    \\}
+;
+
+test "vector scene of images and groups" {
+    const gpa = std.testing.allocator;
+    var px = try raster.Bitmap.init(gpa, 0, 0, 2, 2);
+    defer px.deinit(gpa);
+    px.fill(raster.paint(.{ .r = 0, .g = 0, .b = 65535, .a = 65535 }, 1));
+    const png = try raster.encodePng(gpa, &px, false);
+    defer gpa.free(png);
+    var rig: VectorRig = undefined;
+    try rig.initWithFiles(gpa, media_design, &.{.{ "p.png", png }});
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    try std.testing.expectEqual(@as(usize, 5), items.len);
+    // Cover: the 2 x 2 image grows to 80 x 80, centred, clipped to the box;
+    // the writers get the file to embed.
+    const photo = items[0].image;
+    try std.testing.expectEqualSlices(f32, &.{ 10, -10, 80, 80 }, &photo.rect);
+    try std.testing.expectEqualSlices(f32, &.{ 10, 10, 90, 50 }, &photo.clip);
+    try std.testing.expect(!photo.smooth);
+    try std.testing.expectEqualSlices(u8, png, photo.bytes);
+    // The group's opacity and rotation (about the centre of its bounds) wrap
+    // its layers.
+    const t = items[1].begin.transform;
+    try std.testing.expectEqual(@as(f32, 90), t.rotate);
+    try std.testing.expectEqual(@as(f32, 0.5), t.opacity);
+    try std.testing.expectEqualSlices(f32, &.{ 135, 30 }, &t.pivot);
+    try std.testing.expect(items[2] == .fill);
+    try std.testing.expect(items[3].image.smooth);
+    try std.testing.expectEqualSlices(f32, &.{ 130, 10, 40, 40 }, &items[3].image.rect);
+    try std.testing.expect(items[4] == .end);
 }

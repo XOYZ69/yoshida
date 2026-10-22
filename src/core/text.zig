@@ -47,6 +47,11 @@ pub const Font = struct {
         return c.stbtt_ScaleForMappingEmToPixels(f.info.ptr, size);
     }
 
+    /// The glyph index of `cp` (0, the missing-glyph box, when absent).
+    pub fn glyphIndex(f: *const Font, cp: u21) u32 {
+        return @intCast(c.stbtt_FindGlyphIndex(f.info.ptr, @intCast(cp)));
+    }
+
     pub fn hasGlyph(f: *const Font, cp: u21) bool {
         return c.stbtt_FindGlyphIndex(f.info.ptr, @intCast(cp)) != 0;
     }
@@ -246,8 +251,43 @@ pub fn draw(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout,
 }
 
 fn drawPass(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, p: raster.Paint, outline: ?f32, k: f32) Allocator.Error!void {
-    var mask: std.ArrayList(u8) = .empty;
-    defer mask.deinit(gpa);
+    var pass: Pass = .{ .gpa = gpa, .b = b, .p = p, .outline = outline, .k = k };
+    defer pass.mask.deinit(gpa);
+    try walk(f, l, left, top, alignment, &pass, Pass.glyph);
+}
+
+/// What `drawPass` does with every glyph of the walk.
+const Pass = struct {
+    gpa: Allocator,
+    b: *raster.Bitmap,
+    p: raster.Paint,
+    outline: ?f32,
+    k: f32,
+    mask: std.ArrayList(u8) = .empty,
+
+    fn glyph(s: *Pass, g: Placed) Allocator.Error!void {
+        const sc = g.scale * s.k;
+        if (s.outline) |w| {
+            drawOutline(s.b, g.font, g.cp, sc, g.x * s.k, g.baseline * s.k, w * s.k, s.p);
+        } else try drawGlyph(s.gpa, &s.mask, s.b, g.font, g.cp, sc, g.x * s.k, g.baseline * s.k, s.p);
+    }
+};
+
+/// A glyph of a laid-out block: the font that draws it (a fallback for code
+/// points the block's font lacks), its scale, and where its origin sits on
+/// the baseline.
+pub const Placed = struct {
+    font: *const Font,
+    cp: u21,
+    scale: f32,
+    x: f32,
+    baseline: f32,
+};
+
+/// Calls `visit` for every glyph of the block whose top-left corner is at
+/// (left, top), in drawing order and without spaces. The bitmap and the
+/// vector scene both draw from this walk, so they place text identically.
+pub fn walk(f: *const Font, l: *const Layout, left: f32, top: f32, alignment: Align, ctx: anytype, comptime visit: fn (@TypeOf(ctx), Placed) Allocator.Error!void) Allocator.Error!void {
     for (l.lines, 0..) |ln, i| {
         const baseline = top + l.ascent + @as(f32, @floatFromInt(i)) * (l.line_h + l.spacing);
         var x = left + switch (alignment) {
@@ -271,11 +311,7 @@ fn drawPass(gpa: Allocator, b: *raster.Bitmap, f: *const Font, l: *const Layout,
             };
             prev = cp;
             prev_font = g;
-            if (cp != ' ') {
-                if (outline) |w| {
-                    drawOutline(b, g, cp, sc * k, x * k, baseline * k, w * k, p);
-                } else try drawGlyph(gpa, &mask, b, g, cp, sc * k, x * k, baseline * k, p);
-            }
+            if (cp != ' ') try visit(ctx, .{ .font = g, .cp = cp, .scale = sc, .x = x, .baseline = baseline });
             x += @as(f32, @floatFromInt(g.advance(cp))) * sc;
             if (cp == ' ') x += gap_extra;
         }

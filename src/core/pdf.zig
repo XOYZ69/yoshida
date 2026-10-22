@@ -1,31 +1,30 @@
-//! A minimal PDF writer: one page per card, the card as an image. The page
-//! size comes from `canvas.dpi` (72 when unknown, one pixel per point);
+//! A minimal PDF writer: one page per card, the card as an image
+//! (`addPage`) or as vector drawing (`addVector`, see pdf_vector.zig). The
+//! page size comes from `canvas.dpi` (72 when unknown, one canvas pixel per
+//! point, so a render at a larger scale keeps the page size);
 //! `canvas.bleed` sets the TrimBox and BleedBox.
 
 const std = @import("std");
 const raster = @import("raster.zig");
+const vector = @import("vector.zig");
+const pdf_vector = @import("pdf_vector.zig");
 const Allocator = std.mem.Allocator;
 
-/// One card's compressed pixels and page geometry.
-pub const Page = struct {
-    w: u32,
-    h: u32,
-    dpi: f64,
-    bleed: f64,
-    margin: f64,
+/// 8-bit straight RGB and alpha from premultiplied 16-bit pixels.
+pub const Pixels = struct {
     rgb: []u8,
-    /// Soft mask; null when every pixel is opaque.
+    /// Null when every pixel is opaque.
     alpha: ?[]u8,
 
-    pub fn init(gpa: Allocator, b: *const raster.Bitmap) !Page {
-        const n = @as(usize, b.w) * b.h;
+    pub fn init(gpa: Allocator, px: []const u16, w: u32, h: u32) Allocator.Error!Pixels {
+        const n = @as(usize, w) * h;
         const rgb = try gpa.alloc(u8, n * 3);
-        defer gpa.free(rgb);
+        errdefer gpa.free(rgb);
         const alpha = try gpa.alloc(u8, n);
-        defer gpa.free(alpha);
+        errdefer gpa.free(alpha);
         var opaque_all = true;
         for (0..n) |i| {
-            const p = b.px[i * 4 ..][0..4];
+            const p = px[i * 4 ..][0..4];
             const a: u32 = p[3];
             alpha[i] = @intCast((a * 255 + 32767) / 65535);
             if (alpha[i] != 255) opaque_all = false;
@@ -34,9 +33,38 @@ pub const Page = struct {
                 rgb[i * 3 + k] = @intCast((straight * 255 + 32767) / 65535);
             }
         }
-        const rgb_z = try raster.deflate(gpa, rgb);
+        if (opaque_all) {
+            gpa.free(alpha);
+            return .{ .rgb = rgb, .alpha = null };
+        }
+        return .{ .rgb = rgb, .alpha = alpha };
+    }
+
+    pub fn deinit(p: *Pixels, gpa: Allocator) void {
+        gpa.free(p.rgb);
+        if (p.alpha) |a| gpa.free(a);
+    }
+};
+
+/// One card's compressed pixels and page geometry.
+pub const Page = struct {
+    w: u32,
+    h: u32,
+    dpi: f64,
+    bleed: f64,
+    margin: f64,
+    /// Bitmap pixels per canvas pixel (`raster.Bitmap.scale`).
+    scale: f64 = 1,
+    rgb: []u8,
+    /// Soft mask; null when every pixel is opaque.
+    alpha: ?[]u8,
+
+    pub fn init(gpa: Allocator, b: *const raster.Bitmap) !Page {
+        var px = try Pixels.init(gpa, b.px, b.w, b.h);
+        defer px.deinit(gpa);
+        const rgb_z = try raster.deflate(gpa, px.rgb);
         errdefer gpa.free(rgb_z);
-        return .{ .w = b.w, .h = b.h, .dpi = b.dpi, .bleed = b.bleed, .margin = b.margin, .rgb = rgb_z, .alpha = if (opaque_all) null else try raster.deflate(gpa, alpha) };
+        return .{ .w = b.w, .h = b.h, .dpi = b.dpi, .bleed = b.bleed, .margin = b.margin, .scale = b.scale, .rgb = rgb_z, .alpha = if (px.alpha) |a| try raster.deflate(gpa, a) else null };
     }
 
     pub fn deinit(p: *Page, gpa: Allocator) void {
@@ -51,6 +79,8 @@ pub const Writer = struct {
     /// Byte offset of every object, by object number - 1.
     offsets: std.ArrayList(usize) = .empty,
     pages: std.ArrayList(u32) = .empty,
+    /// What vector pages share (glyph outlines, images), by object number.
+    shared: pdf_vector.Shared = .{},
 
     pub fn init(gpa: Allocator) Allocator.Error!Writer {
         var w: Writer = .{ .gpa = gpa, .out = .init(gpa) };
@@ -65,9 +95,10 @@ pub const Writer = struct {
         w.out.deinit();
         w.offsets.deinit(w.gpa);
         w.pages.deinit(w.gpa);
+        w.shared.deinit(w.gpa);
     }
 
-    fn begin(w: *Writer) Allocator.Error!u32 {
+    pub fn begin(w: *Writer) Allocator.Error!u32 {
         try w.offsets.append(w.gpa, w.out.written().len);
         const n: u32 = @intCast(w.offsets.items.len);
         w.out.writer.print("{d} 0 obj\n", .{n}) catch return error.OutOfMemory;
@@ -79,7 +110,7 @@ pub const Writer = struct {
         w.out.writer.print("{d} 0 obj\n", .{n}) catch return error.OutOfMemory;
     }
 
-    fn stream(w: *Writer, dict: []const u8, data: []const u8) Allocator.Error!void {
+    pub fn stream(w: *Writer, dict: []const u8, data: []const u8) Allocator.Error!void {
         const o = &w.out.writer;
         o.print("<< {s} /Length {d} >>\nstream\n", .{ dict, data.len }) catch return error.OutOfMemory;
         o.writeAll(data) catch return error.OutOfMemory;
@@ -108,7 +139,7 @@ pub const Writer = struct {
             const sm_text = if (smask) |sid| try std.fmt.bufPrint(&sm, " /SMask {d} 0 R", .{sid}) else "";
             try w.stream(try std.fmt.bufPrint(&buf, "/Type /XObject /Subtype /Image /Width {d} /Height {d} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{s}", .{ pg.w, pg.h, sm_text }), pg.rgb);
         }
-        const k: f64 = 72.0 / (if (pg.dpi > 0) pg.dpi else 72.0);
+        const k: f64 = 72.0 / (if (pg.dpi > 0) pg.dpi else 72.0 * (if (pg.scale > 0) pg.scale else 1));
         const pw = @as(f64, @floatFromInt(pg.w)) * k;
         const ph = @as(f64, @floatFromInt(pg.h)) * k;
         const content = blk: {
@@ -128,6 +159,12 @@ pub const Writer = struct {
             .{ pw, ph, m, m, pw - m, ph - m, m + bl, m + bl, pw - m - bl, ph - m - bl, img, content },
         ) catch return error.OutOfMemory;
         try w.pages.append(w.gpa, page);
+    }
+
+    /// Adds one page drawn from a vector scene, with crop marks in a margin
+    /// when asked. The page is the size of the image page for the same card.
+    pub fn addVector(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
+        try pdf_vector.addPage(w, scene, crop_marks);
     }
 
     /// The finished file. The writer can be deinitialised afterwards.
@@ -161,4 +198,39 @@ test "pdf with one page" {
     try std.testing.expect(std.mem.startsWith(u8, out, "%PDF-1.4"));
     try std.testing.expect(std.mem.indexOf(u8, out, "/MediaBox [0 0 2.0000 1.0000]") != null);
     try std.testing.expect(std.mem.endsWith(u8, out, "%%EOF\n"));
+}
+
+fn mediaBox(gpa: Allocator, b: *const raster.Bitmap, want: []const u8) !void {
+    var w = try Writer.init(gpa);
+    defer w.deinit();
+    try w.addPage(b);
+    const out = try w.finish();
+    defer gpa.free(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, want) != null);
+}
+
+test "page size does not change with the render scale" {
+    const gpa = std.testing.allocator;
+    // With a dpi: the dpi grows with the scale.
+    var b = try raster.Bitmap.init(gpa, 0, 0, 8, 4);
+    defer b.deinit(gpa);
+    b.fill(.{ 65535, 0, 0, 65535 });
+    b.dpi = 288;
+    b.scale = 2;
+    try mediaBox(gpa, &b, "/MediaBox [0 0 2.0000 1.0000]");
+    // Without one: one canvas pixel per point, as at scale 1.
+    b.dpi = 0;
+    try mediaBox(gpa, &b, "/MediaBox [0 0 4.0000 2.0000]");
+    // Crop marks without a dpi: the same page at 1x and 2x.
+    var one = try raster.Bitmap.init(gpa, 0, 0, 4, 2);
+    defer one.deinit(gpa);
+    var m1 = try raster.withCropMarks(gpa, &one);
+    defer m1.deinit(gpa);
+    var m2 = try raster.withCropMarks(gpa, &b);
+    defer m2.deinit(gpa);
+    try std.testing.expectEqual(m1.margin * 2, m2.margin);
+    var buf: [64]u8 = undefined;
+    const pt = 4 + 2 * m1.margin;
+    try mediaBox(gpa, &m2, try std.fmt.bufPrint(&buf, "/MediaBox [0 0 {d:.4} ", .{pt}));
+    try mediaBox(gpa, &m1, try std.fmt.bufPrint(&buf, "/MediaBox [0 0 {d:.4} ", .{pt}));
 }

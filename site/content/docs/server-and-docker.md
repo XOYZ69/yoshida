@@ -72,7 +72,7 @@ The image also contains the `yoshida` CLI at `/yoshida`, which you can run with 
 
 ## Using server rendering from the editor
 
-When the editor is served by `yoshida-server` with rendering enabled, the toolbar shows a **Render on server** switch next to the export buttons. Switched on, **ZIP** and **PDF** upload the project's files to `POST /api/render` and download the result; otherwise rendering happens in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
+When the editor is served by `yoshida-server` with rendering enabled, the toolbar shows a **Render on server** switch next to the export buttons. Switched on, **ZIP** and **PDF** upload the project's files to `POST /api/render` and download the result; otherwise rendering happens in the browser. The [export dialog](@/docs/builder.md#export-dialog) sends PNG, SVG and PDF files of whole designs the same way, one request per design and format, with its resolution, crop marks, PDF pages (vector or image) and PNG settings; JPEG and WebP still render in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
 
 The progress window shows each step (pack, upload with the bytes sent, render on the server with the cards done, download, save) and an activity log; the same lines go to the browser console as `[yoshida] …`. The cards done come from [`GET /api/render/progress`](@/docs/server-api.md#get-api-render-progress).
 

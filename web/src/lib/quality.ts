@@ -1,6 +1,6 @@
 // Proxy renders: the editor previews and thumbnails render with fewer pixels
 // than the card (render `scale`), matched to what the screen shows. Exports
-// always render at full size.
+// render at full size, or larger with the export dialog's resolution.
 
 export type PreviewQuality = "auto" | "fast" | "full";
 

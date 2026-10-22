@@ -4,11 +4,24 @@
 //!   {"op":"info"}
 //!   {"op":"check"}
 //!   {"op":"render","set":"name","card":0,"date":"2026-10-07","preview":true,"format":"rgba"|"png"|"png16","layout":true,
-//!    "scale":0.5,"only":["id",...] | "except":["id",...]}
-//!   {"op":"pdf","set":"name","date":"...","crop_marks":false}
-//!   {"op":"pdf_begin"}, then {"op":"pdf_page","set":"name","card":0,"date":"...","crop_marks":false}
+//!    "scale":0.5,"compression":"fast"|"default"|"smallest","only":["id",...] | "except":["id",...]}
+//!   scale is bitmap pixels per canvas pixel: below 1 for the preview, above
+//!   1 for a larger export (each side at most 10000 pixels); compression is
+//!   the PNG deflate level (default "default"). The result has the bitmap's
+//!   "dpi" (canvas.dpi times scale, 0 when the design has none) and "bleed"
+//!   (canvas.bleed times scale, in bitmap pixels).
+//!   {"op":"svg","set":"name","card":0,"date":"...","scale":2}: the card as a
+//!   vector SVG (result_bin), with {"width","height","diagnostics","missing_urls"}.
+//!   "scale" (1 to 4, default 2) sets the resolution of the few parts that
+//!   stay pixels (convolve effects), in pixels per canvas pixel.
+//!   {"op":"pdf","set":"name","date":"...","crop_marks":false,"scale":2,"vector":false}
+//!   {"op":"pdf_begin"}, then {"op":"pdf_page","set":"name","card":0,"date":"...","crop_marks":false,"scale":2,"vector":false}
 //!   per card, then {"op":"pdf_finish"}: the same PDF one page per request,
-//!   so the page can show real progress.
+//!   so the page can show real progress. By default each card is an image
+//!   on its page and "scale" (default 1) sets the resolution of that image.
+//!   With "vector": true the pages are drawn as vectors (sharp at any zoom,
+//!   text as outlines) and "scale" works as for svg. The page size does not
+//!   change with the scale.
 //!   {"op":"scope","set":"name","path":"/layers/3/fill"}: the names and types an
 //!   expression field can use.
 //!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
@@ -16,13 +29,13 @@
 //!
 //! The render clock is set by the optional "now" (a UTC instant,
 //! `YYYY-MM-DDTHH:MM:SSZ`) and "utc_offset" (hours, -14 to 14; other values
-//! are ignored) fields of render, pdf, check_cards, pdf_page and eval. With
+//! are ignored) fields of render, svg, pdf, check_cards, pdf_page and eval. With
 //! "now", render.date and render.time come from it plus the offset (the
 //! project's utc_offset unless "utc_offset" is given). Without it, "date" is
 //! used at midnight. The page supplies the instant: this module has no clock.
 //!
-//! Each request leaves a JSON result and an optional binary result (pixels or
-//! a PNG) that the page reads through the result_* exports.
+//! Each request leaves a JSON result and an optional binary result (pixels, a
+//! PNG, an SVG or a PDF) that the page reads through the result_* exports.
 
 const std = @import("std");
 const y = @import("yoshida");
@@ -113,6 +126,35 @@ fn clockOf(req: *const y.json.Node) Clock {
     return c;
 }
 
+/// The optional "scale" of a request (1 when absent or not a number; the
+/// core rejects a scale that makes the bitmap too large).
+fn scaleOf(req: *const y.json.Node) f64 {
+    const p = req.get("scale") orelse return 1;
+    return if (p.data == .number) p.data.number else 1;
+}
+
+/// The optional "scale" of a vector request: pixels per canvas pixel for
+/// the parts drawn as pixels, 1 to 4 (default 2).
+fn rasterScale(req: *const y.json.Node) f32 {
+    const v = if (req.get("scale")) |s| (if (s.data == .number) s.data.number else 2) else 2;
+    return @floatCast(std.math.clamp(v, 1, 4));
+}
+
+/// True when the request has "vector": true.
+fn wantsVector(req: *const y.json.Node) bool {
+    return if (req.get("vector")) |p| (p.data == .bool and p.data.bool) else false;
+}
+
+/// Draws card `index` as a vector page of `pdf`; false when nothing could be drawn.
+fn addVectorPage(pdf: *y.pdf.Writer, a: *y.render.Assets, set: *const y.project.Set, index: usize, date: []const u8, clock: Clock, marks: bool, scale: f32, diags: *y.diag.List) !bool {
+    var scene = y.vector.Scene.init(gpa);
+    defer scene.deinit();
+    scene.raster_scale = scale;
+    if (!try y.render.renderVector(gpa, a, set, index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset }, &scene, diags)) return false;
+    try pdf.addVector(&scene, marks);
+    return true;
+}
+
 fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
     var aw: std.Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
@@ -154,7 +196,8 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         const preview = if (req.get("preview")) |p| (p.data == .bool and p.data.bool) else true;
         const format = if (req.get("format")) |f| (if (f.data == .string) f.data.string else "rgba") else "rgba";
         const want_layout = if (req.get("layout")) |p| (p.data == .bool and p.data.bool) else false;
-        const scale = if (req.get("scale")) |p| (if (p.data == .number) p.data.number else 1) else 1;
+        const scale = scaleOf(&req);
+        const compression = std.meta.stringToEnum(y.raster.Compression, if (req.get("compression")) |c| (if (c.data == .string) c.data.string else "") else "") orelse .default;
         var outline: y.render.Outline = .{ .arena = arena };
         var filter: ?y.render.Options.Filter = null;
         inline for (.{ "only", "except" }) |mode| if (req.get(mode)) |list| if (list.data == .array) {
@@ -175,6 +218,8 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         var height: u32 = 0;
         var canvas_w: u32 = 0;
         var canvas_h: u32 = 0;
+        var dpi: f64 = 0;
+        var bleed: f64 = 0;
         if (proj.findSet(set_name)) |set| {
             if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = preview, .outline = if (want_layout) &outline else null, .scale = scale, .filter = filter }, &diags)) |bmp_const| {
                 var bmp = bmp_const;
@@ -183,8 +228,10 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
                 height = bmp.h;
                 canvas_w = bmp.canvas_w;
                 canvas_h = bmp.canvas_h;
+                dpi = bmp.dpi;
+                bleed = bmp.bleed;
                 if (std.mem.eql(u8, format, "png") or std.mem.eql(u8, format, "png16")) {
-                    result_bin = try y.raster.encodePng(gpa, &bmp, std.mem.eql(u8, format, "png16"));
+                    result_bin = try y.raster.encodePngLevel(gpa, &bmp, std.mem.eql(u8, format, "png16"), compression);
                 } else {
                     result_bin = try y.raster.toRgba8(gpa, &bmp);
                 }
@@ -193,7 +240,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         }
-        try w.print("{{\"width\":{d},\"height\":{d},\"canvas_width\":{d},\"canvas_height\":{d},\"diagnostics\":", .{ width, height, canvas_w, canvas_h });
+        try w.print("{{\"width\":{d},\"height\":{d},\"canvas_width\":{d},\"canvas_height\":{d},\"dpi\":{d},\"bleed\":{d},\"diagnostics\":", .{ width, height, canvas_w, canvas_h, dpi, bleed });
         try diags.writeJson(w);
         try w.writeAll(",\"missing_urls\":");
         try y.api.writeMissingUrls(w, a);
@@ -201,6 +248,31 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll(",\"layout\":");
             try y.api.writeOutline(w, outline.items.items);
         }
+        try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "svg")) {
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        const a = getAssets();
+        for (a.missing_urls.items) |u| gpa.free(u);
+        a.missing_urls.clearRetainingCapacity();
+        var scene = y.vector.Scene.init(gpa);
+        defer scene.deinit();
+        scene.raster_scale = rasterScale(&req);
+        var drawn = false;
+        if (set.ok) drawn = try y.render.renderVector(gpa, a, set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset }, &scene, &diags);
+        if (drawn) result_bin = try y.svg.write(gpa, &scene);
+        try w.print("{{\"width\":{d},\"height\":{d},\"diagnostics\":", .{ scene.width, scene.height });
+        try diags.writeJson(w);
+        try w.writeAll(",\"missing_urls\":");
+        try y.api.writeMissingUrls(w, a);
         try w.writeAll("}");
         return 0;
     }
@@ -236,7 +308,9 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
         const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
         const marks = if (req.get("crop_marks")) |p| (p.data == .bool and p.data.bool) else false;
+        const vector = wantsVector(&req);
         const dry = std.mem.eql(u8, op, "check_cards");
+        const scale = scaleOf(&req);
         const set = proj.findSet(set_name) orelse {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
@@ -247,7 +321,11 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             var pdf = try y.pdf.Writer.init(gpa);
             defer pdf.deinit();
             for (0..set.cards.len) |i| {
-                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = dry, .dry = dry }, &diags)) orelse continue;
+                if (vector and !dry) {
+                    if (try addVectorPage(&pdf, a, set, i, date, clock, marks, rasterScale(&req), &diags)) pages += 1;
+                    continue;
+                }
+                var bmp = (try y.render.renderCard(gpa, a, set, i, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = dry, .dry = dry, .scale = if (dry) 1 else scale }, &diags)) orelse continue;
                 defer bmp.deinit(gpa);
                 if (dry) continue;
                 if (marks) {
@@ -286,7 +364,9 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         };
-        if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset }, &diags)) |bmp_const| {
+        if (set.ok and wantsVector(&req)) {
+            _ = try addVectorPage(pdf, getAssets(), set, card_index, date, clock, marks, rasterScale(&req), &diags);
+        } else if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .scale = scaleOf(&req) }, &diags)) |bmp_const| {
             var bmp = bmp_const;
             defer bmp.deinit(gpa);
             if (marks) {

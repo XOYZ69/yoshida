@@ -101,6 +101,25 @@ pub extern fn stbtt_MakeCodepointBitmapSubpixel(info: *const anyopaque, output: 
 pub extern fn stbtt_GetCodepointSDF(info: *const anyopaque, scale: f32, codepoint: c_int, padding: c_int, onedge_value: u8, pixel_dist_scale: f32, width: *c_int, height: *c_int, xoff: *c_int, yoff: *c_int) ?[*]u8;
 pub extern fn stbtt_FreeSDF(bitmap: [*]u8, userdata: ?*anyopaque) void;
 
+/// One outline command of a glyph, in font units with y up.
+pub const stbtt_vertex = extern struct {
+    x: i16,
+    y: i16,
+    cx: i16,
+    cy: i16,
+    cx1: i16,
+    cy1: i16,
+    kind: u8,
+    padding: u8,
+
+    pub const move = 1;
+    pub const line = 2;
+    pub const quad = 3;
+    pub const cubic = 4;
+};
+pub extern fn stbtt_GetGlyphShape(info: *const anyopaque, glyph_index: c_int, vertices: *?[*]stbtt_vertex) c_int;
+pub extern fn stbtt_FreeShape(info: *const anyopaque, vertices: ?[*]stbtt_vertex) void;
+
 // ---------------------------------------------------------------- simplewebp
 
 pub const simplewebp = opaque {};

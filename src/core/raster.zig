@@ -34,6 +34,9 @@ pub const Bitmap = struct {
     bleed: f64 = 0,
     /// White margin added around the card for crop marks, in pixels.
     margin: f64 = 0,
+    /// Bitmap pixels per canvas pixel (`render.Options.scale`). Without a
+    /// dpi, the PDF page and the crop marks use it to keep their size.
+    scale: f64 = 1,
     /// Canvas size in canvas pixels; larger than w x h for a proxy render
     /// (`render.Options.scale`). 0 when unknown.
     canvas_w: u32 = 0,
@@ -867,8 +870,29 @@ pub fn toRgba8(gpa: Allocator, b: *const Bitmap) Allocator.Error![]u8 {
     return out;
 }
 
+/// Deflate effort for PNG: smaller files take longer to write. The pixels
+/// are the same at every level.
+pub const Compression = enum {
+    fast,
+    default,
+    smallest,
+
+    fn options(c: Compression) std.compress.flate.Compress.Options {
+        return switch (c) {
+            .fast => .level_1,
+            .default => .level_4,
+            .smallest => .level_9,
+        };
+    }
+};
+
 /// Encodes a bitmap as RGBA PNG, 8 or 16 bits per channel.
 pub fn encodePng(gpa: Allocator, b: *const Bitmap, sixteen: bool) ![]u8 {
+    return encodePngLevel(gpa, b, sixteen, .default);
+}
+
+/// `encodePng` with a chosen compression level.
+pub fn encodePngLevel(gpa: Allocator, b: *const Bitmap, sixteen: bool, compression: Compression) ![]u8 {
     const bpp: usize = if (sixteen) 8 else 4;
     const stride = @as(usize, b.w) * bpp;
     // Raw scanlines with a filter byte each (Paeth for every row).
@@ -941,7 +965,7 @@ pub fn encodePng(gpa: Allocator, b: *const Bitmap, sixteen: bool) ![]u8 {
     {
         const window = try gpa.alloc(u8, std.compress.flate.max_window_len);
         defer gpa.free(window);
-        var comp = try std.compress.flate.Compress.init(&z.writer, window, .zlib, .level_4);
+        var comp = try std.compress.flate.Compress.init(&z.writer, window, .zlib, compression.options());
         try comp.writer.writeAll(raw);
         try comp.finish();
     }
@@ -965,15 +989,20 @@ pub fn deflate(gpa: Allocator, data: []const u8) ![]u8 {
 /// A copy of `b` on a white sheet with crop marks at the trim lines (`bleed`
 /// inside the card's edge). The marks sit in a margin around the card.
 pub fn withCropMarks(gpa: Allocator, b: *const Bitmap) Allocator.Error!Bitmap {
-    const unit: f64 = if (b.dpi > 0) b.dpi / 25.4 else 300.0 / 25.4; // pixels per mm
-    const gap = @round(2 * unit);
-    const len = @round(5 * unit);
+    // Pixels per mm (300 dpi without a dpi). The marks are rounded at scale
+    // 1 and then scaled, so a larger render keeps the page size.
+    const s: f64 = if (b.scale > 0) b.scale else 1;
+    const unit1: f64 = (if (b.dpi > 0) b.dpi / s else 300.0) / 25.4;
+    const unit = unit1 * s;
+    const gap = @round(@round(2 * unit1) * s);
+    const len = @round(@round(5 * unit1) * s);
     const m = gap + len;
     const mi: u32 = @intFromFloat(m);
     var out = try Bitmap.init(gpa, 0, 0, b.w + 2 * mi, b.h + 2 * mi);
     out.dpi = b.dpi;
     out.bleed = b.bleed;
     out.margin = m;
+    out.scale = b.scale;
     out.fill(.{ 65535, 65535, 65535, 65535 });
     // Card pixels over the white sheet.
     for (0..b.h) |y| {
@@ -1034,6 +1063,38 @@ test "png roundtrip through stb_image" {
     // Centre of the ellipse: half white over red.
     const o: usize = (5 * 20 + 7) * 4;
     try std.testing.expect(px[o + 1] > 120 and px[o + 1] < 135);
+}
+
+test "png compression levels decode to the same pixels" {
+    const c = @import("c.zig");
+    const gpa = std.testing.allocator;
+    var b = try Bitmap.init(gpa, 0, 0, 40, 30);
+    defer b.deinit(gpa);
+    b.fill(paint(.{ .r = 0, .g = 30000, .b = 65535, .a = 65535 }, 1));
+    drawShape(&b, .ellipse, 4, 3, 30, 20, 0, paint(Color.white, 0.5), null);
+    // The default level is the one encodePng has always used.
+    const plain = try encodePng(gpa, &b, false);
+    defer gpa.free(plain);
+    const default = try encodePngLevel(gpa, &b, false, .default);
+    defer gpa.free(default);
+    try std.testing.expectEqualSlices(u8, plain, default);
+    // Per bit depth: stb_image reduces 16 bits by truncating, not rounding.
+    var first: [2]?[]u8 = .{ null, null };
+    defer for (first) |f| if (f) |x| gpa.free(x);
+    for ([_]Compression{ .fast, .default, .smallest }) |level| for ([_]bool{ false, true }) |sixteen| {
+        const png = try encodePngLevel(gpa, &b, sixteen, level);
+        defer gpa.free(png);
+        var w: c_int = 0;
+        var h: c_int = 0;
+        var ch: c_int = 0;
+        const px = c.stbi_load_from_memory(png.ptr, @intCast(png.len), &w, &h, &ch, 4) orelse return error.DecodeFailed;
+        defer c.stbi_image_free(px);
+        try std.testing.expectEqual(@as(c_int, 40), w);
+        try std.testing.expectEqual(@as(c_int, 30), h);
+        const got = px[0 .. 40 * 30 * 4];
+        const slot = &first[@intFromBool(sixteen)];
+        if (slot.*) |f| try std.testing.expectEqualSlices(u8, f, got) else slot.* = try gpa.dupe(u8, got);
+    };
 }
 
 test "rgba8 output" {

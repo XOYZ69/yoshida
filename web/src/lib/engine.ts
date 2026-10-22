@@ -72,6 +72,10 @@ export type RenderResult = {
 	/** Size of the canvas the design describes. */
 	canvas_width?: number;
 	canvas_height?: number;
+	/** canvas.dpi times the scale; 0 when the design has no dpi. */
+	dpi?: number;
+	/** canvas.bleed times the scale, in bitmap pixels. */
+	bleed?: number;
 	diagnostics: Diagnostic[];
 	missing_urls: string[];
 	/** Layer bounds, when the request asked for `layout`. */
@@ -103,12 +107,36 @@ export type RenderArgs = {
 	preview: boolean;
 	format: "rgba" | "png" | "png16";
 	layout?: boolean;
-	/** Proxy render: bitmap pixels per canvas pixel (0 < scale <= 1). */
+	/**
+	 * Bitmap pixels per canvas pixel: below 1 a proxy render for the
+	 * preview, above 1 a larger export (each side at most 10000 pixels).
+	 */
 	scale?: number;
+	/** PNG deflate level. */
+	compression?: "fast" | "default" | "smallest";
 	/** Draw only these layer ids (and what is inside them), without the background. */
 	only?: string[];
 	/** Draw everything but these layer ids. */
 	except?: string[];
+};
+
+export type SvgArgs = {
+	set: string;
+	card: number;
+	date: string;
+	now: string;
+	/** Pixels per canvas pixel for the parts that stay pixels (1 to 4, default 2). */
+	scale?: number;
+};
+
+export type SvgResult = {
+	/** The card's size in canvas pixels. */
+	width: number;
+	height: number;
+	diagnostics: Diagnostic[];
+	missing_urls: string[];
+	/** The SVG file; empty when nothing could be drawn. */
+	bin: Uint8Array;
 };
 
 /** A name an expression can use, with its type (`number`, `list`, ...). */
@@ -273,7 +301,8 @@ export class Engine {
 
 	/**
 	 * Every card of a set as one PDF, one page per card. `progress` gets the
-	 * number of cards rendered so far.
+	 * number of cards rendered so far. With `vector` the pages are drawn as
+	 * vectors instead of images (`scale` as for `svg`).
 	 */
 	pdf(
 		set: string,
@@ -281,6 +310,7 @@ export class Engine {
 		cropMarks: boolean,
 		cards: number,
 		progress?: (done: number) => void,
+		vector?: { scale?: number },
 	) {
 		return this.call<{
 			pages: number;
@@ -293,6 +323,8 @@ export class Engine {
 				...clock,
 				crop_marks: cropMarks,
 				cards,
+				vector: vector !== undefined,
+				scale: vector?.scale,
 			},
 			[],
 			progress,
@@ -301,6 +333,62 @@ export class Engine {
 
 	render(args: RenderArgs) {
 		return this.call<RenderResult>({ op: "render", args });
+	}
+
+	/**
+	 * Renders one card once and encodes it with the browser's encoders (JPEG,
+	 * WebP), one file per entry of `encodings`.
+	 */
+	encode(
+		args: Omit<RenderArgs, "format">,
+		encodings: {
+			type: "image/jpeg" | "image/webp";
+			quality: number;
+			background?: string;
+		}[],
+	) {
+		return this.call<RenderResult & { files: Uint8Array[] }>({
+			op: "encode",
+			args,
+			encodings,
+		});
+	}
+
+	/**
+	 * A PDF built one page per call (pdfBegin, pdfPage per card, pdfFinish),
+	 * so an export can stop between cards.
+	 */
+	pdfBegin() {
+		return this.call<{ pages: number }>({ op: "pdfBegin" });
+	}
+
+	pdfPage(args: {
+		set: string;
+		card: number;
+		date: string;
+		now: string;
+		crop_marks: boolean;
+		/**
+		 * Pixels per canvas pixel: of the page image (default 1), or with
+		 * `vector` of the parts that stay pixels (default 2).
+		 */
+		scale?: number;
+		/** Draw the page as vectors instead of as an image. */
+		vector?: boolean;
+	}) {
+		return this.call<{ pages: number; diagnostics: Diagnostic[] }>({
+			op: "pdfPage",
+			args,
+		});
+	}
+
+	pdfFinish() {
+		return this.call<{ pages: number; bin: Uint8Array }>({ op: "pdfFinish" });
+	}
+
+	/** One card as a vector SVG file. */
+	svg(args: SvgArgs) {
+		return this.call<SvgResult>({ op: "svg", args });
 	}
 
 	renderAll(

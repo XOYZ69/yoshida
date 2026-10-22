@@ -38,6 +38,6 @@ read = ["docs/examples.md", "docs/example-board-game.md"]
 
 yoshida turns a **design** (layers, parameters and expressions in a JSON file) and a table of **card data** into finished card images. One core renders everything, and three front ends use it: a command-line tool, a visual editor that runs in the browser, and a small server.
 
-This documentation covers version 0.6.1 of the tool and version 1 of the file format.
+This documentation covers version 0.6.2 of the tool and version 1 of the file format.
 
 > Looking for the old Python version? It lives on as [0.3.1-python](https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python).

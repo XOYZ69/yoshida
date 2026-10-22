@@ -14,8 +14,8 @@ const usage =
     \\  yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
     \\                            [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
     \\                            [--utc-offset HOURS] [--16bit] [--preview]
-    \\                            [--offline] [--pdf] [--crop-marks]
-    \\                            [--format text|json]
+    \\                            [--offline] [--pdf] [--crop-marks] [--svg]
+    \\                            [--vector] [--scale N] [--format text|json]
     \\  yoshida fmt    <project or file>  [--check]
     \\  yoshida version
     \\
@@ -26,6 +26,12 @@ const usage =
     \\        --offline turns that off. --pdf writes <out>/<set>.pdf instead,
     \\        one page per card; --crop-marks adds a margin with crop marks
     \\        at the trim line (canvas.bleed inside the edge).
+    \\        --svg writes <out>/<set>/<card id>.svg, a vector file, instead of
+    \\        a PNG. --pdf --vector draws the PDF pages as vectors (sharp at
+    \\        any zoom) instead of as images.
+    \\        --scale N (1 to 4) renders PNGs and PDF images at N times the
+    \\        canvas size, at the same print size. With --svg or --vector it
+    \\        sets the resolution of the parts that stay pixels (default 2).
     \\clock   --now is the UTC instant the cards are rendered at (render.now,
     \\        render.date, render.time). Without --now or --date it is the
     \\        current UTC time; --date alone pins the local date at midnight.
@@ -53,6 +59,9 @@ const Args = struct {
     check: bool = false,
     pdf: bool = false,
     crop_marks: bool = false,
+    scale: ?[]const u8 = null,
+    svg: bool = false,
+    vector: bool = false,
 };
 
 pub fn main(init: std.process.Init) !u8 {
@@ -89,6 +98,14 @@ pub fn main(init: std.process.Init) !u8 {
         try err.print(usage, .{ y.version, y.format_version });
         return 2;
     }
+    if (args.svg and args.pdf) {
+        try err.print("error: --svg and --pdf cannot be used together\n", .{});
+        return 2;
+    }
+    if (args.vector and !args.pdf) {
+        try err.print("error: --vector goes with --pdf (--svg is always a vector file)\n", .{});
+        return 2;
+    }
     if (args.now) |n| if (!validUtcInstant(n)) {
         try err.print("error: --now must be a UTC instant like 2026-10-15T09:30:00Z, got '{s}'\n", .{n});
         return 2;
@@ -99,6 +116,18 @@ pub fn main(init: std.process.Init) !u8 {
             try err.print("error: --utc-offset must be a number of hours from -14 to 14, got '{s}'\n", .{s});
             return 2;
         };
+    }
+    // Bitmap pixels per canvas pixel: of the whole image for PNG and image
+    // PDF output (default 1), of the parts that stay pixels for --svg and
+    // --vector (default 2).
+    var scale: ?f64 = null;
+    if (args.scale) |s| {
+        const k = std.fmt.parseFloat(f64, s) catch -1;
+        if (!(k >= 1 and k <= 4)) {
+            try err.print("error: --scale must be a number from 1 to 4, got '{s}'\n", .{s});
+            return 2;
+        }
+        scale = k;
     }
     // One clock for the whole run: the current UTC instant unless the
     // render is pinned with --date alone (then the date is local midnight).
@@ -161,7 +190,38 @@ pub fn main(init: std.process.Init) !u8 {
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
                 const errors_before = diags.errorCount();
-                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview }, &diags)) orelse continue;
+                if (args.pdf and args.vector) {
+                    var scene = y.vector.Scene.init(gpa);
+                    defer scene.deinit();
+                    scene.raster_scale = @floatCast(scale orelse 2);
+                    if (!try y.render.renderVector(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview }, &scene, &diags)) continue;
+                    try pdf.?.addVector(&scene, args.crop_marks);
+                    pdf_pages += 1;
+                    if (diags.errorCount() > errors_before) pdf_errors = true;
+                    continue;
+                }
+                if (args.svg) {
+                    var scene = y.vector.Scene.init(gpa);
+                    defer scene.deinit();
+                    scene.raster_scale = @floatCast(scale orelse 2);
+                    if (!try y.render.renderVector(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview }, &scene, &diags)) continue;
+                    const card_errors = diags.errorCount() - errors_before;
+                    const svg = try y.svg.write(gpa, &scene);
+                    defer gpa.free(svg);
+                    const file = try std.fmt.allocPrint(arena, "{s}/{s}.svg", .{ dir, card.id });
+                    Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = svg }) catch |e| {
+                        try err.print("error: cannot write '{s}': {s}\n", .{ file, @errorName(e) });
+                        return 1;
+                    };
+                    rendered += 1;
+                    try rendered_files.append(arena, file);
+                    if (card_errors > 0) try failed_files.append(arena, file);
+                    if (args.json) {} else if (card_errors > 0) {
+                        try out.print("wrote {s} ({d} x {d}) with {d} error(s): parts of the card are missing\n", .{ file, scene.width, scene.height, card_errors });
+                    } else try out.print("wrote {s} ({d} x {d})\n", .{ file, scene.width, scene.height });
+                    continue;
+                }
+                var bmp = (try y.render.renderCard(gpa, &assets, set, i, .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview, .scale = scale orelse 1 }, &diags)) orelse continue;
                 const card_errors = diags.errorCount() - errors_before;
                 defer bmp.deinit(gpa);
                 if (args.crop_marks) {
@@ -281,6 +341,14 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
                 a.crop_marks = true;
                 continue;
             }
+            if (std.mem.eql(u8, name, "svg")) {
+                a.svg = true;
+                continue;
+            }
+            if (std.mem.eql(u8, name, "vector")) {
+                a.vector = true;
+                continue;
+            }
             if (std.mem.eql(u8, name, "help")) {
                 a.command = "help";
                 continue;
@@ -292,7 +360,7 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             if (i + 1 >= argv.len) return error.MissingOptionValue;
             i += 1;
             const v = argv[i];
-            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "format")) {
+            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "scale")) a.scale = v else if (std.mem.eql(u8, name, "format")) {
                 if (std.mem.eql(u8, v, "json")) a.json = true else if (!std.mem.eql(u8, v, "text")) return error.UnknownFormat;
             } else return error.UnknownOption;
         } else if (std.mem.eql(u8, s, "-h")) {
