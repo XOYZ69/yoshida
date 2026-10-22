@@ -10,6 +10,9 @@
 	--fg: light-dark(#22201c, #efe9dd);
 	--muted: light-dark(#6b655a, #a99f8e);
 	--line: light-dark(#e3dccd, #36312a);
+	/* Edges of controls that must stand out (dropdown buttons, switch tracks),
+	   at least 3:1 against --bg and --bg-code in both themes (editor only). */
+	--line-strong: light-dark(#928d83, #716c63);
 	--hover: light-dark(#f1ebdf, #2b2721);
 	--sel: light-dark(#e2e8f8, #2b3550);
 	--accent: light-dark(#3b6cf6, #6e93ff);
@@ -281,11 +284,12 @@ body.dragging-ui {
 	width: 28px;
 	height: 16px;
 	border-radius: 8px;
-	background: var(--line);
+	background: var(--line-strong);
 	position: relative;
 	cursor: pointer;
 	transition: background 0.15s;
 }
+/* The knob is white in both themes, so it shows on the grey and the accent track. */
 .switch input::after {
 	content: "";
 	position: absolute;
@@ -294,7 +298,7 @@ body.dragging-ui {
 	width: 12px;
 	height: 12px;
 	border-radius: 50%;
-	background: var(--bg);
+	background: var(--on-accent);
 	box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 	transition: transform 0.15s;
 }

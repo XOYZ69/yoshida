@@ -196,21 +196,16 @@ function sampleFont(family: string): string {
     max-width: 100%;
     text-align: left;
     padding: 3px 8px;
-    background: var(--bg-code);
+    /* Raised, with an edge of at least 3:1, so a dropdown does not look like
+       a text field (fields are sunken: --bg-code with a --line hairline). */
+    background: var(--hover);
+    border-color: var(--line-strong);
     transition:
       border-color 0.12s,
       background 0.12s;
   }
   .select:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--fg) 28%, var(--line));
-  }
-  .select.open {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
-  }
-  .select.open .chev {
-    transform: rotate(180deg);
-    color: var(--accent);
+    border-color: color-mix(in srgb, var(--fg) 55%, var(--line));
   }
   /* Toolbar picker: a caption and the value inside one button. */
   .select.captioned {
@@ -219,10 +214,12 @@ function sampleFont(family: string): string {
     padding: 0 10px;
     gap: 8px;
     background: var(--bg);
+    border-color: var(--line);
     font-weight: 500;
   }
   .select.captioned:hover:not(:disabled) {
     background: var(--hover);
+    border-color: color-mix(in srgb, var(--fg) 28%, var(--line));
   }
   .cap {
     flex: none;
@@ -246,6 +243,19 @@ function sampleFont(family: string): string {
     font-size: 11px;
     color: var(--muted);
     background: var(--bg);
+    border-color: var(--line);
+  }
+  .select.compact:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--fg) 28%, var(--line));
+  }
+  /* After the variants, so open toolbar and compact dropdowns show the accent edge too. */
+  .select.open {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .select.open .chev {
+    transform: rotate(180deg);
+    color: var(--accent);
   }
   .text {
     flex: 1;
