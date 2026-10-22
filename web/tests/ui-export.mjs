@@ -1,7 +1,8 @@
 // End-to-end checks for exporting: the quick PNG / ZIP / PDF buttons, and
 // the export dialog (one card, a design, all designs; PNG 8 and 16 bit,
 // JPEG, WebP, SVG, vector and image PDF with and without crop marks;
-// resolution; its keyboard handling and remembered settings).
+// resolution; its keyboard handling and remembered settings; the Render on
+// server switch, with a mocked server).
 //
 //   node tests/ui-export.mjs [http://localhost:4173/]
 import { readFile } from "node:fs/promises";
@@ -506,6 +507,90 @@ ok(
 			await p.locator(dialog).innerText(),
 		),
 	disabled,
+);
+ok(
+	"without a server the dialog has no Render on server switch",
+	(await p.locator(`${dialog} label.switch`).count()) === 0 &&
+		/Everything is rendered in this browser/.test(
+			await p.locator(dialog).innerText(),
+		),
+);
+await p.keyboard.press("Escape");
+
+// A server that renders (mocked): the dialog has the Render on server switch,
+// the same setting as the toolbar switch, and whole designs go to the server.
+let renderBody = null;
+await p.route("**/api/capabilities", (r) =>
+	r.fulfill({
+		contentType: "application/json",
+		body: JSON.stringify({
+			version: "test",
+			format: 1,
+			render: true,
+			max_cards: 5000,
+			max_body_mb: 64,
+		}),
+	}),
+);
+await p.route("**/api/render/progress*", (r) =>
+	r.fulfill({ contentType: "application/json", body: '{"found":false}' }),
+);
+await p.route("**/api/render", (r) => {
+	renderBody = JSON.parse(r.request().postData() ?? "{}");
+	r.fulfill({ contentType: "application/pdf", body: "%PDF-1.7\n%%EOF\n" });
+});
+await p.goto(base);
+await rendered();
+const toolbarSwitch = p.locator('.exports label.switch input[role="switch"]');
+const dialogSwitch = p.locator(`${dialog} label.switch input[role="switch"]`);
+const whereNote = () =>
+	p
+		.locator(`${dialog} fieldset:has(legend:text-is("Where")) .note`)
+		.innerText();
+await openDialog();
+ok(
+	"with a server the dialog has the switch, off like the toolbar's",
+	(await dialogSwitch.count()) === 1 &&
+		!(await dialogSwitch.isChecked()) &&
+		/Render on server/.test(
+			await p.locator(`${dialog} label.switch`).innerText(),
+		) &&
+		/Everything is rendered in this browser/.test(await whereNote()),
+);
+await choose("design", ["PDF"], 2);
+await pick("Pages", "Vector");
+await dialogSwitch.check();
+ok(
+	"switching it on in the dialog switches the toolbar too",
+	(await toolbarSwitch.isChecked()) &&
+		/Rendered on the server/.test(await whereNote()),
+	await whereNote(),
+);
+await p.check(`${dialog} input[name=export-scope][value=card]`);
+ok(
+	"one card still renders in the browser, and the dialog says so",
+	/One card always renders in this browser/.test(await whereNote()),
+	await whereNote(),
+);
+await p.check(`${dialog} input[name=export-scope][value=design]`);
+f = await exportNow();
+ok(
+	"the design's PDF is rendered on the server",
+	f.name.endsWith(".pdf") &&
+		renderBody?.format === "pdf" &&
+		renderBody?.vector === true &&
+		renderBody?.scale === 2,
+	`${f.name} ${JSON.stringify({ format: renderBody?.format, vector: renderBody?.vector, scale: renderBody?.scale })}`,
+);
+await p
+	.waitForSelector(".progress", { state: "detached", timeout: 10000 })
+	.catch(() => {});
+await toolbarSwitch.uncheck();
+await openDialog();
+ok(
+	"the toolbar switch shows in the dialog",
+	!(await dialogSwitch.isChecked()) &&
+		/Everything is rendered in this browser/.test(await whereNote()),
 );
 await p.keyboard.press("Escape");
 

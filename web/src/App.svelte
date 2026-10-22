@@ -4338,7 +4338,8 @@
 		card={cardIndex}
 		canvas={exportCanvas}
 		webp={webpOk}
-		server={onServer}
+		canServer={!!server?.render}
+		bind:useServer
 		onexport={exportWith}
 		onclose={closeExport}
 	/>

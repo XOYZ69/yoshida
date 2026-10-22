@@ -3,6 +3,7 @@
 // resolution. A modal like the ask/confirm dialogs: it is a short decision
 // that ends in one action, and the export's progress window follows it.
 import ColorPicker from "./ColorPicker.svelte";
+import Icon from "./Icon.svelte";
 import Select from "./Select.svelte";
 import {
 	type ExportFormat,
@@ -25,7 +26,8 @@ let {
 	card,
 	canvas,
 	webp,
-	server,
+	canServer,
+	useServer = $bindable(false),
 	onexport,
 	onclose,
 }: {
@@ -39,8 +41,10 @@ let {
 	canvas: { w: number; h: number };
 	/** Whether this browser can encode WebP; null while checking. */
 	webp: boolean | null;
-	/** Whether Render on server is on (whole designs as PNG, SVG and PDF). */
-	server: boolean;
+	/** Whether the server this editor comes from can render (shows the switch). */
+	canServer: boolean;
+	/** Render on server (whole designs as PNG, SVG and PDF), the same setting as the toolbar switch. */
+	useServer?: boolean;
 	onexport: (s: ExportSettings) => void;
 	onclose: () => void;
 } = $props();
@@ -84,9 +88,11 @@ const listOf = (fs: ExportFormat[]) => {
 		? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
 		: (names[0] ?? "");
 };
+const server = $derived(canServer && useServer);
 const where = $derived.by(() => {
-	if (!server || s.scope === "card")
-		return "Everything is rendered in this browser.";
+	if (!server) return "Everything is rendered in this browser.";
+	if (s.scope === "card")
+		return "One card always renders in this browser; the server renders whole designs.";
 	// JPEG and WebP are encoded by the browser, so they render here.
 	const there = formats.filter((f) => f !== "jpeg" && f !== "webp");
 	const here = formats.filter((f) => f === "jpeg" || f === "webp");
@@ -256,7 +262,19 @@ $effect(() => {
       {#if !fits}<p class="note warn" role="alert">Over the limit of {MAX_SIDE} pixels per side; choose a lower resolution.</p>{/if}
     </fieldset>
 
-    <p class="note">{where}</p>
+    {#if canServer}
+      <fieldset>
+        <legend>Where</legend>
+        <label class="switch" title="Whole designs as PNG, SVG and PDF are rendered by the yoshida server this editor comes from, with all its CPU cores. JPEG, WebP and a single card render in this browser. The same setting as the switch next to the export buttons.">
+          <input type="checkbox" role="switch" bind:checked={useServer} />
+          <Icon name="cloud" />
+          <span>Render on server</span>
+        </label>
+        <p class="note">{where}</p>
+      </fieldset>
+    {:else}
+      <p class="note">{where}</p>
+    {/if}
     <p class="summary" aria-live="polite">{planSummary(plan)}</p>
 
     <div class="actions">

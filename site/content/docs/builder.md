@@ -50,7 +50,7 @@ While an export or a check runs, a progress window covers the editor (the editor
 
 One file (one card in one format, or one PDF) downloads as it is. Anything more is one ZIP: card images at `<design>/<card id>.<ext>` and PDFs at `<design>.pdf`, named `<project>-<design>.zip` for one design and `<project>.zip` for all designs. The line above the **Export** button says what will be written, for example "40 cards × 2 formats, 80 files in poker-numbers.zip".
 
-JPEG and WebP are made by the browser's own image encoders, from the pixels yoshida renders. With **Render on server** on, PNG, SVG and PDF files of whole designs are rendered on the server, one request per design and format; JPEG and WebP still render in the browser (the server has no JPEG or WebP encoder, and downloading PNGs only to convert them would cost more than it saves). **This card** always renders in the browser. The dialog says what runs where.
+JPEG and WebP are made by the browser's own image encoders, from the pixels yoshida renders. With **Render on server** on, PNG, SVG and PDF files of whole designs are rendered on the server, one request per design and format; JPEG and WebP still render in the browser (the server has no JPEG or WebP encoder, and downloading PNGs only to convert them would cost more than it saves). **This card** always renders in the browser. When the editor comes from `yoshida-server` with rendering on, the dialog has the **Render on server** switch under **Where**; it is the same setting as the switch next to the export buttons. The dialog says what runs where.
 
 Hovering a button or a field shows what it does in a tooltip drawn like the expression suggestions.
 
