@@ -74,6 +74,8 @@ export type RenderResult = {
 	canvas_height?: number;
 	/** canvas.dpi times the scale; 0 when the design has no dpi. */
 	dpi?: number;
+	/** canvas.bleed times the scale, in bitmap pixels. */
+	bleed?: number;
 	diagnostics: Diagnostic[];
 	missing_urls: string[];
 	/** Layer bounds, when the request asked for `layout`. */

@@ -141,12 +141,17 @@
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import ExportDialog from "./lib/ui/ExportDialog.svelte";
 	import {
+		type CanvasInfo,
+		canEncodeLosslessWebp,
 		canEncodeWebp,
 		cleanSettings,
 		designHasBleed,
+		designOutputs,
 		type ExportFormat,
 		type ExportSettings,
 		formatLabels,
+		formatScale,
+		hasBleed,
 		imagePath,
 		pdfPath,
 		type PlanSet,
@@ -2942,7 +2947,7 @@
 		);
 		busy = "Rendering PDF…";
 		try {
-			const bleed = isObj(doc?.canvas) && doc.canvas.bleed !== undefined;
+			const bleed = hasBleed(doc?.canvas);
 			run.step(0, `0 / ${n}`);
 			// Pages are rendered one by one, and each one reports back.
 			const per = fullCardEstimate();
@@ -3245,26 +3250,88 @@
 	let exportOpen = $state(false);
 	let exportButton: HTMLButtonElement | undefined = $state();
 	let exportSettings = $state(cleanSettings(loadPref(EXPORT_PREF, {})));
-	/** Whether this browser can write WebP; null until checked. */
+	/** Whether this browser can write WebP, and lossless WebP; null until checked. */
 	let webpOk = $state<boolean | null>(null);
+	let webpLosslessOk = $state<boolean | null>(null);
+	/** Each design's canvas (size, dpi and bleed), measured when the dialog opens. */
+	let exportCanvases = $state<Record<string, CanvasInfo>>({});
+	let exportMeasuring = $state(false);
 	const planSets = $derived<PlanSet[]>(
 		sets.map((x) => ({
 			name: x.name,
 			label: x.design_name,
 			ok: x.ok,
 			cards: x.cards.map((c) => c.id),
+			canvas: exportCanvases[x.name] ?? null,
 		})),
 	);
-	/** Canvas size for the dialog: the last render's, else the design's literal size. */
-	const exportCanvas = $derived(
-		lastRender?.canvas_width && lastRender.canvas_height
-			? { w: lastRender.canvas_width, h: lastRender.canvas_height }
-			: canvasSize,
-	);
+
+	/**
+	 * Measures the canvas of every design that can be exported: its size and
+	 * dpi can be expressions, so the core evaluates them, at a tiny scale and
+	 * without drawing a layer. The shown design is measured on the shown card.
+	 */
+	async function measureCanvases() {
+		const clock = renderClock();
+		const k = 1 / 64;
+		const out: Record<string, CanvasInfo> = {};
+		exportMeasuring = true;
+		try {
+			for (const x of sets) {
+				if (!x.ok || !x.cards.length) continue;
+				try {
+					const r = await engine.render({
+						set: x.name,
+						card: x.name === setName ? cardIndex : 0,
+						...clock,
+						preview: true,
+						format: "rgba",
+						scale: k,
+						only: [],
+					});
+					if (r.canvas_width && r.canvas_height)
+						out[x.name] = {
+							w: r.canvas_width,
+							h: r.canvas_height,
+							dpi: (r.dpi ?? 0) / k,
+							bleed: (r.bleed ?? 0) / k,
+						};
+				} catch {
+					// Not measured: the dialog shows its size as unknown.
+				}
+			}
+		} finally {
+			exportCanvases = out;
+			exportMeasuring = false;
+		}
+	}
 
 	function openExport() {
+		// Until the measurement is back, the shown design's canvas comes from
+		// its last render and its literal dpi and bleed.
+		const dpi = getPath(doc ?? undefined, ["canvas", "dpi"]);
+		const literal = dpi === undefined ? 0 : literalNumber(dpi);
+		const bleed = getPath(doc ?? undefined, ["canvas", "bleed"]);
+		if (
+			lastRender?.canvas_width &&
+			lastRender.canvas_height &&
+			literal !== undefined &&
+			!exportCanvases[setName]
+		)
+			exportCanvases = {
+				...exportCanvases,
+				[setName]: {
+					w: lastRender.canvas_width,
+					h: lastRender.canvas_height,
+					dpi: literal,
+					bleed: (bleed === undefined ? 0 : literalNumber(bleed)) ?? 0,
+				},
+			};
 		exportOpen = true;
+		measureCanvases();
 		if (webpOk === null) canEncodeWebp().then((ok) => (webpOk = ok));
+		if (webpLosslessOk === null)
+			canEncodeLosslessWebp().then((ok) => (webpLosslessOk = ok));
 	}
 
 	function closeExport() {
@@ -3299,7 +3366,19 @@
 		const plan = planExport(st, projectName, planSets, setName, cardIndex);
 		if (!plan.files) return;
 		const clock = renderClock();
-		const scale = st.scale;
+		// With a target dpi, each design renders at the scale that gives it
+		// that dpi. The dialog measures the canvases when it opens; an export
+		// started before that is done waits for it.
+		if (
+			st.resolution === "dpi" &&
+			plan.targets.some((t) => !exportCanvases[t.set])
+		)
+			await measureCanvases();
+		const scales = new Map(
+			designOutputs(plan, planSets, st).map((o) => [o.set, o.scale]),
+		);
+		const scaleOf = (set: string) => scales.get(set) ?? st.scale;
+		const oneScale = new Set(scales.values()).size === 1;
 		// Whole designs go to the server as one request per set and format;
 		// JPEG and WebP are encoded by the browser, so they render here.
 		const viaServer = onServer && st.scope !== "card";
@@ -3394,7 +3473,7 @@
 							set: t.set,
 							...clock,
 							format: f === "png" && st.pngDepth === 16 ? "png16" : f,
-							scale,
+							scale: scaleOf(t.set),
 							...(f === "png" ? { compression: st.pngCompression } : {}),
 							...(f === "pdf"
 								? {
@@ -3404,7 +3483,7 @@
 								: {}),
 						};
 						run.log(
-							`Design ${ti + 1} of ${plan.targets.length}: '${info.design_name}' as ${formatLabels[f]} on the server`,
+							`Design ${ti + 1} of ${plan.targets.length}: '${info.design_name}' as ${formatLabels[f]} at ${formatScale(scaleOf(t.set))} on the server`,
 						);
 						const body = serverBody(run, req, fj);
 						if (!body) return;
@@ -3434,9 +3513,19 @@
 			}
 			if (passes) {
 				run.step(at.local, `0 / ${units}`);
-				run.log(`Rendering ${plan.cards} card(s) at ${scale}x in this browser`);
+				run.log(
+					oneScale
+						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in this browser`
+						: `Rendering ${plan.cards} card(s) in this browser, each design at the scale for ${st.dpi} dpi`,
+				);
+				// Time grows with the pixels: the scale squared, per card.
+				const area =
+					plan.targets.reduce(
+						(a, t) => a + t.cards.length * scaleOf(t.set) ** 2,
+						0,
+					) / Math.max(1, plan.cards);
 				const per = fullCardEstimate();
-				run.perUnit(per ? per * scale * scale : null);
+				run.perUnit(per ? per * area : null);
 				let done = 0;
 				const tick = () => {
 					done++;
@@ -3447,6 +3536,9 @@
 				for (const t of plan.targets) {
 					const info = sets.find((x) => x.name === t.set);
 					if (!info) continue;
+					const scale = scaleOf(t.set);
+					if (!oneScale)
+						run.log(`'${info.design_name}' at ${formatScale(scale)}`);
 					const base = { set: t.set, ...clock, preview: false, scale };
 					for (const i of t.cards) {
 						const id = info.cards[i].id;
@@ -3514,7 +3606,7 @@
 						if (r.bin.length) out[pdfPath(t.set)] = r.bin;
 					}
 				}
-				if (scale === 1 && localPng && passes === 1)
+				if (area === 1 && localPng && passes === 1)
 					perCardMs = (Date.now() - t0) / Math.max(1, plan.cards);
 				run.log(`Rendered in ${formatMs(Date.now() - t0)}`);
 			}
@@ -4336,9 +4428,10 @@
 		sets={planSets}
 		current={setName}
 		card={cardIndex}
-		canvas={exportCanvas}
 		webp={webpOk}
+		webpLossless={webpLosslessOk}
 		canServer={!!server?.render}
+		measuring={exportMeasuring}
 		bind:useServer
 		onexport={exportWith}
 		onclose={closeExport}

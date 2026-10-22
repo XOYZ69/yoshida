@@ -67,13 +67,14 @@ The answer's JSON is:
 	"canvas_width": 842,
 	"canvas_height": 1228,
 	"dpi": 300,
+	"bleed": 0,
 	"diagnostics": [],
 	"missing_urls": [],
 	"layout": []
 }
 ```
 
-and the binary result holds the pixels or the PNG file. `width` and `height` are the bitmap's size (the canvas times `scale`), `dpi` is `canvas.dpi` times `scale` (0 when the design has none). `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
+and the binary result holds the pixels or the PNG file. `width` and `height` are the bitmap's size (the canvas times `scale`), `dpi` is `canvas.dpi` times `scale` (0 when the design has none) and `bleed` is `canvas.bleed` times `scale`, in bitmap pixels. `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
 
 ### `svg`
 

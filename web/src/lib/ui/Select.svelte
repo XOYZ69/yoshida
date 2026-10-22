@@ -77,7 +77,13 @@ function sampleFont(family: string): string {
     if (disabled || !button) return;
     const r = button.getBoundingClientRect();
     // Wide enough for the longest option (label and detail), within reason.
-    const longest = Math.max(0, ...opts.map((o) => (o.label ?? o.value).length * 7.5 + (o.detail ? o.detail.length * 6.5 + 12 : 0) + (o.sample ? o.sample.text.length * 8 + 12 : 0)));
+    // A label keeps at least 40% of its row, so a detail longer than its
+    // label needs the rest of the row to itself.
+    const longest = Math.max(0, ...opts.map((o) => {
+      const detail = o.detail ? o.detail.length * 6.5 + 12 : 0;
+      const sample = o.sample ? o.sample.text.length * 8 + 12 : 0;
+      return Math.max((o.label ?? o.value).length * 7.5 + detail + sample, detail / 0.6);
+    }));
     const width = Math.min(Math.max(r.width, 180, longest + 48), 440, window.innerWidth - 16);
     const p = placeNear(r, width, Math.min(320, opts.length * 30 + (canSearch ? 40 : 8)));
     pos = { ...p, maxHeight: Math.min(p.maxHeight, 360), width };

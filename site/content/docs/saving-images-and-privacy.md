@@ -56,7 +56,7 @@ Image PDF files (the editor's **PDF** button, the export dialog's PDF with **Pag
 
 ### Resolution
 
-Exports can be rendered at 2x, 3x or 4x the design size (the export dialog's **Resolution**, `yoshida render --scale`, the server's `"scale"`) for sharper print or zoom. Text, shapes, strokes, images and effects are drawn at that size, not scaled up afterwards. The printed size stays the same: PNG and JPEG files store the design's dpi times the resolution, and a PDF page keeps the size it has at 1x (without a `canvas.dpi` too). The sharpen, detail and edge filters work on neighbouring pixels, so at a higher resolution they look a little finer. SVG files and vector PDFs are sharp at any zoom anyway; they use the resolution only for the parts that stay pixels (see below), and 2x when none is given.
+Exports can be rendered at up to 4x the design size, in between too (the export dialog's **Resolution**, by scale or by a target dpi; `yoshida render --scale`; the server's `"scale"`), for sharper print or zoom. Text, shapes, strokes, images and effects are drawn at that size, not scaled up afterwards. The printed size stays the same: PNG and JPEG files store the design's dpi times the resolution, and a PDF page keeps the size it has at 1x (without a `canvas.dpi` too). The sharpen, detail and edge filters work on neighbouring pixels, so at a higher resolution they look a little finer. SVG files and vector PDFs are sharp at any zoom anyway; they use the resolution only for the parts that stay pixels (see below), and 2x when none is given.
 
 ### SVG and vector PDF
 

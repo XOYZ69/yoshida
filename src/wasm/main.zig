@@ -8,7 +8,8 @@
 //!   scale is bitmap pixels per canvas pixel: below 1 for the preview, above
 //!   1 for a larger export (each side at most 10000 pixels); compression is
 //!   the PNG deflate level (default "default"). The result has the bitmap's
-//!   "dpi" (canvas.dpi times scale, 0 when the design has none).
+//!   "dpi" (canvas.dpi times scale, 0 when the design has none) and "bleed"
+//!   (canvas.bleed times scale, in bitmap pixels).
 //!   {"op":"svg","set":"name","card":0,"date":"...","scale":2}: the card as a
 //!   vector SVG (result_bin), with {"width","height","diagnostics","missing_urls"}.
 //!   "scale" (1 to 4, default 2) sets the resolution of the few parts that
@@ -218,6 +219,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         var canvas_w: u32 = 0;
         var canvas_h: u32 = 0;
         var dpi: f64 = 0;
+        var bleed: f64 = 0;
         if (proj.findSet(set_name)) |set| {
             if (try y.render.renderCard(gpa, a, set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .preview = preview, .outline = if (want_layout) &outline else null, .scale = scale, .filter = filter }, &diags)) |bmp_const| {
                 var bmp = bmp_const;
@@ -227,6 +229,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
                 canvas_w = bmp.canvas_w;
                 canvas_h = bmp.canvas_h;
                 dpi = bmp.dpi;
+                bleed = bmp.bleed;
                 if (std.mem.eql(u8, format, "png") or std.mem.eql(u8, format, "png16")) {
                     result_bin = try y.raster.encodePngLevel(gpa, &bmp, std.mem.eql(u8, format, "png16"), compression);
                 } else {
@@ -237,7 +240,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         }
-        try w.print("{{\"width\":{d},\"height\":{d},\"canvas_width\":{d},\"canvas_height\":{d},\"dpi\":{d},\"diagnostics\":", .{ width, height, canvas_w, canvas_h, dpi });
+        try w.print("{{\"width\":{d},\"height\":{d},\"canvas_width\":{d},\"canvas_height\":{d},\"dpi\":{d},\"bleed\":{d},\"diagnostics\":", .{ width, height, canvas_w, canvas_h, dpi, bleed });
         try diags.writeJson(w);
         try w.writeAll(",\"missing_urls\":");
         try y.api.writeMissingUrls(w, a);

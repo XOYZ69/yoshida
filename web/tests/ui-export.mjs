@@ -1,8 +1,10 @@
 // End-to-end checks for exporting: the quick PNG / ZIP / PDF buttons, and
 // the export dialog (one card, a design, all designs; PNG 8 and 16 bit,
 // JPEG, WebP, SVG, vector and image PDF with and without crop marks; the
-// quality slider; resolution; its keyboard handling and remembered settings;
-// the Render on server switch, with a mocked server).
+// quality slider; the resolution slider and the target dpi, the pixel limit,
+// the trim size; its keyboard handling, the reasons Export is off and the
+// remembered settings; the Render on server switch, with a mocked server;
+// designs with and without a dpi, by the same dpi or the same scale).
 //
 //   node tests/ui-export.mjs [http://localhost:4173/]
 import { readFile } from "node:fs/promises";
@@ -61,7 +63,10 @@ async function openDialog() {
 	await p.waitForSelector(dialog);
 }
 
-/** Sets the dialog: scope, formats (others unchecked) and the resolution. */
+/**
+ * Sets the dialog: scope, formats (others unchecked) and the resolution
+ * (opened first when it is folded for vector formats; null leaves it).
+ */
 async function choose(scope, formats, scale = 1) {
 	await p.check(`${dialog} input[name=export-scope][value=${scope}]`);
 	for (const f of ["PNG", "JPEG", "WebP", "SVG", "PDF"]) {
@@ -69,9 +74,10 @@ async function choose(scope, formats, scale = 1) {
 		if (await box.isDisabled()) continue;
 		await box.setChecked(formats.includes(f));
 	}
-	await p.click(
-		`${dialog} [aria-label=Resolution] button:has-text("${scale}x")`,
-	);
+	if (scale === null) return;
+	const change = p.locator(`${dialog} .fold button`);
+	if (await change.count()) await change.click();
+	await p.locator(`${dialog} input[aria-label=Resolution]`).fill(String(scale));
 }
 
 /** Picks the option labelled `text` in the dialog's dropdown `name`. */
@@ -82,9 +88,16 @@ async function pick(name, text) {
 		.click();
 }
 
-/** Runs the export with Enter and waits for the download. */
+const exportOff = async () =>
+	(await p.getAttribute(`${dialog} button.primary`, "aria-disabled")) ===
+	"true";
+
+/** Runs the export with Enter (once the designs are measured) and waits for the download. */
 const exportNow = () =>
 	download(async () => {
+		await p.waitForSelector(
+			`${dialog} button.primary:not([aria-disabled="true"])`,
+		);
 		await p.locator(`${dialog} input[name=export-scope]:checked`).focus();
 		await p.keyboard.press("Enter");
 	});
@@ -163,6 +176,19 @@ ok(
 		dialog,
 	),
 );
+await p.keyboard.press("Shift+Tab");
+const afterShiftTab = await p.evaluate(
+	(sel) => document.querySelector(sel)?.contains(document.activeElement),
+	dialog,
+);
+await p.keyboard.press("Tab");
+ok(
+	"Shift+Tab from the first control stays in the dialog",
+	afterShiftTab &&
+		(await p.evaluate(
+			() => document.activeElement?.getAttribute("name") === "export-scope",
+		)),
+);
 await p.keyboard.press("Escape");
 await p.waitForSelector(dialog, { state: "detached" });
 await p.waitForTimeout(100);
@@ -238,14 +264,105 @@ ok(
 	`${f.data[13]} ${f.data.readUInt16BE(14)}`,
 );
 
+// A target dpi: the dpi field sets the slider, and the slider the field.
+const scaleSlider = p.locator(`${dialog} input[aria-label=Resolution]`);
+const dpiField = p.locator(`${dialog} input[aria-label="Target dpi"]`);
+const scaleShown = () => p.locator(`${dialog} output.k`).innerText();
+const summary = () => p.locator(`${dialog} .summary`).innerText();
+await openDialog();
+await choose("card", ["JPEG"], 1);
+const marks = await p.$$eval(`${dialog} .ticks span`, (els) =>
+	els.map((e) => e.textContent).join(" "),
+);
+ok(
+	"the slider's marks show dpi for a design with one",
+	marks === "300 600 900 1200",
+	marks,
+);
+const at1 = await dpiField.inputValue();
+await dpiField.fill("600");
+const at600 = `${await scaleSlider.inputValue()} ${await scaleShown()}`;
+await dpiField.fill("450");
+const at450 = `${await scaleShown()} ${/1125 × 1575 px/.test(await p.locator(dialog).innerText())}`;
+ok(
+	"the dpi field shows the design's dpi and sets the scale",
+	at1 === "300" && at600 === "2 2x" && at450 === "1.5x true",
+	`${at1} | ${at600} | ${at450}`,
+);
+f = await exportNow();
+const size450 = jpegSize(f.data);
+ok(
+	"one card as JPEG at 450 dpi: 1.5x, and 450 dpi in the file",
+	size450?.w === 1125 && size450?.h === 1575 && f.data.readUInt16BE(14) === 450,
+	`${JSON.stringify(size450)} ${f.data.readUInt16BE(14)}`,
+);
+await openDialog();
+const reopened = `${await dpiField.inputValue()} ${await scaleShown()}`;
+await choose("card", ["PNG"], 1.5);
+await scaleSlider.focus();
+await p.keyboard.press("ArrowRight");
+const arrow = await scaleShown();
+const arrowDpi = await dpiField.inputValue();
+await p.keyboard.press("PageUp");
+const pageUp = await scaleShown();
+await p.keyboard.press("PageDown");
+const pageDown = await scaleShown();
+ok(
+	"the target dpi is kept; the slider moves in quarter steps, PageUp and PageDown to whole multiples",
+	reopened === "450 1.5x" &&
+		arrow === "1.75x" &&
+		arrowDpi === "525" &&
+		pageUp === "2x" &&
+		pageDown === "1x",
+	`${reopened} | ${arrow} ${arrowDpi} ${pageUp} ${pageDown}`,
+);
+await dpiField.fill("2000");
+const rangeNote = await p.locator(`${dialog} #export-dpi-range`).innerText();
+await dpiField.press("Tab");
+ok(
+	"a dpi beyond 4x says the range and comes back to 4x (1200 dpi)",
+	/300 to 1200 dpi \(1x to 4x\)/.test(rangeNote) &&
+		(await dpiField.inputValue()) === "1200" &&
+		(await scaleShown()) === "4x",
+	`${rangeNote} | ${await dpiField.inputValue()} ${await scaleShown()}`,
+);
+await dpiField.fill("150");
+await dpiField.press("Enter");
+const afterFirstEnter = `${await p.isVisible(dialog)} ${await dpiField.inputValue()}`;
+await dpiField.fill("");
+const emptyReason = await summary();
+const emptyOff = await exportOff();
+await dpiField.press("Tab");
+ok(
+	"Enter on a dpi out of range shows the nearest first; an empty field turns Export off",
+	afterFirstEnter === "true 300" &&
+		/Type a dpi from 300 to 1200 dpi/.test(emptyReason) &&
+		emptyOff &&
+		(await dpiField.inputValue()) === "300" &&
+		!(await exportOff()),
+	`${afterFirstEnter} | ${emptyReason} ${emptyOff}`,
+);
+ok(
+	"a format's settings show only while it is chosen",
+	(await p.locator(`${dialog} button[aria-label="Bit depth"]`).count()) === 1 &&
+		(await p.locator(`${dialog} [aria-label="JPEG quality"]`).count()) === 0 &&
+		/Small files, no transparency/.test(await p.locator(dialog).innerText()),
+);
+await p.locator(`${dialog} label.opt:has-text("PNG") input`).uncheck();
+ok(
+	"without a format Export is off and the footer says why",
+	(await summary()) === "Choose at least one format." && (await exportOff()),
+	await summary(),
+);
+await p.keyboard.press("Escape");
+
 // A design as PNG + JPEG in one ZIP.
 await openDialog();
 await choose("design", ["PNG", "JPEG"]);
 ok(
 	"summary for two formats",
-	(await p.locator(`${dialog} .summary`).innerText()) ===
-		"40 cards × 2 formats, 80 files in poker-numbers.zip",
-	await p.locator(`${dialog} .summary`).innerText(),
+	(await summary()) === "80 files in poker-numbers.zip: 40 PNG, 40 JPEG",
+	await summary(),
 );
 f = await exportNow();
 names = Object.keys(unzipSync(f.data));
@@ -282,7 +399,7 @@ const pdfWith = async (marks, pages = "Vector") => {
 	await openDialog();
 	await choose("design", ["PDF"]);
 	await pick("Crop marks", marks);
-	await pick("Pages", pages);
+	await pick("Pages as", pages);
 	return (await exportNow()).data;
 };
 const off = await pdfWith("Off");
@@ -324,12 +441,14 @@ ok(
 // 16-bit PNG at 2x, with the smallest compression.
 await openDialog();
 await choose("card", ["PNG"], 2);
-await pick("Bit depth", "16 bit");
-await pick("Compression", "Smallest");
-ok(
-	"the 16 bit hint is shown",
-	/PNG has no 10 bit mode/.test(await p.locator(dialog).innerText()),
+await p.click(`${dialog} button[aria-label="Bit depth"]`);
+const option16 = p.locator(
+	`${dialog} [role=listbox] [role=option]:has-text("16 bit")`,
 );
+const hint16 = await option16.innerText();
+await option16.click();
+await pick("Compression", "Smallest");
+ok("16 bit says what it is for", /smoother gradients/.test(hint16), hint16);
 f = await exportNow();
 info = pngInfo(f.data);
 ok(
@@ -376,12 +495,12 @@ ok(
 		(await p.isChecked(`${dialog} label.opt:has-text("WebP") input`)) &&
 		!(await p.isChecked(`${dialog} label.opt:has-text("PNG") input`)) &&
 		(await p.isChecked(`${dialog} label:has-text("Lossless") input`)) &&
-		(await p.innerText(`${dialog} button[aria-label="Bit depth"]`)) ===
-			"16 bit" &&
-		(await p.getAttribute(
-			`${dialog} [aria-label=Resolution] button:has-text("1x")`,
-			"aria-checked",
-		)) === "true",
+		(await scaleSlider.inputValue()) === "1" &&
+		(await p
+			.locator(`${dialog} label.opt:has-text("PNG") input`)
+			.setChecked(true)
+			.then(() => p.innerText(`${dialog} button[aria-label="Bit depth"]`))) ===
+			"16 bit",
 );
 await p.keyboard.press("Escape");
 
@@ -503,7 +622,8 @@ ok(
 );
 await p.keyboard.press("Escape");
 
-// A large canvas: resolutions over 10000 pixels a side are disabled.
+// A large canvas: over 10000 pixels a side, the dialog says so, Export is
+// off, and one click picks the highest resolution that fits.
 await p.click(".project-btn");
 await p.locator('.menu [role=menuitem]:has-text("board-game")').click();
 await rendered();
@@ -512,34 +632,89 @@ await p
 	.waitForSelector(".progress", { state: "detached", timeout: 5000 })
 	.catch(() => {});
 await openDialog();
-const scalesDisabled = () =>
-	p.$$eval(`${dialog} [aria-label=Resolution] button`, (bs) =>
-		JSON.stringify(bs.map((x) => x.disabled)),
-	);
+const limitWarning = p.locator(`${dialog} .note.warn[role=alert]`);
 await choose("card", ["PNG"], 2);
-let disabled = await scalesDisabled();
-ok(
-	"3x and 4x are disabled for a 4961 × 3508 canvas",
-	disabled === "[false,false,true,true]" &&
-		/9922 × 7016 px/.test(await p.locator(dialog).innerText()),
-	disabled,
+const at2 = await p.locator(`${dialog} .note.size`).innerText();
+const limitMark = Number(
+	await scaleSlider.evaluate((el) => el.style.getPropertyValue("--lim")),
 );
-await choose("card", ["SVG"], 2);
-disabled = await scalesDisabled();
+await choose("card", ["PNG"], 3);
+const warning = (await limitWarning.count())
+	? await limitWarning.innerText()
+	: "";
+const at3 = await p.locator(`${dialog} .note.size`).innerText();
+const overReason = await summary();
+const blocked = await exportOff();
+await limitWarning.locator('button:has-text("Use 2x")').click();
+await p.waitForTimeout(50);
 ok(
-	"vector files have no pixel limit: every resolution is offered",
-	disabled === "[false,false,false,false]" &&
-		/Vector files use it only for the parts that stay pixels/.test(
-			await p.locator(dialog).innerText(),
-		),
-	disabled,
+	"a 4961 × 3508 canvas at 3x is over the limit: Export is off, Use 2x fits it",
+	/^14883 × 10524 px/.test(at3) &&
+		/Over the limit of 10000 px on each side\. Use 2x, the largest that fits/.test(
+			warning,
+		) &&
+		/Over the limit of 10000 px on each side: lower the resolution/.test(
+			overReason,
+		) &&
+		blocked &&
+		(await scaleShown()) === "2x" &&
+		(await limitWarning.count()) === 0 &&
+		!(await exportOff()),
+	`${at3} | ${warning} | ${overReason} ${blocked} ${await scaleShown()}`,
 );
 ok(
-	"without a server the dialog has no Render on server switch",
+	"after the fix the focus is on the slider",
+	await p.evaluate(
+		() => document.activeElement?.getAttribute("aria-label") === "Resolution",
+	),
+);
+ok(
+	"the size line has the printed size and the trim size inside the bleed",
+	at2 === "9922 × 7016 px · prints at 420 × 297 mm, trim 414.1 × 291.1 mm",
+	at2,
+);
+ok(
+	"the slider marks the part of its track over the limit (from 10000 / 4961)",
+	Math.abs(limitMark - (10000 / 4961 - 1) / 3) < 1e-9,
+	String(limitMark),
+);
+await dpiField.fill("1000");
+await dpiField.press("Tab");
+const fixDpi = await limitWarning
+	.locator("button")
+	.innerText()
+	.catch(() => "");
+await limitWarning.locator("button").click();
+ok(
+	"targeting a dpi over the limit offers the highest slider stop (600 dpi)",
+	fixDpi === "Use 600 dpi, the largest that fits" &&
+		(await dpiField.inputValue()) === "600" &&
+		!(await exportOff()),
+	`${fixDpi} ${await dpiField.inputValue()}`,
+);
+await choose("card", ["SVG"], null);
+const fold = await p.locator(`${dialog} .fold`).innerText();
+await p.locator(`${dialog} .fold button`).click();
+await p.waitForTimeout(50);
+const sliderFocused = await p.evaluate(
+	() => document.activeElement?.getAttribute("aria-label") === "Resolution",
+);
+await scaleSlider.fill("4");
+ok(
+	"vector files: the resolution folds into a line, Change opens it, and 4x has no limit",
+	/SVG and vector PDF are sharp at any size; effects such as sharpen are drawn at 2x/.test(
+		fold,
+	) &&
+		sliderFocused &&
+		(await limitWarning.count()) === 0 &&
+		!(await exportOff()) &&
+		/only effects drawn as pixels/.test(await p.locator(dialog).innerText()),
+	fold,
+);
+ok(
+	"without a server the dialog has no Rendering section",
 	(await p.locator(`${dialog} label.switch`).count()) === 0 &&
-		/Everything is rendered in this browser/.test(
-			await p.locator(dialog).innerText(),
-		),
+		(await p.locator(`${dialog} .where`).count()) === 0,
 );
 await p.keyboard.press("Escape");
 
@@ -569,10 +744,7 @@ await p.goto(base);
 await rendered();
 const toolbarSwitch = p.locator('.exports label.switch input[role="switch"]');
 const dialogSwitch = p.locator(`${dialog} label.switch input[role="switch"]`);
-const whereNote = () =>
-	p
-		.locator(`${dialog} fieldset:has(legend:text-is("Where")) .note`)
-		.innerText();
+const whereNote = () => p.locator(`${dialog} .where .note`).innerText();
 await openDialog();
 ok(
 	"with a server the dialog has the switch, off like the toolbar's",
@@ -581,21 +753,21 @@ ok(
 		/Render on server/.test(
 			await p.locator(`${dialog} label.switch`).innerText(),
 		) &&
-		/Everything is rendered in this browser/.test(await whereNote()),
+		/Everything renders in this browser/.test(await whereNote()),
 );
 await choose("design", ["PDF"], 2);
-await pick("Pages", "Vector");
+await pick("Pages as", "Vector");
 await dialogSwitch.check();
 ok(
 	"switching it on in the dialog switches the toolbar too",
 	(await toolbarSwitch.isChecked()) &&
-		/Rendered on the server/.test(await whereNote()),
+		/The server renders everything/.test(await whereNote()),
 	await whereNote(),
 );
 await p.check(`${dialog} input[name=export-scope][value=card]`);
 ok(
 	"one card still renders in the browser, and the dialog says so",
-	/One card always renders in this browser/.test(await whereNote()),
+	/A single card always renders in this browser/.test(await whereNote()),
 	await whereNote(),
 );
 await p.check(`${dialog} input[name=export-scope][value=design]`);
@@ -611,12 +783,72 @@ ok(
 await p
 	.waitForSelector(".progress", { state: "detached", timeout: 10000 })
 	.catch(() => {});
+await openDialog();
+await choose("design", ["PDF"]);
+await dpiField.fill("450");
+f = await exportNow();
+ok(
+	"with a target dpi the server gets its scale (450 dpi on a 300 dpi design: 1.5)",
+	f.name.endsWith(".pdf") && renderBody?.scale === 1.5,
+	JSON.stringify(renderBody?.scale),
+);
+await p
+	.waitForSelector(".progress", { state: "detached", timeout: 10000 })
+	.catch(() => {});
 await toolbarSwitch.uncheck();
 await openDialog();
 ok(
 	"the toolbar switch shows in the dialog",
 	!(await dialogSwitch.isChecked()) &&
-		/Everything is rendered in this browser/.test(await whereNote()),
+		/Everything renders in this browser/.test(await whereNote()),
+);
+await p.keyboard.press("Escape");
+
+// A design without a dpi next to designs with one: All designs asks for the
+// same dpi or the same scale and lists the designs, those that come out the
+// same in one row.
+await p.click(".project-btn");
+await p.locator('.menu [role=menuitem]:has-text("New design")').click();
+await p.locator('[role=dialog] button:has-text("Add design")').click();
+await rendered();
+await openDialog();
+await choose("all", ["PNG"]);
+await dpiField.fill("600");
+await p.waitForSelector(`${dialog} .per-design`);
+const tableRows = () =>
+	p.$$eval(`${dialog} .per-design tr`, (trs) =>
+		trs.map((tr) => [...tr.cells].map((c) => c.textContent.trim()).join(" ")),
+	);
+const sameDpi = p.locator(`${dialog} .mode label:has-text("same dpi") input`);
+const sameScale = p.locator(
+	`${dialog} .mode label:has-text("same scale") input`,
+);
+let rows = await tableRows();
+const byDpiState = `${await sameDpi.isChecked()} ${await scaleShown()}`;
+ok(
+	"same dpi: the designs with a dpi reach 600 dpi, the one without stays at 1x",
+	byDpiState === "true 1–2x" &&
+		rows.length === 3 &&
+		rows[0] === "Design Size Scale dpi" &&
+		rows.some((r) => /^.+ and 3 more 1500 × 2100 px 2x 600$/.test(r)) &&
+		rows.includes("New design 750 × 1050 px 1x no dpi"),
+	`${byDpiState} ${JSON.stringify(rows)}`,
+);
+await sameScale.check();
+rows = await tableRows();
+ok(
+	"same scale: every design at 2x, so their dpi differs",
+	(await scaleShown()) === "2x" &&
+		rows.length === 3 &&
+		rows[0] === "Design Size dpi" &&
+		rows.some((r) => /^.+ and 3 more 1500 × 2100 px 600$/.test(r)) &&
+		rows.includes("New design 1500 × 2100 px no dpi"),
+	JSON.stringify(rows),
+);
+await scaleSlider.fill("3");
+ok(
+	"moving the slider keeps the same scale",
+	(await sameScale.isChecked()) && !(await sameDpi.isChecked()),
 );
 await p.keyboard.press("Escape");
 
