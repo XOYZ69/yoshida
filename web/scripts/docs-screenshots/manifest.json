@@ -133,7 +133,7 @@
 		"name": "editor-export",
 		"section": "overview",
 		"page": "builder.md",
-		"alt": "The export dialog with PNG and PDF chosen for the poker number cards",
+		"alt": "The export dialog with PNG and PDF chosen for the poker number cards, at 600 dpi",
 		"images": [
 			"editor-export-light.png",
 			"editor-export-dark.png"

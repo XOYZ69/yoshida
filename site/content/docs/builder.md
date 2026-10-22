@@ -36,8 +36,8 @@ While an export or a check runs, a progress window covers the editor (the editor
 
 **Export…** at the end of the export buttons opens a dialog. **Enter** exports, **Escape** closes it; when a typed value is out of range (a quality above 100, a dpi the designs cannot reach), the first **Enter** puts the nearest one in the field and the next exports. It remembers its settings in this browser. A format's settings show while the format is chosen; the others show what they are for.
 
-<img class="only-light" src="../images/editor-export-light.png" alt="The export dialog" width="552" height="664">
-<img class="only-dark" src="../images/editor-export-dark.png" alt="The export dialog" width="552" height="664">
+<img class="only-light" src="../images/editor-export-light.png" alt="The export dialog with PNG and PDF chosen for the poker number cards, at 600 dpi" width="612" height="480">
+<img class="only-dark" src="../images/editor-export-dark.png" alt="The export dialog with PNG and PDF chosen for the poker number cards, at 600 dpi" width="612" height="480">
 
 - **What**: **This card**, **This design** (all its cards) or **All designs** (every design of the project; designs with errors are skipped and named in the dialog). The line below says which card or design, and how many cards. When the design in view has errors, the dialog starts with **All designs**.
 - **Formats**, one or more:
