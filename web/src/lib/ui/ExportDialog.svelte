@@ -204,9 +204,10 @@ $effect(() => {
       <div class="fmt">
         <label class="opt"><input type="checkbox" checked={s.formats.includes("jpeg")} onchange={(e) => toggle("jpeg", e.currentTarget.checked)} /> JPEG</label>
         <span class="more">
-          <label>Quality
-            <input type="number" min="1" max="100" bind:value={s.jpegQuality} disabled={!s.formats.includes("jpeg")} onchange={() => (s.jpegQuality = Math.max(1, Math.min(100, Math.round(s.jpegQuality || 90))))} />
-          </label>
+          <span class="ctl">Quality
+            <input type="range" min="5" max="100" step="5" aria-label="JPEG quality" title="Steps of 5; type an exact value in the field" bind:value={s.jpegQuality} disabled={!s.formats.includes("jpeg")} />
+            <input type="number" min="1" max="100" aria-label="JPEG quality, exact value" bind:value={s.jpegQuality} disabled={!s.formats.includes("jpeg")} onchange={() => (s.jpegQuality = Math.max(1, Math.min(100, Math.round(s.jpegQuality || 90))))} />
+          </span>
           <span class="ctl">Background
             <ColorPicker title="JPEG background: transparent parts are shown on this color" value={s.jpegBackground} disabled={!s.formats.includes("jpeg")} onchange={(v) => (s.jpegBackground = v.slice(0, 7))} />
           </span>
@@ -216,9 +217,10 @@ $effect(() => {
       <div class="fmt">
         <label class="opt" title={unavailable.webp}><input type="checkbox" checked={s.formats.includes("webp") && !unavailable.webp} disabled={!!unavailable.webp} onchange={(e) => toggle("webp", e.currentTarget.checked)} /> WebP</label>
         <span class="more">
-          <label>Quality
-            <input type="number" min="1" max="100" bind:value={s.webpQuality} disabled={!formats.includes("webp") || s.webpLossless} onchange={() => (s.webpQuality = Math.max(1, Math.min(100, Math.round(s.webpQuality || 90))))} />
-          </label>
+          <span class="ctl">Quality
+            <input type="range" min="5" max="100" step="5" aria-label="WebP quality" title="Steps of 5; type an exact value in the field" bind:value={s.webpQuality} disabled={!formats.includes("webp") || s.webpLossless} />
+            <input type="number" min="1" max="100" aria-label="WebP quality, exact value" bind:value={s.webpQuality} disabled={!formats.includes("webp") || s.webpLossless} onchange={() => (s.webpQuality = Math.max(1, Math.min(100, Math.round(s.webpQuality || 90))))} />
+          </span>
           <label title="True lossless in Chrome and Edge; other browsers write their highest quality"><input type="checkbox" bind:checked={s.webpLossless} disabled={!formats.includes("webp")} /> Lossless</label>
         </span>
       </div>
@@ -376,6 +378,10 @@ $effect(() => {
   }
   input[type="number"] {
     width: 4.5em;
+  }
+  input[type="range"] {
+    width: 96px;
+    margin: 0;
   }
   input:disabled {
     opacity: 0.5;

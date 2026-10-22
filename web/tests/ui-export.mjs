@@ -1,8 +1,8 @@
 // End-to-end checks for exporting: the quick PNG / ZIP / PDF buttons, and
 // the export dialog (one card, a design, all designs; PNG 8 and 16 bit,
-// JPEG, WebP, SVG, vector and image PDF with and without crop marks;
-// resolution; its keyboard handling and remembered settings; the Render on
-// server switch, with a mocked server).
+// JPEG, WebP, SVG, vector and image PDF with and without crop marks; the
+// quality slider; resolution; its keyboard handling and remembered settings;
+// the Render on server switch, with a mocked server).
 //
 //   node tests/ui-export.mjs [http://localhost:4173/]
 import { readFile } from "node:fs/promises";
@@ -476,6 +476,32 @@ ok(
 		names.every((n) => /^numbers\/[^/]+\.svg$/.test(n)),
 	`${names.length}`,
 );
+
+// Quality: a slider in steps of 5, and a field for any value.
+await openDialog();
+await choose("card", ["JPEG"]);
+const jpegRange = p.locator(
+	`${dialog} input[type=range][aria-label="JPEG quality"]`,
+);
+const jpegField = p.locator(
+	`${dialog} input[type=number][aria-label="JPEG quality, exact value"]`,
+);
+await jpegField.fill("90");
+await jpegField.dispatchEvent("change");
+await jpegRange.focus();
+await p.keyboard.press("ArrowLeft");
+await p.keyboard.press("ArrowLeft");
+const afterKeys = await jpegField.inputValue();
+await jpegField.fill("92");
+await jpegField.dispatchEvent("change");
+const exact = await jpegField.inputValue();
+const slider = await jpegRange.inputValue();
+ok(
+	"JPEG quality: the slider moves in steps of 5, the field takes any value",
+	afterKeys === "80" && exact === "92" && slider === "90",
+	`${afterKeys} ${exact} ${slider}`,
+);
+await p.keyboard.press("Escape");
 
 // A large canvas: resolutions over 10000 pixels a side are disabled.
 await p.click(".project-btn");
