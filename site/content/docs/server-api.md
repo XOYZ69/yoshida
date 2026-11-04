@@ -8,7 +8,7 @@ description = "The HTTP API of yoshida-server."
 | Method and path         | Request                                                                    | Response                                                                               |
 | ----------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `GET /api/capabilities` |                                                                            | `{ "version", "format", "render", "max_cards", "max_body_mb" }`                        |
-| `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "now", "utc_offset", "format": "png" \| "png16" \| "pdf" }` | `application/zip` with `<set>/<card id>.png` (or `application/pdf` for `pdf`), or 422 with `{ "error", "diagnostics" }` |
+| `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "now", "utc_offset", "format": "png" \| "png16" \| "pdf" \| "svg", "vector", "scale", "crop_marks", "compression" }` | `application/zip` with `<set>/<card id>.png` (`.svg` for `svg`), or `application/pdf` for `pdf`, or 422 with `{ "error", "diagnostics" }` |
 | `GET /api/render/progress?job=<id>` |                                                               | `{ "found", "stage", "done", "total" }` for a render sent with `x-yoshida-job: <id>` |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 
@@ -20,7 +20,7 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 
 ```json
 {
-	"version": "0.6.1",
+	"version": "0.6.2",
 	"format": 1,
 	"render": true,
 	"max_cards": 1000,
@@ -39,25 +39,29 @@ Request body (JSON):
 | `date`   | Used when `now` is not sent: `render.date` is this date, `render.time` is `00:00:00` and `render.now` is that date at midnight UTC. With neither `date` nor `now`, the server's current UTC instant is used. Format `YYYY-MM-DD` |
 | `now`    | UTC instant `YYYY-MM-DDTHH:MM:SSZ`: `render.now`. `render.date` and `render.time` are it shifted by `utc_offset`. Overrides `date`. A malformed value is **400** |
 | `utc_offset` | Hours from UTC, -14 to 14, fractions allowed. Replaces the project's `utc_offset`. Outside that range is **400** |
-| `format` | `png` (8-bit, default), `png16`, or `pdf` (one PDF, one page per card)                                                                                         |
+| `format` | `png` (8-bit, default), `png16`, `pdf` (one PDF, one page per card) or `svg` (one [SVG file](@/docs/command-line.md#svg) per card)                                |
+| `vector` | Optional. `true` with `"format": "pdf"` draws the pages as vectors instead of images (see [Command Line: PDF](@/docs/command-line.md#pdf)). Default `false`. Not a boolean, or `true` with another format, is **400** |
+| `scale`  | Optional, a number from 1 to 4. For `png`, `png16` and the image `pdf`: render at this many times the canvas size (default 1); the PNG dpi grows with it and PDF pages keep their size, and a side over 10000 pixels is a 422 with error 5001. For `svg` and the vector `pdf`: pixels per canvas pixel for the parts that stay pixels (layers with a convolution filter), default 2. Anything else is **400** |
+| `crop_marks` | Optional, `pdf` only (image or vector). `true` puts each page on a white sheet with crop marks at the trim line, like `--crop-marks`; default `false`. Not a boolean is **400** |
+| `compression` | Optional, PNG only. `fast`, `default` (default) or `smallest`: the deflate effort. The pixels are the same. Anything else is **400** |
 
 Response:
 
-- **200** `application/zip` (stored, not compressed) with one `<set>/<card id>.png` per card and `Content-Disposition: attachment; filename="<set>.zip"`. With `"format": "pdf"`: `application/pdf`, `filename="<set>.pdf"`, one page per card (see [Command Line: PDF](@/docs/command-line.md#pdf)).
+- **200** `application/zip` (stored, not compressed) with one `<set>/<card id>.png` per card (`<set>/<card id>.svg` with `"format": "svg"`) and `Content-Disposition: attachment; filename="<set>.zip"`. With `"format": "pdf"`: `application/pdf`, `filename="<set>.pdf"`, one page per card (see [Command Line: PDF](@/docs/command-line.md#pdf)).
 - **422** `application/json` `{ "error": "the project has errors", "diagnostics": [...] }` when loading or rendering reported errors. No zip is produced. Diagnostics are described in [Diagnostics](@/docs/diagnostics.md#json-shape).
 
 Other statuses (all with `{ "error": "..." }`):
 
 | Status | When                                                                                                      |
 | ------ | --------------------------------------------------------------------------------------------------------- |
-| 400    | Body is not JSON, `files` is missing or not an object, a file is not base64, or a path leaves the project |
+| 400    | Body is not JSON, `files` is missing or not an object, a file is not base64, a path leaves the project, or `now`, `utc_offset`, `vector`, `scale`, `crop_marks` or `compression` is invalid |
 | 403    | Rendering is disabled (`--no-render`)                                                                     |
 | 404    | Unknown set, unknown `/api/...` path                                                                      |
 | 405    | `POST /api/render` with another method; non-GET/HEAD for static files                                     |
 | 413    | Request body above `--max-body-mb`, or the set has more cards than `--max-cards`                          |
 | 500    | Out of memory while rendering                                                                             |
 
-The server renders cards in parallel (`--threads`). It never downloads images from URLs; an unreachable URL is error 4001, so include the images in `files`.
+The server renders cards in parallel (`--threads`); a vector PDF is drawn on one thread, since vector pages are quick to make. It never downloads images from URLs; an unreachable URL is error 4001, so include the images in `files`.
 
 An optional `x-yoshida-job: <id>` header (up to 16 hex digits, not 0) makes the request's progress readable with `GET /api/render/progress`. Every request is logged on stderr, see [Server and Docker](@/docs/server-and-docker.md#using-server-rendering-from-the-editor).
 

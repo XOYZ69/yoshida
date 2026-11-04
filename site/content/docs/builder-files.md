@@ -10,8 +10,12 @@ The **Files** tab shows the project's files as a folder tree.
 
 ## What it shows
 
-- Image **thumbnails**, file sizes, and how many files refer to each file.
-- Folders. **Clicking a folder** makes it the place uploads go (the upload button and **Add files** in the project menu use it; without a choice, images go to `assets/images/`). Clicking a file does not change that.
+- A **coloured icon per kind of file**: designs, card data, other JSON (such as `yoshida.json`), fonts, Markdown, PDF, text and license files, and images. Images show a small **thumbnail** instead when the browser can draw it.
+- File sizes in one column on the right, and folder sizes, which add up the files inside. Hover a folder's size for its file count.
+- How many files refer to a file (for example `3↩`), only when at least one does. Hover the count for the list.
+- Folders. **Clicking a folder** makes it the place uploads go (the upload button and **Add files** in the project menu use it; without a choice, the upload button adds to the project root and **Add files** sorts by type, so images go to `assets/images/`). The line above the tree says where uploads go, and the folder is marked in the tree. The **×** button on that line goes back to the project root. Clicking a file does not change the folder.
+- Clicking a file shows its details below the tree: the pixel size of an image, the family and style of a font, what a JSON file is (a design and its name, card data and the number of cards, or the project manifest), the size, and which files use it.
+- Only the tree scrolls: the search field stays at the top, and the file total and the selected file's details stay at the bottom.
 
 ## Actions
 

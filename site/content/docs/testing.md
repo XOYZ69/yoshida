@@ -26,9 +26,11 @@ Run in `web/`. These need no browser, only the built WASM modules (`npm run wasm
 
 | File | Covers |
 | --- | --- |
+| `tests/export-plan.mjs` | the export dialog's plan: file names, ZIP or one file, the summary line, stored settings, each design's scale, size and dpi (by scale or by target dpi), the pixel limit, the JPEG dpi |
 | `tests/expr-core.mjs` | the expression core: tokens, problems, tree, templates, formatter |
 | `tests/expr-edit.mjs` | edits made by the formula panel |
 | `tests/expr-rewrite.mjs` | the quick actions on expressions |
+| `tests/filetypes.mjs` | file kinds and descriptions in the Files tab |
 | `tests/fonts.mjs` | font readers and the Google Fonts catalog |
 | `tests/hexcolor.mjs` | the hex colour helper against the core's rules |
 | `tests/progress-math.mjs` | export progress and time left |
@@ -61,6 +63,9 @@ node tests/ui-organise.mjs http://localhost:4173/
 | `ui-formula.mjs` | the formula editor window |
 | `ui-fonts.mjs` | the Fonts window, Google Fonts import, uploads |
 | `ui-rename.mjs` | renaming fonts and design functions |
+| `ui-files.mjs` | the Files panel layout on a short window |
+| `ui-export.mjs` | the quick PNG / ZIP / PDF buttons and the export dialog: keyboard, one card as JPEG at 2x, a design as PNG + JPEG, all designs, vector and image PDF with and without crop marks, 16-bit PNG, WebP, remembered settings, one card as SVG compared with its PNG, a design as SVG, the target dpi and the resolution slider, the resolution limit, designs with and without a dpi |
+| `ui-file-types.mjs` | the Files tab: icons per file kind, selected file details, upload target, size column |
 
 A failed run writes screenshots to `web/test-results/`; CI uploads them as the `ui-test-results` artifact. When you change an example, update the tests that read it: several look for specific cards, layers and values of the poker and board game examples.
 

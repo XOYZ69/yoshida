@@ -23,6 +23,7 @@ description = "Crop, fade and sharpen filters applied to a layer's own pixels."
 - An unknown effect type or `side` is error 1103 (with a hint listing the valid words); an unknown field in an effect is error 1101.
 - Effects run before [rotation](@/docs/layers.md#rotate) and before `opacity`.
 - On a group, effects are relative to the group's bounds.
+- In [SVG files and vector PDFs](@/docs/command-line.md#svg), `crop` and `fade` stay vectors. The convolution filters have no vector form: a layer or group with one is embedded as pixels at the export resolution (the export dialog's **Resolution**, `--scale` or `"scale"`; 2x when not given).
 
 ## Examples
 

@@ -38,6 +38,9 @@ src/core/        the I/O-free core (module "yoshida")
   render.zig       per-card evaluation (lazy @layer references, cycle detection), drawing
   raster.zig       16-bit premultiplied bitmaps, anti-aliased shapes, images, effects, PNG encoder
   text.zig         stb_truetype fonts, wrapping, alignment, justify, max_lines
+  vector.zig       vector scene: what a card draws as paths, glyphs, images and groups
+  svg.zig          SVG writer for a vector scene
+  pdf.zig          PDF writer: one page per card, as an image or (pdf_vector.zig) as vectors
   api.zig          JSON project summary and layer layout shared by WASM and server
   fmt.zig          canonical JSON formatter (yoshida fmt)
   c.zig            bindings and the libc shims the C code needs
@@ -62,7 +65,7 @@ examples/        poker deck and party board game
 1. **`project.load`** reads the manifest, finds card files and designs, and loads each design once. Parsing keeps byte positions so every diagnostic has file, line and column.
 2. **`design.load`** parses params and layers, resolves `extends`, type-checks every expression against the params and layers it can see, and reports problems with codes (see [Diagnostics](@/docs/diagnostics.md)).
 3. **`render.renderCard`** evaluates a card: layer fields are evaluated lazily by dependency so `@layer` references work in any order; cycles are detected. Then it draws.
-4. **`raster`** draws anti-aliased shapes, text and images into 16-bit premultiplied bitmaps, applies effects, composites, and encodes PNG (8- or 16-bit).
+4. **`raster`** draws anti-aliased shapes, text and images into 16-bit premultiplied bitmaps, applies effects, composites, and encodes PNG (8- or 16-bit). For SVG and vector PDF output, `render.renderVector` records the same drawing as a **`vector`** scene instead, which `svg` and `pdf` write out (see [Rendering Model](@/docs/rendering-model.md#vectors)).
 
 The C code (`stb_image`, `stb_truetype`, `simplewebp`) is compiled freestanding with small libc shims, so the binaries are static and the same code runs in WebAssembly. Notes for contributors: Zig `@min(65535, x)` narrows to `u16`, which overflows in `ReleaseSmall` WebAssembly builds, so cast first.
 

@@ -19,9 +19,13 @@ How a card becomes pixels.
 - Anything outside the canvas is clipped silently. A layer entirely outside the canvas is hint 3202.
 - Groups render their layers into a separate picture first, then apply the group's effects, opacity and rotation, then composite it. See [Layer: group](@/docs/layer-group.md).
 
+## Vectors
+
+For an SVG file or a vector PDF, steps 1 to 3 are the same, and step 4 records drawing commands instead of pixels: filled and stroked paths (rounded rectangles, ellipses and arcs as true curves), each letter as its glyph outline at the position the PNG uses (an outline is the letter stroked at twice the outline width, under the fill), images with their box and clip, and groups for opacity, rotation, `crop` and `fade`. A layer or group with a convolution filter is drawn with the pixel code at the export resolution (2x when none is given; less for a very large area, to bound memory) and placed as an image, still rotated and faded as a vector. The SVG and the PDF writer turn the same commands into their format. See [Command Line: SVG](@/docs/command-line.md#svg).
+
 ## Output
 
-PNG, RGBA, **8-bit or 16-bit** per channel (`--16bit`), with the resolution when `canvas.dpi` is set. Files are named `<set>/<card id>.png`. Or one PDF per set, one page per card, with the bleed and trim boxes from `canvas.bleed`, and optionally crop marks. See [Command Line](@/docs/command-line.md#pdf).
+PNG, RGBA, **8-bit or 16-bit** per channel (`--16bit`), with the resolution when `canvas.dpi` is set. Files are named `<set>/<card id>.png`. Or one PDF per set, one page per card, with the bleed and trim boxes from `canvas.bleed`, and optionally crop marks; its pages are images, or [vectors](#vectors) with `--vector`. See [Command Line](@/docs/command-line.md#pdf). Or one SVG file per card, `<set>/<card id>.svg`.
 
 ## Text
 
@@ -29,7 +33,7 @@ Text uses the layer's font; characters it has no glyph for come from the bundled
 
 ## Determinism
 
-The same project, card data and render clock (`render.now` with the `utc_offset`, or `render.date`) always produce the same pixels, in every build (WebAssembly in the browser, the CLI, the server). The core has no clock, network or file access of its own; each front end gives it a virtual file system and the render clock. Seeded random functions are pure. The browser export, the server zip and the CLI output were compared byte for byte on the examples.
+The same project, card data and render clock (`render.now` with the `utc_offset`, or `render.date`) always produce the same pixels (and the same SVG and vector PDF bytes), in every build (WebAssembly in the browser, the CLI, the server). The core has no clock, network or file access of its own; each front end gives it a virtual file system and the render clock. Seeded random functions are pure. The browser export, the server zip and the CLI output were compared byte for byte on the examples.
 
 ## What happens to a bad card
 

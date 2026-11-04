@@ -60,4 +60,22 @@ export const shots = [
 			return { x: 0, y: 0, width: Math.min(width, 1500), height: Math.min(height, 950) };
 		},
 	},
+	{
+		name: "editor-export",
+		page: "builder.md",
+		alt: "The export dialog with PNG and PDF chosen for the poker number cards, at 600 dpi",
+		async run(h) {
+			await h.p.locator('button[aria-haspopup="dialog"]:has-text("Export…")').click();
+			const dialog = h.p.locator('[role=dialog][aria-labelledby="export-title"]');
+			await dialog.waitFor({ state: "visible" });
+			await dialog.locator('label.opt:has-text("PDF") input[type=checkbox]').check();
+			await h.p.waitForFunction(() => /PDF/.test(document.querySelector(".dialog .summary")?.textContent ?? ""));
+			const dpi = dialog.getByLabel("Target dpi");
+			await dpi.fill("600");
+			await dpi.press("Tab");
+			await h.p.waitForFunction(() => /1500 × 2100/.test(document.querySelector(".dialog .size")?.textContent ?? ""));
+			await h.p.evaluate(() => document.activeElement?.blur());
+			return h.clipOf(dialog, 16);
+		},
+	},
 ];

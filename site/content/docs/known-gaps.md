@@ -25,7 +25,12 @@ What does not work yet, so you do not have to find out the hard way.
 
 ## Output
 
-- PDF pages hold the card as an 8-bit image (no 16-bit, no vector output). Crop marks are drawn in a white margin; there are no color bars or registration marks.
+- Image PDFs hold the card as an 8-bit image (no 16-bit). For sharper print or zoom, export at a higher resolution (2x to 4x; see [Resolution](@/docs/saving-images-and-privacy.md#resolution)) or as a vector file. [Vector PDFs and SVG files](@/docs/command-line.md#svg) draw the card as vectors, except:
+  - A layer or group with a `sharpen`, `detail`, `edge_enhance` or `find_edges` [effect](@/docs/effects.md) is embedded as pixels, at the export resolution (the export dialog's **Resolution**, `--scale` or `"scale"`; 2x when not given).
+  - Text becomes the outlines of its letters; it cannot be selected, searched or edited in the file.
+  - Images are embedded with the pixels they have, and the viewer scales them, so a small image looks as soft (or as blocky, with `"smoothing": "nearest"`) as in the PNG.
+- The viewer anti-aliases a vector file, so edges, thin lines and small text differ slightly from the PNG, and a `fade` is a smooth ramp where the PNG has one step per pixel.
+- SVG files have no crop marks and no trim box; use a PDF for print. Crop marks are drawn in a white margin; there are no color bars or registration marks.
 
 ## Dates and times
 

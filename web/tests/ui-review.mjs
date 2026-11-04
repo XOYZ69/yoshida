@@ -185,7 +185,12 @@ ok(
 ok(
 	"export buttons are one labelled group",
 	(await p.locator('.exports [role=group][aria-label="Export"] > button').count()) ===
-		3 && /export/i.test(await p.locator(".exports .group-cap").innerText()),
+		4 &&
+		/export/i.test(await p.locator(".exports .group-cap").innerText()) &&
+		(await p
+			.locator('.exports [role=group][aria-label="Export"] > button')
+			.last()
+			.innerText()) === "Export…",
 );
 const pickH = await p.evaluate(() =>
 	[".pick .select", ".picker", '.toolbar [aria-label="Add layer"]'].map(

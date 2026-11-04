@@ -2,10 +2,15 @@
 //! sets on the server ("hybrid" mode for home labs).
 //!
 //!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
-//!   POST /api/render         {"files": {path: base64}, "set", "date", "now", "utc_offset", "format": "png"|"png16"|"pdf"}
-//!                            -> application/zip with <set>/<card id>.png, or 422 with diagnostics
+//!   POST /api/render         {"files": {path: base64}, "set", "date", "now", "utc_offset", "format": "png"|"png16"|"pdf"|"svg"}
+//!                            -> application/zip with <set>/<card id>.png (.svg for "svg"), application/pdf for
+//!                            "pdf", or 422 with diagnostics
 //!                            "now" is a UTC instant (YYYY-MM-DDTHH:MM:SSZ) and "utc_offset" the hours (-14 to 14)
 //!                            that replace the project's; with neither "date" nor "now" the server's clock is used
+//!                            Optional: "scale" (1 to 4, pixels per canvas pixel: of the whole image for png and
+//!                            the image pdf, default 1; of the parts that stay pixels for svg and the vector pdf,
+//!                            default 2), "vector" (bool, PDF only: pages drawn as vectors), "crop_marks" (bool,
+//!                            PDF only), "compression" ("fast"|"default"|"smallest", PNG only)
 //!                            An `x-yoshida-job: <hex id>` header makes its progress readable:
 //!   GET  /api/render/progress?job=<hex id>
 //!                            {"found", "stage", "done", "total"} (stage: receiving, loading,
@@ -280,6 +285,14 @@ const Job = struct {
     utc_offset: ?f64,
     sixteen: bool,
     pdf: bool = false,
+    /// Bitmap pixels per canvas pixel (the request's "scale").
+    scale: f64 = 1,
+    crop_marks: bool = false,
+    compression: y.raster.Compression = .default,
+    /// SVG files in `pngs`, instead of PNG.
+    svg: bool = false,
+    /// Pixels per canvas pixel for the parts of a vector file that are pixels.
+    raster_scale: f32 = 2,
     /// Cards with index % stride == offset belong to this job.
     offset: usize,
     stride: usize,
@@ -297,23 +310,46 @@ const Job = struct {
         var i = job.offset;
         while (i < job.set.cards.len) : (i += job.stride) {
             defer job.cardDone();
-            var bmp = (y.render.renderCard(job.gpa, &assets, job.set, i, .{ .date = job.date, .now = job.now, .utc_offset = job.utc_offset }, &job.diags) catch {
+            if (job.svg) {
+                job.runSvg(&assets, i) catch {
+                    job.failed = true;
+                    return;
+                };
+                continue;
+            }
+            var bmp = (y.render.renderCard(job.gpa, &assets, job.set, i, .{ .date = job.date, .now = job.now, .utc_offset = job.utc_offset, .scale = job.scale }, &job.diags) catch {
                 job.failed = true;
                 return;
             }) orelse continue;
             defer bmp.deinit(job.gpa);
             if (job.pdf) {
+                if (job.crop_marks) {
+                    const marked = y.raster.withCropMarks(job.gpa, &bmp) catch {
+                        job.failed = true;
+                        return;
+                    };
+                    bmp.deinit(job.gpa);
+                    bmp = marked;
+                }
                 job.pages[i] = y.pdf.Page.init(job.gpa, &bmp) catch {
                     job.failed = true;
                     return;
                 };
                 continue;
             }
-            job.pngs[i] = y.raster.encodePng(job.gpa, &bmp, job.sixteen) catch {
+            job.pngs[i] = y.raster.encodePngLevel(job.gpa, &bmp, job.sixteen, job.compression) catch {
                 job.failed = true;
                 return;
             };
         }
+    }
+
+    fn runSvg(job: *Job, assets: *y.render.Assets, i: usize) !void {
+        var scene = y.vector.Scene.init(job.gpa);
+        defer scene.deinit();
+        scene.raster_scale = job.raster_scale;
+        if (!try y.render.renderVector(job.gpa, assets, job.set, i, .{ .date = job.date, .now = job.now, .utc_offset = job.utc_offset }, &scene, &job.diags)) return;
+        job.pngs[i] = try y.svg.write(job.gpa, &scene);
     }
 
     /// Counts a finished card; the log gets a line at every 10%.
@@ -366,6 +402,31 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     if (now == null and doc.get("date") == null) now = try utcNow(io, arena);
     const sixteen = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "png16")) else false;
     const want_pdf = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "pdf")) else false;
+    const want_svg = if (doc.get("format")) |f| (f.data == .string and std.mem.eql(u8, f.data.string, "svg")) else false;
+    var want_vector = false;
+    if (doc.get("vector")) |v| {
+        if (v.data != .bool) return jsonError(req, .bad_request, "\"vector\" must be true or false");
+        if (v.data.bool and !want_pdf) return jsonError(req, .bad_request, "\"vector\" goes with \"format\": \"pdf\" (\"svg\" is always a vector file)");
+        want_vector = v.data.bool;
+    }
+    var crop_marks = false;
+    if (doc.get("crop_marks")) |c| {
+        if (c.data != .bool) return jsonError(req, .bad_request, "\"crop_marks\" must be true or false");
+        crop_marks = c.data.bool;
+    }
+    var scale: ?f64 = null;
+    if (doc.get("scale")) |k| {
+        if (k.data != .number or !(k.data.number >= 1 and k.data.number <= 4)) return jsonError(req, .bad_request, "\"scale\" must be a number from 1 to 4");
+        scale = k.data.number;
+    }
+    // Vector files (svg, vector pdf) use the scale for the parts that stay
+    // pixels: 2 when it is not given.
+    const raster_scale: f32 = @floatCast(scale orelse 2);
+    var compression: y.raster.Compression = .default;
+    if (doc.get("compression")) |c| {
+        const level = if (c.data == .string) std.meta.stringToEnum(y.raster.Compression, c.data.string) else null;
+        compression = level orelse return jsonError(req, .bad_request, "\"compression\" must be \"fast\", \"default\" or \"smallest\"");
+    }
 
     var fs = y.project.MemFs.init(gpa);
     defer fs.deinit();
@@ -398,6 +459,8 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         p.set(.rendering);
     }
 
+    if (want_vector) return vectorPdf(io, gpa, arena, req, &fs, set, .{ .date = date, .now = now, .utc_offset = utc_offset, .raster_scale = raster_scale, .marks = crop_marks, .n = req_n, .progress = progress, .started = started, .ok = &ok });
+
     const pngs = try gpa.alloc([]u8, set.cards.len);
     defer {
         for (pngs) |p| if (p.len > 0) gpa.free(p);
@@ -411,8 +474,9 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     }
     @memset(pages, null);
     const n_jobs = @min(cfg.threads, @max(1, set.cards.len));
-    std.debug.print("render #{d}: {d} files, set '{s}', {d} cards as {s} on {d} thread(s)\n", .{
-        req_n, files.data.object.len, set.name, set.cards.len, if (want_pdf) "pdf" else if (sixteen) "png16" else "png", n_jobs,
+    const shown_scale: f64 = if (want_svg) raster_scale else scale orelse 1;
+    std.debug.print("render #{d}: {d} files, set '{s}', {d} cards as {s} at {d}x on {d} thread(s)\n", .{
+        req_n, files.data.object.len, set.name, set.cards.len, if (want_pdf) "pdf" else if (want_svg) "svg" else if (sixteen) "png16" else "png", shown_scale, n_jobs,
     });
     const jobs = try arena.alloc(Job, n_jobs);
     const threads = try arena.alloc(?std.Thread, n_jobs);
@@ -420,7 +484,7 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     const job_arenas = try arena.alloc(std.heap.ArenaAllocator, n_jobs);
     for (jobs, 0..) |*job, j| {
         job_arenas[j] = std.heap.ArenaAllocator.init(gpa);
-        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .now = now, .utc_offset = utc_offset, .sixteen = sixteen, .pdf = want_pdf, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()), .progress = progress, .n = req_n };
+        job.* = .{ .gpa = gpa, .fs = &fs, .set = set, .date = date, .now = now, .utc_offset = utc_offset, .sixteen = sixteen, .pdf = want_pdf, .scale = scale orelse 1, .crop_marks = crop_marks, .compression = compression, .svg = want_svg, .raster_scale = raster_scale, .pages = pages, .offset = j, .stride = n_jobs, .pngs = pngs, .diags = y.diag.List.init(job_arenas[j].allocator()), .progress = progress, .n = req_n };
     }
     defer for (job_arenas) |*a| a.deinit();
     for (jobs, 0..) |*job, j| {
@@ -461,7 +525,7 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     var entries: std.ArrayList(zip.Entry) = .empty;
     for (set.cards, 0..) |card, ci| {
         if (pngs[ci].len == 0) continue;
-        try entries.append(arena, .{ .name = try std.fmt.allocPrint(arena, "{s}/{s}.png", .{ set.name, card.id }), .data = pngs[ci] });
+        try entries.append(arena, .{ .name = try std.fmt.allocPrint(arena, "{s}/{s}.{s}", .{ set.name, card.id, if (want_svg) "svg" else "png" }), .data = pngs[ci] });
     }
     const archive = try zip.store(arena, entries.items);
     const disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.zip\"", .{set.name});
@@ -469,6 +533,52 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     ok = true;
     return req.respond(archive, .{ .extra_headers = &.{
         .{ .name = "content-type", .value = "application/zip" },
+        .{ .name = "content-disposition", .value = disposition },
+    } });
+}
+
+const VectorPdf = struct {
+    date: []const u8,
+    now: ?[]const u8,
+    utc_offset: ?f64,
+    raster_scale: f32,
+    /// Crop marks in a margin around the page (like the image PDF's).
+    marks: bool = false,
+    n: u32,
+    progress: ?*Progress,
+    started: Io.Timestamp,
+    ok: *bool,
+};
+
+/// A vector PDF of the set. The scenes point into the fonts and images of
+/// one set of assets, so the pages are drawn one after the other here
+/// instead of on the render threads; vector pages are quick to make.
+fn vectorPdf(io: Io, gpa: Allocator, arena: Allocator, req: *std.http.Server.Request, fs: *y.project.MemFs, set: *const y.project.Set, o: VectorPdf) !void {
+    var diags = y.diag.List.init(arena);
+    var assets = y.render.Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    var w = try y.pdf.Writer.init(gpa);
+    defer w.deinit();
+    std.debug.print("render #{d}: {d} cards of set '{s}' as vector pdf at {d}x\n", .{ o.n, set.cards.len, set.name, o.raster_scale });
+    for (0..set.cards.len) |i| {
+        var scene = y.vector.Scene.init(gpa);
+        defer scene.deinit();
+        scene.raster_scale = o.raster_scale;
+        if (try y.render.renderVector(gpa, &assets, set, i, .{ .date = o.date, .now = o.now, .utc_offset = o.utc_offset }, &scene, &diags)) try w.addVector(&scene, o.marks);
+        if (o.progress) |p| _ = p.done.fetchAdd(1, .acq_rel);
+    }
+    if (diags.errorCount() > 0) {
+        std.debug.print("render #{d}: {d} error(s) while rendering, sent the problems back\n", .{ o.n, diags.errorCount() });
+        return diagnosticsResponse(arena, req, &diags);
+    }
+    if (o.progress) |p| p.set(.packing);
+    const bytes = try w.finish();
+    defer gpa.free(bytes);
+    const disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.pdf\"", .{set.name});
+    std.debug.print("render #{d}: done, {d} pages in {d} ms, sending {d:.1} MB of PDF\n", .{ o.n, set.cards.len, o.started.untilNow(io, .awake).toMilliseconds(), mb(bytes.len) });
+    o.ok.* = true;
+    return req.respond(bytes, .{ .extra_headers = &.{
+        .{ .name = "content-type", .value = "application/pdf" },
         .{ .name = "content-disposition", .value = disposition },
     } });
 }
