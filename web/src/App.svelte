@@ -2363,6 +2363,8 @@
 				return "text";
 			case "polygon":
 				return isObj(l.shape) ? "box" : "polygon";
+			case "qr":
+				return "aspect";
 			case "image": {
 				const box = isObj(l.box) ? l.box : {};
 				return box.w === "auto" || box.h === "auto" ? "aspect" : "box";
@@ -3661,6 +3663,7 @@
 		ellipse: "Ellipse",
 		text: "Text",
 		image: "Image",
+		qr: "QR code",
 		polygon: "Polygon",
 	};
 </script>

@@ -11,7 +11,13 @@ export type Json =
 	| Json[]
 	| { [k: string]: Json };
 export type Obj = { [k: string]: Json };
-export type LayerType = "rect" | "ellipse" | "polygon" | "text" | "image";
+export type LayerType =
+	| "rect"
+	| "ellipse"
+	| "polygon"
+	| "text"
+	| "image"
+	| "qr";
 
 /** Resolved bounds of one layer (or one repeat iteration) from the core. */
 export type Placed = {
@@ -57,6 +63,7 @@ export const layerTypes: LayerType[] = [
 	"ellipse",
 	"text",
 	"image",
+	"qr",
 	"polygon",
 ];
 
@@ -643,6 +650,14 @@ export function newLayer(doc: Obj, type: LayerType, ctx: NewLayerContext): Obj {
 				fit: "contain",
 			};
 		}
+		case "qr":
+			return {
+				id,
+				type,
+				anchor: "center",
+				box: { x: cx, y: cy, w: side, h: side },
+				text: "https://example.com/",
+			};
 		case "polygon":
 			return {
 				id,

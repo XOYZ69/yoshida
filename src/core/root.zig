@@ -21,6 +21,7 @@ pub const api = @import("api.zig");
 pub const exprapi = @import("exprapi.zig");
 pub const fmt = @import("fmt.zig");
 pub const pdf = @import("pdf.zig");
+pub const qr = @import("qr.zig");
 
 pub const version = @import("build_options").version;
 pub const format_version = 1;

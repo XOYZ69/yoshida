@@ -12,6 +12,7 @@ The design's `layers` array is drawn in order: the first layer is at the bottom,
 | [`polygon`](@/docs/layer-polygon.md) | Closed or open shape through points |
 | [`text`](@/docs/layer-text.md) | Text with wrapping, alignment, auto-shrink |
 | [`image`](@/docs/layer-image.md) | PNG, JPEG, WebP, GIF or BMP picture |
+| [`qr`](@/docs/layer-qr.md) | QR code made from text |
 | [`group`](@/docs/layer-group.md) | Holds other layers and draws them as one picture |
 | [`divider`](@/docs/layer-divider.md) | Draws nothing; organises the layer list in the editor |
 

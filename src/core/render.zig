@@ -12,6 +12,7 @@ const bdate = @import("builtins/date.zig");
 const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
+const qr_mod = @import("qr.zig");
 const raster = @import("raster.zig");
 const text = @import("text.zig");
 const vector = @import("vector.zig");
@@ -333,6 +334,12 @@ const Resolved = struct {
     layout: ?text.Layout = null,
     src: []const u8 = "",
     image: ?*raster.Image = null,
+    /// QR layers: the encoded symbol, the size of one module in canvas
+    /// pixels and the quiet zone in modules. The bounds are the symbol
+    /// including its quiet zone.
+    qr: ?*const qr_mod.Code = null,
+    qr_module: f64 = 0,
+    qr_margin: usize = 0,
 };
 
 const State = enum { todo, busy, done, failed };
@@ -867,6 +874,7 @@ const Ctx = struct {
                 r.pivot = .{ r.left + r.w / 2, r.top + r.h / 2 };
             },
             .rect, .ellipse, .image => try ctx.evalBox(&e, l, r),
+            .qr => try ctx.evalQr(&e, l, r),
             .polygon => if (l.shape) |shape| {
                 try ctx.evalBox(&e, l, r);
                 r.points = try ctx.shapePoints(&e, l, shape, r);
@@ -1110,6 +1118,42 @@ const Ctx = struct {
             if (l.fill) |p| r.fill = (try ctx.eval(e, l, p)).color;
             if (l.radius) |p| r.radius = try ctx.num(e, l, p);
         }
+    }
+
+    /// A QR code layer: encodes the text and fits the symbol, whole pixels
+    /// per module, in the middle of the box.
+    fn evalQr(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
+        try ctx.evalBox(e, l, r);
+        r.text = try ctx.tmpl(e, l, l.text.?);
+        if (l.color) |p| r.color = (try ctx.eval(e, l, p)).color;
+        if (l.fill) |p| r.fill = (try ctx.eval(e, l, p)).color;
+        const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
+        const level: qr_mod.Level = @enumFromInt(@intFromEnum(l.qr_level));
+        const code = try ctx.arena.create(qr_mod.Code);
+        qr_mod.encode(code, r.text, level, null) catch {
+            try ctx.report(.err, 3108, l.text.?.pos, null, try ctx.layerMsg(l, "the text is {d} bytes, but a QR code of level {s} holds at most {d}", .{ r.text.len, @tagName(l.qr_level), qr_mod.capacity(level) }), "shorten the text or use a lower level");
+            return error.Failed;
+        };
+        const margin_modules: usize = @intFromFloat(margin);
+        const modules: f64 = @floatFromInt(@as(usize, code.size) + 2 * margin_modules);
+        const side = @min(r.w, r.h);
+        // Whole bitmap pixels per module keep the edges sharp.
+        var px = @floor(side * ctx.k / modules);
+        if (px < 1) {
+            px = side * ctx.k / modules;
+            try ctx.report(.warning, 3204, l.pos, null, try ctx.layerMsg(l, "a module of the QR code is smaller than one pixel ({d} modules in {d} px)", .{ modules, side }), "make the box larger or the text shorter");
+        }
+        const module = px / ctx.k;
+        const total = module * modules;
+        const cx = r.left + r.w / 2;
+        const cy = r.top + r.h / 2;
+        r.left = @round((cx - total / 2) * ctx.k) / ctx.k;
+        r.top = @round((cy - total / 2) * ctx.k) / ctx.k;
+        r.w = total;
+        r.h = total;
+        r.qr = code;
+        r.qr_module = module;
+        r.qr_margin = margin_modules;
     }
 
     /// Points of a preset shape filling the layer's box.
@@ -1465,6 +1509,24 @@ const Ctx = struct {
                 if (l.closed) try raster.fillPolygon(ctx.gpa, target, pts, raster.paint(r.fill, 1));
                 if (stroke) |s| try ctx.strokeWithArrows(target, l, pts, s);
             },
+            .qr => {
+                const code = r.qr.?;
+                if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
+                const ms: f32 = @floatCast(r.qr_module * ctx.k);
+                const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+                const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+                const paint = raster.paint(r.color, 1);
+                for (0..code.size) |y| {
+                    var x: usize = 0;
+                    while (x < code.size) : (x += 1) {
+                        if (!code.get(x, y)) continue;
+                        var end = x + 1;
+                        while (end < code.size and code.get(end, y)) end += 1;
+                        raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), oy + ms * @as(f32, @floatFromInt(y)), ms * @as(f32, @floatFromInt(end - x)), ms, 0, paint, null);
+                        x = end;
+                    }
+                }
+            },
             .text => try text.draw(ctx.gpa, target, r.font.?, &r.layout.?, lf, tf, switch (l.alignment) {
                 .left => .left,
                 .center => .center,
@@ -1604,6 +1666,7 @@ const Ctx = struct {
             .polygon => try ctx.emitPolygon(sc, l, r),
             .text => try ctx.emitText(sc, l, r),
             .image => try ctx.emitImage(sc, l, r),
+            .qr => try ctx.emitQr(sc, r),
         }
         try closeFrame(sc, n);
     }
@@ -1701,6 +1764,36 @@ const Ctx = struct {
             try hb.polyline(&tri, true);
             try addFill(sc, hb.finish(), s.color);
         };
+    }
+
+    /// The background square, then every dark run of modules as one path.
+    fn emitQr(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+        _ = ctx;
+        const code = r.qr orelse return;
+        const left: f32 = @floatCast(r.left);
+        const top: f32 = @floatCast(r.top);
+        const total: f32 = @floatCast(r.w);
+        var bg = vector.PathBuilder.init(sc.allocator());
+        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total }, .{ left, top + total } }, true);
+        try addFill(sc, bg.finish(), r.fill);
+        const ms: f32 = @floatCast(r.qr_module);
+        const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin));
+        var b = vector.PathBuilder.init(sc.allocator());
+        for (0..code.size) |y| {
+            var x: usize = 0;
+            while (x < code.size) : (x += 1) {
+                if (!code.get(x, y)) continue;
+                var end = x + 1;
+                while (end < code.size and code.get(end, y)) end += 1;
+                const x0 = ox + ms * @as(f32, @floatFromInt(x));
+                const x1 = ox + ms * @as(f32, @floatFromInt(end));
+                const y0 = oy + ms * @as(f32, @floatFromInt(y));
+                try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y0 + ms }, .{ x0, y0 + ms } }, true);
+                x = end;
+            }
+        }
+        try addFill(sc, b.finish(), r.color);
     }
 
     fn emitText(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
@@ -2536,4 +2629,88 @@ test "vector scene of images and groups" {
     try std.testing.expect(items[3].image.smooth);
     try std.testing.expectEqualSlices(f32, &.{ 130, 10, 40, 40 }, &items[3].image.rect);
     try std.testing.expect(items[4] == .end);
+}
+
+const qr_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "code", "type": "qr", "text": "HELLO WORLD", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "level": "quartile" }
+    \\  ]
+    \\}
+;
+
+test "qr layer draws whole pixels per module, centred in its box" {
+    const gpa = std.testing.allocator;
+    var b = (try testRenderDesign(gpa, qr_design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Version 1 is 21 modules, plus a quiet zone of 4 on each side: 29
+    // modules in 100 px is 3 px each, 87 px in all, centred (rounded to 7).
+    // Every pixel is black or white: no anti-aliasing between modules.
+    for (0..b.w * b.h) |i| {
+        const v = b.px[i * 4];
+        try std.testing.expect(v == 0 or v == 65535);
+    }
+    // The top-left finder pattern starts at the quiet zone: 7 + 4 * 3.
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 19, 19)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 20, 20)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 18, 19)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 22, 22)[0]);
+}
+
+test "qr layer bounds are the symbol with its quiet zone" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "code", "type": "qr", "text": "HELLO WORLD", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "level": "quartile" },
+        \\    { "id": "mark", "type": "rect", "box": { "x": "@code.bounds.left", "y": "@code.bounds.bottom", "w": "@code.bounds.w", "h": 2 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    var b = (try testRenderDesign(gpa, design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // 87 px square at 7, so the bar starts at (7, 94).
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 7, 94)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 7, 94)[1]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 93, 94)[1]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 94, 94)[3]);
+}
+
+test "qr layer: text that does not fit is error 3108" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "code", "type": "qr", "text": "{repeat('a', 3000)}", "box": { "x": 0, "y": 0, "w": 100, "h": 100 } }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    if (try testRenderDesign(gpa, design, .{}, &code)) |*b| {
+        var bb = b.*;
+        bb.deinit(gpa);
+    }
+    try std.testing.expectEqual(@as(u16, 3108), code);
+}
+
+test "vector scene of a qr layer" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, qr_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // The white square, then the dark modules as one path.
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    try std.testing.expect(items[0] == .fill and items[1] == .fill);
+    try std.testing.expect(items[1].fill.color.eql(Color.black));
+    try std.testing.expect(items[1].fill.path.cmds.len > 100);
 }
