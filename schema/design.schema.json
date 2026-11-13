@@ -1199,6 +1199,10 @@
               "logo": {
                 "description": "Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high",
                 "type": ["number", "string"]
+              },
+              "logo_src": {
+                "description": "Picture drawn in the cleared middle: a path with {expression} placeholders, like an image's src. Clears a fifth of the side unless logo is set",
+                "type": "string"
               }
             },
             "additionalProperties": false

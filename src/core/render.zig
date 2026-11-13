@@ -500,6 +500,23 @@ const QrView = struct {
     }
 };
 
+/// Where a QR code's logo picture goes (x, y, w, h): inside the cleared
+/// middle, half a module in from its edge, keeping the picture's
+/// proportions. `ox`, `oy` is the top-left module and `ms` a module's size.
+fn qrLogoRect(v: QrView, img: *const raster.Image, ox: f32, oy: f32, ms: f32) ?[4]f32 {
+    if (v.logo_hi <= v.logo_lo) return null;
+    const side = ms * @as(f32, @floatFromInt(v.logo_hi - v.logo_lo)) - ms;
+    if (side <= 0) return null;
+    const x0 = ox + ms * @as(f32, @floatFromInt(v.logo_lo)) + ms / 2;
+    const y0 = oy + ms * @as(f32, @floatFromInt(v.logo_lo)) + ms / 2;
+    const iw: f32 = @floatFromInt(img.w);
+    const ih: f32 = @floatFromInt(img.h);
+    const s = @min(side / iw, side / ih);
+    const w = iw * s;
+    const h = ih * s;
+    return .{ x0 + (side - w) / 2, y0 + (side - h) / 2, w, h };
+}
+
 /// Corner radius of a data module, in module sizes.
 fn qrModuleRadius(style: design_mod.QrStyle) f32 {
     return switch (style) {
@@ -974,7 +991,8 @@ const Ctx = struct {
             // Where the group's coordinates are on the canvas (no moves yet).
             const base = try ctx.offsetOf(ci);
             for (list, moves) |*r, *slot| {
-                if (!r.visible) continue;
+                // Hidden children and empty groups take no room.
+                if (!r.visible or (child.kind == .group and r.w == 0 and r.h == 0)) continue;
                 try items.append(ctx.arena, .{ .slot = slot, .base = base, .left = r.left, .top = r.top, .w = r.w, .h = r.h });
             }
         }
@@ -1215,7 +1233,8 @@ const Ctx = struct {
                     if (child.parent != gi) continue;
                     const list: []const Resolved = if (child.repeat != null) try ctx.repeatInstances(ci) else (try ctx.resolve(ci))[0..1];
                     for (list) |*cr| {
-                        if (!cr.visible) continue;
+                        // An empty group has no bounds to add.
+                        if (!cr.visible or (child.kind == .group and cr.w == 0 and cr.h == 0)) continue;
                         b[0] = @min(b[0], cr.left);
                         b[1] = @min(b[1], cr.top);
                         b[2] = @max(b[2], cr.left + cr.w);
@@ -1530,7 +1549,13 @@ const Ctx = struct {
         r.qr_style = l.qr_style;
         r.qr_eye = l.qr_eye;
         const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
-        const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else 0;
+        // A logo picture clears a fifth of the side unless `logo` says otherwise.
+        const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
+        if (l.logo_src) |t| {
+            r.src = try ctx.tmpl(e, l, t);
+            if (r.src.len > 0) r.image = try ctx.loadImage(l, r.src, t.pos);
+        }
+        const logo_pos = if (l.logo) |p| p.pos else if (l.logo_src) |t| t.pos else l.pos;
         const level: qr_mod.Level = @enumFromInt(@intFromEnum(l.qr_level));
         const code = try ctx.arena.create(qr_mod.Code);
         qr_mod.encode(code, r.text, level, null) catch {
@@ -1568,9 +1593,9 @@ const Ctx = struct {
             r.qr_logo = n;
             const nf: f64 = @floatFromInt(n);
             if (l.qr_level != .high) {
-                try ctx.report(.warning, 3207, l.logo.?.pos, null, try ctx.layerMsg(l, "a logo hides modules, but the error correction level is {s}", .{@tagName(l.qr_level)}), "use level \"high\" (30 %) with a logo");
+                try ctx.report(.warning, 3207, logo_pos, null, try ctx.layerMsg(l, "a logo hides modules, but the error correction level is {s}", .{@tagName(l.qr_level)}), "use level \"high\" (30 %) with a logo");
             } else if (nf * nf > 0.2 * size * size) {
-                try ctx.report(.warning, 3207, l.logo.?.pos, null, try ctx.layerMsg(l, "the cleared middle covers {d} % of the code; 20 % is the usual limit", .{@round(100 * nf * nf / (size * size))}), "make \"logo\" smaller");
+                try ctx.report(.warning, 3207, logo_pos, null, try ctx.layerMsg(l, "the cleared middle covers {d} % of the code; 20 % is the usual limit", .{@round(100 * nf * nf / (size * size))}), "make \"logo\" smaller");
             }
         }
 
@@ -2033,6 +2058,10 @@ const Ctx = struct {
                         raster.drawShape(target, .rect, ex + 2 * ms, ey + 2 * ms, 3 * ms, 3 * ms, radii[1] * ms, ep, null);
                     }
                 }
+                if (r.image) |img| if (qrLogoRect(v, img, ox, oy, ms)) |q| {
+                    const drawn = (try ctx.svgAt(r.src, q[2], q[3])) orelse img;
+                    try raster.drawImage(ctx.gpa, target, drawn, q[0], q[1], q[2], q[3], .{ q[0], q[1], q[0] + q[2], q[1] + q[3] }, true, 1);
+                };
             },
             .text => {
                 const alignment: text.Align = switch (r.alignment) {
@@ -2331,7 +2360,6 @@ const Ctx = struct {
 
     /// The background square, then every dark run of modules as one path.
     fn emitQr(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
-        _ = ctx;
         const v = QrView.init(r);
         const left: f32 = @floatCast(r.left);
         const top: f32 = @floatCast(r.top);
@@ -2378,6 +2406,16 @@ const Ctx = struct {
                 try addFill(sc, core.finish(), ec);
             }
         }
+        if (r.image) |img| if (qrLogoRect(v, img, ox, oy, ms)) |q| {
+            const path = (try project.normalize(ctx.arena, r.src)) orelse "";
+            var drawn = img;
+            var bytes = ctx.assets.vfs.read(path) orelse "";
+            if (try ctx.assets.sized(path, q[2] * sc.raster_scale, q[3] * sc.raster_scale)) |sv| {
+                drawn = sv;
+                bytes = "";
+            }
+            try sc.add(.{ .image = .{ .image = drawn, .bytes = bytes, .rect = q, .clip = .{ q[0], q[1], q[0] + q[2], q[1] + q[3] }, .smooth = true } });
+        };
     }
 
     fn emitText(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
@@ -3641,6 +3679,7 @@ test "row and column layout" {
         \\      { "id": "hidden", "type": "rect", "visible": false, "box": { "x": 0, "y": 0, "w": 500, "h": 40 } },
         \\      { "id": "t", "type": "text", "text": "Gain", "at": { "x": 0, "y": 0 }, "size": 20 },
         \\      { "id": "dots", "type": "ellipse", "repeat": { "count": "n" }, "box": { "x": 0, "y": 0, "w": 10, "h": 10 } },
+        \\      { "id": "empty", "type": "group", "layers": [ { "id": "gone", "type": "rect", "visible": false, "box": { "x": 0, "y": 0, "w": 5, "h": 5 } } ] },
         \\      { "id": "after", "type": "rect", "box": { "x": "@a.bounds.right", "y": 0, "w": 30, "h": 20 } }
         \\    ] },
         \\    { "id": "col", "type": "group", "layout": { "direction": "column", "gap": 5, "x": 300, "y": 10, "cross": "end" }, "layers": [
@@ -3890,4 +3929,52 @@ test "problems inside a component name the component file" {
         else => {},
     };
     try std.testing.expect(unknown and missing and cycle);
+}
+
+test "qr layer: a logo picture in the cleared middle" {
+    const gpa = std.testing.allocator;
+    const png = try testPng(gpa, 8, 8, .{ 65535, 0, 0, 65535 });
+    defer gpa.free(png);
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+        \\  "params": { "brand": { "type": "image", "default": "logo.png" } },
+        \\  "layers": [
+        \\    { "id": "code", "type": "qr", "text": "https://example.com/some/longer/path", "level": "high", "logo_src": "{brand}", "box": { "x": 0, "y": 0, "w": 100, "h": 100 } }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "logo.png", png }}, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // The red picture sits in the middle of the code.
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 50, 50));
+    // A missing logo file is error 4001, like any image.
+    var x = (try testRenderFiles(gpa, design, &.{}, .{}, &code)).?;
+    defer x.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 4001), code);
+}
+
+test "qr layer: a logo picture in a vector scene" {
+    const gpa = std.testing.allocator;
+    const png = try testPng(gpa, 8, 8, .{ 65535, 0, 0, 65535 });
+    defer gpa.free(png);
+    var rig: VectorRig = undefined;
+    try rig.initWithFiles(gpa,
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [ { "id": "code", "type": "qr", "text": "hello", "level": "high", "logo_src": "logo.png", "box": { "x": 0, "y": 0, "w": 100, "h": 100 } } ]
+        \\}
+    , &.{.{ "logo.png", png }});
+    defer rig.deinit();
+    var images: usize = 0;
+    for (rig.scene.items.items) |it| if (it == .image) {
+        images += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 1), images);
 }

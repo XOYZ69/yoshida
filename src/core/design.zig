@@ -288,6 +288,8 @@ pub const Layer = struct {
     qr_eye: QrEye = .square,
     eye_color: ?Prop = null,
     logo: ?Prop = null,
+    /// Picture drawn in the cleared middle (a path template, like `src`).
+    logo_src: ?Tmpl = null,
     // image
     src: ?Tmpl = null,
     fit: Fit = .fill,
@@ -656,7 +658,7 @@ fn kindFields(kind: LayerKind) []const []const u8 {
         .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box", "gradient" },
         .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
         .image => &.{ "src", "box", "fit", "smoothing", "optional", "radius", "clip" },
-        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo" },
+        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo", "logo_src" },
         .group => &.{"layers"},
     };
 }
@@ -1798,6 +1800,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("eye")) |v| layer.qr_eye = (try l.enumField(QrEye, v, "eye")) orelse .square;
             if (m.get("eye_color")) |v| layer.eye_color = try l.prop(v, .color, scope);
             if (m.get("logo")) |v| layer.logo = try l.prop(v, .number, scope);
+            if (m.get("logo_src")) |v| layer.logo_src = try l.template(v, scope);
         },
         .image => {
             if (m.get("src")) |v| layer.src = try l.template(v, scope) else try l.err(1102, m.pos, "image layer '{s}' needs \"src\"", .{id});

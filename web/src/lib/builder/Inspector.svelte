@@ -899,6 +899,11 @@ let newFunction = $state("");
         <Field label="eye" kind="enum" optional value={ownVal(['eye'])} fallback={String(effVal(['eye']) ?? 'square')} options={['square', 'rounded', 'circle']} title="Shape of the three corner squares" onchange={(v) => set(['eye'], v)} />
         <Field label="eye_color" kind="color" optional value={ownVal(['eye_color'])} fallback={effVal(['eye_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['eye_color'])} path={pathOf(['eye_color'])} title="Color of the corner squares" onchange={(v) => set(['eye_color'], v)} />
         <Field label="logo" kind="number" optional value={ownVal(['logo'])} fallback={effVal(['logo']) ?? 0} bindings={numberParams} error={errorAt(['logo'])} path={pathOf(['logo'])} title="Clears the middle for a logo: share of the code's side (0 to 0.5). Use level high" onchange={(v) => set(['logo'], v)} />
+        <Field label="logo_src" kind="template" optional value={ownVal(['logo_src'])} fallback={effVal(['logo_src'])} placeholder="none" bindings={imageParams} error={errorAt(['logo_src'])} path={pathOf(['logo_src'])} title="Picture in the cleared middle: a file or an image param. Clears a fifth of the side unless logo is set" onchange={(v) => set(['logo_src'], v === '' ? undefined : v)} />
+        <div class="field-like">
+          <span class="lbl"></span>
+          <ImagePicker {imageFiles} {upload} onpick={(v) => set(['logo_src'], v)} />
+        </div>
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
