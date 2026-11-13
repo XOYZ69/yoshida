@@ -1,0 +1,294 @@
+{
+  "format": 1,
+  "name": "Cocktail card back",
+  "note": "Matching back for the cocktail cards, same size and bleed.",
+  "canvas": { "width": 1632, "height": 2220, "dpi": 600, "bleed": 70 },
+  "fonts": {
+    "script": "assets/fonts/Pacifico-Regular.ttf",
+    "bold": "assets/fonts/Poppins-SemiBold.ttf"
+  },
+  "params": {
+    "title": { "type": "text", "default": "Cheers!", "max_length": 20 },
+    "subtitle": { "type": "text", "default": "Party Cocktails", "max_length": 30 },
+    "background": { "type": "color", "default": "#E85D75", "label": "Card color" },
+    "liquid": { "type": "color", "default": "#F4A6B7", "label": "Drink color" }
+  },
+  "functions": {
+    "cf_x": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "cx + (600 + 104 * ((i * 0.618 + off * 0.13) % 1)) * cos(rad((i * 5 + off) * 137.508))"
+    },
+    "cf_y": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "1240 + (680 + 240 * ((i * 0.382 + off * 0.21) % 1)) * sin(rad((i * 5 + off) * 137.508))"
+    },
+    "cf_ok": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "cf_y(i, off) > 600 and cf_y(i, off) < 1830 and abs(cf_x(i, off) - cx) < 600"
+    }
+  },
+  "consts": {
+    "cx": 816,
+    "ink": "mix(background, #24121C, 0.72)",
+    "ink_glass": "mix(background, #24121C, 0.55)",
+    "soft": "mix(background, #FFFFFF, 0.72)",
+    "muted": "mix(ink, soft, 0.35)"
+  },
+  "layers": [
+    {
+      "id": "face",
+      "type": "group",
+      "layers": [
+        {
+          "id": "bleed_fill",
+          "type": "rect",
+          "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+          "fill": "background"
+        },
+        {
+          "id": "panel",
+          "type": "rect",
+          "box": { "x": 114, "y": 114, "w": "canvas.w - 228", "h": "canvas.h - 228" },
+          "fill": "soft",
+          "radius": 120
+        },
+        {
+          "id": "stitch",
+          "type": "rect",
+          "box": { "x": 142, "y": 142, "w": "canvas.w - 284", "h": "canvas.h - 284" },
+          "fill": "#00000000",
+          "radius": 96,
+          "stroke": {
+            "color": "with_alpha(background, 0.55)",
+            "width": 8,
+            "dash": [0.2, 26]
+          }
+        }
+      ],
+      "note": "Card color, tinted face and stitching line."
+    },
+    {
+      "id": "stage",
+      "type": "group",
+      "layers": [
+        {
+          "id": "sun_outer",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": "cx", "y": 1120, "w": 1120, "h": 1120 },
+          "fill": "with_alpha(#FFFFFF, 0.45)"
+        },
+        {
+          "id": "sun_inner",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": "cx", "y": 1120, "w": 900, "h": 900 },
+          "fill": "with_alpha(#FFFFFF, 0.6)"
+        },
+        {
+          "id": "confetti_star",
+          "type": "polygon",
+          "anchor": "center",
+          "repeat": { "count": 8, "index": "i" },
+          "visible": "cf_ok(i, 0)",
+          "shape": { "type": "star", "inner": 0.45 },
+          "rotate": "i * 23",
+          "box": {
+            "x": "cf_x(i, 0)",
+            "y": "cf_y(i, 0)",
+            "w": "44 + 20 * ((i * 0.37) % 1)",
+            "h": "44 + 20 * ((i * 0.37) % 1)"
+          },
+          "fill": "#FFD166"
+        },
+        {
+          "id": "confetti_dot",
+          "type": "ellipse",
+          "anchor": "center",
+          "repeat": { "count": 8, "index": "i" },
+          "visible": "cf_ok(i, 2)",
+          "box": {
+            "x": "cf_x(i, 2)",
+            "y": "cf_y(i, 2)",
+            "w": "36 + 20 * ((i * 0.37) % 1)",
+            "h": "36 + 20 * ((i * 0.37) % 1)"
+          },
+          "fill": "with_alpha(background, 0.55)"
+        },
+        {
+          "id": "confetti_spark",
+          "type": "polygon",
+          "anchor": "center",
+          "repeat": { "count": 8, "index": "i" },
+          "visible": "cf_ok(i, 4)",
+          "shape": { "type": "diamond" },
+          "rotate": "i * 23",
+          "box": {
+            "x": "cf_x(i, 4)",
+            "y": "cf_y(i, 4)",
+            "w": "36 + 20 * ((i * 0.37) % 1)",
+            "h": "36 + 20 * ((i * 0.37) % 1)"
+          },
+          "fill": "#FFFFFF"
+        }
+      ],
+      "note": "Halo and confetti."
+    },
+    {
+      "id": "glass",
+      "type": "group",
+      "layers": [
+        {
+          "id": "glass_fill",
+          "type": "polygon",
+          "points": [
+            ["cx - 300", 880],
+            ["cx - 271.5", 914],
+            ["cx - 243", 948],
+            ["cx - 214.5", 982],
+            ["cx - 186", 1016],
+            ["cx - 157.5", 1050],
+            ["cx - 129", 1084],
+            ["cx - 100.5", 1118],
+            ["cx - 72", 1152],
+            ["cx - 43.5", 1186],
+            ["cx - 15", 1220],
+            ["cx + 15", 1220],
+            ["cx + 43.5", 1186],
+            ["cx + 72", 1152],
+            ["cx + 100.5", 1118],
+            ["cx + 129", 1084],
+            ["cx + 157.5", 1050],
+            ["cx + 186", 1016],
+            ["cx + 214.5", 982],
+            ["cx + 243", 948],
+            ["cx + 271.5", 914],
+            ["cx + 300", 880]
+          ],
+          "fill": "with_alpha(#FFFFFF, 0.62)"
+        },
+        {
+          "id": "liquid",
+          "type": "polygon",
+          "points": [
+            ["cx - 221.3", 954.8],
+            ["cx - 199.92", 980.3],
+            ["cx - 178.56", 1005.8],
+            ["cx - 157.18", 1031.3],
+            ["cx - 135.8", 1056.8],
+            ["cx - 114.42", 1082.3],
+            ["cx - 93.06", 1107.8],
+            ["cx - 71.68", 1133.3],
+            ["cx - 50.3", 1158.8],
+            ["cx - 28.92", 1184.3],
+            ["cx - 7.56", 1209.8],
+            ["cx + 7.56", 1209.8],
+            ["cx + 28.92", 1184.3],
+            ["cx + 50.3", 1158.8],
+            ["cx + 71.68", 1133.3],
+            ["cx + 93.06", 1107.8],
+            ["cx + 114.42", 1082.3],
+            ["cx + 135.8", 1056.8],
+            ["cx + 157.18", 1031.3],
+            ["cx + 178.56", 1005.8],
+            ["cx + 199.92", 980.3],
+            ["cx + 221.3", 954.8]
+          ],
+          "fill": "liquid"
+        },
+        {
+          "id": "glass_stroke",
+          "type": "polygon",
+          "points": [
+            ["cx - 300", 880],
+            ["cx - 271.5", 914],
+            ["cx - 243", 948],
+            ["cx - 214.5", 982],
+            ["cx - 186", 1016],
+            ["cx - 157.5", 1050],
+            ["cx - 129", 1084],
+            ["cx - 100.5", 1118],
+            ["cx - 72", 1152],
+            ["cx - 43.5", 1186],
+            ["cx - 15", 1220],
+            ["cx + 15", 1220],
+            ["cx + 43.5", 1186],
+            ["cx + 72", 1152],
+            ["cx + 100.5", 1118],
+            ["cx + 129", 1084],
+            ["cx + 157.5", 1050],
+            ["cx + 186", 1016],
+            ["cx + 214.5", 982],
+            ["cx + 243", 948],
+            ["cx + 271.5", 914],
+            ["cx + 300", 880]
+          ],
+          "fill": "#00000000",
+          "stroke": { "color": "ink_glass", "width": 16 }
+        },
+        {
+          "id": "stem",
+          "type": "rect",
+          "box": { "x": "cx - 18", "y": 1204, "w": 36, "h": 300 },
+          "fill": "with_alpha(#FFFFFF, 0.75)",
+          "stroke": { "color": "ink_glass", "width": 14 }
+        },
+        {
+          "id": "foot",
+          "type": "rect",
+          "box": { "x": "cx - 190", "y": 1500, "w": 380, "h": 36 },
+          "radius": 18,
+          "fill": "with_alpha(#FFFFFF, 0.75)",
+          "stroke": { "color": "ink_glass", "width": 14 }
+        },
+        {
+          "id": "cherry",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": "cx + 140", "y": 872, "w": 116, "h": 116 },
+          "fill": "#D6224A",
+          "stroke": { "color": "#8F1030", "width": 10 }
+        },
+        {
+          "id": "cherry_stem",
+          "type": "polygon",
+          "closed": false,
+          "points": [["cx + 140", 820], ["cx + 180", 724]],
+          "stroke": { "color": "#4F8A2B", "width": 14 }
+        }
+      ],
+      "note": "Martini glass with a cherry."
+    },
+    {
+      "id": "titles",
+      "type": "group",
+      "layers": [
+        {
+          "id": "title",
+          "type": "text",
+          "text": "{title}",
+          "anchor": "center",
+          "font": "script",
+          "size": 300,
+          "color": "ink",
+          "max_width": 1200,
+          "min_size": 140,
+          "at": { "x": "cx", "y": 410 }
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "text": "{upper(subtitle)}",
+          "anchor": "center",
+          "font": "bold",
+          "size": 68,
+          "color": "muted",
+          "max_width": 1120,
+          "min_size": 40,
+          "at": { "x": "cx", "y": 1930 }
+        }
+      ],
+      "note": "Title and subtitle."
+    }
+  ]
+}

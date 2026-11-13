@@ -1,0 +1,1507 @@
+{
+  "format": 1,
+  "name": "Cocktail card",
+  "note": "Party cocktail card, 63 x 88 mm at 600 dpi with 3 mm bleed (canvas 1632 x 2220, trim at 70 px). Illustrated glass, proportion bar, strength drops and an optional QR code. Ingredients come from the catalog param.",
+  "canvas": { "width": 1632, "height": 2220, "dpi": 600, "bleed": 70 },
+  "fonts": {
+    "script": { "path": "assets/fonts/Pacifico-Regular.ttf", "note": "Cocktail name" },
+    "body": { "path": "assets/fonts/Poppins-Medium.ttf", "note": "Text" },
+    "bold": { "path": "assets/fonts/Poppins-SemiBold.ttf", "note": "Numbers and labels" }
+  },
+  "params": {
+    "cocktail_name": {
+      "type": "text",
+      "default": "Cocktail Name",
+      "max_length": 40,
+      "group": "Drink"
+    },
+    "tagline": { "type": "text", "default": "", "max_length": 48, "group": "Drink" },
+    "ingredients": {
+      "type": "list",
+      "item": {
+        "ingredient": {
+          "type": "enum",
+          "options": [
+            "Ananassaft",
+            "Aperitif alkoholfrei",
+            "Aperol",
+            "Blue Curaçao",
+            "Blue Curaçao Sirup",
+            "Bombay Sapphire Gin",
+            "Cachaça",
+            "Campari",
+            "Cola",
+            "Cranberrysaft",
+            "Crushed Ice",
+            "Dunkler Rum",
+            "Erdbeersirup",
+            "Gin",
+            "Gin entalkoholisiert",
+            "Ginger Beer",
+            "Grenadine",
+            "Honigsirup",
+            "Johannisbeernektar",
+            "Kokoscreme",
+            "Limette",
+            "Limettensaft",
+            "Limettensirup",
+            "Maracujanektar",
+            "Minze",
+            "Orangensaft",
+            "Pfirsichlikör",
+            "Prosecco",
+            "Puschkin Black Berries",
+            "Rohrzucker",
+            "Roter Wermut",
+            "Rum alkoholfrei",
+            "Sekt alkoholfrei",
+            "Sodawasser",
+            "Tequila",
+            "Tonic Water",
+            "Triple Sec",
+            "Vodka",
+            "Vodka alkoholfrei",
+            "Weißer Rum",
+            "Whiskey",
+            "Zitronensaft",
+            "Zuckersirup"
+          ]
+        },
+        "amount": { "type": "number", "default": 0 },
+        "unit": {
+          "type": "enum",
+          "options": ["cl", "ml", "tsp", "pc", "dash", "none"],
+          "default": "cl"
+        },
+        "vol": { "type": "number", "default": -1 }
+      },
+      "default": [],
+      "label": "Ingredients",
+      "note": "Pick the ingredient from the list; its name, color and alcohol come from the ingredient catalog. vol is % vol: leave -1 to use the catalog's value. Volumes add up for cl and ml only.",
+      "group": "Drink"
+    },
+    "virgin": {
+      "type": "bool",
+      "default": false,
+      "label": "Alcohol-free version",
+      "note": "Swaps every alcoholic ingredient for its alternative from the catalog (column alt).",
+      "group": "Drink"
+    },
+    "background": { "type": "color", "default": "#E85D75", "label": "Card color", "group": "Look" },
+    "liquid_mode": {
+      "type": "enum",
+      "options": ["auto", "custom"],
+      "default": "auto",
+      "label": "Drink color from",
+      "note": "auto mixes the ingredient colors by volume; custom uses the color below.",
+      "group": "Look"
+    },
+    "liquid": {
+      "type": "color",
+      "default": "#F4A6B7",
+      "label": "Custom drink color",
+      "group": "Look"
+    },
+    "glass": {
+      "type": "enum",
+      "options": ["highball", "tumbler", "martini", "hurricane", "shot", "coupe", "wine"],
+      "default": "highball",
+      "group": "Look"
+    },
+    "fill": {
+      "type": "number",
+      "default": 0.82,
+      "min": 0.2,
+      "max": 0.95,
+      "label": "Glass fill",
+      "group": "Look"
+    },
+    "ice": { "type": "bool", "default": true, "group": "Look" },
+    "straw": { "type": "bool", "default": true, "group": "Look" },
+    "garnish": {
+      "type": "enum",
+      "options": ["none", "orange", "lime", "cherry"],
+      "default": "none",
+      "group": "Look"
+    },
+    "lang": {
+      "type": "enum",
+      "options": ["de", "en"],
+      "default": "de",
+      "label": "Language",
+      "group": "Card"
+    },
+    "url": {
+      "type": "text",
+      "default": "",
+      "label": "Recipe link (QR code)",
+      "note": "Empty hides the QR code. Short links make bigger, easier to scan modules.",
+      "group": "Card"
+    },
+    "catalog": {
+      "type": "list",
+      "item": {
+        "name": "text",
+        "en": "text",
+        "color": { "type": "color", "default": "#F4A6B7" },
+        "vol": { "type": "number", "default": 0 },
+        "unit": {
+          "type": "enum",
+          "options": ["cl", "tsp", "pc", "none"],
+          "default": "cl"
+        },
+        "tint": { "type": "number", "default": 1 },
+        "alt": { "type": "text", "default": "" },
+        "bottle": { "type": "number", "default": 0 }
+      },
+      "default": [
+        {
+          "name": "Ananassaft",
+          "en": "Pineapple juice",
+          "color": "#F9D548",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Aperitif alkoholfrei",
+          "en": "Alcohol-free bitter aperitif",
+          "color": "#FF6A2B",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Aperol",
+          "en": "Aperol",
+          "color": "#FF6A2B",
+          "vol": 11,
+          "unit": "cl",
+          "alt": "Aperitif alkoholfrei",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Blue Curaçao",
+          "en": "Blue curaçao",
+          "color": "#3FA9F5",
+          "vol": 21,
+          "unit": "cl",
+          "alt": "Blue Curaçao Sirup",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Blue Curaçao Sirup",
+          "en": "Blue curaçao syrup",
+          "color": "#3FA9F5",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Bombay Sapphire Gin",
+          "en": "Bombay Sapphire gin",
+          "color": "#CFE8F0",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Gin entalkoholisiert",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Cachaça",
+          "en": "Cachaça",
+          "color": "#E6E2B8",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Rum alkoholfrei",
+          "bottle": 70,
+          "tint": 0.15
+        },
+        {
+          "name": "Campari",
+          "en": "Campari",
+          "color": "#C8102E",
+          "vol": 25,
+          "unit": "cl",
+          "alt": "Aperitif alkoholfrei",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Cola",
+          "en": "Cola",
+          "color": "#4A2C1A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Cranberrysaft",
+          "en": "Cranberry juice",
+          "color": "#B3203C",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Crushed Ice",
+          "en": "Crushed ice",
+          "color": "#BFE3F2",
+          "vol": 0,
+          "unit": "none",
+          "alt": "",
+          "bottle": 0,
+          "tint": 0
+        },
+        {
+          "name": "Dunkler Rum",
+          "en": "Dark rum",
+          "color": "#8B5A2B",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Rum alkoholfrei",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Erdbeersirup",
+          "en": "Strawberry syrup",
+          "color": "#F0607A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Gin",
+          "en": "Gin",
+          "color": "#CFE8F0",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Gin entalkoholisiert",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Gin entalkoholisiert",
+          "en": "Alcohol-free gin",
+          "color": "#CFE8F0",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Ginger Beer",
+          "en": "Ginger beer",
+          "color": "#E9C46A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 0.6
+        },
+        {
+          "name": "Grenadine",
+          "en": "Grenadine",
+          "color": "#D6224A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Honigsirup",
+          "en": "Honey syrup",
+          "color": "#E8A93A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 50,
+          "tint": 1
+        },
+        {
+          "name": "Johannisbeernektar",
+          "en": "Blackcurrant nectar",
+          "color": "#7A1B3A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Kokoscreme",
+          "en": "Coconut cream",
+          "color": "#F3D9B1",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 40,
+          "tint": 0.6
+        },
+        {
+          "name": "Limette",
+          "en": "Lime",
+          "color": "#A8D86B",
+          "vol": 0,
+          "unit": "pc",
+          "alt": "",
+          "bottle": 0,
+          "tint": 0.2
+        },
+        {
+          "name": "Limettensaft",
+          "en": "Lime juice",
+          "color": "#A8D86B",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 0.5
+        },
+        {
+          "name": "Limettensirup",
+          "en": "Lime syrup",
+          "color": "#A8D86B",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Maracujanektar",
+          "en": "Passion fruit nectar",
+          "color": "#F5B93A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Minze",
+          "en": "Mint",
+          "color": "#5FB36A",
+          "vol": 0,
+          "unit": "pc",
+          "alt": "",
+          "bottle": 0,
+          "tint": 0.2
+        },
+        {
+          "name": "Orangensaft",
+          "en": "Orange juice",
+          "color": "#FF9F2E",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 1
+        },
+        {
+          "name": "Pfirsichlikör",
+          "en": "Peach schnapps",
+          "color": "#F8B58A",
+          "vol": 20,
+          "unit": "cl",
+          "alt": "Orangensaft",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Prosecco",
+          "en": "Prosecco",
+          "color": "#F3E3A3",
+          "vol": 11,
+          "unit": "cl",
+          "alt": "Sekt alkoholfrei",
+          "bottle": 75,
+          "tint": 0.3
+        },
+        {
+          "name": "Puschkin Black Berries",
+          "en": "Puschkin Black Berries",
+          "color": "#5B2C6F",
+          "vol": 16.6,
+          "unit": "cl",
+          "alt": "Johannisbeernektar",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Rohrzucker",
+          "en": "Cane sugar",
+          "color": "#F4E4C8",
+          "vol": 0,
+          "unit": "tsp",
+          "alt": "",
+          "bottle": 0,
+          "tint": 0
+        },
+        {
+          "name": "Roter Wermut",
+          "en": "Sweet vermouth",
+          "color": "#8E2B2B",
+          "vol": 15,
+          "unit": "cl",
+          "alt": "Johannisbeernektar",
+          "bottle": 75,
+          "tint": 1
+        },
+        {
+          "name": "Rum alkoholfrei",
+          "en": "Alcohol-free rum",
+          "color": "#D9EEF2",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Sekt alkoholfrei",
+          "en": "Alcohol-free sparkling wine",
+          "color": "#F3E3A3",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 75,
+          "tint": 0.3
+        },
+        {
+          "name": "Sodawasser",
+          "en": "Soda water",
+          "color": "#DDEFF5",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 0.1
+        },
+        {
+          "name": "Tequila",
+          "en": "Tequila",
+          "color": "#EAD9A6",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Rum alkoholfrei",
+          "bottle": 70,
+          "tint": 0.15
+        },
+        {
+          "name": "Tonic Water",
+          "en": "Tonic water",
+          "color": "#E9F3F5",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 0.1
+        },
+        {
+          "name": "Triple Sec",
+          "en": "Triple sec",
+          "color": "#F6C768",
+          "vol": 30,
+          "unit": "cl",
+          "alt": "Orangensaft",
+          "bottle": 70,
+          "tint": 0.6
+        },
+        {
+          "name": "Vodka",
+          "en": "Vodka",
+          "color": "#E6EEF2",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Vodka alkoholfrei",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Vodka alkoholfrei",
+          "en": "Alcohol-free vodka",
+          "color": "#E6EEF2",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Weißer Rum",
+          "en": "White rum",
+          "color": "#D9EEF2",
+          "vol": 37.5,
+          "unit": "cl",
+          "alt": "Rum alkoholfrei",
+          "bottle": 70,
+          "tint": 0.12
+        },
+        {
+          "name": "Whiskey",
+          "en": "Whiskey",
+          "color": "#C9822B",
+          "vol": 40,
+          "unit": "cl",
+          "alt": "Rum alkoholfrei",
+          "bottle": 70,
+          "tint": 1
+        },
+        {
+          "name": "Zitronensaft",
+          "en": "Lemon juice",
+          "color": "#FFF08A",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 100,
+          "tint": 0.5
+        },
+        {
+          "name": "Zuckersirup",
+          "en": "Sugar syrup",
+          "color": "#F4E4C8",
+          "vol": 0,
+          "unit": "cl",
+          "alt": "",
+          "bottle": 70,
+          "tint": 0.2
+        }
+      ],
+      "label": "Ingredient catalog",
+      "note": "Name (German), English name, color, % vol, unit for shopping lists, tint (0 to 1: how strongly it colors a mixed drink), alcohol-free alternative and bottle size in cl. A new ingredient also needs its name in the options of the ingredient field of the ingredients list.",
+      "group": "Catalog"
+    }
+  },
+  "functions": {
+    "tr": {
+      "args": { "de_text": "text", "en_text": "text" },
+      "expr": "lang == 'en' ? en_text : de_text",
+      "note": "Picks the label for the card language."
+    },
+    "dec": {
+      "args": { "x": "number", "d": "number" },
+      "expr": "lang == 'en' ? fmt(x, d) : replace(fmt(x, d), '.', ',')",
+      "note": "Number with the language's decimal separator."
+    },
+    "num": {
+      "args": { "x": "number" },
+      "expr": "x == floor(x) ? fmt(x, 0) : dec(x, 1)",
+      "note": "Number without needless decimals: 4, 1,5."
+    },
+    "pct": {
+      "args": { "v": "number" },
+      "expr": "dec(v, v == floor(v) ? 0 : 1)",
+      "note": "Percent value with one decimal only when needed."
+    },
+    "hw": {
+      "args": { "t": "number" },
+      "expr": "glass == 'highball' ? 1 - 0.1 * t : glass == 'tumbler' ? 1 - 0.18 * t : glass == 'shot' ? 1 - 0.26 * t : glass == 'martini' ? 1 - 0.95 * t : glass == 'coupe' ? 0.12 + 0.88 * sqrt(max(0, 1 - t * t)) : glass == 'wine' ? 0.1 + 0.9 * sin(pi * (0.25 + 0.7 * t)) : 0.34 + 0.66 * sin(pi * (0.08 + 0.84 * t))",
+      "note": "Half width of the glass body as a fraction of gw, t = 0 at the rim and 1 at the bottom."
+    },
+    "ing_eff": {
+      "args": { "name": "text" },
+      "expr": "virgin and get(catalog, name, 'vol', 0) > 0 and get(catalog, name, 'alt', '') != '' ? get(catalog, name, 'alt', name) : name",
+      "note": "The ingredient that is really used: in a virgin card, an alcoholic one is swapped for its alternative."
+    },
+    "ing_name": {
+      "args": { "name": "text" },
+      "expr": "tr(ing_eff(name), get(catalog, ing_eff(name), 'en', ing_eff(name)))",
+      "note": "Ingredient name in the card language."
+    },
+    "ing_color": {
+      "args": { "name": "text" },
+      "expr": "get(catalog, ing_eff(name), 'color', #F4A6B7)",
+      "note": "Color of an ingredient, from the catalog."
+    },
+    "ing_vol": {
+      "args": { "name": "text", "own": "number" },
+      "expr": "virgin ? get(catalog, ing_eff(name), 'vol', 0) : own >= 0 ? own : get(catalog, name, 'vol', 0)",
+      "note": "Alcohol in % vol: the card's own value, or the catalog's when it is -1."
+    },
+    "ing_tint": {
+      "args": { "name": "text" },
+      "expr": "get(catalog, ing_eff(name), 'tint', 1)",
+      "note": "How strongly an ingredient colors the drink (clear spirits barely do)."
+    },
+    "unit_name": {
+      "args": { "unit": "text" },
+      "expr": "unit == 'tsp' ? tr('TL', 'tsp') : unit == 'pc' ? tr('Stk', 'pcs') : unit == 'dash' ? tr('Spritzer', 'dash') : unit == 'none' ? '' : unit",
+      "note": "Unit label in the card language."
+    },
+    "cl_of": {
+      "args": { "unit": "text", "amount": "number" },
+      "expr": "unit == 'cl' ? amount : unit == 'ml' ? amount / 10 : 0",
+      "note": "Volume in cl; counted things and spoons do not add up."
+    },
+    "cf_x": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "cx + (392 + 128 * ((i * 0.618 + off * 0.13) % 1)) * cos(rad((i * 6 + off) * 137.508))",
+      "note": "x of a confetti piece on a golden-angle spiral."
+    },
+    "cf_y": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "stage_cy + (236 + 92 * ((i * 0.382 + off * 0.21) % 1)) * sin(rad((i * 6 + off) * 137.508))",
+      "note": "y of a confetti piece."
+    },
+    "cf_free": {
+      "args": { "i": "number", "off": "number" },
+      "expr": "not (abs(cf_x(i, off) - cx) < gw + 60 and cf_y(i, off) > gtop - 140 and cf_y(i, off) < gtop + gtot + 48)",
+      "note": "True when the piece does not land on the glass."
+    }
+  },
+  "consts": {
+    "n": "len(ingredients)",
+    "cx": 816,
+    "ink": "mix(background, #24121C, 0.72)",
+    "soft": "mix(background, #FFFFFF, 0.72)",
+    "paper": "mix(#FFFFFF, background, 0.06)",
+    "muted": "mix(ink, paper, 0.45)",
+    "ink_glass": "mix(background, #24121C, 0.55)",
+    "stage_cy": 476,
+    "bare": "glass in ['martini', 'coupe', 'wine']",
+    "gw": "glass == 'highball' ? 128 : glass == 'tumbler' ? 180 : glass == 'martini' ? 252 : glass == 'hurricane' ? 192 : glass == 'coupe' ? 224 : glass == 'wine' ? 168 : 144",
+    "gbh": "glass == 'highball' ? 500 : glass == 'tumbler' ? 320 : glass == 'martini' ? 264 : glass == 'hurricane' ? 356 : glass == 'coupe' ? 192 : glass == 'wine' ? 380 : 280",
+    "gstem": "glass == 'martini' ? 224 : glass == 'hurricane' ? 124 : glass == 'coupe' ? 208 : glass == 'wine' ? 192 : 0",
+    "gfoot": "glass == 'martini' ? 140 : glass == 'hurricane' ? 112 : glass == 'coupe' ? 128 : glass == 'wine' ? 120 : 0",
+    "gtot": "gbh + gstem + (gstem > 0 ? 28 : 0)",
+    "gtop": "stage_cy - gtot / 2 + 12",
+    "ts": "1 - clamp(fill, 0.2, 0.95)",
+    "pitch": "min(116, 508 / max(n, 1))",
+    "row_size": "clamp(pitch * 0.66, 46, 64)",
+    "list_top": "1364 + (508 - pitch * n) / 2",
+    "bar_x": 238,
+    "bar_w": 1156,
+    "badge_y": 296,
+    "corner_y": 690
+  },
+  "layers": [
+    {
+      "id": "bases",
+      "type": "group",
+      "layers": [
+        {
+          "id": "disc_base",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": 0, "y": 0, "w": 200, "h": 200 },
+          "stroke": { "color": "paper", "width": 12 },
+          "note": "Round badge: extend it."
+        },
+        {
+          "id": "badge_text_base",
+          "type": "text",
+          "text": "",
+          "anchor": "center",
+          "font": "body",
+          "size": 44,
+          "color": "with_alpha(#FFFFFF, 0.9)",
+          "at": { "x": 0, "y": 0 },
+          "note": "Small white label inside a badge."
+        },
+        {
+          "id": "row_text_base",
+          "type": "text",
+          "text": "",
+          "font": "body",
+          "size": "row_size",
+          "color": "ink",
+          "at": { "x": 0, "y": 0 },
+          "note": "One text of an ingredient row."
+        },
+        {
+          "id": "ice_base",
+          "type": "rect",
+          "anchor": "center",
+          "box": { "x": 0, "y": 0, "w": 20, "h": 20 },
+          "fill": "with_alpha(#FFFFFF, 0.5)",
+          "radius": 18,
+          "stroke": { "color": "with_alpha(#FFFFFF, 0.8)", "width": 6 },
+          "note": "Ice cube."
+        }
+      ],
+      "visible": false,
+      "note": "Hidden base layers the visible ones extend."
+    },
+    {
+      "id": "calc",
+      "type": "group",
+      "layers": [
+        {
+          "id": "vol_acc",
+          "type": "rect",
+          "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+          "box": {
+            "x": "i == 0 ? 0 : @vol_acc[i - 1].bounds.right",
+            "y": 0,
+            "w": "cl_of(ing.unit, ing.amount) * 10",
+            "h": 2
+          },
+          "note": "Chain of boxes as wide as each ingredient in ml: the end of the last one is the total."
+        },
+        {
+          "id": "pure_acc",
+          "type": "rect",
+          "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+          "box": {
+            "x": "i == 0 ? 0 : @pure_acc[i - 1].bounds.right",
+            "y": 0,
+            "w": "cl_of(ing.unit, ing.amount) * 10 * ing_vol(ing.ingredient, ing.vol)",
+            "h": 2
+          },
+          "note": "Same, weighted with % vol: pure alcohol."
+        },
+        {
+          "id": "tint_acc",
+          "type": "rect",
+          "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+          "box": {
+            "x": "i == 0 ? 0 : @tint_acc[i - 1].bounds.right",
+            "y": 0,
+            "w": "cl_of(ing.unit, ing.amount) * 10 * ing_tint(ing.ingredient)",
+            "h": 2
+          },
+          "note": "Same, weighted with how strongly each ingredient colors the drink."
+        },
+        {
+          "id": "mix_acc",
+          "type": "rect",
+          "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+          "box": { "x": 0, "y": 0, "w": 2, "h": 2 },
+          "fill": "@tint_acc[i].bounds.right <= 0 ? paper : (i == 0 ? ing_color(ing.ingredient) : mix(@mix_acc[i - 1].fill, ing_color(ing.ingredient), @tint_acc[i].bounds.w / @tint_acc[i].bounds.right))",
+          "note": "Running mix of the ingredient colors, weighted by volume and tint: the last one is the drink color."
+        },
+        {
+          "id": "totals",
+          "type": "rect",
+          "box": {
+            "x": 0,
+            "y": 0,
+            "w": "n > 0 ? @vol_acc[n - 1].bounds.right : 0",
+            "h": "n > 0 ? (@vol_acc[n - 1].bounds.right > 0 ? round(10 * @pure_acc[n - 1].bounds.right / @vol_acc[n - 1].bounds.right) : 0) : 0"
+          },
+          "note": "w is the total in ml, h the alcohol in tenths of % vol."
+        },
+        {
+          "id": "strength",
+          "type": "rect",
+          "box": {
+            "x": 0,
+            "y": 0,
+            "h": 2,
+            "w": "@totals.bounds.h <= 0 ? 0 : @totals.bounds.h < 80 ? 1 : @totals.bounds.h < 140 ? 2 : @totals.bounds.h < 200 ? 3 : 4"
+          },
+          "note": "w is the strength 0 to 4."
+        }
+      ],
+      "visible": false,
+      "note": "Numbers computed from the ingredients, read through bounds and fill (a repeat cannot sum up any other way)."
+    },
+    {
+      "id": "face",
+      "type": "group",
+      "layers": [
+        {
+          "id": "bleed_fill",
+          "type": "rect",
+          "note": "Fills the whole canvas including the bleed.",
+          "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+          "fill": "background"
+        },
+        {
+          "id": "panel",
+          "type": "rect",
+          "note": "Tinted card face.",
+          "box": { "x": 114, "y": 114, "w": "canvas.w - 228", "h": "canvas.h - 228" },
+          "fill": "soft",
+          "radius": 120
+        },
+        {
+          "id": "stitch",
+          "type": "rect",
+          "note": "Dotted 'stitching' line.",
+          "box": { "x": 142, "y": 142, "w": "canvas.w - 284", "h": "canvas.h - 284" },
+          "fill": "#00000000",
+          "radius": 96,
+          "stroke": {
+            "color": "with_alpha(background, 0.55)",
+            "width": 8,
+            "dash": [0.2, 26]
+          }
+        }
+      ]
+    },
+    {
+      "id": "stage",
+      "type": "group",
+      "layers": [
+        {
+          "id": "sun_outer",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": "cx", "y": "stage_cy", "w": 744, "h": 744 },
+          "fill": "with_alpha(#FFFFFF, 0.45)"
+        },
+        {
+          "id": "sun_inner",
+          "type": "ellipse",
+          "anchor": "center",
+          "box": { "x": "cx", "y": "stage_cy", "w": 600, "h": 600 },
+          "fill": "with_alpha(#FFFFFF, 0.6)"
+        },
+        {
+          "id": "confetti_star",
+          "type": "polygon",
+          "anchor": "center",
+          "repeat": { "count": 6, "index": "i" },
+          "visible": "cf_free(i, 0)",
+          "shape": { "type": "star", "inner": 0.45 },
+          "rotate": "i * 23",
+          "box": {
+            "x": "cf_x(i, 0)",
+            "y": "cf_y(i, 0)",
+            "w": "32 + 16 * ((i * 0.37) % 1)",
+            "h": "32 + 16 * ((i * 0.37) % 1)"
+          },
+          "fill": "#FFD166"
+        },
+        {
+          "id": "confetti_dot",
+          "type": "ellipse",
+          "anchor": "center",
+          "repeat": { "count": 6, "index": "i" },
+          "visible": "cf_free(i, 2)",
+          "box": {
+            "x": "cf_x(i, 2)",
+            "y": "cf_y(i, 2)",
+            "w": "28 + 16 * ((i * 0.37) % 1)",
+            "h": "28 + 16 * ((i * 0.37) % 1)"
+          },
+          "fill": "with_alpha(background, 0.55)"
+        },
+        {
+          "id": "confetti_spark",
+          "type": "polygon",
+          "anchor": "center",
+          "repeat": { "count": 6, "index": "i" },
+          "visible": "cf_free(i, 4)",
+          "shape": { "type": "diamond" },
+          "rotate": "i * 23",
+          "box": {
+            "x": "cf_x(i, 4)",
+            "y": "cf_y(i, 4)",
+            "w": "28 + 16 * ((i * 0.37) % 1)",
+            "h": "28 + 16 * ((i * 0.37) % 1)"
+          },
+          "fill": "#FFFFFF"
+        },
+        {
+          "id": "glass",
+          "type": "group",
+          "layers": [
+            {
+              "id": "straw_shape",
+              "type": "polygon",
+              "closed": false,
+              "visible": "straw and not bare and glass != 'shot'",
+              "points": [["gw * 0.12", "gbh * 0.75"], ["gw * 0.42", -124], ["gw * 0.5", -124]],
+              "stroke": { "color": "mix(background, #FFFFFF, 0.25)", "width": 30 }
+            },
+            {
+              "id": "stem",
+              "type": "rect",
+              "visible": "gstem > 0",
+              "box": { "x": -14, "y": "gbh - 12", "w": 28, "h": "gstem + 16" },
+              "fill": "with_alpha(#FFFFFF, 0.75)",
+              "stroke": { "color": "ink_glass", "width": 10 }
+            },
+            {
+              "id": "foot",
+              "type": "rect",
+              "visible": "gstem > 0",
+              "box": { "x": "-gfoot", "y": "gbh + gstem", "w": "gfoot * 2", "h": 28 },
+              "fill": "with_alpha(#FFFFFF, 0.75)",
+              "radius": 14,
+              "stroke": { "color": "ink_glass", "width": 10 }
+            },
+            {
+              "id": "glass_fill",
+              "type": "polygon",
+              "points": [
+                ["-(gw * hw(0) - 0)", "gbh * 0"],
+                ["-(gw * hw(0.0833) - 0)", "gbh * 0.0833"],
+                ["-(gw * hw(0.1667) - 0)", "gbh * 0.1667"],
+                ["-(gw * hw(0.25) - 0)", "gbh * 0.25"],
+                ["-(gw * hw(0.3333) - 0)", "gbh * 0.3333"],
+                ["-(gw * hw(0.4167) - 0)", "gbh * 0.4167"],
+                ["-(gw * hw(0.5) - 0)", "gbh * 0.5"],
+                ["-(gw * hw(0.5833) - 0)", "gbh * 0.5833"],
+                ["-(gw * hw(0.6667) - 0)", "gbh * 0.6667"],
+                ["-(gw * hw(0.75) - 0)", "gbh * 0.75"],
+                ["-(gw * hw(0.8333) - 0)", "gbh * 0.8333"],
+                ["-(gw * hw(0.9167) - 0)", "gbh * 0.9167"],
+                ["-(gw * hw(1) - 0)", "gbh * 1"],
+                ["(gw * hw(1) - 0)", "gbh * 1"],
+                ["(gw * hw(0.9167) - 0)", "gbh * 0.9167"],
+                ["(gw * hw(0.8333) - 0)", "gbh * 0.8333"],
+                ["(gw * hw(0.75) - 0)", "gbh * 0.75"],
+                ["(gw * hw(0.6667) - 0)", "gbh * 0.6667"],
+                ["(gw * hw(0.5833) - 0)", "gbh * 0.5833"],
+                ["(gw * hw(0.5) - 0)", "gbh * 0.5"],
+                ["(gw * hw(0.4167) - 0)", "gbh * 0.4167"],
+                ["(gw * hw(0.3333) - 0)", "gbh * 0.3333"],
+                ["(gw * hw(0.25) - 0)", "gbh * 0.25"],
+                ["(gw * hw(0.1667) - 0)", "gbh * 0.1667"],
+                ["(gw * hw(0.0833) - 0)", "gbh * 0.0833"],
+                ["(gw * hw(0) - 0)", "gbh * 0"]
+              ],
+              "fill": "with_alpha(#FFFFFF, 0.62)"
+            },
+            {
+              "id": "liquid_shape",
+              "type": "polygon",
+              "points": [
+                ["-(gw * hw((ts + (0.96 - ts) * 0)) - 14)", "gbh * (ts + (0.96 - ts) * 0)"],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.0833)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.0833)"
+                ],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.1667)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.1667)"
+                ],
+                ["-(gw * hw((ts + (0.96 - ts) * 0.25)) - 14)", "gbh * (ts + (0.96 - ts) * 0.25)"],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.3333)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.3333)"
+                ],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.4167)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.4167)"
+                ],
+                ["-(gw * hw((ts + (0.96 - ts) * 0.5)) - 14)", "gbh * (ts + (0.96 - ts) * 0.5)"],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.5833)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.5833)"
+                ],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.6667)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.6667)"
+                ],
+                ["-(gw * hw((ts + (0.96 - ts) * 0.75)) - 14)", "gbh * (ts + (0.96 - ts) * 0.75)"],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.8333)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.8333)"
+                ],
+                [
+                  "-(gw * hw((ts + (0.96 - ts) * 0.9167)) - 14)",
+                  "gbh * (ts + (0.96 - ts) * 0.9167)"
+                ],
+                ["-(gw * hw((ts + (0.96 - ts) * 1)) - 14)", "gbh * (ts + (0.96 - ts) * 1)"],
+                ["gw * hw((ts + (0.96 - ts) * 1)) - 14", "gbh * (ts + (0.96 - ts) * 1)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.9167)) - 14", "gbh * (ts + (0.96 - ts) * 0.9167)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.8333)) - 14", "gbh * (ts + (0.96 - ts) * 0.8333)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.75)) - 14", "gbh * (ts + (0.96 - ts) * 0.75)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.6667)) - 14", "gbh * (ts + (0.96 - ts) * 0.6667)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.5833)) - 14", "gbh * (ts + (0.96 - ts) * 0.5833)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.5)) - 14", "gbh * (ts + (0.96 - ts) * 0.5)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.4167)) - 14", "gbh * (ts + (0.96 - ts) * 0.4167)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.3333)) - 14", "gbh * (ts + (0.96 - ts) * 0.3333)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.25)) - 14", "gbh * (ts + (0.96 - ts) * 0.25)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.1667)) - 14", "gbh * (ts + (0.96 - ts) * 0.1667)"],
+                ["gw * hw((ts + (0.96 - ts) * 0.0833)) - 14", "gbh * (ts + (0.96 - ts) * 0.0833)"],
+                ["gw * hw((ts + (0.96 - ts) * 0)) - 14", "gbh * (ts + (0.96 - ts) * 0)"]
+              ],
+              "fill": "liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid"
+            },
+            {
+              "id": "foam",
+              "type": "polygon",
+              "fill": "with_alpha(#FFFFFF, 0.38)",
+              "points": [
+                ["-(gw * hw(ts + 0.1 * 0) - 14)", "gbh * (ts + 0.1 * 0)"],
+                ["-(gw * hw(ts + 0.1 * 0.25) - 14)", "gbh * (ts + 0.1 * 0.25)"],
+                ["-(gw * hw(ts + 0.1 * 0.5) - 14)", "gbh * (ts + 0.1 * 0.5)"],
+                ["-(gw * hw(ts + 0.1 * 0.75) - 14)", "gbh * (ts + 0.1 * 0.75)"],
+                ["-(gw * hw(ts + 0.1 * 1) - 14)", "gbh * (ts + 0.1 * 1)"],
+                ["gw * hw(ts + 0.1 * 1) - 14", "gbh * (ts + 0.1 * 1)"],
+                ["gw * hw(ts + 0.1 * 0.75) - 14", "gbh * (ts + 0.1 * 0.75)"],
+                ["gw * hw(ts + 0.1 * 0.5) - 14", "gbh * (ts + 0.1 * 0.5)"],
+                ["gw * hw(ts + 0.1 * 0.25) - 14", "gbh * (ts + 0.1 * 0.25)"],
+                ["gw * hw(ts + 0.1 * 0) - 14", "gbh * (ts + 0.1 * 0)"]
+              ]
+            },
+            {
+              "id": "ice",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "ice_1",
+                  "type": "rect",
+                  "extends": "ice_base",
+                  "rotate": -14,
+                  "box": { "x": "gw * -0.35", "y": "gbh * 0.4", "w": "gw * 0.40", "h": "gw * 0.40" }
+                },
+                {
+                  "id": "ice_2",
+                  "type": "rect",
+                  "extends": "ice_base",
+                  "rotate": 12,
+                  "box": { "x": "gw * 0.3", "y": "gbh * 0.48", "w": "gw * 0.36", "h": "gw * 0.36" }
+                },
+                {
+                  "id": "ice_3",
+                  "type": "rect",
+                  "extends": "ice_base",
+                  "rotate": 6,
+                  "box": {
+                    "x": "gw * -0.05",
+                    "y": "gbh * 0.64",
+                    "w": "gw * 0.39",
+                    "h": "gw * 0.39"
+                  }
+                }
+              ],
+              "visible": "ice and not bare and glass != 'shot'"
+            },
+            {
+              "id": "reflection",
+              "type": "polygon",
+              "closed": false,
+              "points": [
+                ["-(gw * hw(0.12) - 34)", "gbh * 0.12"],
+                ["-(gw * hw(0.22) - 34)", "gbh * 0.22"],
+                ["-(gw * hw(0.32) - 34)", "gbh * 0.32"],
+                ["-(gw * hw(0.42) - 34)", "gbh * 0.42"],
+                ["-(gw * hw(0.52) - 34)", "gbh * 0.52"],
+                ["-(gw * hw(0.62) - 34)", "gbh * 0.62"]
+              ],
+              "stroke": { "color": "with_alpha(#FFFFFF, 0.8)", "width": 18 }
+            },
+            {
+              "id": "glass_stroke",
+              "type": "polygon",
+              "points": [
+                ["-(gw * hw(0) - 0)", "gbh * 0"],
+                ["-(gw * hw(0.0833) - 0)", "gbh * 0.0833"],
+                ["-(gw * hw(0.1667) - 0)", "gbh * 0.1667"],
+                ["-(gw * hw(0.25) - 0)", "gbh * 0.25"],
+                ["-(gw * hw(0.3333) - 0)", "gbh * 0.3333"],
+                ["-(gw * hw(0.4167) - 0)", "gbh * 0.4167"],
+                ["-(gw * hw(0.5) - 0)", "gbh * 0.5"],
+                ["-(gw * hw(0.5833) - 0)", "gbh * 0.5833"],
+                ["-(gw * hw(0.6667) - 0)", "gbh * 0.6667"],
+                ["-(gw * hw(0.75) - 0)", "gbh * 0.75"],
+                ["-(gw * hw(0.8333) - 0)", "gbh * 0.8333"],
+                ["-(gw * hw(0.9167) - 0)", "gbh * 0.9167"],
+                ["-(gw * hw(1) - 0)", "gbh * 1"],
+                ["(gw * hw(1) - 0)", "gbh * 1"],
+                ["(gw * hw(0.9167) - 0)", "gbh * 0.9167"],
+                ["(gw * hw(0.8333) - 0)", "gbh * 0.8333"],
+                ["(gw * hw(0.75) - 0)", "gbh * 0.75"],
+                ["(gw * hw(0.6667) - 0)", "gbh * 0.6667"],
+                ["(gw * hw(0.5833) - 0)", "gbh * 0.5833"],
+                ["(gw * hw(0.5) - 0)", "gbh * 0.5"],
+                ["(gw * hw(0.4167) - 0)", "gbh * 0.4167"],
+                ["(gw * hw(0.3333) - 0)", "gbh * 0.3333"],
+                ["(gw * hw(0.25) - 0)", "gbh * 0.25"],
+                ["(gw * hw(0.1667) - 0)", "gbh * 0.1667"],
+                ["(gw * hw(0.0833) - 0)", "gbh * 0.0833"],
+                ["(gw * hw(0) - 0)", "gbh * 0"]
+              ],
+              "fill": "#00000000",
+              "stroke": { "color": "ink_glass", "width": 12 }
+            },
+            {
+              "id": "rim",
+              "type": "rect",
+              "visible": "glass in ['highball', 'tumbler', 'shot']",
+              "anchor": "left",
+              "box": { "x": "-gw - 6", "y": 0, "w": "gw * 2 + 12", "h": 0.2 },
+              "fill": "#00000000",
+              "stroke": { "color": "ink_glass", "width": 12 }
+            },
+            {
+              "id": "garnish_group",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "garnish_slice",
+                  "type": "ellipse",
+                  "anchor": "center",
+                  "visible": "garnish == 'orange' or garnish == 'lime'",
+                  "box": { "x": "gw * 0.92", "y": 12, "w": 124, "h": 124 },
+                  "fill": "garnish == 'lime' ? #8BCB4F : #FFA62B",
+                  "stroke": { "color": "garnish == 'lime' ? #4F8A2B : #E07B00", "width": 12 }
+                },
+                {
+                  "id": "garnish_inner",
+                  "type": "ellipse",
+                  "anchor": "center",
+                  "visible": "garnish == 'orange' or garnish == 'lime'",
+                  "box": {
+                    "x": "@garnish_slice.bounds.cx",
+                    "y": "@garnish_slice.bounds.cy",
+                    "w": 76,
+                    "h": 76
+                  },
+                  "fill": "garnish == 'lime' ? #D2EDA6 : #FFD58A"
+                },
+                {
+                  "id": "cherry",
+                  "type": "ellipse",
+                  "anchor": "center",
+                  "visible": "garnish == 'cherry'",
+                  "box": { "x": "gw * 0.55", "y": -12, "w": 88, "h": 88 },
+                  "fill": "#D6224A",
+                  "stroke": { "color": "#8F1030", "width": 8 }
+                },
+                {
+                  "id": "cherry_stem",
+                  "type": "polygon",
+                  "closed": false,
+                  "visible": "garnish == 'cherry'",
+                  "points": [
+                    ["@cherry.bounds.cx", "@cherry.bounds.top + 4"],
+                    ["@cherry.bounds.cx + 28", "@cherry.bounds.top - 60"]
+                  ],
+                  "stroke": { "color": "#4F8A2B", "width": 10 }
+                }
+              ]
+            }
+          ],
+          "translate": { "x": "cx", "y": "gtop" },
+          "note": "Coordinates are relative to the rim of the glass, centred."
+        }
+      ]
+    },
+    {
+      "id": "corners",
+      "type": "group",
+      "layers": [
+        {
+          "id": "volume_badge",
+          "type": "group",
+          "layers": [
+            {
+              "id": "volume_disc",
+              "type": "ellipse",
+              "extends": "disc_base",
+              "box": { "x": 0, "y": 0, "w": 208, "h": 208 },
+              "fill": "paper",
+              "stroke": { "color": "background", "width": 10 }
+            },
+            {
+              "id": "volume_num",
+              "type": "text",
+              "anchor": "center",
+              "font": "bold",
+              "size": 72,
+              "color": "ink",
+              "max_width": 164,
+              "min_size": 48,
+              "text": "{num(@totals.bounds.w)}",
+              "at": { "x": 0, "y": -14 }
+            },
+            {
+              "id": "volume_unit",
+              "type": "text",
+              "extends": "badge_text_base",
+              "text": "ml",
+              "size": 48,
+              "color": "muted",
+              "at": { "x": 0, "y": 48 }
+            }
+          ],
+          "translate": { "x": 352, "y": "corner_y" },
+          "note": "Total volume of the liquids."
+        },
+        {
+          "id": "qr",
+          "type": "group",
+          "layers": [
+            {
+              "id": "qr_tile",
+              "type": "rect",
+              "anchor": "center",
+              "box": { "x": 0, "y": 0, "w": 392, "h": 392 },
+              "fill": "#FFFFFF",
+              "radius": 36,
+              "stroke": { "color": "background", "width": 10 }
+            },
+            {
+              "id": "qr_code",
+              "type": "qr",
+              "text": "{url}",
+              "anchor": "center",
+              "box": { "x": 0, "y": 0, "w": 368, "h": 368 },
+              "fill": "#FFFFFF",
+              "margin": 1,
+              "level": "medium",
+              "style": "dots",
+              "eye": "rounded",
+              "color": "#24121C",
+              "eye_color": "ink_glass"
+            }
+          ],
+          "visible": "url != ''",
+          "translate": { "x": "canvas.w - 352", "y": "corner_y" }
+        }
+      ]
+    },
+    {
+      "id": "badges",
+      "type": "group",
+      "layers": [
+        {
+          "id": "id_badge",
+          "type": "group",
+          "layers": [
+            { "id": "id_disc", "type": "ellipse", "extends": "disc_base", "fill": "background" },
+            {
+              "id": "id_no",
+              "type": "text",
+              "extends": "badge_text_base",
+              "text": "No.",
+              "at": { "x": 0, "y": -40 }
+            },
+            {
+              "id": "id_text",
+              "type": "text",
+              "text": "{card.id}",
+              "anchor": "center",
+              "font": "bold",
+              "size": 80,
+              "color": "#FFFFFF",
+              "max_width": 148,
+              "min_size": 48,
+              "at": { "x": 0, "y": 24 }
+            }
+          ],
+          "translate": { "x": 296, "y": "badge_y" }
+        },
+        {
+          "id": "vol_badge",
+          "type": "group",
+          "layers": [
+            {
+              "id": "vol_disc",
+              "type": "ellipse",
+              "extends": "disc_base",
+              "fill": "(@totals.bounds.h / 10) > 0 ? background : #5FB36A"
+            },
+            {
+              "id": "vol_num",
+              "type": "text",
+              "anchor": "center",
+              "font": "bold",
+              "size": 68,
+              "color": "#FFFFFF",
+              "max_width": 156,
+              "min_size": 44,
+              "text": "{pct((@totals.bounds.h / 10))}",
+              "at": { "x": 0, "y": -16 }
+            },
+            {
+              "id": "vol_label",
+              "type": "text",
+              "extends": "badge_text_base",
+              "text": "% vol",
+              "at": { "x": 0, "y": 44 }
+            }
+          ],
+          "translate": { "x": "canvas.w - 296", "y": "badge_y" },
+          "note": "Alcohol by volume of the finished drink."
+        }
+      ]
+    },
+    {
+      "id": "recipe",
+      "type": "group",
+      "layers": [
+        {
+          "id": "sheet",
+          "type": "rect",
+          "box": { "x": 158, "y": 904, "w": "canvas.w - 316", "h": 1146 },
+          "fill": "paper",
+          "radius": 92,
+          "stroke": { "color": "with_alpha(background, 0.35)", "width": 6 }
+        },
+        {
+          "id": "name",
+          "type": "text",
+          "text": "{cocktail_name}",
+          "anchor": "center",
+          "font": "script",
+          "size": 168,
+          "color": "ink",
+          "max_width": 1140,
+          "min_size": 88,
+          "at": { "x": "cx", "y": 1016 }
+        },
+        {
+          "id": "tagline_text",
+          "type": "text",
+          "text": "{tagline}",
+          "anchor": "center",
+          "font": "body",
+          "size": 54,
+          "color": "muted",
+          "max_width": 1120,
+          "min_size": 40,
+          "visible": "tagline != ''",
+          "at": { "x": "cx", "y": 1216 }
+        },
+        {
+          "id": "bar",
+          "type": "group",
+          "layers": [
+            {
+              "id": "bar_seg",
+              "type": "rect",
+              "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+              "visible": "cl_of(ing.unit, ing.amount) > 0",
+              "box": {
+                "x": "bar_x + @vol_acc[i].bounds.left / @totals.bounds.w * bar_w",
+                "y": 1256,
+                "w": "@vol_acc[i].bounds.w / @totals.bounds.w * bar_w",
+                "h": 52
+              },
+              "fill": "ing_color(ing.ingredient)",
+              "radius": 18,
+              "stroke": { "color": "paper", "width": 10 }
+            }
+          ],
+          "note": "Proportions of the drink."
+        },
+        {
+          "id": "rows",
+          "type": "group",
+          "layers": [
+            {
+              "id": "row",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "row_dot",
+                  "type": "ellipse",
+                  "anchor": "center",
+                  "box": { "x": 248, "y": 0, "w": "row_size * 0.55", "h": "row_size * 0.55" },
+                  "fill": "ing_color(ing.ingredient)",
+                  "stroke": { "color": "with_alpha(ink, 0.35)", "width": 4 }
+                },
+                {
+                  "id": "row_amount",
+                  "type": "text",
+                  "extends": "row_text_base",
+                  "anchor": "right",
+                  "font": "bold",
+                  "text": "{ing.amount > 0 ? num(ing.amount) : ''}",
+                  "at": { "x": 464, "y": 0 }
+                },
+                {
+                  "id": "row_unit",
+                  "type": "text",
+                  "extends": "row_text_base",
+                  "anchor": "left",
+                  "size": "row_size * 0.86",
+                  "color": "muted",
+                  "text": "{ing.amount > 0 ? unit_name(ing.unit) : ''}",
+                  "at": { "x": 484, "y": 0 }
+                },
+                {
+                  "id": "row_name",
+                  "type": "text",
+                  "extends": "row_text_base",
+                  "anchor": "left",
+                  "text": "{ing_name(ing.ingredient)}",
+                  "max_width": 540,
+                  "min_size": 38,
+                  "shrink_group": "ingredient_names",
+                  "at": { "x": 584, "y": 0 }
+                },
+                {
+                  "id": "row_vol",
+                  "type": "text",
+                  "extends": "row_text_base",
+                  "anchor": "right",
+                  "size": "row_size * 0.72",
+                  "color": "muted",
+                  "text": "{ing_vol(ing.ingredient, ing.vol) > 0 ? pct(ing_vol(ing.ingredient, ing.vol)) : ''}{ing_vol(ing.ingredient, ing.vol) > 0 ? ' % vol' : ''}",
+                  "at": { "x": "canvas.w - 238", "y": 0 }
+                }
+              ],
+              "repeat": { "each": "ingredients", "item": "ing", "index": "i" },
+              "translate": { "x": 0, "y": "list_top + pitch * (i + 0.5)" }
+            }
+          ],
+          "note": "One group per ingredient; the group moves down by the row pitch."
+        },
+        {
+          "id": "footer",
+          "type": "group",
+          "layers": [
+            {
+              "id": "footer_line",
+              "type": "polygon",
+              "closed": false,
+              "points": [[238, 1888], ["canvas.w - 238", 1888]],
+              "stroke": {
+                "color": "with_alpha(background, 0.5)",
+                "width": 8,
+                "dash": [0.2, 24]
+              }
+            },
+            {
+              "id": "strength_label",
+              "type": "text",
+              "text": "{upper(tr('Stärke', 'Strength'))}",
+              "anchor": "left",
+              "font": "bold",
+              "size": 44,
+              "color": "muted",
+              "at": { "x": 238, "y": 1970 }
+            },
+            {
+              "id": "strength_drop",
+              "type": "ellipse",
+              "anchor": "center",
+              "repeat": { "count": 4, "index": "i" },
+              "box": { "x": "566 + i * 72", "y": 1970, "w": 52, "h": 52 },
+              "fill": "i < @strength.bounds.w ? background : #00000000",
+              "stroke": { "color": "background", "width": 8 }
+            },
+            {
+              "id": "strength_word",
+              "type": "text",
+              "anchor": "right",
+              "font": "bold",
+              "size": 56,
+              "color": "ink",
+              "text": "{@strength.bounds.w == 0 ? tr('alkoholfrei', 'alcohol-free') : @strength.bounds.w == 1 ? tr('leicht', 'light') : @strength.bounds.w == 2 ? tr('mittel', 'medium') : @strength.bounds.w == 3 ? tr('kräftig', 'strong') : tr('stark', 'very strong')}",
+              "at": { "x": "canvas.w - 238", "y": 1970 }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

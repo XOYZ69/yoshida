@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "design": "designs/shopping.design.json",
+  "name": "Shopping list",
+  "cards": [
+    { "id": "party" }
+  ]
+}
