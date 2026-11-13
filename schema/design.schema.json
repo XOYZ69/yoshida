@@ -892,6 +892,22 @@
               "level": {
                 "description": "Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%)",
                 "enum": ["low", "medium", "quartile", "high"]
+              },
+              "style": {
+                "description": "Shape of the data modules: square (default), rounded or dots",
+                "enum": ["square", "rounded", "dots"]
+              },
+              "eye": {
+                "description": "Shape of the three corner squares: square (default), rounded or circle",
+                "enum": ["square", "rounded", "circle"]
+              },
+              "eye_color": {
+                "description": "Color of the corner squares. Default: the color of the code",
+                "type": "string"
+              },
+              "logo": {
+                "description": "Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high",
+                "type": ["number", "string"]
               }
             },
             "additionalProperties": false

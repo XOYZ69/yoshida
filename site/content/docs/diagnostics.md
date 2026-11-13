@@ -134,6 +134,9 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |
 | 3204 | warning | A module of a QR code is smaller than one pixel |
+| 3205 | warning | A QR code has little contrast against its fill, or is lighter than it |
+| 3207 | warning | A QR code with `logo` is not at level `high`, or the cleared middle covers more than 20 % |
+| 3208 | warning | A module of a QR code prints narrower than 0.5 mm at the canvas `dpi` |
 
 ### 4xxx: assets
 

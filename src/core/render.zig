@@ -8,6 +8,7 @@ const c = @import("c.zig");
 const json = @import("json.zig");
 const diag = @import("diag.zig");
 const value = @import("value.zig");
+const bcolor = @import("builtins/color.zig");
 const bdate = @import("builtins/date.zig");
 const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
@@ -340,7 +341,77 @@ const Resolved = struct {
     qr: ?*const qr_mod.Code = null,
     qr_module: f64 = 0,
     qr_margin: usize = 0,
+    qr_style: design_mod.QrStyle = .square,
+    qr_eye: design_mod.QrEye = .square,
+    /// Color of the corner squares; null means the same as `color`.
+    qr_eye_color: ?Color = null,
+    /// Modules per side of the cleared square in the middle (odd), 0 for none.
+    qr_logo: usize = 0,
 };
+
+/// What a QR layer draws: which modules are dark once the cleared middle and
+/// the corner squares (drawn on their own when styled) are left out.
+const QrView = struct {
+    code: *const qr_mod.Code,
+    size: usize,
+    logo_lo: usize,
+    logo_hi: usize,
+    /// The corner squares are drawn as shapes, not as modules.
+    eyes: bool,
+
+    fn init(r: *const Resolved) QrView {
+        const code = r.qr.?;
+        const size: usize = code.size;
+        const lo = (size - r.qr_logo) / 2;
+        return .{
+            .code = code,
+            .size = size,
+            .logo_lo = lo,
+            .logo_hi = lo + r.qr_logo,
+            .eyes = r.qr_style != .square or r.qr_eye != .square or r.qr_eye_color != null,
+        };
+    }
+
+    fn inEye(v: QrView, x: usize, y: usize) bool {
+        const far = v.size - 7;
+        return (x < 7 and y < 7) or (x >= far and y < 7) or (x < 7 and y >= far);
+    }
+
+    fn dark(v: QrView, x: usize, y: usize) bool {
+        if (!v.code.get(x, y)) return false;
+        if (x >= v.logo_lo and x < v.logo_hi and y >= v.logo_lo and y < v.logo_hi) return false;
+        if (v.eyes and v.inEye(x, y)) return false;
+        return true;
+    }
+
+    /// Top-left module of the three corner squares.
+    fn eyeOrigin(v: QrView, i: usize) [2]usize {
+        return switch (i) {
+            0 => .{ 0, 0 },
+            1 => .{ v.size - 7, 0 },
+            else => .{ 0, v.size - 7 },
+        };
+    }
+};
+
+/// Corner radius of a data module, in module sizes.
+fn qrModuleRadius(style: design_mod.QrStyle) f32 {
+    return switch (style) {
+        .square => 0,
+        .rounded => 0.35,
+        .dots => 0.5,
+    };
+}
+
+/// Corner radius of the ring (along its middle) and of the 3 x 3 centre of a
+/// corner square, in module sizes.
+fn qrEyeRadii(eye: design_mod.QrEye) [2]f32 {
+    return switch (eye) {
+        .square => .{ 0, 0 },
+        .rounded => .{ 1.5, 0.8 },
+        .circle => .{ 3, 1.5 },
+    };
+}
 
 const State = enum { todo, busy, done, failed };
 
@@ -369,6 +440,8 @@ const Ctx = struct {
     canvas_h: f64 = 0,
     /// Bitmap pixels per canvas pixel (`Options.scale`).
     k: f64 = 1,
+    /// `canvas.dpi`, 0 when unknown.
+    dpi: f64 = 0,
     /// Inside a layer that `Options.filter` selected (mode `only`).
     filter_inside: bool = false,
     states: []State,
@@ -1127,7 +1200,11 @@ const Ctx = struct {
         r.text = try ctx.tmpl(e, l, l.text.?);
         if (l.color) |p| r.color = (try ctx.eval(e, l, p)).color;
         if (l.fill) |p| r.fill = (try ctx.eval(e, l, p)).color;
+        if (l.eye_color) |p| r.qr_eye_color = (try ctx.eval(e, l, p)).color;
+        r.qr_style = l.qr_style;
+        r.qr_eye = l.qr_eye;
         const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
+        const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else 0;
         const level: qr_mod.Level = @enumFromInt(@intFromEnum(l.qr_level));
         const code = try ctx.arena.create(qr_mod.Code);
         qr_mod.encode(code, r.text, level, null) catch {
@@ -1154,6 +1231,46 @@ const Ctx = struct {
         r.qr = code;
         r.qr_module = module;
         r.qr_margin = margin_modules;
+
+        // The cleared middle for a logo: an odd number of modules so that it
+        // sits in the centre, and clear of the corner squares.
+        if (logo > 0) {
+            const size: f64 = @floatFromInt(code.size);
+            var n: usize = @intFromFloat(@round(logo * size));
+            if (n % 2 == 0) n += 1;
+            n = @min(n, code.size - 18);
+            r.qr_logo = n;
+            const nf: f64 = @floatFromInt(n);
+            if (l.qr_level != .high) {
+                try ctx.report(.warning, 3207, l.logo.?.pos, null, try ctx.layerMsg(l, "a logo hides modules, but the error correction level is {s}", .{@tagName(l.qr_level)}), "use level \"high\" (30 %) with a logo");
+            } else if (nf * nf > 0.2 * size * size) {
+                try ctx.report(.warning, 3207, l.logo.?.pos, null, try ctx.layerMsg(l, "the cleared middle covers {d} % of the code; 20 % is the usual limit", .{@round(100 * nf * nf / (size * size))}), "make \"logo\" smaller");
+            }
+        }
+
+        // Standards: dark on light with enough contrast, modules big enough
+        // to print. A transparent fill says nothing about the background.
+        if (r.fill.a > 0) {
+            const dark = bcolor.luminance(r.color);
+            const light = bcolor.luminance(r.fill);
+            if (dark > light) {
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code is lighter than its background; many scanners reject inverted codes", .{}), "use dark modules on a light fill");
+            } else if (light - dark < 0.4) {
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code has little contrast (luminance differs by {d} %, 40 % is the usual minimum)", .{@round(100 * (light - dark))}), "darken \"color\" or lighten \"fill\"");
+            }
+        }
+        if (r.fill.a > 0) if (r.qr_eye_color) |ec| {
+            // Scanners find the code by its corner squares.
+            if (bcolor.luminance(r.fill) - bcolor.luminance(ec) < 0.4) {
+                try ctx.report(.warning, 3205, l.eye_color.?.pos, null, try ctx.layerMsg(l, "the corner squares of the QR code have little contrast against the fill; scanners find the code by them", .{}), "darken \"eye_color\"");
+            }
+        };
+        if (ctx.dpi > 0) {
+            const mm = module / ctx.dpi * 25.4;
+            if (mm < 0.5) {
+                try ctx.report(.warning, 3208, l.pos, null, try ctx.layerMsg(l, "a module of the QR code prints {d} mm wide at {d} dpi; 0.5 mm is the usual minimum", .{ @round(mm * 100) / 100, ctx.dpi }), "make the box larger, the text shorter or the level lower");
+            }
+        }
     }
 
     /// Points of a preset shape filling the layer's box.
@@ -1510,20 +1627,39 @@ const Ctx = struct {
                 if (stroke) |s| try ctx.strokeWithArrows(target, l, pts, s);
             },
             .qr => {
-                const code = r.qr.?;
+                const v = QrView.init(r);
                 if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
                 const ms: f32 = @floatCast(r.qr_module * ctx.k);
                 const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
                 const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin));
                 const paint = raster.paint(r.color, 1);
-                for (0..code.size) |y| {
+                const mod_r = qrModuleRadius(r.qr_style) * ms;
+                // Dots are a little smaller than a module so they do not touch.
+                const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
+                for (0..v.size) |y| {
                     var x: usize = 0;
-                    while (x < code.size) : (x += 1) {
-                        if (!code.get(x, y)) continue;
-                        var end = x + 1;
-                        while (end < code.size and code.get(end, y)) end += 1;
-                        raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), oy + ms * @as(f32, @floatFromInt(y)), ms * @as(f32, @floatFromInt(end - x)), ms, 0, paint, null);
-                        x = end;
+                    while (x < v.size) : (x += 1) {
+                        if (!v.dark(x, y)) continue;
+                        const my = oy + ms * @as(f32, @floatFromInt(y));
+                        if (r.qr_style == .square) {
+                            var end = x + 1;
+                            while (end < v.size and v.dark(end, y)) end += 1;
+                            raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), my, ms * @as(f32, @floatFromInt(end - x)), ms, 0, paint, null);
+                            x = end;
+                        } else {
+                            raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)) + gap, my + gap, ms - 2 * gap, ms - 2 * gap, mod_r, paint, null);
+                        }
+                    }
+                }
+                if (v.eyes) {
+                    const ep = raster.paint(r.qr_eye_color orelse r.color, 1);
+                    const radii = qrEyeRadii(r.qr_eye);
+                    for (0..3) |i| {
+                        const o = v.eyeOrigin(i);
+                        const ex = ox + ms * @as(f32, @floatFromInt(o[0]));
+                        const ey = oy + ms * @as(f32, @floatFromInt(o[1]));
+                        raster.drawShape(target, .rect, ex + ms / 2, ey + ms / 2, 6 * ms, 6 * ms, radii[0] * ms, null, .{ .paint = ep, .width = ms });
+                        raster.drawShape(target, .rect, ex + 2 * ms, ey + 2 * ms, 3 * ms, 3 * ms, radii[1] * ms, ep, null);
                     }
                 }
             },
@@ -1769,7 +1905,7 @@ const Ctx = struct {
     /// The background square, then every dark run of modules as one path.
     fn emitQr(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
         _ = ctx;
-        const code = r.qr orelse return;
+        const v = QrView.init(r);
         const left: f32 = @floatCast(r.left);
         const top: f32 = @floatCast(r.top);
         const total: f32 = @floatCast(r.w);
@@ -1779,21 +1915,42 @@ const Ctx = struct {
         const ms: f32 = @floatCast(r.qr_module);
         const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
         const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const mod_r = qrModuleRadius(r.qr_style) * ms;
+        const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
         var b = vector.PathBuilder.init(sc.allocator());
-        for (0..code.size) |y| {
+        for (0..v.size) |y| {
             var x: usize = 0;
-            while (x < code.size) : (x += 1) {
-                if (!code.get(x, y)) continue;
-                var end = x + 1;
-                while (end < code.size and code.get(end, y)) end += 1;
-                const x0 = ox + ms * @as(f32, @floatFromInt(x));
-                const x1 = ox + ms * @as(f32, @floatFromInt(end));
+            while (x < v.size) : (x += 1) {
+                if (!v.dark(x, y)) continue;
                 const y0 = oy + ms * @as(f32, @floatFromInt(y));
-                try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y0 + ms }, .{ x0, y0 + ms } }, true);
-                x = end;
+                if (r.qr_style == .square) {
+                    var end = x + 1;
+                    while (end < v.size and v.dark(end, y)) end += 1;
+                    const x0 = ox + ms * @as(f32, @floatFromInt(x));
+                    const x1 = ox + ms * @as(f32, @floatFromInt(end));
+                    try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y0 + ms }, .{ x0, y0 + ms } }, true);
+                    x = end;
+                } else {
+                    try b.roundRect(ox + ms * @as(f32, @floatFromInt(x)) + gap, y0 + gap, ms - 2 * gap, ms - 2 * gap, mod_r);
+                }
             }
         }
         try addFill(sc, b.finish(), r.color);
+        if (v.eyes) {
+            const ec = r.qr_eye_color orelse r.color;
+            const radii = qrEyeRadii(r.qr_eye);
+            for (0..3) |i| {
+                const o = v.eyeOrigin(i);
+                const ex = ox + ms * @as(f32, @floatFromInt(o[0]));
+                const ey = oy + ms * @as(f32, @floatFromInt(o[1]));
+                var ring = vector.PathBuilder.init(sc.allocator());
+                try ring.roundRect(ex + ms / 2, ey + ms / 2, 6 * ms, 6 * ms, radii[0] * ms);
+                if (ec.a > 0) try sc.add(.{ .stroke = .{ .path = ring.finish(), .color = ec, .width = ms, .dash = &.{} } });
+                var core = vector.PathBuilder.init(sc.allocator());
+                try core.roundRect(ex + 2 * ms, ey + 2 * ms, 3 * ms, 3 * ms, radii[1] * ms);
+                try addFill(sc, core.finish(), ec);
+            }
+        }
     }
 
     fn emitText(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
@@ -2144,6 +2301,7 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
         error.Failed => 0,
     };
     if (!(dpi >= 0 and dpi <= 10000)) dpi = 0;
+    ctx.dpi = dpi;
     bleed = std.math.clamp(bleed, 0, @min(w, h) / 2);
     e = ctx.newEnv();
     // A vector render has no pixels of its own: it works in canvas pixels,
@@ -2713,4 +2871,53 @@ test "vector scene of a qr layer" {
     try std.testing.expect(items[0] == .fill and items[1] == .fill);
     try std.testing.expect(items[1].fill.color.eql(Color.black));
     try std.testing.expect(items[1].fill.path.cmds.len > 100);
+}
+
+const qr_styled_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 100, "height": 100 },
+    \\  "layers": [
+    \\    { "id": "code", "type": "qr", "text": "HELLO WORLD", "box": { "x": 0, "y": 0, "w": 100, "h": 100 },
+    \\      "level": "high", "style": "dots", "eye": "circle", "eye_color": "#FF0000", "logo": 0.3 }
+    \\  ]
+    \\}
+;
+
+test "qr layer: circle corner squares lose their corners" {
+    const gpa = std.testing.allocator;
+    var b = (try testRenderDesign(gpa, qr_styled_design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // The first corner square starts at (19, 19); a circle leaves that pixel
+    // white, but its centre (module 3 of 7, at 19 + 10) is the eye colour.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 19, 19)[1]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 29, 29)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 29, 29)[1]);
+}
+
+test "qr layer: the middle is cleared for a logo" {
+    const gpa = std.testing.allocator;
+    var b = (try testRenderDesign(gpa, qr_styled_design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Version 2 (25 modules, 33 with the quiet zone) at 3 px: the middle
+    // module is lit by data in a plain code but must be white here.
+    var lit: usize = 0;
+    for (45..55) |y| for (45..55) |x| {
+        if (pixel(&b, x, y)[0] != 65535 or pixel(&b, x, y)[1] != 65535) lit += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 0), lit);
+}
+
+test "vector scene of a styled qr layer" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, qr_styled_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // Background, data modules, then a ring and a centre for each of the
+    // three corner squares.
+    try std.testing.expectEqual(@as(usize, 8), items.len);
+    try std.testing.expect(items[2] == .stroke);
+    try std.testing.expect(items[2].stroke.color.eql(Color{ .r = 65535, .g = 0, .b = 0, .a = 65535 }));
 }

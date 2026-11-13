@@ -1491,7 +1491,7 @@ pub fn refType(kind: LayerKind, path: []const []const u8) ?Type {
         .rect, .ellipse, .polygon => if (eq(u8, f, "fill")) .color else if (kind == .rect and eq(u8, f, "radius")) .number else null,
         .text => if (eq(u8, f, "color")) .color else if (eq(u8, f, "text")) .text else if (eq(u8, f, "size") or eq(u8, f, "line_spacing") or eq(u8, f, "wrap") or eq(u8, f, "max_lines")) .number else null,
         .image => if (eq(u8, f, "src")) .text else null,
-        .qr => if (eq(u8, f, "color") or eq(u8, f, "fill")) .color else if (eq(u8, f, "text")) .text else if (eq(u8, f, "margin")) .number else null,
+        .qr => if (eq(u8, f, "color") or eq(u8, f, "fill") or eq(u8, f, "eye_color")) .color else if (eq(u8, f, "text")) .text else if (eq(u8, f, "margin") or eq(u8, f, "logo")) .number else null,
         .group => null,
     };
 }
