@@ -889,6 +889,16 @@ let newFunction = $state("");
         <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} path={pathOf(['min_size'])} onchange={(v) => set(['min_size'], v)} />
         <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} path={pathOf(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
         <Field label="shrink_group" kind="text" optional value={ownVal(['shrink_group'])} fallback={effVal(['shrink_group'])} placeholder="none" title="Texts with the same name (and all their iterations) use the smallest size any of them shrank to" onchange={(v) => set(['shrink_group'], v === '' ? undefined : v)} />
+      {:else if type === 'qr'}
+        <Field label="text" kind="template" value={ownVal(['text']) ?? effVal(['text'])} bindings={textParams} error={errorAt(['text'])} path={pathOf(['text'])} onchange={(v) => set(['text'], v)} />
+        <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
+        <Field label="fill" kind="color" optional value={ownVal(['fill'])} fallback={effVal(['fill']) ?? '#FFFFFFFF'} bindings={colorParams} error={errorAt(['fill'])} path={pathOf(['fill'])} title="Behind the code, quiet zone included" onchange={(v) => set(['fill'], v)} />
+        <Field label="margin" kind="number" optional value={ownVal(['margin'])} fallback={effVal(['margin']) ?? 4} bindings={numberParams} error={errorAt(['margin'])} path={pathOf(['margin'])} title="Quiet zone around the code, in modules (0 to 16)" onchange={(v) => set(['margin'], v)} />
+        <Field label="level" kind="enum" optional value={ownVal(['level'])} fallback={String(effVal(['level']) ?? 'medium')} options={['low', 'medium', 'quartile', 'high']} title="Error correction: 7, 15, 25 or 30 percent" onchange={(v) => set(['level'], v)} />
+        <Field label="style" kind="enum" optional value={ownVal(['style'])} fallback={String(effVal(['style']) ?? 'square')} options={['square', 'rounded', 'dots']} title="Shape of the data modules" onchange={(v) => set(['style'], v)} />
+        <Field label="eye" kind="enum" optional value={ownVal(['eye'])} fallback={String(effVal(['eye']) ?? 'square')} options={['square', 'rounded', 'circle']} title="Shape of the three corner squares" onchange={(v) => set(['eye'], v)} />
+        <Field label="eye_color" kind="color" optional value={ownVal(['eye_color'])} fallback={effVal(['eye_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['eye_color'])} path={pathOf(['eye_color'])} title="Color of the corner squares" onchange={(v) => set(['eye_color'], v)} />
+        <Field label="logo" kind="number" optional value={ownVal(['logo'])} fallback={effVal(['logo']) ?? 0} bindings={numberParams} error={errorAt(['logo'])} path={pathOf(['logo'])} title="Clears the middle for a logo: share of the code's side (0 to 0.5). Use level high" onchange={(v) => set(['logo'], v)} />
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
@@ -914,7 +924,7 @@ let newFunction = $state("");
           {/if}
         {/if}
       {/if}
-      {#if type !== 'image'}
+      {#if type !== 'image' && type !== 'qr'}
         <div class="field-like">
           <span class="lbl">{type === 'text' ? 'outline' : 'stroke'}</span>
           <input type="checkbox" checked={isObj(eff.stroke)} onchange={(e) => set(['stroke'], e.currentTarget.checked ? { color: '#000000', width: type === 'text' ? 2 : 4 } : undefined)} />

@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "name": "Cocktail cards",
+  "note": "Party cocktail cards, 63 x 88 mm with 3 mm bleed. Render the faces and the back as PDF with crop marks.",
+  "sets": [
+    {
+      "name": "cocktails",
+      "design": "designs/cocktail.design.json",
+      "cards": "cards/cocktails.cards.json"
+    },
+    { "name": "back", "design": "designs/back.design.json", "cards": "cards/back.cards.json" },
+    { "name": "menu", "design": "designs/menu.design.json", "cards": "cards/menu.cards.json" },
+    {
+      "name": "shopping",
+      "design": "designs/shopping.design.json",
+      "cards": "cards/shopping.cards.json"
+    }
+  ]
+}

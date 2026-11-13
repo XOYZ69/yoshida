@@ -1,0 +1,775 @@
+{
+  "format": 1,
+  "name": "Shopping list",
+  "note": "A4 page: how much of each ingredient a party needs for the chosen drinks. The sums are made by chained hidden layers, as on the cards.",
+  "canvas": { "width": 4960, "height": 7016, "dpi": 600, "bleed": 0 },
+  "fonts": {
+    "script": "assets/fonts/Pacifico-Regular.ttf",
+    "body": "assets/fonts/Poppins-Medium.ttf",
+    "bold": "assets/fonts/Poppins-SemiBold.ttf"
+  },
+  "params": {
+    "title": { "type": "text", "default": "Einkaufsliste", "max_length": 30 },
+    "subtitle": { "type": "text", "default": "Party Cocktails", "max_length": 40 },
+    "accent": { "type": "color", "default": "#E85D75", "label": "Page color" },
+    "lang": {
+      "type": "enum",
+      "options": ["de", "en"],
+      "default": "de"
+    },
+    "reserve": {
+      "type": "number",
+      "default": 10,
+      "min": 0,
+      "max": 100,
+      "label": "Reserve in %",
+      "note": "Added to every amount."
+    },
+    "party": {
+      "type": "list",
+      "item": {
+        "drink": {
+          "type": "enum",
+          "options": [
+            "Black Bombay",
+            "Paradiesvogel",
+            "German Shooter",
+            "Tropical Derby",
+            "Whiskey Sour",
+            "Blue Hawaii",
+            "Hurricane",
+            "Piña Colada",
+            "Moscow Mule",
+            "Mojito",
+            "Aperol Spritz",
+            "AIDA Honey Mule",
+            "Virgin Honey Mule",
+            "Margarita",
+            "Daiquiri",
+            "Cosmopolitan",
+            "Negroni",
+            "Cuba Libre",
+            "Caipirinha",
+            "Tequila Sunrise",
+            "Sex on the Beach",
+            "Gin Tonic",
+            "Virgin Mojito",
+            "Virgin Mule",
+            "Virgin Colada",
+            "Spritz 0,0"
+          ]
+        },
+        "servings": { "type": "number", "default": 10 }
+      },
+      "default": [
+        { "drink": "Mojito", "servings": 12 },
+        { "drink": "Aperol Spritz", "servings": 10 },
+        { "drink": "Moscow Mule", "servings": 8 },
+        { "drink": "Piña Colada", "servings": 8 },
+        { "drink": "Margarita", "servings": 8 },
+        { "drink": "Gin Tonic", "servings": 8 },
+        { "drink": "Virgin Mojito", "servings": 6 }
+      ],
+      "label": "Drinks and servings",
+      "note": "Pick the drinks from the list and say how many glasses of each you expect."
+    },
+    "recipes": {
+      "type": "list",
+      "item": {
+        "drink": "text",
+        "ingredient": {
+          "type": "enum",
+          "options": [
+            "Ananassaft",
+            "Aperitif alkoholfrei",
+            "Aperol",
+            "Blue Curaçao",
+            "Blue Curaçao Sirup",
+            "Bombay Sapphire Gin",
+            "Cachaça",
+            "Campari",
+            "Cola",
+            "Cranberrysaft",
+            "Crushed Ice",
+            "Dunkler Rum",
+            "Erdbeersirup",
+            "Gin",
+            "Gin entalkoholisiert",
+            "Ginger Beer",
+            "Grenadine",
+            "Honigsirup",
+            "Johannisbeernektar",
+            "Kokoscreme",
+            "Limette",
+            "Limettensaft",
+            "Limettensirup",
+            "Maracujanektar",
+            "Minze",
+            "Orangensaft",
+            "Pfirsichlikör",
+            "Prosecco",
+            "Puschkin Black Berries",
+            "Rohrzucker",
+            "Roter Wermut",
+            "Rum alkoholfrei",
+            "Sekt alkoholfrei",
+            "Sodawasser",
+            "Tequila",
+            "Tonic Water",
+            "Triple Sec",
+            "Vodka",
+            "Vodka alkoholfrei",
+            "Weißer Rum",
+            "Whiskey",
+            "Zitronensaft",
+            "Zuckersirup"
+          ]
+        },
+        "amount": { "type": "number", "default": 0 },
+        "unit": {
+          "type": "enum",
+          "options": ["cl", "ml", "tsp", "pc"],
+          "default": "cl"
+        }
+      },
+      "default": [
+        { "drink": "Paradiesvogel", "ingredient": "Ananassaft", "amount": 6, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Ananassaft", "amount": 1, "unit": "cl" },
+        { "drink": "Blue Hawaii", "ingredient": "Ananassaft", "amount": 9, "unit": "cl" },
+        { "drink": "Piña Colada", "ingredient": "Ananassaft", "amount": 5, "unit": "cl" },
+        { "drink": "Virgin Colada", "ingredient": "Ananassaft", "amount": 5, "unit": "cl" },
+        { "drink": "Spritz 0,0", "ingredient": "Aperitif alkoholfrei", "amount": 6, "unit": "cl" },
+        { "drink": "Aperol Spritz", "ingredient": "Aperol", "amount": 6, "unit": "cl" },
+        { "drink": "Blue Hawaii", "ingredient": "Blue Curaçao", "amount": 1.5, "unit": "cl" },
+        { "drink": "Black Bombay", "ingredient": "Blue Curaçao Sirup", "amount": 2, "unit": "cl" },
+        {
+          "drink": "AIDA Honey Mule",
+          "ingredient": "Bombay Sapphire Gin",
+          "amount": 4,
+          "unit": "cl"
+        },
+        { "drink": "Caipirinha", "ingredient": "Cachaça", "amount": 6, "unit": "cl" },
+        { "drink": "Negroni", "ingredient": "Campari", "amount": 3, "unit": "cl" },
+        { "drink": "Cuba Libre", "ingredient": "Cola", "amount": 12, "unit": "cl" },
+        { "drink": "Cosmopolitan", "ingredient": "Cranberrysaft", "amount": 3, "unit": "cl" },
+        { "drink": "Sex on the Beach", "ingredient": "Cranberrysaft", "amount": 4, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Dunkler Rum", "amount": 6, "unit": "cl" },
+        { "drink": "German Shooter", "ingredient": "Erdbeersirup", "amount": 1, "unit": "cl" },
+        { "drink": "Black Bombay", "ingredient": "Gin", "amount": 4, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Gin", "amount": 5, "unit": "cl" },
+        { "drink": "Negroni", "ingredient": "Gin", "amount": 3, "unit": "cl" },
+        { "drink": "Gin Tonic", "ingredient": "Gin", "amount": 5, "unit": "cl" },
+        {
+          "drink": "Virgin Honey Mule",
+          "ingredient": "Gin entalkoholisiert",
+          "amount": 4,
+          "unit": "cl"
+        },
+        { "drink": "Moscow Mule", "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" },
+        { "drink": "AIDA Honey Mule", "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" },
+        { "drink": "Virgin Honey Mule", "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" },
+        { "drink": "Virgin Mule", "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Grenadine", "amount": 2, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Grenadine", "amount": 1.5, "unit": "cl" },
+        { "drink": "Tequila Sunrise", "ingredient": "Grenadine", "amount": 1.5, "unit": "cl" },
+        { "drink": "AIDA Honey Mule", "ingredient": "Honigsirup", "amount": 2, "unit": "cl" },
+        { "drink": "Virgin Honey Mule", "ingredient": "Honigsirup", "amount": 2, "unit": "cl" },
+        { "drink": "Black Bombay", "ingredient": "Johannisbeernektar", "amount": 6, "unit": "cl" },
+        { "drink": "Piña Colada", "ingredient": "Kokoscreme", "amount": 3, "unit": "cl" },
+        { "drink": "Virgin Colada", "ingredient": "Kokoscreme", "amount": 3, "unit": "cl" },
+        { "drink": "Caipirinha", "ingredient": "Limette", "amount": 1, "unit": "pc" },
+        { "drink": "Blue Hawaii", "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Limettensaft", "amount": 3, "unit": "cl" },
+        { "drink": "Moscow Mule", "ingredient": "Limettensaft", "amount": 1, "unit": "cl" },
+        { "drink": "Mojito", "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Margarita", "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" },
+        { "drink": "Daiquiri", "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Cosmopolitan", "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" },
+        { "drink": "Cuba Libre", "ingredient": "Limettensaft", "amount": 1, "unit": "cl" },
+        { "drink": "Virgin Mojito", "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Virgin Mule", "ingredient": "Limettensaft", "amount": 1, "unit": "cl" },
+        { "drink": "German Shooter", "ingredient": "Limettensirup", "amount": 1, "unit": "cl" },
+        { "drink": "Black Bombay", "ingredient": "Maracujanektar", "amount": 3, "unit": "cl" },
+        { "drink": "Paradiesvogel", "ingredient": "Maracujanektar", "amount": 6, "unit": "cl" },
+        { "drink": "German Shooter", "ingredient": "Maracujanektar", "amount": 1, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Maracujanektar", "amount": 3, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Maracujanektar", "amount": 6, "unit": "cl" },
+        { "drink": "Mojito", "ingredient": "Minze", "amount": 6, "unit": "pc" },
+        { "drink": "Virgin Mojito", "ingredient": "Minze", "amount": 6, "unit": "pc" },
+        { "drink": "Paradiesvogel", "ingredient": "Orangensaft", "amount": 6, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Orangensaft", "amount": 3, "unit": "cl" },
+        { "drink": "Whiskey Sour", "ingredient": "Orangensaft", "amount": 5, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Orangensaft", "amount": 3, "unit": "cl" },
+        { "drink": "Tequila Sunrise", "ingredient": "Orangensaft", "amount": 9, "unit": "cl" },
+        { "drink": "Sex on the Beach", "ingredient": "Orangensaft", "amount": 4, "unit": "cl" },
+        { "drink": "Sex on the Beach", "ingredient": "Pfirsichlikör", "amount": 2, "unit": "cl" },
+        { "drink": "Aperol Spritz", "ingredient": "Prosecco", "amount": 9, "unit": "cl" },
+        {
+          "drink": "German Shooter",
+          "ingredient": "Puschkin Black Berries",
+          "amount": 1.5,
+          "unit": "cl"
+        },
+        { "drink": "Mojito", "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" },
+        { "drink": "Daiquiri", "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" },
+        { "drink": "Caipirinha", "ingredient": "Rohrzucker", "amount": 4, "unit": "tsp" },
+        { "drink": "Virgin Mojito", "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" },
+        { "drink": "Negroni", "ingredient": "Roter Wermut", "amount": 3, "unit": "cl" },
+        { "drink": "Virgin Mojito", "ingredient": "Rum alkoholfrei", "amount": 4.5, "unit": "cl" },
+        { "drink": "Virgin Colada", "ingredient": "Rum alkoholfrei", "amount": 5, "unit": "cl" },
+        { "drink": "Spritz 0,0", "ingredient": "Sekt alkoholfrei", "amount": 9, "unit": "cl" },
+        { "drink": "Mojito", "ingredient": "Sodawasser", "amount": 6, "unit": "cl" },
+        { "drink": "Aperol Spritz", "ingredient": "Sodawasser", "amount": 3, "unit": "cl" },
+        { "drink": "Virgin Mojito", "ingredient": "Sodawasser", "amount": 6, "unit": "cl" },
+        { "drink": "Spritz 0,0", "ingredient": "Sodawasser", "amount": 3, "unit": "cl" },
+        { "drink": "Margarita", "ingredient": "Tequila", "amount": 5, "unit": "cl" },
+        { "drink": "Tequila Sunrise", "ingredient": "Tequila", "amount": 4.5, "unit": "cl" },
+        { "drink": "Gin Tonic", "ingredient": "Tonic Water", "amount": 15, "unit": "cl" },
+        { "drink": "Margarita", "ingredient": "Triple Sec", "amount": 2, "unit": "cl" },
+        { "drink": "Cosmopolitan", "ingredient": "Triple Sec", "amount": 1.5, "unit": "cl" },
+        { "drink": "Blue Hawaii", "ingredient": "Vodka", "amount": 2, "unit": "cl" },
+        { "drink": "Moscow Mule", "ingredient": "Vodka", "amount": 4.5, "unit": "cl" },
+        { "drink": "Cosmopolitan", "ingredient": "Vodka", "amount": 4, "unit": "cl" },
+        { "drink": "Sex on the Beach", "ingredient": "Vodka", "amount": 4, "unit": "cl" },
+        { "drink": "Virgin Mule", "ingredient": "Vodka alkoholfrei", "amount": 4.5, "unit": "cl" },
+        { "drink": "German Shooter", "ingredient": "Weißer Rum", "amount": 1, "unit": "cl" },
+        { "drink": "Blue Hawaii", "ingredient": "Weißer Rum", "amount": 2, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Weißer Rum", "amount": 6, "unit": "cl" },
+        { "drink": "Piña Colada", "ingredient": "Weißer Rum", "amount": 5, "unit": "cl" },
+        { "drink": "Mojito", "ingredient": "Weißer Rum", "amount": 4.5, "unit": "cl" },
+        { "drink": "Daiquiri", "ingredient": "Weißer Rum", "amount": 6, "unit": "cl" },
+        { "drink": "Cuba Libre", "ingredient": "Weißer Rum", "amount": 5, "unit": "cl" },
+        { "drink": "Whiskey Sour", "ingredient": "Whiskey", "amount": 5, "unit": "cl" },
+        { "drink": "Black Bombay", "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Paradiesvogel", "ingredient": "Zitronensaft", "amount": 3, "unit": "cl" },
+        { "drink": "Tropical Derby", "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Whiskey Sour", "ingredient": "Zitronensaft", "amount": 3, "unit": "cl" },
+        { "drink": "AIDA Honey Mule", "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Virgin Honey Mule", "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "drink": "Whiskey Sour", "ingredient": "Zuckersirup", "amount": 2, "unit": "cl" },
+        { "drink": "Blue Hawaii", "ingredient": "Zuckersirup", "amount": 1.5, "unit": "cl" },
+        { "drink": "Hurricane", "ingredient": "Zuckersirup", "amount": 1.5, "unit": "cl" }
+      ],
+      "label": "Recipes",
+      "note": "One row per ingredient of each drink, sorted by ingredient. Generated from the cocktail cards."
+    },
+    "catalog": {
+      "type": "list",
+      "item": {
+        "name": "text",
+        "en": "text",
+        "color": { "type": "color", "default": "#F4A6B7" },
+        "unit": {
+          "type": "enum",
+          "options": ["cl", "tsp", "pc", "none"],
+          "default": "cl"
+        },
+        "bottle": { "type": "number", "default": 0 }
+      },
+      "default": [
+        {
+          "name": "Ananassaft",
+          "en": "Pineapple juice",
+          "color": "#F9D548",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Aperitif alkoholfrei",
+          "en": "Alcohol-free bitter aperitif",
+          "color": "#FF6A2B",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Aperol", "en": "Aperol", "color": "#FF6A2B", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Blue Curaçao",
+          "en": "Blue curaçao",
+          "color": "#3FA9F5",
+          "unit": "cl",
+          "bottle": 70
+        },
+        {
+          "name": "Blue Curaçao Sirup",
+          "en": "Blue curaçao syrup",
+          "color": "#3FA9F5",
+          "unit": "cl",
+          "bottle": 70
+        },
+        {
+          "name": "Bombay Sapphire Gin",
+          "en": "Bombay Sapphire gin",
+          "color": "#CFE8F0",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Cachaça", "en": "Cachaça", "color": "#E6E2B8", "unit": "cl", "bottle": 70 },
+        { "name": "Campari", "en": "Campari", "color": "#C8102E", "unit": "cl", "bottle": 70 },
+        { "name": "Cola", "en": "Cola", "color": "#4A2C1A", "unit": "cl", "bottle": 100 },
+        {
+          "name": "Cranberrysaft",
+          "en": "Cranberry juice",
+          "color": "#B3203C",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Crushed Ice",
+          "en": "Crushed ice",
+          "color": "#BFE3F2",
+          "unit": "none",
+          "bottle": 0
+        },
+        { "name": "Dunkler Rum", "en": "Dark rum", "color": "#8B5A2B", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Erdbeersirup",
+          "en": "Strawberry syrup",
+          "color": "#F0607A",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Gin", "en": "Gin", "color": "#CFE8F0", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Gin entalkoholisiert",
+          "en": "Alcohol-free gin",
+          "color": "#CFE8F0",
+          "unit": "cl",
+          "bottle": 70
+        },
+        {
+          "name": "Ginger Beer",
+          "en": "Ginger beer",
+          "color": "#E9C46A",
+          "unit": "cl",
+          "bottle": 100
+        },
+        { "name": "Grenadine", "en": "Grenadine", "color": "#D6224A", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Honigsirup",
+          "en": "Honey syrup",
+          "color": "#E8A93A",
+          "unit": "cl",
+          "bottle": 50
+        },
+        {
+          "name": "Johannisbeernektar",
+          "en": "Blackcurrant nectar",
+          "color": "#7A1B3A",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Kokoscreme",
+          "en": "Coconut cream",
+          "color": "#F3D9B1",
+          "unit": "cl",
+          "bottle": 40
+        },
+        { "name": "Limette", "en": "Lime", "color": "#A8D86B", "unit": "pc", "bottle": 0 },
+        {
+          "name": "Limettensaft",
+          "en": "Lime juice",
+          "color": "#A8D86B",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Limettensirup",
+          "en": "Lime syrup",
+          "color": "#A8D86B",
+          "unit": "cl",
+          "bottle": 70
+        },
+        {
+          "name": "Maracujanektar",
+          "en": "Passion fruit nectar",
+          "color": "#F5B93A",
+          "unit": "cl",
+          "bottle": 100
+        },
+        { "name": "Minze", "en": "Mint", "color": "#5FB36A", "unit": "pc", "bottle": 0 },
+        {
+          "name": "Orangensaft",
+          "en": "Orange juice",
+          "color": "#FF9F2E",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Pfirsichlikör",
+          "en": "Peach schnapps",
+          "color": "#F8B58A",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Prosecco", "en": "Prosecco", "color": "#F3E3A3", "unit": "cl", "bottle": 75 },
+        {
+          "name": "Puschkin Black Berries",
+          "en": "Puschkin Black Berries",
+          "color": "#5B2C6F",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Rohrzucker", "en": "Cane sugar", "color": "#F4E4C8", "unit": "tsp", "bottle": 0 },
+        {
+          "name": "Roter Wermut",
+          "en": "Sweet vermouth",
+          "color": "#8E2B2B",
+          "unit": "cl",
+          "bottle": 75
+        },
+        {
+          "name": "Rum alkoholfrei",
+          "en": "Alcohol-free rum",
+          "color": "#D9EEF2",
+          "unit": "cl",
+          "bottle": 70
+        },
+        {
+          "name": "Sekt alkoholfrei",
+          "en": "Alcohol-free sparkling wine",
+          "color": "#F3E3A3",
+          "unit": "cl",
+          "bottle": 75
+        },
+        {
+          "name": "Sodawasser",
+          "en": "Soda water",
+          "color": "#DDEFF5",
+          "unit": "cl",
+          "bottle": 100
+        },
+        { "name": "Tequila", "en": "Tequila", "color": "#EAD9A6", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Tonic Water",
+          "en": "Tonic water",
+          "color": "#E9F3F5",
+          "unit": "cl",
+          "bottle": 100
+        },
+        { "name": "Triple Sec", "en": "Triple sec", "color": "#F6C768", "unit": "cl", "bottle": 70 },
+        { "name": "Vodka", "en": "Vodka", "color": "#E6EEF2", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Vodka alkoholfrei",
+          "en": "Alcohol-free vodka",
+          "color": "#E6EEF2",
+          "unit": "cl",
+          "bottle": 70
+        },
+        { "name": "Weißer Rum", "en": "White rum", "color": "#D9EEF2", "unit": "cl", "bottle": 70 },
+        { "name": "Whiskey", "en": "Whiskey", "color": "#C9822B", "unit": "cl", "bottle": 70 },
+        {
+          "name": "Zitronensaft",
+          "en": "Lemon juice",
+          "color": "#FFF08A",
+          "unit": "cl",
+          "bottle": 100
+        },
+        {
+          "name": "Zuckersirup",
+          "en": "Sugar syrup",
+          "color": "#F4E4C8",
+          "unit": "cl",
+          "bottle": 70
+        }
+      ],
+      "label": "Ingredient catalog"
+    }
+  },
+  "functions": {
+    "tr": {
+      "args": { "de_text": "text", "en_text": "text" },
+      "expr": "lang == 'en' ? en_text : de_text"
+    },
+    "dec": {
+      "args": { "x": "number", "d": "number" },
+      "expr": "lang == 'en' ? fmt(x, d) : replace(fmt(x, d), '.', ',')"
+    },
+    "num": {
+      "args": { "x": "number" },
+      "expr": "x == floor(x) ? fmt(x, 0) : dec(x, 1)"
+    },
+    "name_of": {
+      "args": { "x": "text" },
+      "expr": "tr(x, get(catalog, x, 'en', x))"
+    },
+    "need": {
+      "args": { "unit": "text", "amount": "number", "drink": "text" },
+      "expr": "(unit == 'cl' ? amount : unit == 'ml' ? amount / 10 : amount) * 10 * get(party, drink, 'servings', 0) * (1 + reserve / 100)",
+      "note": "Needed amount times ten (cl, or pieces or spoons) for all servings of one drink, with the reserve."
+    },
+    "unit_of": {
+      "args": { "x": "text" },
+      "expr": "get(catalog, x, 'unit', 'cl') == 'tsp' ? tr('TL', 'tsp') : get(catalog, x, 'unit', 'cl') == 'pc' ? tr('Stk', 'pcs') : 'cl'"
+    }
+  },
+  "consts": {
+    "cx": 2480,
+    "ink": "mix(accent, #24121C, 0.72)",
+    "soft": "mix(accent, #FFFFFF, 0.86)",
+    "paper": "mix(#FFFFFF, accent, 0.04)",
+    "muted": "mix(ink, paper, 0.45)",
+    "nrows": "len(recipes)",
+    "list_top": 1540,
+    "list_h": 4660,
+    "party_pitch": "min(168, 4000 / max(len(party), 1))"
+  },
+  "layers": [
+    {
+      "id": "calc",
+      "type": "group",
+      "layers": [
+        {
+          "id": "need_acc",
+          "type": "rect",
+          "repeat": { "each": "recipes", "item": "rc", "index": "r" },
+          "box": {
+            "x": "(r == 0 ? false : recipes[r - 1].ingredient == rc.ingredient) ? @need_acc[r - 1].bounds.right : 0",
+            "y": 0,
+            "w": "need(rc.unit, rc.amount, rc.drink)",
+            "h": 2
+          },
+          "note": "Running total per ingredient: the rows are sorted, so a box starts where the previous one of the same ingredient ends."
+        },
+        {
+          "id": "line_acc",
+          "type": "rect",
+          "repeat": { "each": "recipes", "item": "rc", "index": "r" },
+          "box": {
+            "x": "r == 0 ? 0 : @line_acc[r - 1].bounds.right",
+            "y": 0,
+            "w": "(r + 1 < nrows ? recipes[r + 1].ingredient != rc.ingredient : true) ? (@need_acc[r].bounds.right > 0 ? 1 : 0) : 0",
+            "h": 2
+          },
+          "note": "Counts the lines to draw (the last row of every ingredient that is needed): the end of a box is the line number."
+        },
+        {
+          "id": "shop_lines",
+          "type": "rect",
+          "box": {
+            "x": 0,
+            "y": 0,
+            "w": "nrows > 0 ? @line_acc[nrows - 1].bounds.right : 0",
+            "h": 2
+          },
+          "note": "Number of lines."
+        }
+      ],
+      "visible": false
+    },
+    {
+      "id": "page",
+      "type": "group",
+      "layers": [
+        {
+          "id": "bleed_fill",
+          "type": "rect",
+          "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "canvas.h" },
+          "fill": "accent"
+        },
+        {
+          "id": "panel",
+          "type": "rect",
+          "box": { "x": 160, "y": 160, "w": "canvas.w - 320", "h": "canvas.h - 320" },
+          "fill": "soft",
+          "radius": 180
+        },
+        {
+          "id": "stitch",
+          "type": "rect",
+          "box": { "x": 220, "y": 220, "w": "canvas.w - 440", "h": "canvas.h - 440" },
+          "fill": "#00000000",
+          "radius": 140,
+          "stroke": {
+            "color": "with_alpha(accent, 0.5)",
+            "width": 12,
+            "dash": [0.2, 40]
+          }
+        },
+        {
+          "id": "left_card",
+          "type": "rect",
+          "box": { "x": 260, "y": 1300, "w": 1400, "h": 5360 },
+          "fill": "paper",
+          "radius": 120,
+          "stroke": { "color": "with_alpha(accent, 0.35)", "width": 8 }
+        },
+        {
+          "id": "right_card",
+          "type": "rect",
+          "box": { "x": 1720, "y": 1300, "w": 2980, "h": 5360 },
+          "fill": "paper",
+          "radius": 120,
+          "stroke": { "color": "with_alpha(accent, 0.35)", "width": 8 }
+        }
+      ]
+    },
+    {
+      "id": "header",
+      "type": "group",
+      "layers": [
+        {
+          "id": "shop_title",
+          "type": "text",
+          "text": "{title}",
+          "anchor": "center",
+          "font": "script",
+          "size": 460,
+          "color": "ink",
+          "max_width": 3600,
+          "min_size": 240,
+          "at": { "x": "cx", "y": 640 }
+        },
+        {
+          "id": "shop_sub",
+          "type": "text",
+          "text": "{upper(subtitle)}",
+          "anchor": "center",
+          "font": "bold",
+          "size": 112,
+          "color": "muted",
+          "max_width": 3600,
+          "min_size": 60,
+          "at": { "x": "cx", "y": 1000 }
+        },
+        {
+          "id": "left_head",
+          "type": "text",
+          "text": "{upper(tr('Getränke', 'Drinks'))}",
+          "anchor": "left",
+          "font": "bold",
+          "size": 84,
+          "color": "muted",
+          "at": { "x": 380, "y": 1440 }
+        },
+        {
+          "id": "right_head",
+          "type": "text",
+          "text": "{upper(tr('Einkaufen', 'Shopping'))} · +{num(reserve)} %",
+          "anchor": "left",
+          "font": "bold",
+          "size": 84,
+          "color": "muted",
+          "at": { "x": 1840, "y": 1440 }
+        },
+        {
+          "id": "total_servings",
+          "type": "text",
+          "text": "{num(sum(party, 'servings'))} {tr('Gläser insgesamt', 'glasses in total')}",
+          "anchor": "center",
+          "font": "body",
+          "size": 80,
+          "color": "ink",
+          "at": { "x": 960, "y": 6520 }
+        }
+      ]
+    },
+    {
+      "id": "party_list",
+      "type": "group",
+      "layers": [
+        {
+          "id": "party_row",
+          "type": "group",
+          "layers": [
+            {
+              "id": "p_name",
+              "type": "text",
+              "text": "{name_of(p.drink)}",
+              "anchor": "left",
+              "font": "body",
+              "size": 88,
+              "color": "ink",
+              "max_width": 940,
+              "min_size": 56,
+              "shrink_group": "party_names",
+              "at": { "x": 0, "y": 0 }
+            },
+            {
+              "id": "p_serv",
+              "type": "text",
+              "text": "{num(p.servings)} ×",
+              "anchor": "right",
+              "font": "bold",
+              "size": 92,
+              "color": "ink",
+              "at": { "x": 1280, "y": 0 }
+            }
+          ],
+          "repeat": { "each": "party", "item": "p", "index": "k" },
+          "translate": { "x": 320, "y": "list_top + party_pitch * (k + 0.5)" }
+        }
+      ]
+    },
+    {
+      "id": "shopping_list",
+      "type": "group",
+      "layers": [
+        {
+          "id": "shop_row",
+          "type": "group",
+          "layers": [
+            {
+              "id": "s_dot",
+              "type": "ellipse",
+              "anchor": "center",
+              "box": { "x": 1840, "y": 0, "w": 68, "h": 68 },
+              "fill": "get(catalog, rc.ingredient, 'color', #F4A6B7)",
+              "stroke": { "color": "with_alpha(ink, 0.35)", "width": 6 }
+            },
+            {
+              "id": "s_name",
+              "type": "text",
+              "text": "{name_of(rc.ingredient)}",
+              "anchor": "left",
+              "font": "body",
+              "size": 88,
+              "color": "ink",
+              "max_width": 1240,
+              "min_size": 56,
+              "shrink_group": "shop_names",
+              "at": { "x": 1960, "y": 0 }
+            },
+            {
+              "id": "s_amount",
+              "type": "text",
+              "text": "{get(catalog, rc.ingredient, 'unit', 'cl') == 'cl' ? num(round(@need_acc[r].bounds.right) / 10) : num(ceil(round(@need_acc[r].bounds.right) / 10 - 0.001))}",
+              "anchor": "right",
+              "font": "bold",
+              "size": 92,
+              "color": "ink",
+              "at": { "x": 3800, "y": 0 }
+            },
+            {
+              "id": "s_unit",
+              "type": "text",
+              "text": "{unit_of(rc.ingredient)}",
+              "anchor": "left",
+              "font": "body",
+              "size": 80,
+              "color": "muted",
+              "at": { "x": 3832, "y": 0 }
+            },
+            {
+              "id": "s_bottles",
+              "type": "text",
+              "anchor": "right",
+              "font": "body",
+              "size": 80,
+              "color": "muted",
+              "visible": "get(catalog, rc.ingredient, 'bottle', 0) > 0",
+              "text": "{tr('≈ ', '≈ ')}{ceil(round(@need_acc[r].bounds.right) / 10 / max(get(catalog, rc.ingredient, 'bottle', 1), 1) - 0.0001)} × {num(get(catalog, rc.ingredient, 'bottle', 0))} cl",
+              "at": { "x": 4600, "y": 0 }
+            }
+          ],
+          "repeat": { "each": "recipes", "item": "rc", "index": "r" },
+          "visible": "(r + 1 < nrows ? recipes[r + 1].ingredient != rc.ingredient : true) and @need_acc[r].bounds.right > 0",
+          "translate": {
+            "x": 0,
+            "y": "list_top + min(184, 4900 / max(@shop_lines.bounds.w, 1)) * (@line_acc[r].bounds.right - 0.5)"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -167,7 +167,7 @@
           "description": "Unique layer id"
         },
         "type": {
-          "enum": ["rect", "ellipse", "polygon", "text", "image", "group", "divider"]
+          "enum": ["rect", "ellipse", "polygon", "text", "image", "qr", "group", "divider"]
         },
         "note": { "type": "string" },
         "label": {
@@ -828,6 +828,86 @@
               },
               "smoothing": {
                 "enum": ["nearest", "bilinear"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "qr" }
+            }
+          },
+          "then": {
+            "required": ["text", "box"],
+            "properties": {
+              "id": true,
+              "type": true,
+              "note": true,
+              "visible": true,
+              "opacity": true,
+              "rotate": true,
+              "anchor": true,
+              "repeat": true,
+              "extends": true,
+              "effects": true,
+              "text": {
+                "description": "What the code holds: text with {expression} placeholders, for example a link",
+                "type": "string"
+              },
+              "box": {
+                "description": "The code is drawn as a square with whole pixels per module, centred in this box",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "y": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "w": {
+                    "type": ["number", "string"]
+                  },
+                  "h": {
+                    "type": ["number", "string"]
+                  }
+                }
+              },
+              "color": {
+                "description": "Color of the dark modules. Default black",
+                "type": "string"
+              },
+              "fill": {
+                "description": "Color behind the code, quiet zone included. Default white; #00000000 for none",
+                "type": "string"
+              },
+              "margin": {
+                "description": "Quiet zone around the code in modules, 0 to 16. Default 4",
+                "type": ["number", "string"]
+              },
+              "level": {
+                "description": "Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%)",
+                "enum": ["low", "medium", "quartile", "high"]
+              },
+              "style": {
+                "description": "Shape of the data modules: square (default), rounded or dots",
+                "enum": ["square", "rounded", "dots"]
+              },
+              "eye": {
+                "description": "Shape of the three corner squares: square (default), rounded or circle",
+                "enum": ["square", "rounded", "circle"]
+              },
+              "eye_color": {
+                "description": "Color of the corner squares. Default: the color of the code",
+                "type": "string"
+              },
+              "logo": {
+                "description": "Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high",
+                "type": ["number", "string"]
               }
             },
             "additionalProperties": false

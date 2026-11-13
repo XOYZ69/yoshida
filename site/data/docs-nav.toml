@@ -54,6 +54,9 @@ path = "docs/layer-text.md"
 title = "image"
 path = "docs/layer-image.md"
 [[group.item.child]]
+title = "qr"
+path = "docs/layer-qr.md"
+[[group.item.child]]
 title = "group"
 path = "docs/layer-group.md"
 [[group.item.child]]

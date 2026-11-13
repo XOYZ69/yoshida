@@ -17,7 +17,7 @@ const brand = @import("builtins/rand.zig");
 
 pub const Axis = enum { none, x, y };
 pub const Unit = enum { percent, vw, vh };
-pub const LayerKind = enum { rect, ellipse, polygon, text, image, group };
+pub const LayerKind = enum { rect, ellipse, polygon, text, image, qr, group };
 
 pub const Builtin = enum {
     canvas_w,
@@ -1469,7 +1469,7 @@ pub fn refType(kind: LayerKind, path: []const []const u8) ?Type {
             }
             return null;
         }
-        if (eq(u8, a, "box") and (kind == .rect or kind == .ellipse or kind == .image)) {
+        if (eq(u8, a, "box") and (kind == .rect or kind == .ellipse or kind == .image or kind == .qr)) {
             for ([_][]const u8{ "x", "y", "w", "h" }) |f| if (eq(u8, b, f)) return .number;
             return null;
         }
@@ -1491,6 +1491,7 @@ pub fn refType(kind: LayerKind, path: []const []const u8) ?Type {
         .rect, .ellipse, .polygon => if (eq(u8, f, "fill")) .color else if (kind == .rect and eq(u8, f, "radius")) .number else null,
         .text => if (eq(u8, f, "color")) .color else if (eq(u8, f, "text")) .text else if (eq(u8, f, "size") or eq(u8, f, "line_spacing") or eq(u8, f, "wrap") or eq(u8, f, "max_lines")) .number else null,
         .image => if (eq(u8, f, "src")) .text else null,
+        .qr => if (eq(u8, f, "color") or eq(u8, f, "fill") or eq(u8, f, "eye_color")) .color else if (eq(u8, f, "text")) .text else if (eq(u8, f, "margin") or eq(u8, f, "logo")) .number else null,
         .group => null,
     };
 }

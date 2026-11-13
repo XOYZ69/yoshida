@@ -29,6 +29,7 @@ export const icons = {
 		"M8 3.5c3 0 5.5 2 5.5 4.5S11 12.5 8 12.5 2.5 10.5 2.5 8 5 3.5 8 3.5Z",
 	text: "M3.5 4h9M8 4v9M6.25 13h3.5",
 	polygon: "M8 2.75l5.5 9.75h-11z",
+	qr: "M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h1.5v1.5H9.5zM12 12h1.5v1.5H12zM12 9.5h1.5M9.5 12h1.5v1.5",
 	"check-all":
 		"M2.5 4.5 4 6l2.5-2.5M2.5 10.5 4 12l2.5-2.5M8.5 5h5M8.5 11h5",
 	close: "M4 4l8 8M12 4l-8 8",
@@ -95,6 +96,7 @@ const layerIcons: Record<string, IconName> = {
 	polygon: "polygon",
 	text: "text",
 	image: "image",
+	qr: "qr",
 	group: "group",
 	divider: "divider",
 };

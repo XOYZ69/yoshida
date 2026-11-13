@@ -100,6 +100,12 @@ pub const Side = enum { top, bottom, left, right };
 pub const Align = enum { left, center, right, justify };
 pub const Fit = enum { fill, contain, cover };
 pub const Smoothing = enum { nearest, bilinear };
+/// Error correction level of a QR code layer.
+pub const QrLevel = enum { low, medium, quartile, high };
+/// Shape of the data modules of a QR code layer.
+pub const QrStyle = enum { square, rounded, dots };
+/// Shape of the three corner squares (finder patterns) of a QR code layer.
+pub const QrEye = enum { square, rounded, circle };
 pub const EffectKind = enum { crop, fade, sharpen, detail, edge_enhance, find_edges };
 
 pub const Effect = struct {
@@ -209,6 +215,13 @@ pub const Layer = struct {
     max_width: ?Prop = null,
     max_height: ?Prop = null,
     min_size: ?Prop = null,
+    // qr (also uses text, color, fill and box)
+    margin: ?Prop = null,
+    qr_level: QrLevel = .medium,
+    qr_style: QrStyle = .square,
+    qr_eye: QrEye = .square,
+    eye_color: ?Prop = null,
+    logo: ?Prop = null,
     // image
     src: ?Tmpl = null,
     fit: Fit = .fill,
@@ -492,6 +505,7 @@ fn kindFields(kind: LayerKind) []const []const u8 {
         .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box" },
         .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group" },
         .image => &.{ "src", "box", "fit", "smoothing" },
+        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo" },
         .group => &.{"layers"},
     };
 }
@@ -1318,7 +1332,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
 
     const shape_polygon = kind == .polygon and m.get("shape") != null;
     switch (kind) {
-        .rect, .ellipse, .image, .polygon => if (kind != .polygon or shape_polygon) {
+        .rect, .ellipse, .image, .qr, .polygon => if (kind != .polygon or shape_polygon) {
             if (m.get("box")) |bn| {
                 if (try l.expectObject(bn, "box")) {
                     try l.checkFields(bn, &.{ "x", "y", "w", "h" }, "box");
@@ -1461,6 +1475,17 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("max_height")) |v| layer.max_height = try l.prop(v, .number, &sy);
             if (m.get("min_size")) |v| layer.min_size = try l.prop(v, .number, scope);
             if (m.get("shrink_group")) |v| layer.shrink_group = try l.literalString(v, "shrink_group");
+        },
+        .qr => {
+            if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "qr layer '{s}' needs \"text\"", .{id});
+            if (m.get("color")) |v| layer.color = try l.prop(v, .color, scope);
+            if (m.get("fill")) |v| layer.fill = try l.prop(v, .color, scope);
+            if (m.get("margin")) |v| layer.margin = try l.prop(v, .number, scope);
+            if (m.get("level")) |v| layer.qr_level = (try l.enumField(QrLevel, v, "level")) orelse .medium;
+            if (m.get("style")) |v| layer.qr_style = (try l.enumField(QrStyle, v, "style")) orelse .square;
+            if (m.get("eye")) |v| layer.qr_eye = (try l.enumField(QrEye, v, "eye")) orelse .square;
+            if (m.get("eye_color")) |v| layer.eye_color = try l.prop(v, .color, scope);
+            if (m.get("logo")) |v| layer.logo = try l.prop(v, .number, scope);
         },
         .image => {
             if (m.get("src")) |v| layer.src = try l.template(v, scope) else try l.err(1102, m.pos, "image layer '{s}' needs \"src\"", .{id});
