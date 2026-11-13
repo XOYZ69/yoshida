@@ -74,6 +74,58 @@ A group can [repeat](@/docs/repeat.md): the layers inside are drawn once per ite
 
 The [board game example](@/docs/example-board-game.md) draws its 40 tiles this way.
 
+## Layout: rows and columns
+
+`layout` places the group's children one after another, measured by their bounds, so a row of text and icons grows and shrinks with the text. The children's own positions are replaced; only their sizes count. Hidden children take no room, and every iteration of a repeated child is one item.
+
+```json
+{
+  "id": "cost", "type": "group",
+  "layout": { "direction": "row", "gap": 8, "x": "50%", "y": 900, "align": "center", "cross": "center" },
+  "layers": [
+    { "id": "label", "type": "text", "text": "{name}", "at": { "x": 0, "y": 0 }, "size": 28 },
+    { "id": "coin", "type": "image", "src": "icons/gold.png", "repeat": { "count": "cost" }, "box": { "x": 0, "y": 0, "w": 28, "h": 28 } }
+  ]
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `direction` | `row` | `row` (left to right) or `column` (top to bottom) |
+| `gap` | `0` | Space between children |
+| `x`, `y` | `0` | Where the line goes, in the group's coordinates (after `translate`) |
+| `align` | `start` | Along the line: `start` puts its first child at x (row) or y (column), `center` centres it there, `end` ends it there |
+| `cross` | `start` | Across the line: `start` puts every child's top (row) or left (column) at y (x), `center` centres it, `end` puts its bottom (right) there |
+
+A shared background for adjacent items is a layer that reads the group's bounds, for example a rect before the group with `"box": { "x": "@cost.bounds.left - 12", "w": "@cost.bounds.w + 24", ... }`. A child can be a plain group (it moves as a whole); a repeated group cannot be a child of a layout group (error 1103).
+
+## Shared components (`include`)
+
+Layers that several designs share, such as an effect row, can live in one component file. A group takes them with `include` instead of `layers`:
+
+```json
+{ "id": "effects", "type": "group", "include": "components/effect-row.json", "translate": { "x": 40, "y": 820 } }
+```
+
+`components/effect-row.json`:
+
+```json
+{
+  "format": 1,
+  "name": "Effect row",
+  "layers": [
+    { "id": "effect_bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 670, "h": 90 }, "radius": 12, "fill": "#EEE6D8" },
+    { "id": "effect_text", "type": "text", "markup": true, "text": "{effect}", "at": { "x": 16, "y": 16 }, "wrap": 638 }
+  ]
+}
+```
+
+- The path is from the project folder. Any name works; `*.component.json` keeps them apart from designs, and `schema/component.schema.json` checks them in an editor.
+- The layers are compiled as part of the design that includes them: they use that design's params, constants, functions, fonts and icons, and the design's layers can reference them (`@effect_bg.bounds.bottom`) and `extends` them. Every design that includes the component needs the params it uses.
+- The group works like any group: `translate`, `layout`, `visible`, `repeat` and effects apply to the included layers. Components can include other components (a cycle is error 3004).
+- Ids must be unique in the design, so one component can be included once per design; repeat the group to show it several times.
+- Problems inside a component name the component file and its line. The builder's live values and inspector do not reach into component files yet.
+
 ## Moving a group
 
 In the editor, moving a group with a `translate` changes the translate; moving a group without one moves every layer in it. Group a set of layers with <kbd>Ctrl</kbd>+<kbd>G</kbd> (the group takes the place of the topmost selected layer and keeps the order) and ungroup with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>. See [Builder: Layers](@/docs/builder-layers.md).

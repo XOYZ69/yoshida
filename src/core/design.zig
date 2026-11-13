@@ -11,6 +11,7 @@ const Node = json.Node;
 const Value = value.Value;
 const Type = value.Type;
 const LayerKind = expr.LayerKind;
+const project = @import("project.zig");
 
 /// A compiled number, bool or color field.
 pub const Prop = struct {
@@ -96,6 +97,11 @@ pub const Anchor = enum {
     }
 };
 
+/// An enum field: a fixed name, or an expression evaluated per card.
+pub fn EnumOrExpr(comptime E: type) type {
+    return struct { lit: ?E = null, expr: ?Prop = null };
+}
+
 pub const Side = enum { top, bottom, left, right };
 pub const Align = enum { left, center, right, justify };
 pub const Fit = enum { fill, contain, cover };
@@ -134,6 +140,48 @@ pub const Box = struct {
 pub const Point = struct { x: Prop, y: Prop };
 
 pub const Arrow = enum { none, start, end, both };
+
+pub const GradientKind = enum { linear, radial };
+
+/// A fill that blends colors across the layer's bounds (`gradient`).
+pub const Gradient = struct {
+    kind: GradientKind = .linear,
+    /// Linear: direction in degrees clockwise, 0 from left to right.
+    angle: ?Prop = null,
+    stops: []const Stop,
+
+    /// A color and where it sits along the gradient (0 to 1); stops
+    /// without `at` are spread evenly.
+    pub const Stop = struct { color: Prop, at: ?Prop = null };
+};
+
+pub const Direction = enum { row, column };
+pub const LayoutAlign = enum { start, center, end };
+
+/// A group that places its children one after another (`layout`): along
+/// x for a row, along y for a column, `gap` apart. The children's own
+/// positions are replaced; only their sizes count.
+pub const Flow = struct {
+    direction: Direction = .row,
+    gap: ?Prop = null,
+    /// Where the line of children starts (`align` start), is centred
+    /// (center) or ends (end), in the group's coordinates.
+    x: ?Prop = null,
+    y: ?Prop = null,
+    /// Along the line: which end of it sits at x (row) or y (column).
+    alignment: LayoutAlign = .start,
+    /// Across the line: which side of every child sits at y (row) or x
+    /// (column).
+    cross: LayoutAlign = .start,
+
+    pub fn fraction(a: LayoutAlign) f64 {
+        return switch (a) {
+            .start => 0,
+            .center => 0.5,
+            .end => 1,
+        };
+    }
+};
 
 pub const Stroke = struct {
     color: Prop,
@@ -177,14 +225,27 @@ pub const Layer = struct {
     /// Groups: moves every layer inside by (x, y); coordinates inside the
     /// group are relative to this origin.
     translate: ?Point = null,
+    /// Groups: places the children in a row or column.
+    flow: ?Flow = null,
     /// Text: layers with the same name use the smallest auto-shrunk size
     /// of all of them (and of all their iterations).
     shrink_group: ?[]const u8 = null,
+    /// Text: `<b>`, `<i>` and `{icon:name}` in the text are markup.
+    markup: bool = false,
+    /// Text with markup: fonts for bold, italic and bold italic runs.
+    font_bold: ?[]const u8 = null,
+    font_italic: ?[]const u8 = null,
+    font_bold_italic: ?[]const u8 = null,
+    /// Text with markup: icon height in font sizes (default 1).
+    icon_scale: ?Prop = null,
     visible: ?Prop = null,
     opacity: ?Prop = null,
     /// Degrees clockwise around the anchor point (polygons: their centre).
     rotate: ?Prop = null,
     anchor: Anchor = .@"top-left",
+    /// `anchor` given as an expression (evaluated per card); `anchor` is
+    /// then the default until it is evaluated.
+    anchor_expr: ?Prop = null,
     repeat: ?Repeat = null,
     effects: []const Effect = &.{},
     // rect, ellipse, image
@@ -192,8 +253,12 @@ pub const Layer = struct {
     // rect, ellipse, polygon
     fill: ?Prop = null,
     stroke: ?Stroke = null,
-    // rect
+    // rect, ellipse, polygon
+    gradient: ?Gradient = null,
+    // rect; image (clips the image to a rounded box)
     radius: ?Prop = null,
+    // image: clips the image to this polygon
+    clip: []const Point = &.{},
     // ellipse
     arc: ?Arc = null,
     // polygon
@@ -207,6 +272,7 @@ pub const Layer = struct {
     size: ?Prop = null,
     color: ?Prop = null,
     alignment: Align = .left,
+    align_expr: ?Prop = null,
     wrap: ?Prop = null,
     line_spacing: ?Prop = null,
     max_lines: ?Prop = null,
@@ -225,7 +291,10 @@ pub const Layer = struct {
     // image
     src: ?Tmpl = null,
     fit: Fit = .fill,
+    fit_expr: ?Prop = null,
     smoothing: Smoothing = .bilinear,
+    /// A missing file hides the layer instead of being an error.
+    optional: bool = false,
 };
 
 /// A named value shared by every layer (`consts`), evaluated once per card.
@@ -249,10 +318,39 @@ pub const Font = struct {
     pos: u32,
 };
 
+/// An icon for `{icon:name}` in text with markup.
+pub const Icon = struct {
+    name: []const u8,
+    path: []const u8,
+    pos: u32,
+};
+
+/// A component file a group takes its layers from (`include`). Its nodes'
+/// positions are moved past the design's text and the parts before it, so
+/// that every position in a design names one place in one file.
+pub const Part = struct {
+    file: []const u8,
+    text: []const u8,
+    root: Node,
+    base: u32,
+};
+
+/// A position in a design, in the file it is in.
+pub const Located = struct {
+    file: []const u8,
+    text: []const u8,
+    /// The root of that file, with positions as in the design.
+    root: *const Node,
+    /// The position in `text`.
+    local: u32,
+};
+
 pub const Design = struct {
     file: []const u8,
     source: []const u8,
     root: Node,
+    /// Component files included by groups.
+    parts: []const Part = &.{},
     name: []const u8 = "",
     canvas_w: ?Prop = null,
     canvas_h: ?Prop = null,
@@ -262,6 +360,10 @@ pub const Design = struct {
     /// Bleed in pixels on every side; the trim line is this far inside.
     bleed: ?Prop = null,
     fonts: []const Font = &.{},
+    /// `icons`: named icon files, or a path with `*` for the name.
+    icons: []const Icon = &.{},
+    icon_pattern: ?[]const u8 = null,
+    icons_pos: u32 = 0,
     params: []const Param = &.{},
     layers: []const Layer = &.{},
     symbols: []const expr.Symbol = &.{},
@@ -284,13 +386,32 @@ pub const Design = struct {
         return null;
     }
 
+    /// The file of icon `name`, or null when the design has no such icon.
+    pub fn iconPath(d: *const Design, arena: Allocator, name: []const u8) Allocator.Error!?[]const u8 {
+        for (d.icons) |ic| if (std.mem.eql(u8, ic.name, name)) return ic.path;
+        const pat = d.icon_pattern orelse return null;
+        return try std.mem.replaceOwned(u8, arena, pat, "*", name);
+    }
+
     pub fn findFont(d: *const Design, name: []const u8) ?*const Font {
         for (d.fonts) |*f| if (std.mem.eql(u8, f.name, name)) return f;
         return null;
     }
 
     pub fn pathAt(d: *const Design, arena: Allocator, pos: u32) []const u8 {
-        return json.pointerTo(arena, &d.root, pos) catch "";
+        const loc = d.locate(pos);
+        return json.pointerTo(arena, loc.root, pos) catch "";
+    }
+
+    /// The file a position is in: the design or one of its components.
+    pub fn locate(d: *const Design, pos: u32) Located {
+        var i = d.parts.len;
+        while (i > 0) {
+            i -= 1;
+            const p = &d.parts[i];
+            if (pos >= p.base) return .{ .file = p.file, .text = p.text, .root = &p.root, .local = pos - p.base };
+        }
+        return .{ .file = d.file, .text = d.source, .root = &d.root, .local = pos };
     }
 
     /// The expression field at a JSON value offset.
@@ -307,6 +428,12 @@ const Loader = struct {
     diags: *diag.List,
     src: diag.Source,
     root: *const Node,
+    design: *Design,
+    /// Reads component files; null when the design is loaded on its own.
+    vfs: ?project.Vfs = null,
+    parts: std.ArrayList(Part) = .empty,
+    /// Component files being flattened (include cycles).
+    including: std.ArrayList([]const u8) = .empty,
     errors: usize = 0,
     /// Set while compiling `repeat.count`: a list there counts its items.
     list_counts: bool = false,
@@ -327,8 +454,15 @@ const Loader = struct {
 
     fn report(l: *Loader, sev: diag.Severity, code: u16, pos: u32, msg: []const u8, hint: ?[]const u8) Allocator.Error!void {
         if (sev == .err) l.errors += 1;
-        const path = try json.pointerTo(l.arena, l.root, pos);
-        try l.diags.at(sev, code, l.src, pos, path, msg, hint);
+        const loc = l.locate(pos);
+        const path = try json.pointerTo(l.arena, loc.root, pos);
+        try l.diags.at(sev, code, .{ .file = loc.file, .text = loc.text }, loc.local, path, msg, hint);
+    }
+
+    fn locate(l: *const Loader, pos: u32) Located {
+        var d = l.design.*;
+        d.parts = l.parts.items;
+        return d.locate(pos);
     }
 
     fn err(l: *Loader, code: u16, pos: u32, comptime f: []const u8, args: anytype) Allocator.Error!void {
@@ -341,12 +475,13 @@ const Loader = struct {
 
     fn exprProblem(l: *Loader, pos: u32, p: expr.Problem) Allocator.Error!void {
         l.errors += 1;
-        const path = try json.pointerTo(l.arena, l.root, pos);
-        const lc = json.lineCol(l.src.text, pos);
+        const loc = l.locate(pos);
+        const path = try json.pointerTo(l.arena, loc.root, pos);
+        const lc = json.lineCol(loc.text, loc.local);
         try l.diags.add(.{
             .severity = .err,
             .code = p.code,
-            .file = l.src.file,
+            .file = loc.file,
             .path = path,
             .line = lc.line,
             .col = lc.col,
@@ -394,6 +529,22 @@ const Loader = struct {
         const all = try std.mem.join(l.arena, ", ", &names);
         try l.errHint(1103, n.pos, try std.fmt.allocPrint(l.arena, "'{s}' is not a valid {s}; expected one of {s}", .{ s, what, all }), diag.suggest(l.arena, s, &names));
         return null;
+    }
+
+    /// An enum field that may also be an expression giving one of the
+    /// names: a string that is one of the names is that name; a bare word
+    /// that is not a name in scope is reported as a misspelt option;
+    /// anything else is compiled as a text expression, checked per card.
+    fn enumOrExpr(l: *Loader, comptime E: type, n: *const Node, what: []const u8, scope: *const expr.Scope) Allocator.Error!EnumOrExpr(E) {
+        if (n.data == .string) {
+            const s = n.data.string;
+            if (std.meta.stringToEnum(E, s)) |e| return .{ .lit = e };
+            const word = s.len > 0 and for (s) |ch| {
+                if (!(std.ascii.isAlphanumeric(ch) or ch == '-' or ch == '_')) break false;
+            } else true;
+            if (!word or (expr.isIdent(s) and scope.knows(s))) return .{ .expr = try l.prop(n, .text, scope) };
+        }
+        return .{ .lit = try l.enumField(E, n, what) };
     }
 
     /// Compiles a number, bool or color field.
@@ -494,17 +645,17 @@ const Loader = struct {
     }
 };
 
-const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "params", "consts", "functions", "layers" };
+const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
 const common_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
 
 fn kindFields(kind: LayerKind) []const []const u8 {
     return switch (kind) {
-        .rect => &.{ "box", "fill", "radius", "stroke" },
-        .ellipse => &.{ "box", "fill", "stroke", "arc" },
-        .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box" },
-        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group" },
-        .image => &.{ "src", "box", "fit", "smoothing" },
+        .rect => &.{ "box", "fill", "radius", "stroke", "gradient" },
+        .ellipse => &.{ "box", "fill", "stroke", "arc", "gradient" },
+        .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box", "gradient" },
+        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
+        .image => &.{ "src", "box", "fit", "smoothing", "optional", "radius", "clip" },
         .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo" },
         .group => &.{"layers"},
     };
@@ -684,11 +835,17 @@ pub fn checkRange(arena: Allocator, p: *const Param, v: Value) Allocator.Error!?
 }
 
 pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const u8) Allocator.Error!*Design {
+    return loadWith(arena, diags, file, text, null);
+}
+
+/// `load` for a design in a project: groups can `include` component files
+/// that `vfs` reads.
+pub fn loadWith(arena: Allocator, diags: *diag.List, file: []const u8, text: []const u8, vfs: ?project.Vfs) Allocator.Error!*Design {
     const d = try arena.create(Design);
     const src: diag.Source = .{ .file = file, .text = text };
     d.* = .{ .file = file, .source = text, .root = .{ .pos = 0, .data = .null } };
     d.root = (try parseJson(arena, diags, src)) orelse return d;
-    var l: Loader = .{ .arena = arena, .diags = diags, .src = src, .root = &d.root };
+    var l: Loader = .{ .arena = arena, .diags = diags, .src = src, .root = &d.root, .design = d, .vfs = vfs };
     const root = &d.root;
     if (!try checkFormat(root, diags, src)) l.errors += 1;
     try l.checkFields(root, &top_fields, "a design");
@@ -744,6 +901,25 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
     };
     d.fonts = fonts.items;
 
+    // Icons: { "steel": "icons/steel.png" } or "icons/*.png".
+    if (root.get("icons")) |inode| {
+        d.icons_pos = inode.pos;
+        switch (inode.data) {
+            .string => |pat| {
+                if (std.mem.indexOfScalar(u8, pat, '*') == null) try l.errHint(1103, inode.pos, "an icons path needs a '*' where the icon name goes", "e.g. \"icons/*.png\"") else d.icon_pattern = pat;
+            },
+            .object => |fields| {
+                var icons: std.ArrayList(Icon) = .empty;
+                for (fields) |f| {
+                    if (!text_isIconName(f.key)) try l.err(1103, f.key_pos, "icon name '{s}' must be letters, digits, '_', '-' and '.'", .{f.key});
+                    if (try l.literalString(&f.value, "an icon path")) |path| try icons.append(arena, .{ .name = f.key, .path = path, .pos = f.value.pos });
+                }
+                d.icons = icons.items;
+            },
+            else => try l.err(1103, inode.pos, "icons must be an object of name to path, or a path with '*', found {s}", .{inode.kindName()}),
+        }
+    }
+
     // Layers
     if (root.get("layers")) |ln| {
         if (ln.data == .array) {
@@ -752,6 +928,7 @@ pub fn load(arena: Allocator, diags: *diag.List, file: []const u8, text: []const
     } else try l.err(1102, root.pos, "the design needs \"layers\"", .{});
 
     d.fields = l.fields.items;
+    d.parts = l.parts.items;
     d.ok = l.errors == 0;
     return d;
 }
@@ -1024,7 +1201,8 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate" };
+const group_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
+const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "label" };
 
 fn isGroup(n: *const Node) bool {
@@ -1044,8 +1222,22 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
         const i = out.items.len;
         try out.append(l.arena, .{ .node = n, .parent = parent });
         if (n.data != .object or !isGroup(n)) continue;
+        if (n.get("include")) |inc| {
+            if (n.get("layers")) |ln| {
+                try l.err(1111, ln.pos, "a group needs exactly one of \"layers\" and \"include\"", .{});
+                continue;
+            }
+            if (depth >= 16) {
+                try l.err(5001, inc.pos, "groups are nested more than 16 deep", .{});
+                continue;
+            }
+            const layers = (try includeComponent(l, inc)) orelse continue;
+            try flatten(l, out, layers, i, depth + 1);
+            _ = l.including.pop();
+            continue;
+        }
         const ln = n.get("layers") orelse {
-            try l.err(1102, n.pos, "a group needs \"layers\"", .{});
+            try l.err(1102, n.pos, "a group needs \"layers\" (or \"include\")", .{});
             continue;
         };
         if (ln.data != .array) {
@@ -1057,6 +1249,74 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
             continue;
         }
         try flatten(l, out, ln.data.array, i, depth + 1);
+    }
+}
+
+/// The layers of the component file a group includes [1201, 1203, 3004].
+/// On success the file is pushed on `including` (the caller pops it once
+/// the layers are flattened).
+fn includeComponent(l: *Loader, inc: *const Node) Allocator.Error!?[]const Node {
+    const raw = (try l.literalString(inc, "include")) orelse return null;
+    const path = (try project.normalize(l.arena, raw)) orelse {
+        try l.errHint(1203, inc.pos, try std.fmt.allocPrint(l.arena, "include path '{s}' is outside the project", .{raw}), "paths are relative to the project folder");
+        return null;
+    };
+    for (l.including.items) |f| if (std.mem.eql(u8, f, path)) {
+        try l.err(3004, inc.pos, "include cycle through '{s}'", .{path});
+        return null;
+    };
+    // A component used by several groups is read once.
+    var part: ?*const Part = null;
+    for (l.parts.items) |*p| if (std.mem.eql(u8, p.file, path)) {
+        part = p;
+    };
+    if (part == null) {
+        const vfs = l.vfs orelse {
+            try l.err(1201, inc.pos, "component '{s}' cannot be read here; include works in a project", .{path});
+            return null;
+        };
+        const text = vfs.read(path) orelse {
+            try l.err(1201, inc.pos, "component file '{s}' not found", .{path});
+            return null;
+        };
+        const src: diag.Source = .{ .file = path, .text = text };
+        var root = (try parseJson(l.arena, l.diags, src)) orelse {
+            l.errors += 1;
+            return null;
+        };
+        if (!try checkFormat(&root, l.diags, src)) l.errors += 1;
+        // Positions after the design's text and the parts so far.
+        var base: u32 = @intCast(l.src.text.len + 1);
+        for (l.parts.items) |p| base = p.base + @as(u32, @intCast(p.text.len + 1));
+        shift(&root, base);
+        try l.parts.append(l.arena, .{ .file = path, .text = text, .root = root, .base = base });
+        const p = &l.parts.items[l.parts.items.len - 1];
+        try l.checkFields(&p.root, &component_fields, "a component");
+        part = p;
+    }
+    const r = &part.?.root;
+    const ln = r.get("layers") orelse {
+        try l.err(1102, r.pos, "the component needs \"layers\"", .{});
+        return null;
+    };
+    if (ln.data != .array) {
+        try l.err(1103, ln.pos, "layers must be an array", .{});
+        return null;
+    }
+    try l.including.append(l.arena, part.?.file);
+    return ln.data.array;
+}
+
+/// Moves every position in a parsed tree by `base`.
+fn shift(n: *Node, base: u32) void {
+    n.pos += base;
+    switch (n.data) {
+        .array => |items| for (@constCast(items)) |*it| shift(it, base),
+        .object => |fields| for (@constCast(fields)) |*f| {
+            f.key_pos += base;
+            shift(&f.value, base);
+        },
+        else => {},
     }
 }
 
@@ -1296,13 +1556,27 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         const py = if (tn.get("y")) |v| try l.prop(v, .number, &sy) else try constProp(arena, .{ .number = 0 }, tn.pos);
         if (px != null and py != null) layer.translate = .{ .x = px.?, .y = py.? };
     };
+    if (kind == .group) if (m.get("layout")) |fnode| if (try l.expectObject(fnode, "layout")) {
+        try l.checkFields(fnode, &.{ "direction", "gap", "x", "y", "align", "cross" }, "layout");
+        var flow: Flow = .{};
+        if (fnode.get("direction")) |v| flow.direction = (try l.enumField(Direction, v, "layout direction")) orelse .row;
+        const main_scope = if (flow.direction == .row) &sx else &sy;
+        if (fnode.get("gap")) |v| flow.gap = try l.prop(v, .number, main_scope);
+        if (fnode.get("x")) |v| flow.x = try l.prop(v, .number, &sx);
+        if (fnode.get("y")) |v| flow.y = try l.prop(v, .number, &sy);
+        if (fnode.get("align")) |v| flow.alignment = (try l.enumField(LayoutAlign, v, "layout align")) orelse .start;
+        if (fnode.get("cross")) |v| flow.cross = (try l.enumField(LayoutAlign, v, "layout cross")) orelse .start;
+        layer.flow = flow;
+    };
     if (m.get("visible")) |v| layer.visible = try l.prop(v, .bool, scope);
     if (m.get("opacity")) |v| layer.opacity = try l.prop(v, .number, scope);
     if (m.get("rotate")) |v| layer.rotate = try l.prop(v, .number, scope);
     if (m.get("anchor")) |v| {
-        if (try l.enumField(Anchor, v, "anchor")) |a| {
+        const got = try l.enumOrExpr(Anchor, v, "anchor", scope);
+        if (got.lit) |a| {
             if (a.isBaseline() and kind != .text) try l.err(1103, v.pos, "baseline anchors only apply to text layers", .{}) else layer.anchor = a;
         }
+        layer.anchor_expr = got.expr;
     }
     if (m.get("effects")) |en| {
         if (en.data == .array) {
@@ -1402,6 +1676,34 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (kind == .rect) if (m.get("radius")) |v| {
                 layer.radius = try l.prop(v, .number, scope);
             };
+            if (kind != .text) if (m.get("gradient")) |gn| if (try l.expectObject(gn, "gradient")) {
+                try l.checkFields(gn, &.{ "type", "angle", "stops" }, "gradient");
+                var g: Gradient = .{ .stops = &.{} };
+                if (gn.get("type")) |v| g.kind = (try l.enumField(GradientKind, v, "gradient type")) orelse .linear;
+                if (gn.get("angle")) |v| {
+                    if (g.kind == .radial) try l.err(1101, v.pos, "'angle' only applies to linear gradients", .{});
+                    g.angle = try l.prop(v, .number, scope);
+                }
+                var stops: std.ArrayList(Gradient.Stop) = .empty;
+                if (gn.get("stops")) |sn| {
+                    if (sn.data == .array and sn.data.array.len >= 2) {
+                        // "#FF0000" or { "color": "#FF0000", "at": 0.3 }
+                        for (sn.data.array) |*st| {
+                            if (st.data == .object) {
+                                try l.checkFields(st, &.{ "color", "at" }, "a gradient stop");
+                                const cn = st.get("color") orelse {
+                                    try l.err(1102, st.pos, "a gradient stop needs \"color\"", .{});
+                                    continue;
+                                };
+                                const cp = (try l.prop(cn, .color, scope)) orelse continue;
+                                try stops.append(arena, .{ .color = cp, .at = if (st.get("at")) |an| try l.prop(an, .number, scope) else null });
+                            } else if (try l.prop(st, .color, scope)) |cp| try stops.append(arena, .{ .color = cp });
+                        }
+                    } else try l.err(1103, sn.pos, "stops must be an array of at least 2 colors", .{});
+                } else try l.err(1102, gn.pos, "a gradient needs \"stops\"", .{});
+                g.stops = stops.items;
+                if (g.stops.len >= 2) layer.gradient = g;
+            };
         },
         else => {},
     }
@@ -1458,16 +1760,15 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             } else try l.err(1102, m.pos, "text layer '{s}' needs \"at\"", .{id});
             if (m.get("font")) |v| if (try l.literalString(v, "font")) |s| {
                 layer.font = s;
-                if (!std.mem.eql(u8, s, "default") and d.findFont(s) == null) {
-                    var names: std.ArrayList([]const u8) = .empty;
-                    try names.append(arena, "default");
-                    for (d.fonts) |f| try names.append(arena, f.name);
-                    try l.errHint(4004, v.pos, try std.fmt.allocPrint(arena, "font '{s}' is not declared in \"fonts\"", .{s}), diag.suggest(arena, s, names.items));
-                }
+                try checkFontName(l, d, s, v.pos);
             };
             if (m.get("size")) |v| layer.size = try l.prop(v, .number, scope);
             if (m.get("color")) |v| layer.color = try l.prop(v, .color, scope);
-            if (m.get("align")) |v| layer.alignment = (try l.enumField(Align, v, "align")) orelse .left;
+            if (m.get("align")) |v| {
+                const got = try l.enumOrExpr(Align, v, "align", scope);
+                layer.alignment = got.lit orelse .left;
+                layer.align_expr = got.expr;
+            }
             if (m.get("wrap")) |v| layer.wrap = try l.prop(v, .number, &sx);
             if (m.get("line_spacing")) |v| layer.line_spacing = try l.prop(v, .number, scope);
             if (m.get("max_lines")) |v| layer.max_lines = try l.prop(v, .number, scope);
@@ -1475,6 +1776,17 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("max_height")) |v| layer.max_height = try l.prop(v, .number, &sy);
             if (m.get("min_size")) |v| layer.min_size = try l.prop(v, .number, scope);
             if (m.get("shrink_group")) |v| layer.shrink_group = try l.literalString(v, "shrink_group");
+            if (m.get("markup")) |v| {
+                if (v.data == .bool) layer.markup = v.data.bool else try l.err(1103, v.pos, "markup must be true or false", .{});
+            }
+            inline for (.{ "font_bold", "font_italic", "font_bold_italic" }) |key| if (m.get(key)) |v| if (try l.literalString(v, key)) |fs| {
+                try checkFontName(l, d, fs, v.pos);
+                @field(layer, key) = fs;
+            };
+            if (m.get("icon_scale")) |v| layer.icon_scale = try l.prop(v, .number, scope);
+            if (!layer.markup) for ([_][]const u8{ "font_bold", "font_italic", "font_bold_italic", "icon_scale" }) |key| if (m.get(key)) |v| {
+                try l.report(.warning, 1101, v.pos, try std.fmt.allocPrint(arena, "'{s}' only applies with \"markup\": true", .{key}), "add \"markup\": true to the layer");
+            };
         },
         .qr => {
             if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "qr layer '{s}' needs \"text\"", .{id});
@@ -1489,12 +1801,46 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         },
         .image => {
             if (m.get("src")) |v| layer.src = try l.template(v, scope) else try l.err(1102, m.pos, "image layer '{s}' needs \"src\"", .{id});
-            if (m.get("fit")) |v| layer.fit = (try l.enumField(Fit, v, "fit")) orelse .fill;
+            if (m.get("fit")) |v| {
+                const got = try l.enumOrExpr(Fit, v, "fit", scope);
+                layer.fit = got.lit orelse .fill;
+                layer.fit_expr = got.expr;
+            }
             if (m.get("smoothing")) |v| layer.smoothing = (try l.enumField(Smoothing, v, "smoothing")) orelse .bilinear;
+            if (m.get("optional")) |v| {
+                if (v.data == .bool) layer.optional = v.data.bool else try l.err(1103, v.pos, "optional must be true or false", .{});
+            }
+            if (m.get("radius")) |v| layer.radius = try l.prop(v, .number, scope);
+            if (m.get("clip")) |cn| {
+                if (cn.data == .array and cn.data.array.len >= 3) {
+                    var pts: std.ArrayList(Point) = .empty;
+                    for (cn.data.array) |*pt| {
+                        if (pt.data != .array or pt.data.array.len != 2) {
+                            try l.err(1103, pt.pos, "a point must be an array [x, y]", .{});
+                            continue;
+                        }
+                        const px = try l.prop(&pt.data.array[0], .number, &sx);
+                        const py = try l.prop(&pt.data.array[1], .number, &sy);
+                        if (px != null and py != null) try pts.append(arena, .{ .x = px.?, .y = py.? });
+                    }
+                    layer.clip = pts.items;
+                } else try l.err(1109, cn.pos, "clip must be an array of at least 3 [x, y] points", .{});
+            }
         },
         else => {},
     }
     return layer;
+}
+
+const text_isIconName = @import("text.zig").isIconName;
+
+/// A font name must be "default" or declared in `fonts` [4004].
+fn checkFontName(l: *Loader, d: *const Design, s: []const u8, pos: u32) Allocator.Error!void {
+    if (std.mem.eql(u8, s, "default") or d.findFont(s) != null) return;
+    var names: std.ArrayList([]const u8) = .empty;
+    try names.append(l.arena, "default");
+    for (d.fonts) |f| try names.append(l.arena, f.name);
+    try l.errHint(4004, pos, try std.fmt.allocPrint(l.arena, "font '{s}' is not declared in \"fonts\"", .{s}), diag.suggest(l.arena, s, names.items));
 }
 
 fn constProp(arena: Allocator, v: Value, pos: u32) Allocator.Error!?Prop {
@@ -1675,4 +2021,33 @@ test "a design function may wrap the built-in it hides" {
     try std.testing.expectEqual(@as(usize, 1), diags.items.items.len);
     try std.testing.expectEqual(@as(u16, 1113), diags.items.items[0].code);
     try std.testing.expectEqual(@as(usize, 1), d.functions.len);
+}
+
+test "enum fields: names, expressions and misspelt names" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "pos": { "type": "text", "default": "center" } },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "anchor": "bottom-right", "box": { "x": 0, "y": 0, "w": 1, "h": 1 } },
+        \\    { "id": "b", "type": "rect", "anchor": "pos", "box": { "x": 0, "y": 0, "w": 1, "h": 1 } },
+        \\    { "id": "c", "type": "image", "src": "x.png", "fit": "pos == 'center' ? 'cover' : 'contain'", "box": { "x": 0, "y": 0, "w": 1, "h": 1 } },
+        \\    { "id": "d", "type": "rect", "anchor": "centre", "box": { "x": 0, "y": 0, "w": 1, "h": 1 } }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 1), diags.errorCount());
+    try std.testing.expectEqual(@as(u16, 1103), diags.items.items[0].code);
+    try std.testing.expectEqualStrings("did you mean 'center'?", diags.items.items[0].hint.?);
+    try std.testing.expectEqual(Anchor.@"bottom-right", d.layers[0].anchor);
+    try std.testing.expect(d.layers[0].anchor_expr == null);
+    try std.testing.expect(d.layers[1].anchor_expr != null);
+    try std.testing.expect(d.layers[2].fit_expr != null);
 }

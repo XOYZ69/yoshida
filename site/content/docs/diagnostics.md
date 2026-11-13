@@ -130,6 +130,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3106 | error | Text result over 10 000 bytes (at render time) |
 | 3107 | error | Argument out of range: `roman` outside 1 to 3999, an empty `part` separator, `rand_int` with `lo` greater than `hi` (at render time) |
 | 3108 | error | QR code text too long for its error correction level (at render time) |
+| 3109 | error | An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |
@@ -137,6 +138,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3205 | warning | A QR code has little contrast against its fill, or is lighter than it |
 | 3207 | warning | A QR code with `logo` is not at level `high`, or the cleared middle covers more than 20 % |
 | 3208 | warning | A module of a QR code prints narrower than 0.5 mm at the canvas `dpi` |
+| 3209 | warning | Text with `markup` uses an icon the design does not know (left out), or `<i>` without `font_italic` (drawn upright) |
 
 ### 4xxx: assets
 

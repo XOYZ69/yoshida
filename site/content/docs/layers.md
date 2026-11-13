@@ -11,7 +11,7 @@ The design's `layers` array is drawn in order: the first layer is at the bottom,
 | [`ellipse`](@/docs/layer-ellipse.md) | Ellipse filling a box |
 | [`polygon`](@/docs/layer-polygon.md) | Closed or open shape through points |
 | [`text`](@/docs/layer-text.md) | Text with wrapping, alignment, auto-shrink |
-| [`image`](@/docs/layer-image.md) | PNG, JPEG, WebP, GIF or BMP picture |
+| [`image`](@/docs/layer-image.md) | PNG, JPEG, WebP, GIF, BMP or SVG picture |
 | [`qr`](@/docs/layer-qr.md) | QR code made from text |
 | [`group`](@/docs/layer-group.md) | Holds other layers and draws them as one picture |
 | [`divider`](@/docs/layer-divider.md) | Draws nothing; organises the layer list in the editor |
@@ -50,6 +50,8 @@ bottom-left  bottom    bottom-right
 ```
 
 Text layers also allow `baseline-left`, `baseline` and `baseline-right`, which use the first line's baseline. A baseline anchor on any other type is error 1103.
+
+`anchor` can also be an expression that gives one of these names, evaluated for every card: `"anchor": "side == 'left' ? 'top-left' : 'top-right'"`, or a text param's name. A string that is one of the names is that name; a single word that is neither a name nor a param or constant is error 1103 (with a suggestion), and an expression that gives a word that is not an anchor is error 3109 at render time. The same goes for `align` on text layers and `fit` on image layers.
 
 Examples: a rect with `"anchor": "center"` and `box.x`, `box.y` set to `50%` is centred on the canvas; a text layer with `"anchor": "baseline"` sits on the line given by `at.y`.
 

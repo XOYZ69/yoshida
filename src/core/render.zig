@@ -149,6 +149,9 @@ pub const Assets = struct {
     /// URLs that were needed but are not in the file system. The shell may
     /// fetch them, add them under the URL as path, and render again.
     missing_urls: std.ArrayList([]const u8) = .empty,
+    /// SVG files among `images` (whose entry is the SVG at its own size);
+    /// `sized` draws them again at the size they are used at.
+    svgs: std.StringHashMapUnmanaged(void) = .empty,
 
     pub const ImageEntry = union(enum) {
         ok: *raster.Image,
@@ -174,6 +177,9 @@ pub const Assets = struct {
             a.gpa.free(e.key_ptr.*);
         }
         a.images.deinit(a.gpa);
+        var sit = a.svgs.keyIterator();
+        while (sit.next()) |k| a.gpa.free(k.*);
+        a.svgs.deinit(a.gpa);
         var fit = a.fonts.iterator();
         while (fit.next()) |e| {
             if (e.value_ptr.*) |f| {
@@ -191,6 +197,15 @@ pub const Assets = struct {
 
     /// Drops cached files, e.g. after the editor changed one.
     pub fn invalidate(a: *Assets, path: []const u8) void {
+        if (a.svgs.fetchRemove(path)) |kv| {
+            a.gpa.free(kv.key);
+            // Every size the SVG was drawn at.
+            var stale: std.ArrayList([]const u8) = .empty;
+            defer stale.deinit(a.gpa);
+            var it = a.images.keyIterator();
+            while (it.next()) |k| if (k.len > path.len and std.mem.startsWith(u8, k.*, path) and k.*[path.len] == 0) stale.append(a.gpa, k.*) catch {};
+            for (stale.items) |k| a.dropImage(k);
+        }
         if (a.images.fetchRemove(path)) |kv| {
             switch (kv.value) {
                 .ok => |img| {
@@ -211,11 +226,76 @@ pub const Assets = struct {
         }
     }
 
+    fn dropImage(a: *Assets, key: []const u8) void {
+        const kv = a.images.fetchRemove(key) orelse return;
+        switch (kv.value) {
+            .ok => |img| {
+                img.deinit(a.gpa);
+                a.gpa.destroy(img);
+            },
+            .bad => |msg| a.gpa.free(msg),
+            .missing => {},
+        }
+        a.gpa.free(kv.key);
+    }
+
     pub fn image(a: *Assets, path: []const u8) Allocator.Error!ImageEntry {
         if (a.images.get(path)) |e| return e;
         const entry = try a.decode(path);
         try a.images.put(a.gpa, try a.gpa.dupe(u8, path), entry);
         return entry;
+    }
+
+    pub fn isSvg(a: *const Assets, path: []const u8) bool {
+        return a.svgs.contains(path);
+    }
+
+    /// The SVG at `path` drawn for a `w` x `h` pixel area (at least as
+    /// many pixels as that; the caller scales it the rest of the way).
+    /// null when it is not an SVG or cannot be drawn.
+    pub fn sized(a: *Assets, path: []const u8, w: f64, h: f64) Allocator.Error!?*raster.Image {
+        if (!a.svgs.contains(path)) return null;
+        const pw: u32 = @intFromFloat(std.math.clamp(@ceil(w), 1, 8192));
+        const ph: u32 = @intFromFloat(std.math.clamp(@ceil(h), 1, 8192));
+        const key = try std.fmt.allocPrint(a.gpa, "{s}\x00{d}x{d}", .{ path, pw, ph });
+        if (a.images.get(key)) |e| {
+            a.gpa.free(key);
+            return if (e == .ok) e.ok else null;
+        }
+        errdefer a.gpa.free(key);
+        const entry = try a.rasterSvg(a.vfs.read(path) orelse "", @floatFromInt(pw), @floatFromInt(ph));
+        try a.images.put(a.gpa, key, entry);
+        return if (entry == .ok) entry.ok else null;
+    }
+
+    /// Draws SVG `bytes`; with a size, scaled so it covers w x h (keeping
+    /// its proportions), else at its own size.
+    fn rasterSvg(a: *Assets, bytes: []const u8, w: ?f64, h: ?f64) Allocator.Error!ImageEntry {
+        // nanosvg changes the text while parsing; it needs a copy with a 0 at the end.
+        const text_z = try a.gpa.allocSentinel(u8, bytes.len, 0);
+        defer a.gpa.free(text_z);
+        @memcpy(text_z, bytes);
+        const svg = c.nsvgParse(text_z.ptr, "px", 96) orelse return .{ .bad = try a.gpa.dupe(u8, "cannot parse SVG") };
+        defer c.nsvgDelete(svg);
+        const iw: f64 = if (svg.width > 0) svg.width else 100;
+        const ih: f64 = if (svg.height > 0) svg.height else 100;
+        const s: f64 = if (w != null and h != null) @max(w.? / iw, h.? / ih) else 1;
+        const pw: u32 = @intFromFloat(std.math.clamp(@ceil(iw * s), 1, 8192));
+        const ph: u32 = @intFromFloat(std.math.clamp(@ceil(ih * s), 1, 8192));
+        if (@as(u64, pw) * ph > limits.image_pixels) return .{ .bad = try std.fmt.allocPrint(a.gpa, "SVG drawn at {d} x {d}, above the 50 megapixel limit", .{ pw, ph }) };
+        const rast = c.nsvgCreateRasterizer() orelse return error.OutOfMemory;
+        defer c.nsvgDeleteRasterizer(rast);
+        const rgba8 = try a.gpa.alloc(u8, @as(usize, pw) * ph * 4);
+        defer a.gpa.free(rgba8);
+        @memset(rgba8, 0);
+        c.nsvgRasterize(rast, svg, 0, 0, @floatCast(s), rgba8.ptr, @intCast(pw), @intCast(ph), @intCast(pw * 4));
+        const px = try a.gpa.alloc(u16, rgba8.len);
+        defer a.gpa.free(px);
+        for (rgba8, px) |b, *o| o.* = @as(u16, b) * 257;
+        const img = try a.gpa.create(raster.Image);
+        errdefer a.gpa.destroy(img);
+        img.* = try raster.Image.fromStraight(a.gpa, pw, ph, px);
+        return .{ .ok = img };
     }
 
     fn decode(a: *Assets, path: []const u8) Allocator.Error!ImageEntry {
@@ -233,9 +313,14 @@ pub const Assets = struct {
         if (bytes.len >= 12 and std.mem.eql(u8, bytes[0..4], "RIFF") and std.mem.eql(u8, bytes[8..12], "WEBP")) {
             return a.decodeWebp(bytes);
         }
+        if (looksLikeSvg(path, bytes)) {
+            const entry = try a.rasterSvg(bytes, null, null);
+            if (entry == .ok) try a.svgs.put(a.gpa, try a.gpa.dupe(u8, path), {});
+            return entry;
+        }
         const px = c.stbi_load_16_from_memory(bytes.ptr, @intCast(bytes.len), &w, &h, &ch, 4) orelse {
             const reason = if (c.stbi_failure_reason()) |r| std.mem.span(r) else "unknown format";
-            return .{ .bad = try std.fmt.allocPrint(a.gpa, "cannot decode image ({s}); PNG, JPEG, WebP, GIF and BMP are supported", .{reason}) };
+            return .{ .bad = try std.fmt.allocPrint(a.gpa, "cannot decode image ({s}); PNG, JPEG, WebP, GIF, BMP and SVG are supported", .{reason}) };
         };
         defer c.stbi_image_free(px);
         const uw: u32 = @intCast(w);
@@ -305,6 +390,15 @@ pub const Assets = struct {
     }
 };
 
+/// An SVG file: by its extension, or text that starts with `<?xml` or `<svg`.
+fn looksLikeSvg(path: []const u8, bytes: []const u8) bool {
+    if (std.ascii.endsWithIgnoreCase(path, ".svg")) return true;
+    var t = std.mem.trimStart(u8, bytes, " \t\r\n");
+    if (std.mem.startsWith(u8, t, "\xEF\xBB\xBF")) t = t[3..];
+    if (std.mem.startsWith(u8, t, "<svg")) return true;
+    return std.mem.startsWith(u8, t, "<?xml") and std.mem.indexOf(u8, t[0..@min(t.len, 1024)], "<svg") != null;
+}
+
 /// Everything a layer evaluates to for one card (and one repeat iteration).
 const Resolved = struct {
     visible: bool = true,
@@ -312,6 +406,10 @@ const Resolved = struct {
     /// Degrees clockwise around `pivot`.
     rotate: f64 = 0,
     pivot: [2]f64 = .{ 0, 0 },
+    /// `anchor`, `align` and `fit` for this card (they may be expressions).
+    anchor: design_mod.Anchor = .@"top-left",
+    alignment: design_mod.Align = .left,
+    fit: design_mod.Fit = .fill,
     // Final bounds after anchor and layout.
     left: f64 = 0,
     top: f64 = 0,
@@ -322,6 +420,10 @@ const Resolved = struct {
     fill: Color = Color.white,
     stroke: ?struct { color: Color, width: f64, dash: []const f32 = &.{} } = null,
     radius: f64 = 0,
+    /// `gradient` for this card: colors at positions 0..1.
+    gradient: ?struct { radial: bool, angle: f64, stops: []const raster.GradientStop } = null,
+    /// Image `clip` polygon on the canvas.
+    clip: []const [2]f32 = &.{},
     /// Ellipse arc in degrees clockwise from the top.
     arc: ?[2]f64 = null,
     points: []const [2]f32 = &.{},
@@ -333,6 +435,10 @@ const Resolved = struct {
     line_spacing: f64 = 4,
     max_lines: ?f64 = null,
     layout: ?text.Layout = null,
+    /// Text with markup: styles and icons, and each icon's image and file.
+    rich: ?*const text.Rich = null,
+    icons: []const ?*raster.Image = &.{},
+    icon_paths: []const []const u8 = &.{},
     src: []const u8 = "",
     image: ?*raster.Image = null,
     /// QR layers: the encoded symbol, the size of one module in canvas
@@ -426,6 +532,11 @@ const Frame = struct {
 
 const Failed = error{ Failed, OutOfMemory };
 
+/// Where a group's `layout` puts one child (one iteration of it): the
+/// top-left corner on the canvas, and the move that takes it there as
+/// measured (for the layers inside a child group).
+const FlowMove = struct { target: [2]f64 = .{ 0, 0 }, delta: [2]f64 = .{ 0, 0 }, placed: bool = false };
+
 const Ctx = struct {
     gpa: Allocator,
     arena: Allocator,
@@ -461,6 +572,10 @@ const Ctx = struct {
     frame_busy: []bool = &.{},
     /// Repeated groups: the frame of every iteration.
     group_iters: []?[]Frame = &.{},
+    /// Groups with `layout`: how far each direct child (by index past the
+    /// group) and each of its iterations is moved; null until measured.
+    flows: []?[]const []const FlowMove = &.{},
+    flow_busy: []bool = &.{},
     /// Repeated layers being evaluated: iterations done so far (for
     /// references to earlier iterations such as @row[i - 1]).
     partial: []?[]Resolved = &.{},
@@ -509,14 +624,15 @@ const Ctx = struct {
         var d: diag.Diagnostic = .{
             .severity = sev,
             .code = code,
-            .file = ctx.d.file,
+            .file = if (pos) |p| ctx.d.locate(p).file else ctx.d.file,
             .path = if (pos) |p| ctx.d.pathAt(da, p) else "",
             .message = try da.dupe(u8, msg),
             .hint = if (hint) |h| try da.dupe(u8, h) else null,
             .card = card,
         };
         if (pos) |p| {
-            const lc = json.lineCol(ctx.d.source, p);
+            const loc = ctx.d.locate(p);
+            const lc = json.lineCol(loc.text, loc.local);
             d.line = lc.line;
             d.col = lc.col;
         }
@@ -596,6 +712,23 @@ const Ctx = struct {
         env.axis = .none;
         try ctx.probeAt(env, t.pos);
         return env.template(t.t) catch |e| return ctx.evalFailed(e, env, layer, t.pos);
+    }
+
+    /// An enum field for this card: the expression's text when there is
+    /// one (it must be one of the names), else the fixed value [3109].
+    fn enumValue(ctx: *Ctx, comptime E: type, env: *expr.Env, layer: *const Layer, p: ?Prop, fixed: E, what: []const u8) Failed!E {
+        const prop = p orelse return fixed;
+        const s = (try ctx.eval(env, layer, prop)).text;
+        if (std.meta.stringToEnum(E, s)) |v| return v;
+        const names = comptime blk: {
+            const fields = @typeInfo(E).@"enum".fields;
+            var out: [fields.len][]const u8 = undefined;
+            for (fields, 0..) |f, i| out[i] = f.name;
+            break :blk out;
+        };
+        const all = try std.mem.join(ctx.arena, ", ", &names);
+        try ctx.report(.err, 3109, prop.pos, null, try ctx.layerMsg(layer, "'{s}' is not a valid {s}; expected one of {s}", .{ s, what, all }), diag.suggest(ctx.arena, s, &names));
+        return error.Failed;
     }
 
     // ---------------------------------------------------------- env callbacks
@@ -746,6 +879,124 @@ const Ctx = struct {
         return off;
     }
 
+    /// How far the `layout` groups around layer `li` move it, when its
+    /// top-left corner is at `at` on the canvas. A direct child goes to its
+    /// place; the layers inside a child group move with the group.
+    fn flowShift(ctx: *Ctx, li: usize, at: [2]f64) Failed![2]f64 {
+        var off = [2]f64{ 0, 0 };
+        var child = li;
+        var p = ctx.d.layers[li].parent;
+        while (p) |gi| : (p = ctx.d.layers[gi].parent) {
+            if (ctx.d.layers[gi].flow != null) if (try ctx.flowOf(gi)) |fl| {
+                const list = fl[child - gi - 1];
+                // A repeated child: the iteration being evaluated.
+                const k: usize = if (ctx.d.layers[child].repeat != null) ctx.partial_done[child] else 0;
+                if (k < list.len and list[k].placed) {
+                    const m = list[k];
+                    if (child == li) {
+                        off[0] += m.target[0] - at[0];
+                        off[1] += m.target[1] - at[1];
+                    } else {
+                        off[0] += m.delta[0];
+                        off[1] += m.delta[1];
+                    }
+                }
+            };
+            child = gi;
+        }
+        return off;
+    }
+
+    /// Measures the groups with `layout` around `li` before `li` is
+    /// evaluated, so that it is evaluated in its place.
+    fn ensureFlows(ctx: *Ctx, li: usize) Failed!void {
+        var chain: [17]usize = undefined;
+        var n: usize = 0;
+        var p = ctx.d.layers[li].parent;
+        while (p) |gi| : (p = ctx.d.layers[gi].parent) {
+            if (ctx.d.layers[gi].flow != null and n < chain.len) {
+                chain[n] = gi;
+                n += 1;
+            }
+        }
+        while (n > 0) {
+            n -= 1;
+            _ = try ctx.flowOf(chain[n]);
+        }
+    }
+
+    /// The moves of a group's children in a row or column (see `flows`).
+    /// null while the group is being measured: its children are then
+    /// evaluated where they are, for their sizes.
+    fn flowOf(ctx: *Ctx, gi: usize) Failed!?[]const []const FlowMove {
+        if (ctx.flows[gi]) |f| return f;
+        if (ctx.flow_busy[gi]) return null;
+        const g = &ctx.d.layers[gi];
+        const flow = g.flow.?;
+        if (g.repeat != null and ctx.frames[gi] == null) return error.Failed;
+        ctx.flow_busy[gi] = true;
+        defer ctx.flow_busy[gi] = false;
+        // gap, x and y, in the group's own scope.
+        var gap: f64 = 0;
+        var at = [2]f64{ 0, 0 };
+        {
+            const outer = try ctx.outerLocals(gi);
+            const own: []const Local = if (g.repeat != null) ctx.frames[gi].?.locals else &.{};
+            const saved_locals = ctx.locals;
+            const saved_current = ctx.current;
+            ctx.locals = try std.mem.concat(ctx.arena, Local, &.{ outer, own });
+            ctx.current = gi;
+            defer {
+                ctx.locals = saved_locals;
+                ctx.current = saved_current;
+            }
+            var e = ctx.newEnv();
+            if (flow.gap) |p| gap = try ctx.num(&e, g, p);
+            if (flow.x) |p| at[0] = try ctx.num(&e, g, p);
+            if (flow.y) |p| at[1] = try ctx.num(&e, g, p);
+        }
+        const Item = struct { slot: *FlowMove, base: [2]f64, left: f64, top: f64, w: f64, h: f64 };
+        var items: std.ArrayList(Item) = .empty;
+        const out = try ctx.arena.alloc([]const FlowMove, g.end - gi - 1);
+        @memset(out, &.{});
+        var ci = gi + 1;
+        while (ci < g.end) : (ci += 1) {
+            const child = &ctx.d.layers[ci];
+            if (child.parent != gi) continue;
+            if (child.kind == .group and child.repeat != null) {
+                try ctx.report(.err, 1103, child.pos, null, try ctx.layerMsg(child, "a repeated group cannot be a child of a group with \"layout\"", .{}), "repeat the layers inside it, or put it in a plain group");
+                return error.Failed;
+            }
+            const list: []const Resolved = if (child.repeat != null) try ctx.repeatInstances(ci) else (try ctx.resolve(ci))[0..1];
+            const moves = try ctx.arena.alloc(FlowMove, list.len);
+            @memset(moves, .{});
+            out[ci - gi - 1] = moves;
+            // Where the group's coordinates are on the canvas (no moves yet).
+            const base = try ctx.offsetOf(ci);
+            for (list, moves) |*r, *slot| {
+                if (!r.visible) continue;
+                try items.append(ctx.arena, .{ .slot = slot, .base = base, .left = r.left, .top = r.top, .w = r.w, .h = r.h });
+            }
+        }
+        const row = flow.direction == .row;
+        var total: f64 = 0;
+        for (items.items, 0..) |it, i| total += (if (row) it.w else it.h) + (if (i > 0) gap else 0);
+        var cursor = (if (row) at[0] else at[1]) - design_mod.Flow.fraction(flow.alignment) * total;
+        const cf = design_mod.Flow.fraction(flow.cross);
+        for (items.items) |it| {
+            const target: [2]f64 = if (row)
+                .{ it.base[0] + cursor, it.base[1] + at[1] - cf * it.h }
+            else
+                .{ it.base[0] + at[0] - cf * it.w, it.base[1] + cursor };
+            it.slot.* = .{ .target = target, .delta = .{ target[0] - it.left, target[1] - it.top }, .placed = true };
+            cursor += (if (row) it.w else it.h) + gap;
+        }
+        // The children are evaluated again, in their places.
+        ctx.resetGroup(gi);
+        ctx.flows[gi] = out;
+        return out;
+    }
+
     /// Everything cached for the layers inside group `gi` (and its frame).
     const Saved = struct {
         frame: ?Frame,
@@ -756,6 +1007,8 @@ const Ctx = struct {
         group_iters: []?[]Frame,
         partial: []?[]Resolved,
         partial_done: []usize,
+        flow: ?[]const []const FlowMove,
+        flows: []?[]const []const FlowMove,
     };
 
     fn saveGroup(ctx: *Ctx, gi: usize) Allocator.Error!Saved {
@@ -770,6 +1023,8 @@ const Ctx = struct {
             .group_iters = try ctx.arena.dupe(?[]Frame, ctx.group_iters[a..b]),
             .partial = try ctx.arena.dupe(?[]Resolved, ctx.partial[a..b]),
             .partial_done = try ctx.arena.dupe(usize, ctx.partial_done[a..b]),
+            .flow = ctx.flows[gi],
+            .flows = try ctx.arena.dupe(?[]const []const FlowMove, ctx.flows[a..b]),
         };
     }
 
@@ -783,6 +1038,8 @@ const Ctx = struct {
         @memcpy(ctx.group_iters[a..][0..s.group_iters.len], s.group_iters);
         @memcpy(ctx.partial[a..][0..s.partial.len], s.partial);
         @memcpy(ctx.partial_done[a..][0..s.partial_done.len], s.partial_done);
+        ctx.flows[gi] = s.flow;
+        @memcpy(ctx.flows[a..][0..s.flows.len], s.flows);
     }
 
     /// Forgets what was evaluated inside group `gi`.
@@ -794,16 +1051,19 @@ const Ctx = struct {
         @memset(ctx.frames[a..b], null);
         @memset(ctx.group_iters[a..b], null);
         @memset(ctx.partial[a..b], null);
+        @memset(ctx.flows[a..b], null);
     }
 
     /// Makes iteration `k` of repeated group `gi` the current one.
     fn enterIteration(ctx: *Ctx, gi: usize, k: usize) void {
         ctx.frames[gi] = ctx.group_iters[gi].?[k];
+        ctx.flows[gi] = null;
         ctx.resetGroup(gi);
     }
 
     fn leaveIteration(ctx: *Ctx, gi: usize) void {
         ctx.frames[gi] = null;
+        ctx.flows[gi] = null;
         ctx.resetGroup(gi);
     }
 
@@ -852,6 +1112,21 @@ const Ctx = struct {
         return .{ .r = 40000, .g = 40000, .b = 40000, .a = 65535 };
     }
 
+    /// True when the image at `raw_path` is not in the project (an empty
+    /// path counts as missing). Other problems are left to `loadImage`.
+    fn imageMissing(ctx: *Ctx, raw_path: []const u8) Allocator.Error!bool {
+        if (raw_path.len == 0) return true;
+        const path = (try project.normalize(ctx.arena, raw_path)) orelse return false;
+        return (try ctx.assets.image(path)) == .missing;
+    }
+
+    /// An SVG image drawn for a `w` x `h` bitmap pixel area; null for
+    /// other images (draw those as they are).
+    fn svgAt(ctx: *Ctx, raw_path: []const u8, w: f32, h: f32) Allocator.Error!?*raster.Image {
+        const path = (try project.normalize(ctx.arena, raw_path)) orelse return null;
+        return ctx.assets.sized(path, w, h);
+    }
+
     /// Loads an image for a layer. Returns null for a placeholder (preview).
     fn loadImage(ctx: *Ctx, layer: ?*const Layer, raw_path: []const u8, pos: ?u32) Failed!?*raster.Image {
         const where = if (pos) |p| p else if (layer) |l| l.pos else null;
@@ -893,6 +1168,8 @@ const Ctx = struct {
             },
             .todo => {},
         }
+        try ctx.ensureFlows(li);
+        if (ctx.states[li] == .done) return &ctx.resolved[li];
         const outer = try ctx.outerLocals(li);
         ctx.states[li] = .busy;
         const saved_locals = ctx.locals;
@@ -917,8 +1194,15 @@ const Ctx = struct {
         if (l.visible) |p| r.visible = (try ctx.eval(&e, l, p)).bool;
         if (l.opacity) |p| r.opacity = std.math.clamp(try ctx.num(&e, l, p), 0, 1);
         if (l.rotate) |p| r.rotate = @mod(try ctx.num(&e, l, p), 360);
-        const fx = l.anchor.fx();
-        const fy = l.anchor.fy();
+        r.anchor = try ctx.enumValue(design_mod.Anchor, &e, l, l.anchor_expr, l.anchor, "anchor");
+        if (r.anchor.isBaseline() and l.kind != .text) {
+            try ctx.report(.err, 3109, l.anchor_expr.?.pos, null, try ctx.layerMsg(l, "baseline anchors only apply to text layers", .{}), null);
+            return error.Failed;
+        }
+        r.alignment = try ctx.enumValue(design_mod.Align, &e, l, l.align_expr, l.alignment, "align");
+        r.fit = try ctx.enumValue(design_mod.Fit, &e, l, l.fit_expr, l.fit, "fit");
+        const fx = r.anchor.fx();
+        const fy = r.anchor.fy();
         switch (l.kind) {
             .group => {
                 // Bounds: the union of the visible children (and their
@@ -991,15 +1275,18 @@ const Ctx = struct {
                     return error.Failed;
                 }
                 r.font = try ctx.fontFor(l);
+                if (l.markup) try ctx.evalMarkup(&e, l, r);
+                const ltext = if (r.rich) |rich| rich.base else r.text;
                 const max_lines: ?usize = if (r.max_lines) |m| @intFromFloat(@max(1, @floor(m))) else null;
                 var opts: text.Options = .{
                     .size = @floatCast(r.size),
                     .wrap = if (r.wrap) |w| @floatCast(@max(1, w)) else null,
                     .line_spacing = @floatCast(r.line_spacing),
                     .max_lines = max_lines,
-                    .justify = l.alignment == .justify,
+                    .justify = r.alignment == .justify,
+                    .rich = r.rich,
                 };
-                var lay = try text.layout(ctx.arena, r.font.?, r.text, opts);
+                var lay = try text.layout(ctx.arena, r.font.?, ltext, opts);
                 // Auto-shrink: largest size (in 0.5 px steps) whose block fits.
                 const max_w: ?f64 = if (l.max_width) |p| try ctx.num(&e, l, p) else null;
                 const max_h: ?f64 = if (l.max_height) |p| try ctx.num(&e, l, p) else null;
@@ -1018,7 +1305,7 @@ const Ctx = struct {
                         while (lo <= hi) {
                             const mid = @floor((lo + hi) / 2);
                             opts.size = @floatCast(mid / 2);
-                            const t = try text.layout(ctx.arena, r.font.?, r.text, opts);
+                            const t = try text.layout(ctx.arena, r.font.?, ltext, opts);
                             if (fits(t, max_w, max_h)) {
                                 best = t;
                                 best_size = mid / 2;
@@ -1029,7 +1316,7 @@ const Ctx = struct {
                             lay = b;
                         } else {
                             opts.size = @floatCast(best_size);
-                            lay = try text.layout(ctx.arena, r.font.?, r.text, opts);
+                            lay = try text.layout(ctx.arena, r.font.?, ltext, opts);
                             try ctx.report(.warning, 3203, l.pos, null, try ctx.layerMsg(l, "the text does not fit even at min_size {d}", .{best_size}), "allow a smaller min_size, a larger box or shorter text");
                         }
                         r.size = best_size;
@@ -1039,7 +1326,7 @@ const Ctx = struct {
                     const m = try ctx.shrinkMin(name);
                     if (m < r.size - 0.001) {
                         opts.size = @floatCast(m);
-                        lay = try text.layout(ctx.arena, r.font.?, r.text, opts);
+                        lay = try text.layout(ctx.arena, r.font.?, ltext, opts);
                         r.size = m;
                     }
                 };
@@ -1049,7 +1336,7 @@ const Ctx = struct {
                 r.w = lay.block_w;
                 r.h = lay.block_h;
                 r.left = r.at[0] - fx * r.w;
-                r.top = if (l.anchor.isBaseline()) r.at[1] - lay.ascent else r.at[1] - fy * r.h;
+                r.top = if (r.anchor.isBaseline()) r.at[1] - lay.ascent else r.at[1] - fy * r.h;
                 r.pivot = r.at;
             },
         }
@@ -1066,9 +1353,36 @@ const Ctx = struct {
             };
         }
         if (l.arc) |a| r.arc = .{ try ctx.num(&e, l, a.start), try ctx.num(&e, l, a.end) };
+        if (l.gradient) |g| {
+            const stops = try ctx.arena.alloc(raster.GradientStop, g.stops.len);
+            const n: f32 = @floatFromInt(g.stops.len - 1);
+            for (g.stops, stops, 0..) |st, *o, i| {
+                const col = (try ctx.eval(&e, l, st.color)).color;
+                const at: f32 = if (st.at) |p| @floatCast(std.math.clamp(try ctx.num(&e, l, p), 0, 1)) else @as(f32, @floatFromInt(i)) / n;
+                o.* = .{ .at = at, .color = raster.paint(col, 1) };
+            }
+            std.mem.sort(raster.GradientStop, stops, {}, struct {
+                fn lt(_: void, a: raster.GradientStop, b: raster.GradientStop) bool {
+                    return a.at < b.at;
+                }
+            }.lt);
+            r.gradient = .{ .radial = g.kind == .radial, .angle = if (g.angle) |p| try ctx.num(&e, l, p) else 0, .stops = stops };
+        }
+        if (l.clip.len > 0) {
+            const pts = try ctx.arena.alloc([2]f32, l.clip.len);
+            for (l.clip, pts) |p, *q| q.* = .{ @floatCast(try ctx.num(&e, l, p.x)), @floatCast(try ctx.num(&e, l, p.y)) };
+            r.clip = pts;
+        }
+        if (l.kind == .image) if (l.radius) |p| {
+            r.radius = @max(0, try ctx.num(&e, l, p));
+        };
         if (l.kind != .group) {
-            // Inside translated groups: from the group's frame to the canvas.
-            const off = try ctx.offsetOf(ctx.indexOf(l));
+            // Inside translated groups: from the group's frame to the canvas;
+            // then to its place in a row or column.
+            const li = ctx.indexOf(l);
+            var off = try ctx.offsetOf(li);
+            const fs = try ctx.flowShift(li, .{ r.left + off[0], r.top + off[1] });
+            off = .{ off[0] + fs[0], off[1] + fs[1] };
             if (off[0] != 0 or off[1] != 0) {
                 r.left += off[0];
                 r.top += off[1];
@@ -1082,6 +1396,11 @@ const Ctx = struct {
                     const pts = try ctx.arena.alloc([2]f32, r.points.len);
                     for (r.points, pts) |p, *q| q.* = .{ p[0] + @as(f32, @floatCast(off[0])), p[1] + @as(f32, @floatCast(off[1])) };
                     r.points = pts;
+                }
+                if (r.clip.len > 0) {
+                    const pts = try ctx.arena.alloc([2]f32, r.clip.len);
+                    for (r.clip, pts) |p, *q| q.* = .{ p[0] + @as(f32, @floatCast(off[0])), p[1] + @as(f32, @floatCast(off[1])) };
+                    r.clip = pts;
                 }
             }
         }
@@ -1142,6 +1461,7 @@ const Ctx = struct {
             }
             return;
         }
+        try ctx.ensureFlows(li);
         if (l.repeat != null) {
             for (try ctx.evalRepeat(li)) |r| if (r.visible) {
                 m.* = @min(m.*, r.size);
@@ -1164,15 +1484,21 @@ const Ctx = struct {
     /// `box` with its anchor: rect, ellipse, image and shape polygons.
     fn evalBox(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
         const box = l.box orelse return error.Failed;
-        const fx = l.anchor.fx();
-        const fy = l.anchor.fy();
+        const fx = r.anchor.fx();
+        const fy = r.anchor.fy();
         r.box[0] = try ctx.num(e, l, box.x);
         r.box[1] = try ctx.num(e, l, box.y);
         if (box.w) |p| r.box[2] = try ctx.num(e, l, p);
         if (box.h) |p| r.box[3] = try ctx.num(e, l, p);
         if (l.kind == .image) {
             r.src = try ctx.tmpl(e, l, l.src.?);
-            r.image = try ctx.loadImage(l, r.src, l.src.?.pos);
+            // A hidden image is not loaded, so a missing file is no error;
+            // an optional one hides the layer when its file is missing.
+            if (r.visible) {
+                if (l.optional and try ctx.imageMissing(r.src)) {
+                    r.visible = false;
+                } else r.image = try ctx.loadImage(l, r.src, l.src.?.pos);
+            }
             const ratio: f64 = if (r.image) |img| @as(f64, @floatFromInt(img.w)) / @as(f64, @floatFromInt(img.h)) else 1;
             if (box.w == null) r.box[2] = r.box[3] * ratio;
             if (box.h == null) r.box[3] = r.box[2] / ratio;
@@ -1329,6 +1655,10 @@ const Ctx = struct {
     /// Evaluates every iteration of a repeated layer (once per card).
     fn repeatInstances(ctx: *Ctx, li: usize) Failed![]Resolved {
         if (ctx.instances[li]) |x| return x;
+        if (ctx.states[li] == .todo) {
+            try ctx.ensureFlows(li);
+            if (ctx.instances[li]) |x| return x;
+        }
         switch (ctx.states[li]) {
             .failed => return error.Failed,
             .busy => {
@@ -1418,7 +1748,57 @@ const Ctx = struct {
     }
 
     fn fontFor(ctx: *Ctx, l: *const Layer) Failed!*text.Font {
-        if (ctx.d.findFont(l.font)) |f| {
+        return ctx.fontNamed(l.font);
+    }
+
+    /// Bold, italic and icons of a text layer with markup.
+    fn evalMarkup(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
+        const a = ctx.arena;
+        const m = try text.parseMarkup(a, r.text);
+        const reg = r.font.?;
+        const b: ?*text.Font = if (l.font_bold) |n| try ctx.fontNamed(n) else null;
+        const it: ?*text.Font = if (l.font_italic) |n| try ctx.fontNamed(n) else null;
+        const bi: ?*text.Font = if (l.font_bold_italic) |n| try ctx.fontNamed(n) else null;
+        var used_italic = false;
+        for (m.style) |st| if (st & text.italic != 0) {
+            used_italic = true;
+        };
+        if (used_italic and it == null and bi == null) try ctx.report(.warning, 3209, l.pos, null, try ctx.layerMsg(l, "the text has <i> but the layer has no \"font_italic\"; it is drawn upright", .{}), "declare an italic font in \"fonts\" and name it in \"font_italic\"");
+        const rich = try a.create(text.Rich);
+        rich.* = .{
+            .base = m.text,
+            .style = m.style,
+            .icon = m.icon,
+            .fonts = .{ reg, b orelse reg, it orelse reg, bi orelse b orelse it orelse reg },
+            .faux = .{ false, b == null, false, bi == null and b == null },
+        };
+        if (l.icon_scale) |p| rich.icon_scale = @floatCast(@max(0, try ctx.num(e, l, p)));
+        const ratios = try a.alloc(f32, m.icons.len);
+        const imgs = try a.alloc(?*raster.Image, m.icons.len);
+        const paths = try a.alloc([]const u8, m.icons.len);
+        for (m.icons, ratios, imgs, paths) |name, *ratio, *img, *path| {
+            ratio.* = 1;
+            img.* = null;
+            path.* = "";
+            const p = (try ctx.d.iconPath(a, name)) orelse {
+                var names: std.ArrayList([]const u8) = .empty;
+                for (ctx.d.icons) |ic| try names.append(a, ic.name);
+                const hint = diag.suggest(a, name, names.items) orelse "add it to \"icons\" in the design";
+                try ctx.report(.warning, 3209, l.text.?.pos, null, try ctx.layerMsg(l, "unknown icon '{s}'; it is left out", .{name}), hint);
+                continue;
+            };
+            path.* = p;
+            img.* = try ctx.loadImage(l, p, l.text.?.pos);
+            if (img.*) |im| ratio.* = @as(f32, @floatFromInt(im.w)) / @as(f32, @floatFromInt(@max(1, im.h)));
+        }
+        rich.icon_ratio = ratios;
+        r.rich = rich;
+        r.icons = imgs;
+        r.icon_paths = paths;
+    }
+
+    fn fontNamed(ctx: *Ctx, name: []const u8) Failed!*text.Font {
+        if (ctx.d.findFont(name)) |f| {
             const path = (try project.normalize(ctx.arena, f.path)) orelse {
                 try ctx.report(.err, 1203, f.pos, null, try std.fmt.allocPrint(ctx.arena, "font path '{s}' is outside the project", .{f.path}), null);
                 return error.Failed;
@@ -1545,7 +1925,7 @@ const Ctx = struct {
             return;
         }
         if (ctx.opts.dry) return;
-        if (ctx.scene) |sc| return if (hasConvolve(l)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
+        if (ctx.scene) |sc| return if (hasConvolve(l) or paintsAlone(l, r)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
         return ctx.paintLayer(canvas, l, r, bb);
     }
 
@@ -1566,7 +1946,7 @@ const Ctx = struct {
         const x1 = bb[2];
         const y1 = bb[3];
         const rotated = r.rotate != 0;
-        const direct = l.effects.len == 0 and r.opacity >= 1 and !rotated and ctx.capture == null;
+        const direct = l.effects.len == 0 and r.opacity >= 1 and !rotated and ctx.capture == null and !paintsAlone(l, r);
         var tmp: ?raster.Bitmap = null;
         defer if (tmp) |*t| t.deinit(ctx.gpa);
         var target = canvas;
@@ -1602,30 +1982,21 @@ const Ctx = struct {
         const radius: f32 = @as(f32, @floatCast(r.radius)) * k;
         switch (l.kind) {
             .group => unreachable,
-            .rect => if (stroke != null and stroke.?.dash.len > 0) {
-                raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), null);
-                raster.strokePolyline(target, try raster.roundRectPath(ctx.arena, lf, tf, wf, hf, radius), true, stroke.?);
-            } else raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), stroke),
-            .ellipse => if (r.arc) |arc| {
-                const cx = lf + wf / 2;
-                const cy = tf + hf / 2;
-                const curve = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(arc[1]));
-                if (l.arc.?.pie) {
-                    const slice = try ctx.arena.alloc([2]f32, curve.len + 1);
-                    slice[0] = .{ cx, cy };
-                    @memcpy(slice[1..], curve);
-                    try raster.fillPolygon(ctx.gpa, target, slice, raster.paint(r.fill, 1));
-                    if (stroke) |s| raster.strokePolyline(target, slice, true, s);
-                } else if (stroke) |s| raster.strokePolyline(target, curve, false, s);
-            } else if (stroke != null and stroke.?.dash.len > 0) {
-                raster.drawShape(target, .ellipse, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
-                raster.strokePolyline(target, try raster.ellipsePath(ctx.arena, lf + wf / 2, tf + hf / 2, wf / 2, hf / 2, 0, 360), true, stroke.?);
-            } else raster.drawShape(target, .ellipse, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), stroke),
-            .polygon => {
-                const pts = try ctx.scalePoints(r.points);
-                if (l.closed) try raster.fillPolygon(ctx.gpa, target, pts, raster.paint(r.fill, 1));
-                if (stroke) |s| try ctx.strokeWithArrows(target, l, pts, s);
-            },
+            .rect, .ellipse, .polygon => if (r.gradient) |g| {
+                // The fill drawn opaque on its own, tinted, then the stroke.
+                var gb = try raster.Bitmap.init(ctx.gpa, target.x, target.y, target.w, target.h);
+                defer gb.deinit(ctx.gpa);
+                var plain = r.*;
+                plain.fill = Color.white;
+                try ctx.paintShape(&gb, l, &plain, null);
+                const grad = gradientIn(g.radial, g.angle, g.stops, lf, tf, wf, hf);
+                raster.tintGradient(&gb, &grad);
+                raster.composite(target, &gb);
+                if (stroke) |st| {
+                    plain.fill = Color.transparent;
+                    try ctx.paintShape(target, l, &plain, st);
+                }
+            } else try ctx.paintShape(target, l, r, stroke),
             .qr => {
                 const v = QrView.init(r);
                 if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
@@ -1663,12 +2034,19 @@ const Ctx = struct {
                     }
                 }
             },
-            .text => try text.draw(ctx.gpa, target, r.font.?, &r.layout.?, lf, tf, switch (l.alignment) {
-                .left => .left,
-                .center => .center,
-                .right => .right,
-                .justify => .justify,
-            }, raster.paint(r.color, 1), if (r.stroke) |s| .{ .paint = raster.paint(s.color, 1), .width = @floatCast(s.width) } else null, k),
+            .text => {
+                const alignment: text.Align = switch (r.alignment) {
+                    .left => .left,
+                    .center => .center,
+                    .right => .right,
+                    .justify => .justify,
+                };
+                try text.draw(ctx.gpa, target, r.font.?, r.rich, &r.layout.?, lf, tf, alignment, raster.paint(r.color, 1), if (r.stroke) |s| .{ .paint = raster.paint(s.color, 1), .width = @floatCast(s.width) } else null, k);
+                if (r.icons.len > 0) {
+                    var pass: IconPass = .{ .ctx = ctx, .target = target, .r = r, .k = k };
+                    try text.walkRich(r.font.?, r.rich, &r.layout.?, @floatCast(r.left), @floatCast(r.top), alignment, &pass, IconPass.add);
+                }
+            },
             .image => {
                 const img = r.image orelse {
                     raster.drawPlaceholder(target, lf, tf, wf, hf);
@@ -1680,20 +2058,69 @@ const Ctx = struct {
                 var dh = hf;
                 const iw: f32 = @floatFromInt(img.w);
                 const ih: f32 = @floatFromInt(img.h);
-                switch (l.fit) {
+                switch (r.fit) {
                     .fill => {},
                     .contain, .cover => {
-                        const s = if (l.fit == .contain) @min(wf / iw, hf / ih) else @max(wf / iw, hf / ih);
+                        const s = if (r.fit == .contain) @min(wf / iw, hf / ih) else @max(wf / iw, hf / ih);
                         dw = iw * s;
                         dh = ih * s;
                         dx = lf + (wf - dw) / 2;
                         dy = tf + (hf - dh) / 2;
                     },
                 }
-                try raster.drawImage(ctx.gpa, target, img, dx, dy, dw, dh, .{ lf, tf, lf + wf, tf + hf }, l.smoothing == .bilinear, 1);
+                const drawn = (try ctx.svgAt(r.src, dw, dh)) orelse img;
+                try raster.drawImage(ctx.gpa, target, drawn, dx, dy, dw, dh, .{ lf, tf, lf + wf, tf + hf }, l.smoothing == .bilinear, 1);
+                if (r.clip.len >= 3 or r.radius > 0) {
+                    // Clip to the polygon or the rounded box: keep only the
+                    // pixels the shape covers.
+                    var mask = try raster.Bitmap.init(ctx.gpa, target.x, target.y, target.w, target.h);
+                    defer mask.deinit(ctx.gpa);
+                    const white = raster.paint(Color.white, 1);
+                    if (r.clip.len >= 3) {
+                        try raster.fillPolygon(ctx.gpa, &mask, try ctx.scalePoints(r.clip), white);
+                    } else raster.drawShape(&mask, .rect, lf, tf, wf, hf, radius, white, null);
+                    raster.maskBy(target, &mask);
+                }
             },
         }
         try ctx.finishLayer(canvas, l, r, &tmp);
+    }
+
+    /// The fill and stroke of a rect, ellipse or polygon, in bitmap pixels.
+    fn paintShape(ctx: *Ctx, target: *raster.Bitmap, l: *const Layer, r: *const Resolved, stroke: ?raster.StrokeStyle) Failed!void {
+        const k: f32 = @floatCast(ctx.k);
+        const lf: f32 = @as(f32, @floatCast(r.left)) * k;
+        const tf: f32 = @as(f32, @floatCast(r.top)) * k;
+        const wf: f32 = @as(f32, @floatCast(r.w)) * k;
+        const hf: f32 = @as(f32, @floatCast(r.h)) * k;
+        const radius: f32 = @as(f32, @floatCast(r.radius)) * k;
+        switch (l.kind) {
+            .rect => if (stroke != null and stroke.?.dash.len > 0) {
+                raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), null);
+                raster.strokePolyline(target, try raster.roundRectPath(ctx.arena, lf, tf, wf, hf, radius), true, stroke.?);
+            } else raster.drawShape(target, .rect, lf, tf, wf, hf, radius, raster.paint(r.fill, 1), stroke),
+            .ellipse => if (r.arc) |arc| {
+                const cx = lf + wf / 2;
+                const cy = tf + hf / 2;
+                const curve = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(arc[1]));
+                if (l.arc.?.pie) {
+                    const slice = try ctx.arena.alloc([2]f32, curve.len + 1);
+                    slice[0] = .{ cx, cy };
+                    @memcpy(slice[1..], curve);
+                    try raster.fillPolygon(ctx.gpa, target, slice, raster.paint(r.fill, 1));
+                    if (stroke) |s| raster.strokePolyline(target, slice, true, s);
+                } else if (stroke) |s| raster.strokePolyline(target, curve, false, s);
+            } else if (stroke != null and stroke.?.dash.len > 0) {
+                raster.drawShape(target, .ellipse, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
+                raster.strokePolyline(target, try raster.ellipsePath(ctx.arena, lf + wf / 2, tf + hf / 2, wf / 2, hf / 2, 0, 360), true, stroke.?);
+            } else raster.drawShape(target, .ellipse, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), stroke),
+            .polygon => {
+                const pts = try ctx.scalePoints(r.points);
+                if (l.closed) try raster.fillPolygon(ctx.gpa, target, pts, raster.paint(r.fill, 1));
+                if (stroke) |s| try ctx.strokeWithArrows(target, l, pts, s);
+            },
+            else => unreachable,
+        }
     }
 
     /// A polygon's stroke; open polygons may end in arrowheads, and the line
@@ -1748,7 +2175,7 @@ const Ctx = struct {
                         .right => .right,
                     };
                     if (eff.kind == .crop) {
-                        try raster.crop(ctx.gpa, t, side, len, @floatCast(l.anchor.fx()), @floatCast(l.anchor.fy()));
+                        try raster.crop(ctx.gpa, t, side, len, @floatCast(r.anchor.fx()), @floatCast(r.anchor.fy()));
                     } else raster.fade(t, side, len);
                 },
                 else => {
@@ -1825,7 +2252,7 @@ const Ctx = struct {
                 .right => .right,
             };
             if (eff.kind == .crop) {
-                const g = vector.cropGeometry(cur, side, len, @floatCast(l.anchor.fx()), @floatCast(l.anchor.fy())) orelse continue;
+                const g = vector.cropGeometry(cur, side, len, @floatCast(r.anchor.fx()), @floatCast(r.anchor.fy())) orelse continue;
                 if (g.keep.w == 0 or g.keep.h == 0) return null;
                 try effects.append(ctx.arena, .{ .crop = .{
                     .clip = rectCorners(g.keep),
@@ -1954,8 +2381,8 @@ const Ctx = struct {
     }
 
     fn emitText(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
-        _ = ctx;
-        const alignment: text.Align = switch (l.alignment) {
+        _ = l;
+        const alignment: text.Align = switch (r.alignment) {
             .left => .left,
             .center => .center,
             .right => .right,
@@ -1965,12 +2392,17 @@ const Ctx = struct {
         const top: f32 = @floatCast(r.top);
         // The outline pass comes first, for every glyph, then the fill.
         if (r.stroke) |s| if (s.width > 0 and s.color.a > 0) {
-            var pass: GlyphPass = .{ .scene = sc, .color = s.color, .stroke = @floatCast(s.width * 2) };
-            try text.walk(r.font.?, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
+            var pass: GlyphPass = .{ .scene = sc, .color = s.color, .stroke = @floatCast(s.width * 2), .size = r.layout.?.size };
+            try text.walkRich(r.font.?, r.rich, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
         };
-        if (r.color.a == 0) return;
-        var pass: GlyphPass = .{ .scene = sc, .color = r.color };
-        try text.walk(r.font.?, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
+        if (r.color.a > 0) {
+            var pass: GlyphPass = .{ .scene = sc, .color = r.color, .size = r.layout.?.size };
+            try text.walkRich(r.font.?, r.rich, &r.layout.?, left, top, alignment, &pass, GlyphPass.add);
+        }
+        if (r.icons.len > 0) {
+            var pass: IconScenePass = .{ .ctx = ctx, .scene = sc, .r = r };
+            try text.walkRich(r.font.?, r.rich, &r.layout.?, left, top, alignment, &pass, IconScenePass.add);
+        }
     }
 
     fn emitImage(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
@@ -1980,17 +2412,24 @@ const Ctx = struct {
         const wf: f32 = @floatCast(r.w);
         const hf: f32 = @floatCast(r.h);
         var rect: [4]f32 = .{ lf, tf, wf, hf };
-        if (l.fit != .fill) {
+        if (r.fit != .fill) {
             const iw: f32 = @floatFromInt(img.w);
             const ih: f32 = @floatFromInt(img.h);
-            const s = if (l.fit == .contain) @min(wf / iw, hf / ih) else @max(wf / iw, hf / ih);
+            const s = if (r.fit == .contain) @min(wf / iw, hf / ih) else @max(wf / iw, hf / ih);
             rect = .{ lf + (wf - iw * s) / 2, tf + (hf - ih * s) / 2, iw * s, ih * s };
         }
         if (rect[2] <= 0 or rect[3] <= 0) return;
         const path = (try project.normalize(ctx.arena, r.src)) orelse "";
+        var drawn = img;
+        var bytes = ctx.assets.vfs.read(path) orelse "";
+        // An SVG goes in as pixels at the scene's raster scale.
+        if (try ctx.assets.sized(path, rect[2] * sc.raster_scale, rect[3] * sc.raster_scale)) |sv| {
+            drawn = sv;
+            bytes = "";
+        }
         try sc.add(.{ .image = .{
-            .image = img,
-            .bytes = ctx.assets.vfs.read(path) orelse "",
+            .image = drawn,
+            .bytes = bytes,
             .rect = rect,
             .clip = .{ lf, tf, lf + wf, tf + hf },
             .smooth = l.smoothing == .bilinear,
@@ -2067,6 +2506,26 @@ const Ctx = struct {
     }
 };
 
+/// Layers drawn on a bitmap of their own and then combined: a gradient
+/// fill, an image clipped to a shape. A vector render keeps them as pixels.
+fn paintsAlone(l: *const Layer, r: *const Resolved) bool {
+    return r.gradient != null or (l.kind == .image and (r.clip.len >= 3 or r.radius > 0));
+}
+
+/// The gradient across the box (x, y, w, h) in bitmap pixels: linear along
+/// `angle` (degrees clockwise, 0 from left to right), corner to corner as in
+/// CSS; radial from the centre to the corners.
+fn gradientIn(radial: bool, angle: f64, stops: []const raster.GradientStop, x: f32, y: f32, w: f32, h: f32) raster.Gradient {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    if (radial) return .{ .radial = true, .origin = .{ cx, cy }, .radius = @max(0.5, @sqrt(w * w + h * h) / 2), .stops = stops };
+    const a: f32 = @floatCast(angle * std.math.pi / 180);
+    const dx = @cos(a);
+    const dy = @sin(a);
+    const len = @max(0.5, @abs(w * dx) + @abs(h * dy));
+    return .{ .origin = .{ cx - dx * len / 2, cy - dy * len / 2 }, .dir = .{ dx / len, dy / len }, .stops = stops };
+}
+
 fn hasConvolve(l: *const Layer) bool {
     for (l.effects) |eff| switch (eff.kind) {
         .crop, .fade => {},
@@ -2116,16 +2575,70 @@ const GlyphPass = struct {
     scene: *vector.Scene,
     color: Color,
     stroke: f32 = 0,
+    /// Font size, for faux bold.
+    size: f32 = 0,
 
     fn add(p: *GlyphPass, g: text.Placed) Allocator.Error!void {
-        try p.scene.add(.{ .glyph = .{
+        if (g.icon != null) return;
+        const thick: f32 = if (g.faux_bold) 2 * text.fauxBoldWidth(p.size) else 0;
+        const glyph: vector.Item = .{ .glyph = .{
             .font = g.font,
             .gid = g.font.glyphIndex(g.cp),
             .x = g.x,
             .y = g.baseline,
             .scale = g.scale,
             .color = p.color,
-            .stroke = p.stroke,
+            .stroke = if (p.stroke > 0) p.stroke + thick else 0,
+        } };
+        try p.scene.add(glyph);
+        // Faux bold: the glyph again as an outline in the same color.
+        if (p.stroke == 0 and thick > 0) {
+            var o = glyph;
+            o.glyph.stroke = thick;
+            try p.scene.add(o);
+        }
+    }
+};
+
+/// Draws the inline icons of rich text into pixels.
+const IconPass = struct {
+    ctx: *Ctx,
+    target: *raster.Bitmap,
+    r: *const Resolved,
+    k: f32,
+
+    fn add(p: *IconPass, g: text.Placed) Allocator.Error!void {
+        const idx = g.icon orelse return;
+        const k = p.k;
+        const img = (try p.ctx.svgAt(p.r.icon_paths[idx], g.w * k, g.h * k)) orelse p.r.icons[idx] orelse return;
+        const top = g.iconTop(p.r.layout.?.size);
+        try raster.drawImage(p.ctx.gpa, p.target, img, g.x * k, top * k, g.w * k, g.h * k, .{ g.x * k, top * k, (g.x + g.w) * k, (top + g.h) * k }, true, 1);
+    }
+};
+
+/// Adds the inline icons of rich text to a vector scene.
+const IconScenePass = struct {
+    ctx: *Ctx,
+    scene: *vector.Scene,
+    r: *const Resolved,
+
+    fn add(p: *IconScenePass, g: text.Placed) Allocator.Error!void {
+        const idx = g.icon orelse return;
+        var img = p.r.icons[idx] orelse return;
+        const top = g.iconTop(p.r.layout.?.size);
+        const path = (try project.normalize(p.ctx.arena, p.r.icon_paths[idx])) orelse "";
+        var bytes = p.ctx.assets.vfs.read(path) orelse "";
+        // An SVG goes in as pixels at the scene's raster scale.
+        if (try p.ctx.assets.sized(path, g.w * p.scene.raster_scale, g.h * p.scene.raster_scale)) |sv| {
+            img = sv;
+            bytes = "";
+        }
+        try p.scene.add(.{ .image = .{
+            .image = img,
+            .bytes = bytes,
+            .rect = .{ g.x, top, g.w, g.h },
+            .clip = .{ g.x, top, g.x + g.w, top + g.h },
+            .smooth = true,
         } });
     }
 };
@@ -2256,6 +2769,8 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
         .frames = try arena.alloc(?Frame, d.layers.len),
         .frame_busy = try arena.alloc(bool, d.layers.len),
         .group_iters = try arena.alloc(?[]Frame, d.layers.len),
+        .flows = try arena.alloc(?[]const []const FlowMove, d.layers.len),
+        .flow_busy = try arena.alloc(bool, d.layers.len),
         .partial = try arena.alloc(?[]Resolved, d.layers.len),
         .partial_done = try arena.alloc(usize, d.layers.len),
     };
@@ -2264,6 +2779,8 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     @memset(ctx.frames, null);
     @memset(ctx.frame_busy, false);
     @memset(ctx.group_iters, null);
+    @memset(ctx.flows, null);
+    @memset(ctx.flow_busy, false);
     @memset(ctx.partial, null);
     @memset(ctx.partial_done, 0);
     ctx.clock = try clockFor(arena, opts, set.utc_offset);
@@ -2437,12 +2954,18 @@ fn testRender(gpa: Allocator, opts: Options) !raster.Bitmap {
 /// Renders the one card of `design`; null (and the first error code in
 /// `code`) when the card is not drawn.
 fn testRenderDesign(gpa: Allocator, design: []const u8, opts: Options, code: ?*u16) !?raster.Bitmap {
+    return testRenderFiles(gpa, design, &.{}, opts, code);
+}
+
+/// `testRenderDesign` with more files (path, bytes) in the project.
+fn testRenderFiles(gpa: Allocator, design: []const u8, files: []const [2][]const u8, opts: Options, code: ?*u16) !?raster.Bitmap {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     var fs = project.MemFs.init(gpa);
     defer fs.deinit();
     try fs.put("t.design.json", design);
+    for (files) |f| try fs.put(f[0], f[1]);
     try fs.put("t.cards.json", "{ \"format\": 1, \"design\": \"t.design.json\", \"cards\": [{ \"id\": \"one\" }] }");
     var diags = diag.List.init(arena);
     const proj = try project.load(arena, fs.vfs(), &diags);
@@ -2920,4 +3443,451 @@ test "vector scene of a styled qr layer" {
     try std.testing.expectEqual(@as(usize, 8), items.len);
     try std.testing.expect(items[2] == .stroke);
     try std.testing.expect(items[2].stroke.color.eql(Color{ .r = 65535, .g = 0, .b = 0, .a = 65535 }));
+}
+
+test "hidden and optional images do not need their file" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 40, "height": 20, "background": "#FFFFFF" },
+        \\  "params": { "art": { "type": "image", "default": "" } },
+        \\  "layers": [
+        \\    { "id": "hidden", "type": "image", "src": "missing.png", "visible": false, "box": { "x": 0, "y": 0, "w": 10, "h": "auto" } },
+        \\    { "id": "maybe", "type": "image", "src": "{art}", "optional": true, "box": { "x": 0, "y": 0, "w": 10, "h": 10 } },
+        \\    { "id": "after", "type": "rect", "visible": "not @maybe.visible", "box": { "x": 20, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderDesign(gpa, design, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // The optional image is hidden, which other layers can read.
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 25, 5));
+    try std.testing.expectEqual([4]u16{ 65535, 65535, 65535, 65535 }, pixel(&b, 5, 5));
+    // A visible image that is not optional still needs its file.
+    const strict =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 40, "height": 20 },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "missing.png", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } } ]
+        \\}
+    ;
+    var s = (try testRenderDesign(gpa, strict, .{}, &code)).?;
+    defer s.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 4001), code);
+}
+
+test "anchor, align and fit as expressions" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 40, "height": 20, "background": "#FFFFFF" },
+        \\  "params": { "side": { "type": "enum", "options": ["left", "right"], "default": "right" } },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "anchor": "side == 'right' ? 'top-right' : 'top-left'", "box": { "x": 40, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" },
+        \\    { "id": "b", "type": "rect", "anchor": "center", "box": { "x": 20, "y": 15, "w": 4, "h": 4 }, "fill": "#0000FF" },
+        \\    { "id": "t", "type": "text", "text": "x", "at": { "x": 0, "y": 0 }, "align": "side", "visible": false }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderDesign(gpa, design, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 35, 5));
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 19, 14));
+    // An expression that gives a word that is not an anchor.
+    const bad =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 40, "height": 20 },
+        \\  "params": { "where": { "type": "text", "default": "middle" } },
+        \\  "layers": [ { "id": "a", "type": "rect", "anchor": "where", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } } ]
+        \\}
+    ;
+    var x = (try testRenderDesign(gpa, bad, .{}, &code)).?;
+    defer x.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 3109), code);
+}
+
+/// A PNG of `w` x `h` pixels in one color.
+fn testPng(gpa: Allocator, w: u32, h: u32, p: raster.Paint) ![]u8 {
+    var b = try raster.Bitmap.init(gpa, 0, 0, w, h);
+    defer b.deinit(gpa);
+    b.fill(p);
+    return raster.encodePng(gpa, &b, false);
+}
+
+test "text markup: inline icons and bold" {
+    const gpa = std.testing.allocator;
+    const png = try testPng(gpa, 20, 10, .{ 0, 0, 65535, 65535 });
+    defer gpa.free(png);
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 40, "background": "#FFFFFF" },
+        \\  "icons": "icons/*.png",
+        \\  "params": { "effect": { "type": "text", "default": "Gain 2 {icon:steel}" } },
+        \\  "layers": [
+        \\    { "id": "plain", "type": "text", "text": "Gain 2", "at": { "x": 0, "y": 0 }, "size": 20, "color": "#000000", "visible": false },
+        \\    { "id": "t", "type": "text", "markup": true, "text": "{effect}", "at": { "x": 0, "y": 0 }, "size": 20, "color": "#000000" },
+        \\    { "id": "b", "type": "text", "markup": true, "text": "<b>Gain</b> {icon:steel}", "at": { "x": 0, "y": 20 }, "size": 20, "color": "#000000", "visible": false },
+        \\    { "id": "w", "type": "rect", "box": { "x": 150, "y": 0, "w": "@t.bounds.w - @plain.bounds.w", "h": 1 }, "visible": false }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "icons/steel.png", png }}, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // Somewhere right of the words, the blue icon is drawn.
+    var blue = false;
+    for (0..20) |y| for (60..140) |x| {
+        const p = pixel(&b, x, y);
+        if (p[2] == 65535 and p[0] == 0) blue = true;
+    };
+    try std.testing.expect(blue);
+
+    // An unknown icon is a warning and is left out.
+    const unknown =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 40 },
+        \\  "icons": { "steel": "icons/steel.png" },
+        \\  "layers": [ { "id": "t", "type": "text", "markup": true, "text": "x {icon:stel}", "at": { "x": 0, "y": 0 } } ]
+        \\}
+    ;
+    code = 0;
+    var u = (try testRenderFiles(gpa, unknown, &.{.{ "icons/steel.png", png }}, .{}, &code)).?;
+    defer u.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+}
+
+test "text markup in a vector scene" {
+    const gpa = std.testing.allocator;
+    const png = try testPng(gpa, 10, 10, .{ 0, 0, 65535, 65535 });
+    defer gpa.free(png);
+    var rig: VectorRig = undefined;
+    try rig.initWithFiles(gpa,
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 40 },
+        \\  "icons": { "steel": "steel.png" },
+        \\  "layers": [ { "id": "t", "type": "text", "markup": true, "text": "<b>A</b> {icon:steel}", "at": { "x": 0, "y": 0 }, "size": 20 } ]
+        \\}
+    , &.{.{ "steel.png", png }});
+    defer rig.deinit();
+    var glyphs: usize = 0;
+    var images: usize = 0;
+    for (rig.scene.items.items) |it| switch (it) {
+        .glyph => glyphs += 1,
+        .image => images += 1,
+        else => {},
+    };
+    // The bold A twice (fill and the thickening outline), and the icon.
+    try std.testing.expectEqual(@as(usize, 2), glyphs);
+    try std.testing.expectEqual(@as(usize, 1), images);
+}
+
+/// The outline of the one card of `design` (bounds of every layer).
+/// The project lives in `arena`, so the ids stay valid.
+fn testOutline(gpa: Allocator, arena: Allocator, design: []const u8) ![]const Placed {
+    // The files live in the arena too: ids point into the design text.
+    var fs = project.MemFs.init(arena);
+    try fs.put("t.design.json", design);
+    try fs.put("t.cards.json", "{ \"format\": 1, \"design\": \"t.design.json\", \"cards\": [{ \"id\": \"one\" }] }");
+    var diags = diag.List.init(arena);
+    const proj = try project.load(arena, fs.vfs(), &diags);
+    var assets = Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    const o = try arena.create(Outline);
+    o.* = .{ .arena = arena };
+    var b = (try renderCard(gpa, &assets, &proj.sets[0], 0, .{ .outline = o }, &diags)).?;
+    b.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    return o.items.items;
+}
+
+fn findPlaced(items: []const Placed, id: []const u8, instance: ?u32) Placed {
+    for (items) |p| if (std.mem.eql(u8, p.id, id) and p.instance == instance) return p;
+    unreachable;
+}
+
+test "row and column layout" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 400, "height": 200 },
+        \\  "params": { "n": { "type": "integer", "default": 3 } },
+        \\  "layers": [
+        \\    { "id": "bg", "type": "rect", "box": { "x": "@row.bounds.left - 4", "y": 0, "w": "@row.bounds.w + 8", "h": 10 } },
+        \\    { "id": "row", "type": "group", "translate": { "x": 100, "y": 0 }, "layout": { "gap": 10, "x": 100, "y": 50, "align": "center", "cross": "center" }, "layers": [
+        \\      { "id": "a", "type": "rect", "box": { "x": 999, "y": 999, "w": 20, "h": 40 } },
+        \\      { "id": "hidden", "type": "rect", "visible": false, "box": { "x": 0, "y": 0, "w": 500, "h": 40 } },
+        \\      { "id": "t", "type": "text", "text": "Gain", "at": { "x": 0, "y": 0 }, "size": 20 },
+        \\      { "id": "dots", "type": "ellipse", "repeat": { "count": "n" }, "box": { "x": 0, "y": 0, "w": 10, "h": 10 } },
+        \\      { "id": "after", "type": "rect", "box": { "x": "@a.bounds.right", "y": 0, "w": 30, "h": 20 } }
+        \\    ] },
+        \\    { "id": "col", "type": "group", "layout": { "direction": "column", "gap": 5, "x": 300, "y": 10, "cross": "end" }, "layers": [
+        \\      { "id": "c1", "type": "rect", "box": { "x": 0, "y": 0, "w": 20, "h": 10 } },
+        \\      { "id": "c2", "type": "rect", "box": { "x": 0, "y": 0, "w": 40, "h": 10 } }
+        \\    ] }
+        \\  ]
+        \\}
+    ;
+    const items = try testOutline(gpa, a, design);
+    const ra = findPlaced(items, "a", null);
+    const t = findPlaced(items, "t", null);
+    const d0 = findPlaced(items, "dots", 0);
+    const d2 = findPlaced(items, "dots", 2);
+    const after = findPlaced(items, "after", null);
+    const row = findPlaced(items, "row", null);
+    // a, t, three dots and after, 10 apart, centred on x 200 (100 + translate).
+    try std.testing.expectApproxEqAbs(ra.left + 20 + 10, t.left, 0.001);
+    try std.testing.expectApproxEqAbs(t.left + t.w + 10, d0.left, 0.001);
+    try std.testing.expectApproxEqAbs(d0.left + 40, d2.left, 0.001);
+    try std.testing.expectApproxEqAbs(d2.left + 10 + 10, after.left, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 200), row.left + row.w / 2, 0.001);
+    // Centred across the row on y 50.
+    try std.testing.expectApproxEqAbs(@as(f64, 30), ra.top, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 45), d0.top, 0.001);
+    // References read the placed layers.
+    const bg = findPlaced(items, "bg", null);
+    try std.testing.expectApproxEqAbs(row.left - 4, bg.left, 0.001);
+    // A column, right-aligned on x 300.
+    const c1 = findPlaced(items, "c1", null);
+    const c2 = findPlaced(items, "c2", null);
+    try std.testing.expectApproxEqAbs(@as(f64, 280), c1.left, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 260), c2.left, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 25), c2.top, 0.001);
+}
+
+test "gradient fills and clipped images" {
+    const gpa = std.testing.allocator;
+    const png = try testPng(gpa, 10, 10, .{ 0, 65535, 0, 65535 });
+    defer gpa.free(png);
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [
+        \\    { "id": "lin", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 50 }, "gradient": { "stops": ["#FF0000", "#0000FF"] }, "stroke": { "color": "#000000", "width": 2 } },
+        \\    { "id": "rad", "type": "ellipse", "box": { "x": 100, "y": 0, "w": 100, "h": 100 }, "gradient": { "type": "radial", "stops": [{ "color": "#000000", "at": 0 }, { "color": "#FFFFFF", "at": 0.5 }] } },
+        \\    { "id": "img", "type": "image", "src": "g.png", "radius": 25, "box": { "x": 0, "y": 50, "w": 50, "h": 50 } },
+        \\    { "id": "tri", "type": "image", "src": "g.png", "clip": [[50, 50], [100, 100], [50, 100]], "box": { "x": 50, "y": 50, "w": 50, "h": 50 } }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "g.png", png }}, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // Red on the left, blue on the right, a mix in the middle.
+    const left = pixel(&b, 5, 25);
+    const right = pixel(&b, 95, 25);
+    const mid = pixel(&b, 50, 25);
+    try std.testing.expect(left[0] > 60000 and left[2] < 6000);
+    try std.testing.expect(right[2] > 60000 and right[0] < 6000);
+    try std.testing.expect(mid[0] > 25000 and mid[0] < 40000);
+    // The stroke is drawn over the gradient.
+    try std.testing.expect(pixel(&b, 0, 25)[0] < 20000);
+    // Radial: black in the middle, white from half way out.
+    try std.testing.expect(pixel(&b, 150, 50)[0] < 3000);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 150, 5)[0]);
+    // The image in a circle: green in the middle, white in its corner.
+    try std.testing.expectEqual([4]u16{ 0, 65535, 0, 65535 }, pixel(&b, 25, 75));
+    try std.testing.expectEqual([4]u16{ 65535, 65535, 65535, 65535 }, pixel(&b, 1, 51));
+    // The triangle: green below the diagonal, white above it.
+    try std.testing.expectEqual([4]u16{ 0, 65535, 0, 65535 }, pixel(&b, 55, 95));
+    try std.testing.expectEqual([4]u16{ 65535, 65535, 65535, 65535 }, pixel(&b, 95, 55));
+}
+
+test "gradients stay pixels in a vector scene" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa,
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [ { "id": "lin", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 50 }, "gradient": { "angle": 90, "stops": ["#FF0000", "#0000FF"] } } ]
+        \\}
+    );
+    defer rig.deinit();
+    try std.testing.expectEqual(@as(usize, 1), rig.scene.items.items.len);
+    try std.testing.expect(rig.scene.items.items[0] == .raster);
+}
+
+const test_svg =
+    \\<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10" viewBox="0 0 20 10">
+    \\  <rect x="0" y="0" width="10" height="10" fill="#FF0000"/>
+    \\  <circle cx="15" cy="5" r="5" fill="rgb(0, 0, 255)"/>
+    \\</svg>
+;
+
+test "SVG images are drawn at the size they are used at" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 120, "background": "#FFFFFF" },
+        \\  "icons": "icons/*.svg",
+        \\  "layers": [
+        \\    { "id": "img", "type": "image", "src": "art.svg", "box": { "x": 0, "y": 0, "w": 200, "h": "auto" } },
+        \\    { "id": "t", "type": "text", "markup": true, "text": "a {icon:dot}", "at": { "x": 0, "y": 100 }, "size": 16 }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{ .{ "art.svg", test_svg }, .{ "icons/dot.svg", test_svg } }, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // "auto" keeps the 2:1 proportions: 200 x 100.
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 50, 50));
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 150, 50));
+    // Drawn at 200 x 100 rather than scaled up from 20 x 10: the edge of
+    // the red square is sharp.
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 98, 50));
+    try std.testing.expectEqual([4]u16{ 65535, 65535, 65535, 65535 }, pixel(&b, 101, 2));
+    // The icon in the text is there too (red and blue below y 100).
+    var red = false;
+    for (100..120) |y| for (0..200) |x| {
+        const p = pixel(&b, x, y);
+        if (p[0] > 60000 and p[1] < 5000) red = true;
+    };
+    try std.testing.expect(red);
+}
+
+test "a file that is no image, SVG included, is error 4002" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 20, "height": 20 },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "bad.png", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } } ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "bad.png", "not an image" }}, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 4002), code);
+}
+
+test "SVG images in a vector scene are pixels at the raster scale" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.initWithFiles(gpa,
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "art.svg", "box": { "x": 0, "y": 0, "w": 100, "h": 50 } } ]
+        \\}
+    , &.{.{ "art.svg", test_svg }});
+    defer rig.deinit();
+    const im = rig.scene.items.items[0].image;
+    try std.testing.expectEqual(@as(usize, 0), im.bytes.len);
+    try std.testing.expectEqual(@as(u32, 200), im.image.w);
+}
+
+test "groups include shared components" {
+    const gpa = std.testing.allocator;
+    const component =
+        \\{
+        \\  "format": 1,
+        \\  "name": "effect row",
+        \\  "layers": [
+        \\    { "id": "row_bg", "type": "rect", "box": { "x": 0, "y": 0, "w": "w", "h": 10 }, "fill": "#FF0000" },
+        \\    { "id": "row_mark", "type": "rect", "box": { "x": "@row_bg.bounds.right", "y": 0, "w": 5, "h": 10 }, "fill": "#0000FF" }
+        \\  ]
+        \\}
+    ;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 40, "background": "#FFFFFF" },
+        \\  "params": { "w": { "type": "number", "default": 30 } },
+        \\  "layers": [
+        \\    { "id": "effects", "type": "group", "include": "parts/effect-row.json", "translate": { "x": 10, "y": 20 } },
+        \\    { "id": "after", "type": "rect", "extends": "row_mark", "box": { "y": 0 } }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "parts/effect-row.json", component }}, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+    // The component sees the design's params and is moved by the group.
+    try std.testing.expectEqual([4]u16{ 65535, 0, 0, 65535 }, pixel(&b, 25, 25));
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 42, 25));
+    // A layer of the design can extend a layer of the component (it reads
+    // @row_bg in its own frame: right edge at 40).
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 42, 5));
+}
+
+test "problems inside a component name the component file" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var fs = project.MemFs.init(a);
+    try fs.put("t.design.json",
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 40 },
+        \\  "layers": [
+        \\    { "id": "g", "type": "group", "include": "c.json" },
+        \\    { "id": "h", "type": "group", "include": "missing.json" },
+        \\    { "id": "k", "type": "group", "include": "loop.json" }
+        \\  ]
+        \\}
+    );
+    try fs.put("c.json",
+        \\{
+        \\  "format": 1,
+        \\  "layers": [
+        \\    { "id": "x", "type": "rect", "box": { "x": "nope", "y": 0, "w": 1, "h": 1 } }
+        \\  ]
+        \\}
+    );
+    try fs.put("loop.json", "{ \"format\": 1, \"layers\": [ { \"id\": \"again\", \"type\": \"group\", \"include\": \"loop.json\" } ] }");
+    var diags = diag.List.init(a);
+    _ = try project.load(a, fs.vfs(), &diags);
+    var unknown = false;
+    var missing = false;
+    var cycle = false;
+    for (diags.items.items) |d| switch (d.code) {
+        3002 => {
+            unknown = true;
+            try std.testing.expectEqualStrings("c.json", d.file);
+            try std.testing.expectEqualStrings("/layers/0/box/x", d.path);
+            try std.testing.expectEqual(@as(u32, 4), d.line);
+        },
+        1201 => missing = true,
+        3004 => {
+            cycle = true;
+            try std.testing.expectEqualStrings("loop.json", d.file);
+        },
+        else => {},
+    };
+    try std.testing.expect(unknown and missing and cycle);
 }

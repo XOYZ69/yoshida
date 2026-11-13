@@ -55,6 +55,17 @@
         ]
       }
     },
+    "icons": {
+      "description": "Icons for {icon:name} in text with markup: an object of name to path, or a path with '*' for the name",
+      "oneOf": [
+        { "type": "string", "pattern": "\\*" },
+        {
+          "type": "object",
+          "propertyNames": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+          "additionalProperties": { "type": "string" }
+        }
+      ]
+    },
     "params": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
@@ -187,19 +198,25 @@
           "type": ["number", "string"]
         },
         "anchor": {
-          "enum": [
-            "top-left",
-            "top",
-            "top-right",
-            "left",
-            "center",
-            "right",
-            "bottom-left",
-            "bottom",
-            "bottom-right",
-            "baseline-left",
-            "baseline",
-            "baseline-right"
+          "description": "One of the anchor names, or an expression that gives one",
+          "anyOf": [
+            {
+              "enum": [
+                "top-left",
+                "top",
+                "top-right",
+                "left",
+                "center",
+                "right",
+                "bottom-left",
+                "bottom",
+                "bottom-right",
+                "baseline-left",
+                "baseline",
+                "baseline-right"
+              ]
+            },
+            { "type": "string" }
           ]
         },
         "repeat": {
@@ -331,7 +348,13 @@
           "type": "string"
         },
         "align": {
-          "enum": ["left", "center", "right", "justify"]
+          "description": "One of the align names, or an expression that gives one",
+          "anyOf": [
+            {
+              "enum": ["left", "center", "right", "justify"]
+            },
+            { "type": "string" }
+          ]
         },
         "wrap": {
           "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
@@ -359,7 +382,13 @@
         },
         "src": { "description": "Text with {expression} placeholders", "type": "string" },
         "fit": {
-          "enum": ["fill", "contain", "cover"]
+          "description": "One of the fit names, or an expression that gives one",
+          "anyOf": [
+            {
+              "enum": ["fill", "contain", "cover"]
+            },
+            { "type": "string" }
+          ]
         },
         "smoothing": {
           "enum": ["nearest", "bilinear"]
@@ -422,6 +451,107 @@
         "shrink_group": {
           "type": "string",
           "description": "Texts with the same name use the smallest auto-shrunk size of all of them"
+        },
+        "gradient": {
+          "description": "Fill blended between colors across the layer (instead of fill)",
+          "type": "object",
+          "required": ["stops"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": ["linear", "radial"]
+            },
+            "angle": {
+              "description": "Linear: degrees clockwise, 0 from left to right",
+              "type": ["number", "string"]
+            },
+            "stops": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "required": ["color"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "color": {
+                        "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
+                        "type": "string"
+                      },
+                      "at": {
+                        "description": "Position along the gradient, 0 to 1",
+                        "type": ["number", "string"]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "clip": {
+          "description": "Clips the image to this polygon",
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": ["number", "string"]
+            }
+          }
+        },
+        "layout": {
+          "description": "Places the children one after another; their own positions are replaced",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "enum": ["row", "column"]
+            },
+            "gap": {
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+              "type": ["number", "string"]
+            },
+            "x": {
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+              "type": ["number", "string"]
+            },
+            "y": {
+              "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+              "type": ["number", "string"]
+            },
+            "align": {
+              "description": "Which end of the line sits at x (row) or y (column)",
+              "enum": ["start", "center", "end"]
+            },
+            "cross": {
+              "description": "Which side of every child sits at y (row) or x (column)",
+              "enum": ["start", "center", "end"]
+            }
+          }
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Image: a missing file hides the layer instead of being an error"
+        },
+        "markup": {
+          "type": "boolean",
+          "description": "Text: <b>, <i> and {icon:name} in the text are markup"
+        },
+        "font_bold": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "font_italic": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "font_bold_italic": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "icon_scale": {
+          "description": "Icon height in font sizes (default 1)",
+          "type": ["number", "string"]
+        },
+        "include": {
+          "description": "Group: takes the layers from a component file instead of \"layers\"",
+          "type": "string"
         }
       },
       "allOf": [
@@ -494,6 +624,45 @@
                   "arrow": {
                     "description": "Arrowheads on open polygons",
                     "enum": ["none", "start", "end", "both"]
+                  }
+                }
+              },
+              "gradient": {
+                "description": "Fill blended between colors across the layer (instead of fill)",
+                "type": "object",
+                "required": ["stops"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["linear", "radial"]
+                  },
+                  "angle": {
+                    "description": "Linear: degrees clockwise, 0 from left to right",
+                    "type": ["number", "string"]
+                  },
+                  "stops": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                      "oneOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "required": ["color"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "color": {
+                              "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
+                              "type": "string"
+                            },
+                            "at": {
+                              "description": "Position along the gradient, 0 to 1",
+                              "type": ["number", "string"]
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }
@@ -583,6 +752,45 @@
                     "type": ["number", "string"]
                   },
                   "pie": { "type": "boolean" }
+                }
+              },
+              "gradient": {
+                "description": "Fill blended between colors across the layer (instead of fill)",
+                "type": "object",
+                "required": ["stops"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["linear", "radial"]
+                  },
+                  "angle": {
+                    "description": "Linear: degrees clockwise, 0 from left to right",
+                    "type": ["number", "string"]
+                  },
+                  "stops": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                      "oneOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "required": ["color"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "color": {
+                              "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
+                              "type": "string"
+                            },
+                            "at": {
+                              "description": "Position along the gradient, 0 to 1",
+                              "type": ["number", "string"]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             },
@@ -687,6 +895,45 @@
                     "type": ["number", "string"]
                   }
                 }
+              },
+              "gradient": {
+                "description": "Fill blended between colors across the layer (instead of fill)",
+                "type": "object",
+                "required": ["stops"],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "enum": ["linear", "radial"]
+                  },
+                  "angle": {
+                    "description": "Linear: degrees clockwise, 0 from left to right",
+                    "type": ["number", "string"]
+                  },
+                  "stops": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                      "oneOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "required": ["color"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "color": {
+                              "description": "Color literal (#RRGGBB, #RRGGBBAA, 12 or 16 digit) or expression",
+                              "type": "string"
+                            },
+                            "at": {
+                              "description": "Position along the gradient, 0 to 1",
+                              "type": ["number", "string"]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             },
             "additionalProperties": false
@@ -735,7 +982,13 @@
                 "type": "string"
               },
               "align": {
-                "enum": ["left", "center", "right", "justify"]
+                "description": "One of the align names, or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["left", "center", "right", "justify"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "wrap": {
                 "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
@@ -779,6 +1032,17 @@
               "shrink_group": {
                 "type": "string",
                 "description": "Texts with the same name use the smallest auto-shrunk size of all of them"
+              },
+              "markup": {
+                "type": "boolean",
+                "description": "Text: <b>, <i> and {icon:name} in the text are markup"
+              },
+              "font_bold": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+              "font_italic": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+              "font_bold_italic": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+              "icon_scale": {
+                "description": "Icon height in font sizes (default 1)",
+                "type": ["number", "string"]
               }
             },
             "additionalProperties": false
@@ -824,10 +1088,37 @@
                 }
               },
               "fit": {
-                "enum": ["fill", "contain", "cover"]
+                "description": "One of the fit names, or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["fill", "contain", "cover"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "smoothing": {
                 "enum": ["nearest", "bilinear"]
+              },
+              "optional": {
+                "type": "boolean",
+                "description": "Image: a missing file hides the layer instead of being an error"
+              },
+              "radius": {
+                "description": "Clips the image to a box with rounded corners",
+                "type": ["number", "string"]
+              },
+              "clip": {
+                "description": "Clips the image to this polygon",
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": ["number", "string"]
+                  }
+                }
               }
             },
             "additionalProperties": false
@@ -920,7 +1211,6 @@
             }
           },
           "then": {
-            "required": ["layers"],
             "properties": {
               "id": true,
               "type": true,
@@ -945,9 +1235,51 @@
                     "type": ["number", "string"]
                   }
                 }
+              },
+              "layout": {
+                "description": "Places the children one after another; their own positions are replaced",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "direction": {
+                    "enum": ["row", "column"]
+                  },
+                  "gap": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "x": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "y": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "align": {
+                    "description": "Which end of the line sits at x (row) or y (column)",
+                    "enum": ["start", "center", "end"]
+                  },
+                  "cross": {
+                    "description": "Which side of every child sits at y (row) or x (column)",
+                    "enum": ["start", "center", "end"]
+                  }
+                }
+              },
+              "include": {
+                "description": "Takes the layers from a component file (a path from the project folder) instead of \"layers\"",
+                "type": "string"
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": ["layers"]
+              },
+              {
+                "required": ["include"]
+              }
+            ]
           }
         },
         {
