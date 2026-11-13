@@ -2000,6 +2000,12 @@
 	 */
 	function pickOnCanvas(id: string, deep: boolean): string | null {
 		if (!doc) return id;
+		// A layer of a component file is not in this design: a click picks
+		// the group that includes it.
+		if (!findLayer(doc, id)) {
+			const group = layout.find((b) => b.id === id)?.component;
+			return group && findLayer(doc, group) ? pickOnCanvas(group, false) : null;
+		}
 		const chain = [...ancestorsOf(doc, id).reverse(), id];
 		if (locked.has(chain[0])) return null;
 		if (deep) return id;
@@ -2770,6 +2776,17 @@
 		selected = d.file;
 		sidePanel = "files";
 		jump = { line: d.line || 1, col: d.col || 1, nonce: Math.random() };
+	}
+
+	/** Shows a project file in the Advanced view, e.g. a component file. */
+	function openFileInCode(path: string) {
+		if (!files.has(path)) {
+			status = `'${path}' is not in the project.`;
+			return;
+		}
+		mode = "code";
+		selected = path;
+		sidePanel = "files";
 	}
 
 	function openJson() {
@@ -4263,6 +4280,7 @@
 						{fontLicenses}
 						fontText={fontLayer?.text ?? ""}
 						onfonts={openFonts}
+						onopenfile={openFileInCode}
 						{diagnostics}
 						designFile={designPath ?? ""}
 						{editLayer}

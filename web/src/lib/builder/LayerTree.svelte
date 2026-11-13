@@ -245,7 +245,7 @@ function finish() {
         </span>
       {:else}
         {@const kind = layerIcon(String(r.l.type))}
-        {#if r.group}
+        {#if r.group && typeof r.l.include !== 'string'}
           <button class="fold" aria-label={folded.has(r.id) ? 'Expand group' : 'Collapse group'} onclick={() => fold(r.id)}><Icon name={folded.has(r.id) ? 'chevron-right' : 'chevron-down'} /></button>
         {:else}
           <span class="fold-space"></span>
@@ -253,7 +253,7 @@ function finish() {
         <button class="row" onclick={(e) => pick(r.id, e)}>
           <span class="icon" class:grp={r.group}>{#if kind}<Icon name={kind} />{/if}</span>
           <span class="name" class:off={vis === false} title={r.id}>{r.id}</span>
-          {#if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
+          {#if r.group && typeof r.l.include === 'string'}<span class="badge component" title="Component: the layers come from {r.l.include}"><Icon name="extends" />{String(r.l.include).split('/').pop()?.replace(/(\.component)?\.json$/, '')}</span>{:else if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
           {#if r.l.repeat}<span class="badge" title="Repeated"><Icon name="repeat" /></span>{/if}
           {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}"><Icon name="extends" />{r.l.extends}</span>{/if}
           {#if Array.isArray(r.l.effects) && r.l.effects.length}<span class="badge" title="Effects"><Icon name="effects" /></span>{/if}
@@ -481,5 +481,9 @@ function finish() {
     padding: 8px 12px;
     color: var(--muted);
     font-size: 12px;
+  }
+  .badge.component {
+    color: var(--accent, #6a8cff);
+    border-color: currentColor;
   }
 </style>

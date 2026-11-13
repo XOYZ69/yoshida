@@ -51,7 +51,7 @@ bottom-left  bottom    bottom-right
 
 Text layers also allow `baseline-left`, `baseline` and `baseline-right`, which use the first line's baseline. A baseline anchor on any other type is error 1103.
 
-`anchor` can also be an expression that gives one of these names, evaluated for every card: `"anchor": "side == 'left' ? 'top-left' : 'top-right'"`, or a text param's name. A string that is one of the names is that name; a single word that is neither a name nor a param or constant is error 1103 (with a suggestion), and an expression that gives a word that is not an anchor is error 3109 at render time. The same goes for `align` on text layers and `fit` on image layers.
+`anchor` can also be an expression that gives one of these names, evaluated for every card: `"anchor": "side == 'left' ? 'top-left' : 'top-right'"`, or a text param's name. A string that is one of the names is that name; a single word that is neither a name nor a param or constant is error 1103 (with a suggestion), and an expression that gives a word that is not an anchor is error 3109 at render time. The same goes for `align` on text layers, `fit` and `smoothing` on image layers, `level`, `style` and `eye` on QR layers, and `align` and `cross` of a group's `layout`.
 
 Examples: a rect with `"anchor": "center"` and `box.x`, `box.y` set to `50%` is centred on the canvas; a text layer with `"anchor": "baseline"` sits on the line given by `at.y`.
 

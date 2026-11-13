@@ -35,6 +35,8 @@ export type Placed = {
 	/** Text size after auto-shrink. */
 	size?: number;
 	points?: [number, number][];
+	/** A layer from a component file: the id of the group that includes it. */
+	component?: string;
 };
 
 export type Bounds = { x: number; y: number; w: number; h: number };

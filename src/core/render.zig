@@ -113,14 +113,23 @@ pub const Placed = struct {
     size: ?f64 = null,
     /// Polygon points in canvas pixels; empty for other layer types.
     points: []const [2]f32 = &.{},
+    /// A layer from a component file: the id of the group in the design
+    /// that includes it (the outermost one), which the editor selects.
+    component: ?[]const u8 = null,
 };
 
 pub const Outline = struct {
     arena: Allocator,
     items: std.ArrayList(Placed) = .empty,
 
-    fn add(o: *Outline, l: *const Layer, instance: ?u32, r: *const Resolved) Allocator.Error!void {
+    fn add(o: *Outline, d: *const Design, l: *const Layer, instance: ?u32, r: *const Resolved) Allocator.Error!void {
+        var component: ?[]const u8 = null;
+        var p = l.parent;
+        while (p) |gi| : (p = d.layers[gi].parent) {
+            if (d.layers[gi].include != null) component = d.layers[gi].id;
+        }
         try o.items.append(o.arena, .{
+            .component = component,
             .id = l.id,
             .instance = instance,
             .visible = r.visible,
@@ -410,6 +419,7 @@ const Resolved = struct {
     anchor: design_mod.Anchor = .@"top-left",
     alignment: design_mod.Align = .left,
     fit: design_mod.Fit = .fill,
+    smoothing: design_mod.Smoothing = .bilinear,
     // Final bounds after anchor and layout.
     left: f64 = 0,
     top: f64 = 0,
@@ -545,6 +555,8 @@ const Local = struct { name: []const u8, value: Value };
 const Frame = struct {
     locals: []const Local = &.{},
     translate: [2]f64 = .{ 0, 0 },
+    /// Repeated groups: which iteration this is.
+    index: usize = 0,
 };
 
 const Failed = error{ Failed, OutOfMemory };
@@ -768,10 +780,18 @@ const Ctx = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => return error.Eval,
         };
-        // Positions are read in the referencing layer's frame.
-        const off = if (ctx.current) |cur| ctx.offsetOf(cur) catch |e| switch (e) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Failed => return error.Eval,
+        // Positions are read in the referencing layer's frame (moved by
+        // translates and by the layout groups that move its group).
+        const off = if (ctx.current) |cur| blk: {
+            const t = ctx.offsetOf(cur) catch |e| switch (e) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Failed => return error.Eval,
+            };
+            const f = (if (ctx.d.layers[cur].kind == .group) [2]f64{ 0, 0 } else ctx.flowShift(cur, null)) catch |e| switch (e) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Failed => return error.Eval,
+            };
+            break :blk [2]f64{ t[0] + f[0], t[1] + f[1] };
         } else [2]f64{ 0, 0 };
         return readField(&got, path, off) orelse error.Eval;
     }
@@ -899,20 +919,26 @@ const Ctx = struct {
     /// How far the `layout` groups around layer `li` move it, when its
     /// top-left corner is at `at` on the canvas. A direct child goes to its
     /// place; the layers inside a child group move with the group.
-    fn flowShift(ctx: *Ctx, li: usize, at: [2]f64) Failed![2]f64 {
+    /// `at` null: only the moves of the groups around it (what positions
+    /// read by the layer are measured from), not its own place.
+    fn flowShift(ctx: *Ctx, li: usize, at: ?[2]f64) Failed![2]f64 {
         var off = [2]f64{ 0, 0 };
         var child = li;
         var p = ctx.d.layers[li].parent;
         while (p) |gi| : (p = ctx.d.layers[gi].parent) {
             if (ctx.d.layers[gi].flow != null) if (try ctx.flowOf(gi)) |fl| {
                 const list = fl[child - gi - 1];
-                // A repeated child: the iteration being evaluated.
-                const k: usize = if (ctx.d.layers[child].repeat != null) ctx.partial_done[child] else 0;
+                // A repeated child: the iteration being evaluated (a
+                // repeated group's is in its frame).
+                const cl = &ctx.d.layers[child];
+                const k: usize = if (cl.repeat == null) 0 else if (cl.kind == .group) (if (ctx.frames[child]) |f| f.index else 0) else ctx.partial_done[child];
                 if (k < list.len and list[k].placed) {
                     const m = list[k];
                     if (child == li) {
-                        off[0] += m.target[0] - at[0];
-                        off[1] += m.target[1] - at[1];
+                        if (at) |a| {
+                            off[0] += m.target[0] - a[0];
+                            off[1] += m.target[1] - a[1];
+                        }
                     } else {
                         off[0] += m.delta[0];
                         off[1] += m.delta[1];
@@ -956,6 +982,8 @@ const Ctx = struct {
         // gap, x and y, in the group's own scope.
         var gap: f64 = 0;
         var at = [2]f64{ 0, 0 };
+        var alignment = flow.alignment;
+        var cross = flow.cross;
         {
             const outer = try ctx.outerLocals(gi);
             const own: []const Local = if (g.repeat != null) ctx.frames[gi].?.locals else &.{};
@@ -971,6 +999,8 @@ const Ctx = struct {
             if (flow.gap) |p| gap = try ctx.num(&e, g, p);
             if (flow.x) |p| at[0] = try ctx.num(&e, g, p);
             if (flow.y) |p| at[1] = try ctx.num(&e, g, p);
+            alignment = try ctx.enumValue(design_mod.LayoutAlign, &e, g, flow.alignment_expr, flow.alignment, "layout align");
+            cross = try ctx.enumValue(design_mod.LayoutAlign, &e, g, flow.cross_expr, flow.cross, "layout cross");
         }
         const Item = struct { slot: *FlowMove, base: [2]f64, left: f64, top: f64, w: f64, h: f64 };
         var items: std.ArrayList(Item) = .empty;
@@ -980,10 +1010,6 @@ const Ctx = struct {
         while (ci < g.end) : (ci += 1) {
             const child = &ctx.d.layers[ci];
             if (child.parent != gi) continue;
-            if (child.kind == .group and child.repeat != null) {
-                try ctx.report(.err, 1103, child.pos, null, try ctx.layerMsg(child, "a repeated group cannot be a child of a group with \"layout\"", .{}), "repeat the layers inside it, or put it in a plain group");
-                return error.Failed;
-            }
             const list: []const Resolved = if (child.repeat != null) try ctx.repeatInstances(ci) else (try ctx.resolve(ci))[0..1];
             const moves = try ctx.arena.alloc(FlowMove, list.len);
             @memset(moves, .{});
@@ -999,8 +1025,8 @@ const Ctx = struct {
         const row = flow.direction == .row;
         var total: f64 = 0;
         for (items.items, 0..) |it, i| total += (if (row) it.w else it.h) + (if (i > 0) gap else 0);
-        var cursor = (if (row) at[0] else at[1]) - design_mod.Flow.fraction(flow.alignment) * total;
-        const cf = design_mod.Flow.fraction(flow.cross);
+        var cursor = (if (row) at[0] else at[1]) - design_mod.Flow.fraction(alignment) * total;
+        const cf = design_mod.Flow.fraction(cross);
         for (items.items) |it| {
             const target: [2]f64 = if (row)
                 .{ it.base[0] + cursor, it.base[1] + at[1] - cf * it.h }
@@ -1219,6 +1245,7 @@ const Ctx = struct {
         }
         r.alignment = try ctx.enumValue(design_mod.Align, &e, l, l.align_expr, l.alignment, "align");
         r.fit = try ctx.enumValue(design_mod.Fit, &e, l, l.fit_expr, l.fit, "fit");
+        r.smoothing = try ctx.enumValue(design_mod.Smoothing, &e, l, l.smoothing_expr, l.smoothing, "smoothing");
         const fx = r.anchor.fx();
         const fy = r.anchor.fy();
         switch (l.kind) {
@@ -1295,6 +1322,7 @@ const Ctx = struct {
                 }
                 r.font = try ctx.fontFor(l);
                 if (l.markup) try ctx.evalMarkup(&e, l, r);
+                if (!l.markup and std.mem.indexOf(u8, r.text, "{icon:") != null) try ctx.report(.warning, 3209, l.text.?.pos, null, try ctx.layerMsg(l, "the text has {{icon:...}} but the layer has no \"markup\": true; it is shown as text", .{}), "add \"markup\": true to the layer");
                 const ltext = if (r.rich) |rich| rich.base else r.text;
                 const max_lines: ?usize = if (r.max_lines) |m| @intFromFloat(@max(1, @floor(m))) else null;
                 var opts: text.Options = .{
@@ -1546,8 +1574,9 @@ const Ctx = struct {
         if (l.color) |p| r.color = (try ctx.eval(e, l, p)).color;
         if (l.fill) |p| r.fill = (try ctx.eval(e, l, p)).color;
         if (l.eye_color) |p| r.qr_eye_color = (try ctx.eval(e, l, p)).color;
-        r.qr_style = l.qr_style;
-        r.qr_eye = l.qr_eye;
+        r.qr_style = try ctx.enumValue(design_mod.QrStyle, e, l, l.qr_style_expr, l.qr_style, "style");
+        r.qr_eye = try ctx.enumValue(design_mod.QrEye, e, l, l.qr_eye_expr, l.qr_eye, "eye");
+        const qr_level = try ctx.enumValue(design_mod.QrLevel, e, l, l.qr_level_expr, l.qr_level, "level");
         const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
         // A logo picture clears a fifth of the side unless `logo` says otherwise.
         const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
@@ -1556,10 +1585,10 @@ const Ctx = struct {
             if (r.src.len > 0) r.image = try ctx.loadImage(l, r.src, t.pos);
         }
         const logo_pos = if (l.logo) |p| p.pos else if (l.logo_src) |t| t.pos else l.pos;
-        const level: qr_mod.Level = @enumFromInt(@intFromEnum(l.qr_level));
+        const level: qr_mod.Level = @enumFromInt(@intFromEnum(qr_level));
         const code = try ctx.arena.create(qr_mod.Code);
         qr_mod.encode(code, r.text, level, null) catch {
-            try ctx.report(.err, 3108, l.text.?.pos, null, try ctx.layerMsg(l, "the text is {d} bytes, but a QR code of level {s} holds at most {d}", .{ r.text.len, @tagName(l.qr_level), qr_mod.capacity(level) }), "shorten the text or use a lower level");
+            try ctx.report(.err, 3108, l.text.?.pos, null, try ctx.layerMsg(l, "the text is {d} bytes, but a QR code of level {s} holds at most {d}", .{ r.text.len, @tagName(qr_level), qr_mod.capacity(level) }), "shorten the text or use a lower level");
             return error.Failed;
         };
         const margin_modules: usize = @intFromFloat(margin);
@@ -1592,8 +1621,8 @@ const Ctx = struct {
             n = @min(n, code.size - 18);
             r.qr_logo = n;
             const nf: f64 = @floatFromInt(n);
-            if (l.qr_level != .high) {
-                try ctx.report(.warning, 3207, logo_pos, null, try ctx.layerMsg(l, "a logo hides modules, but the error correction level is {s}", .{@tagName(l.qr_level)}), "use level \"high\" (30 %) with a logo");
+            if (qr_level != .high) {
+                try ctx.report(.warning, 3207, logo_pos, null, try ctx.layerMsg(l, "a logo hides modules, but the error correction level is {s}", .{@tagName(qr_level)}), "use level \"high\" (30 %) with a logo");
             } else if (nf * nf > 0.2 * size * size) {
                 try ctx.report(.warning, 3207, logo_pos, null, try ctx.layerMsg(l, "the cleared middle covers {d} % of the code; 20 % is the usual limit", .{@round(100 * nf * nf / (size * size))}), "make \"logo\" smaller");
             }
@@ -1751,7 +1780,7 @@ const Ctx = struct {
             // read other iterations), then the layers inside, once per iteration.
             const iters = try ctx.arena.alloc(Frame, count);
             for (iters, 0..) |*fr, i| {
-                fr.* = .{ .locals = all[i][outer.len..] };
+                fr.* = .{ .locals = all[i][outer.len..], .index = i };
                 if (l.translate) |t| fr.translate = try ctx.evalTranslate(li, t, all[i]);
             }
             ctx.group_iters[li] = iters;
@@ -2098,7 +2127,7 @@ const Ctx = struct {
                     },
                 }
                 const drawn = (try ctx.svgAt(r.src, dw, dh)) orelse img;
-                try raster.drawImage(ctx.gpa, target, drawn, dx, dy, dw, dh, .{ lf, tf, lf + wf, tf + hf }, l.smoothing == .bilinear, 1);
+                try raster.drawImage(ctx.gpa, target, drawn, dx, dy, dw, dh, .{ lf, tf, lf + wf, tf + hf }, r.smoothing == .bilinear, 1);
                 if (r.clip.len >= 3 or r.radius > 0) {
                     // Clip to the polygon or the rounded box: keep only the
                     // pixels the shape covers.
@@ -2444,6 +2473,7 @@ const Ctx = struct {
     }
 
     fn emitImage(ctx: *Ctx, sc: *vector.Scene, l: *const Layer, r: *const Resolved) Failed!void {
+        _ = l;
         const img = r.image orelse return;
         const lf: f32 = @floatCast(r.left);
         const tf: f32 = @floatCast(r.top);
@@ -2470,7 +2500,7 @@ const Ctx = struct {
             .bytes = bytes,
             .rect = rect,
             .clip = .{ lf, tf, lf + wf, tf + hf },
-            .smooth = l.smoothing == .bilinear,
+            .smooth = r.smoothing == .bilinear,
         } });
     }
 
@@ -2936,7 +2966,7 @@ fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed
     }
     if (l.repeat == null) {
         const r = try ctx.resolve(li);
-        if (ctx.opts.outline) |o| try o.add(l, ctx.outline_instance, r);
+        if (ctx.opts.outline) |o| try o.add(ctx.d, l, ctx.outline_instance, r);
         if (!r.visible or hide) return;
         if (l.kind == .group) return ctx.drawGroup(canvas, l, li, r);
         return ctx.drawLayer(canvas, l, r);
@@ -2948,7 +2978,7 @@ fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed
         defer ctx.outline_instance = saved_instance;
         defer ctx.leaveIteration(li);
         for (list, 0..) |*r, i| {
-            if (ctx.opts.outline) |o| try o.add(l, @intCast(i), r);
+            if (ctx.opts.outline) |o| try o.add(ctx.d, l, @intCast(i), r);
             if (!r.visible or hide) continue;
             ctx.enterIteration(li, i);
             ctx.outline_instance = @intCast(i);
@@ -2960,7 +2990,7 @@ fn drawOne(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, li: usize) Failed
         return;
     }
     for (list, 0..) |*r, i| {
-        if (ctx.opts.outline) |o| try o.add(l, @intCast(i), r);
+        if (ctx.opts.outline) |o| try o.add(ctx.d, l, @intCast(i), r);
         if (r.visible and !hide) ctx.drawLayer(canvas, l, r) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => {},
@@ -3977,4 +4007,80 @@ test "qr layer: a logo picture in a vector scene" {
         images += 1;
     };
     try std.testing.expectEqual(@as(usize, 1), images);
+}
+
+test "qr style, eye and level as expressions" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const items = try testOutline(gpa, arena_state.allocator(),
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "params": { "fancy": { "type": "bool", "default": true } },
+        \\  "layers": [ { "id": "code", "type": "qr", "text": "hi", "style": "fancy ? 'dots' : 'square'", "eye": "fancy ? 'circle' : 'square'", "level": "fancy ? 'high' : 'low'", "box": { "x": 0, "y": 0, "w": 100, "h": 100 } } ]
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), items.len);
+}
+
+test "icon markup in a text without markup is a warning" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 40 },
+        \\  "layers": [ { "id": "t", "type": "text", "text": "Pay 2 {icon:gold}", "at": { "x": 0, "y": 0 } } ]
+        \\}
+    ;
+    var code: u16 = 0;
+    var b = (try testRenderDesign(gpa, design, .{}, &code)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+}
+
+test "a repeated group in a row: one item per iteration" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const items = try testOutline(gpa, arena_state.allocator(),
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 400, "height": 100 },
+        \\  "params": { "words": { "type": "list", "item": { "w": "number" }, "default": [ { "w": 10 }, { "w": 30 }, { "w": 20 } ] } },
+        \\  "layers": [
+        \\    { "id": "row", "type": "group", "layout": { "gap": 5, "x": 100, "y": 10 }, "layers": [
+        \\      { "id": "chip", "type": "group", "repeat": { "each": "words", "item": "c" }, "layers": [
+        \\        { "id": "chip_bg", "type": "rect", "box": { "x": 50, "y": 50, "w": "c.w", "h": 10 } },
+        \\        { "id": "chip_dot", "type": "rect", "box": { "x": "@chip_bg.bounds.right", "y": 50, "w": 4, "h": 4 } }
+        \\      ] }
+        \\    ] }
+        \\  ]
+        \\}
+    );
+    // Each iteration of chip_bg and its dot, 5 apart, from x 100.
+    var lefts: [3]f64 = undefined;
+    var dots: [3]f64 = undefined;
+    var n: usize = 0;
+    var m: usize = 0;
+    for (items) |p| {
+        if (std.mem.eql(u8, p.id, "chip_bg")) {
+            lefts[n] = p.left;
+            n += 1;
+            try std.testing.expectApproxEqAbs(@as(f64, 10), p.top, 0.001);
+        }
+        if (std.mem.eql(u8, p.id, "chip_dot")) {
+            dots[m] = p.left;
+            m += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), n);
+    try std.testing.expectApproxEqAbs(@as(f64, 100), lefts[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 100 + 14 + 5), lefts[1], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 119 + 34 + 5), lefts[2], 0.001);
+    // The dot moves with its iteration.
+    try std.testing.expectApproxEqAbs(lefts[1] + 30, dots[1], 0.001);
 }

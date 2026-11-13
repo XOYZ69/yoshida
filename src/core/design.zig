@@ -170,9 +170,11 @@ pub const Flow = struct {
     y: ?Prop = null,
     /// Along the line: which end of it sits at x (row) or y (column).
     alignment: LayoutAlign = .start,
+    alignment_expr: ?Prop = null,
     /// Across the line: which side of every child sits at y (row) or x
     /// (column).
     cross: LayoutAlign = .start,
+    cross_expr: ?Prop = null,
 
     pub fn fraction(a: LayoutAlign) f64 {
         return switch (a) {
@@ -227,6 +229,8 @@ pub const Layer = struct {
     translate: ?Point = null,
     /// Groups: places the children in a row or column.
     flow: ?Flow = null,
+    /// Groups: the component file the layers inside come from.
+    include: ?[]const u8 = null,
     /// Text: layers with the same name use the smallest auto-shrunk size
     /// of all of them (and of all their iterations).
     shrink_group: ?[]const u8 = null,
@@ -286,6 +290,9 @@ pub const Layer = struct {
     qr_level: QrLevel = .medium,
     qr_style: QrStyle = .square,
     qr_eye: QrEye = .square,
+    qr_level_expr: ?Prop = null,
+    qr_style_expr: ?Prop = null,
+    qr_eye_expr: ?Prop = null,
     eye_color: ?Prop = null,
     logo: ?Prop = null,
     /// Picture drawn in the cleared middle (a path template, like `src`).
@@ -295,6 +302,7 @@ pub const Layer = struct {
     fit: Fit = .fill,
     fit_expr: ?Prop = null,
     smoothing: Smoothing = .bilinear,
+    smoothing_expr: ?Prop = null,
     /// A missing file hides the layer instead of being an error.
     optional: bool = false,
 };
@@ -1558,6 +1566,9 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         const py = if (tn.get("y")) |v| try l.prop(v, .number, &sy) else try constProp(arena, .{ .number = 0 }, tn.pos);
         if (px != null and py != null) layer.translate = .{ .x = px.?, .y = py.? };
     };
+    if (kind == .group) if (m.get("include")) |v| {
+        if (v.data == .string) layer.include = v.data.string;
+    };
     if (kind == .group) if (m.get("layout")) |fnode| if (try l.expectObject(fnode, "layout")) {
         try l.checkFields(fnode, &.{ "direction", "gap", "x", "y", "align", "cross" }, "layout");
         var flow: Flow = .{};
@@ -1566,8 +1577,16 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
         if (fnode.get("gap")) |v| flow.gap = try l.prop(v, .number, main_scope);
         if (fnode.get("x")) |v| flow.x = try l.prop(v, .number, &sx);
         if (fnode.get("y")) |v| flow.y = try l.prop(v, .number, &sy);
-        if (fnode.get("align")) |v| flow.alignment = (try l.enumField(LayoutAlign, v, "layout align")) orelse .start;
-        if (fnode.get("cross")) |v| flow.cross = (try l.enumField(LayoutAlign, v, "layout cross")) orelse .start;
+        if (fnode.get("align")) |v| {
+            const got = try l.enumOrExpr(LayoutAlign, v, "layout align", scope);
+            flow.alignment = got.lit orelse .start;
+            flow.alignment_expr = got.expr;
+        }
+        if (fnode.get("cross")) |v| {
+            const got = try l.enumOrExpr(LayoutAlign, v, "layout cross", scope);
+            flow.cross = got.lit orelse .start;
+            flow.cross_expr = got.expr;
+        }
         layer.flow = flow;
     };
     if (m.get("visible")) |v| layer.visible = try l.prop(v, .bool, scope);
@@ -1795,9 +1814,21 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("color")) |v| layer.color = try l.prop(v, .color, scope);
             if (m.get("fill")) |v| layer.fill = try l.prop(v, .color, scope);
             if (m.get("margin")) |v| layer.margin = try l.prop(v, .number, scope);
-            if (m.get("level")) |v| layer.qr_level = (try l.enumField(QrLevel, v, "level")) orelse .medium;
-            if (m.get("style")) |v| layer.qr_style = (try l.enumField(QrStyle, v, "style")) orelse .square;
-            if (m.get("eye")) |v| layer.qr_eye = (try l.enumField(QrEye, v, "eye")) orelse .square;
+            if (m.get("level")) |v| {
+                const got = try l.enumOrExpr(QrLevel, v, "level", scope);
+                layer.qr_level = got.lit orelse .medium;
+                layer.qr_level_expr = got.expr;
+            }
+            if (m.get("style")) |v| {
+                const got = try l.enumOrExpr(QrStyle, v, "style", scope);
+                layer.qr_style = got.lit orelse .square;
+                layer.qr_style_expr = got.expr;
+            }
+            if (m.get("eye")) |v| {
+                const got = try l.enumOrExpr(QrEye, v, "eye", scope);
+                layer.qr_eye = got.lit orelse .square;
+                layer.qr_eye_expr = got.expr;
+            }
             if (m.get("eye_color")) |v| layer.eye_color = try l.prop(v, .color, scope);
             if (m.get("logo")) |v| layer.logo = try l.prop(v, .number, scope);
             if (m.get("logo_src")) |v| layer.logo_src = try l.template(v, scope);
@@ -1809,7 +1840,11 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                 layer.fit = got.lit orelse .fill;
                 layer.fit_expr = got.expr;
             }
-            if (m.get("smoothing")) |v| layer.smoothing = (try l.enumField(Smoothing, v, "smoothing")) orelse .bilinear;
+            if (m.get("smoothing")) |v| {
+                const got = try l.enumOrExpr(Smoothing, v, "smoothing", scope);
+                layer.smoothing = got.lit orelse .bilinear;
+                layer.smoothing_expr = got.expr;
+            }
             if (m.get("optional")) |v| {
                 if (v.data == .bool) layer.optional = v.data.bool else try l.err(1103, v.pos, "optional must be true or false", .{});
             }

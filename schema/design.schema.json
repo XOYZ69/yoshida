@@ -391,7 +391,13 @@
           ]
         },
         "smoothing": {
-          "enum": ["nearest", "bilinear"]
+          "description": "or an expression that gives one",
+          "anyOf": [
+            {
+              "enum": ["nearest", "bilinear"]
+            },
+            { "type": "string" }
+          ]
         },
         "layers": {
           "type": "array",
@@ -525,12 +531,22 @@
               "type": ["number", "string"]
             },
             "align": {
-              "description": "Which end of the line sits at x (row) or y (column)",
-              "enum": ["start", "center", "end"]
+              "description": "Which end of the line sits at x (row) or y (column); or an expression that gives one",
+              "anyOf": [
+                {
+                  "enum": ["start", "center", "end"]
+                },
+                { "type": "string" }
+              ]
             },
             "cross": {
-              "description": "Which side of every child sits at y (row) or x (column)",
-              "enum": ["start", "center", "end"]
+              "description": "Which side of every child sits at y (row) or x (column); or an expression that gives one",
+              "anyOf": [
+                {
+                  "enum": ["start", "center", "end"]
+                },
+                { "type": "string" }
+              ]
             }
           }
         },
@@ -1097,7 +1113,13 @@
                 ]
               },
               "smoothing": {
-                "enum": ["nearest", "bilinear"]
+                "description": "or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["nearest", "bilinear"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "optional": {
                 "type": "boolean",
@@ -1181,16 +1203,31 @@
                 "type": ["number", "string"]
               },
               "level": {
-                "description": "Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%)",
-                "enum": ["low", "medium", "quartile", "high"]
+                "description": "Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["low", "medium", "quartile", "high"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "style": {
-                "description": "Shape of the data modules: square (default), rounded or dots",
-                "enum": ["square", "rounded", "dots"]
+                "description": "Shape of the data modules: square (default), rounded or dots; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["square", "rounded", "dots"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "eye": {
-                "description": "Shape of the three corner squares: square (default), rounded or circle",
-                "enum": ["square", "rounded", "circle"]
+                "description": "Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["square", "rounded", "circle"]
+                  },
+                  { "type": "string" }
+                ]
               },
               "eye_color": {
                 "description": "Color of the corner squares. Default: the color of the code",
@@ -1261,12 +1298,22 @@
                     "type": ["number", "string"]
                   },
                   "align": {
-                    "description": "Which end of the line sits at x (row) or y (column)",
-                    "enum": ["start", "center", "end"]
+                    "description": "Which end of the line sits at x (row) or y (column); or an expression that gives one",
+                    "anyOf": [
+                      {
+                        "enum": ["start", "center", "end"]
+                      },
+                      { "type": "string" }
+                    ]
                   },
                   "cross": {
-                    "description": "Which side of every child sits at y (row) or x (column)",
-                    "enum": ["start", "center", "end"]
+                    "description": "Which side of every child sits at y (row) or x (column); or an expression that gives one",
+                    "anyOf": [
+                      {
+                        "enum": ["start", "center", "end"]
+                      },
+                      { "type": "string" }
+                    ]
                   }
                 }
               },

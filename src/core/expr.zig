@@ -2763,3 +2763,20 @@ fn expectHint(arena: Allocator, src: []const u8, want: []const u8) !void {
     };
     return error.TestExpectedError;
 }
+
+test "templates keep {icon:name} as text" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var problem: ?Problem = null;
+    const t = try parseTemplate(a, "Pay {n} {icon:gold}.", &problem);
+    try std.testing.expect(problem == null);
+    try std.testing.expectEqual(@as(usize, 3), t.parts.len);
+    try std.testing.expectEqualStrings(" {icon:gold}.", t.parts[2].lit);
+    // A name with a space is no icon: the braces hold an expression again.
+    try std.testing.expectError(error.Invalid, parseTemplate(a, "{icon:x y}", &problem));
+    // The editor's tolerant parse sees it as text too.
+    const tol = try parseTemplateTolerant(a, "a {icon:gold}", 10);
+    try std.testing.expectEqual(@as(usize, 0), tol.problems.len);
+    try std.testing.expectEqual(@as(usize, 1), tol.pieces.len);
+}

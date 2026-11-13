@@ -57,6 +57,7 @@ let {
 	fontLicenses = {},
 	fontText = "",
 	onfonts = () => {},
+	onopenfile = () => {},
 	diagnostics,
 	designFile,
 	editLayer,
@@ -88,6 +89,8 @@ let {
 	fontText?: string;
 	/** Opens the Fonts window (on a font file, or to upload one). */
 	onfonts?: (target?: { path?: string; upload?: boolean }) => void;
+	/** Opens a project file in the Advanced view (a group's component file). */
+	onopenfile?: (path: string) => void;
 	diagnostics: Diagnostic[];
 	designFile: string;
 	editLayer: (fn: (own: Obj) => void, key?: string) => void;
@@ -782,14 +785,23 @@ let newFunction = $state("");
   {:else if ids.length === 1 && id && own && eff && isGroupLayer}
     <section>
       <h3>Group contents</h3>
-      <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
+      {#if typeof eff.include === 'string'}
+        <div class="component-note">
+          <p><strong>Component.</strong> The layers inside come from <code>{eff.include}</code>, which other designs can include too. Change them in that file; here you can move, hide, repeat or lay out the group as a whole.</p>
+          <button onclick={() => onopenfile(String(eff.include))}>Open component file</button>
+        </div>
+      {:else}
+        <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
+      {/if}
       {@render alignBar(true)}
       <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
-      <div class="row">
-        <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
-      </div>
+      {#if typeof eff.include !== 'string'}
+        <div class="row">
+          <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
+        </div>
+      {/if}
     </section>
     <section>
       <h3>Origin</h3>
@@ -1331,5 +1343,18 @@ let newFunction = $state("");
   }
   .pad {
     padding: 10px 12px;
+  }
+  .component-note {
+    border: 1px solid var(--accent, #6a8cff);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 4px 0 8px;
+    font-size: 12px;
+  }
+  .component-note p {
+    margin: 0 0 6px;
+  }
+  .component-note code {
+    word-break: break-all;
   }
 </style>

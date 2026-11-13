@@ -97,7 +97,9 @@ The [board game example](@/docs/example-board-game.md) draws its 40 tiles this w
 | `align` | `start` | Along the line: `start` puts its first child at x (row) or y (column), `center` centres it there, `end` ends it there |
 | `cross` | `start` | Across the line: `start` puts every child's top (row) or left (column) at y (x), `center` centres it, `end` puts its bottom (right) there |
 
-A shared background for adjacent items is a layer that reads the group's bounds, for example a rect before the group with `"box": { "x": "@cost.bounds.left - 12", "w": "@cost.bounds.w + 24", ... }`. A child can be a plain group (it moves as a whole); a repeated group cannot be a child of a layout group (error 1103).
+`align` and `cross` may be expressions that give one of the words, as with [`anchor`](@/docs/layers.md#anchor).
+
+A shared background for adjacent items is a layer that reads the group's bounds, for example a rect before the group with `"box": { "x": "@cost.bounds.left - 12", "w": "@cost.bounds.w + 24", ... }`. A child can be a group, which moves as a whole; every iteration of a repeated group is one item, so a row of chips can be one repeated group (or one included component) inside a layout group.
 
 ## Shared components (`include`)
 
