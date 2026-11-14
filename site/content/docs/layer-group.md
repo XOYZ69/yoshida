@@ -126,7 +126,8 @@ Layers that several designs share, such as an effect row, can live in one compon
 - The layers are compiled as part of the design that includes them: they use that design's params, constants, functions, fonts and icons, and the design's layers can reference them (`@effect_bg.bounds.bottom`) and `extends` them. Every design that includes the component needs the params it uses.
 - The group works like any group: `translate`, `layout`, `visible`, `repeat` and effects apply to the included layers. Components can include other components (a cycle is error 3004).
 - Ids must be unique in the design, so one component can be included once per design; repeat the group to show it several times.
-- Problems inside a component name the component file and its line. The builder's live values and inspector do not reach into component files yet.
+- Problems inside a component name the component file and its line.
+- In the builder, a group becomes a component with **Create component**, and a component's layers are edited in place; see [Builder: Layers](@/docs/builder-layers.md#components). Live values are not shown for fields inside a component yet.
 
 ## Moving a group
 

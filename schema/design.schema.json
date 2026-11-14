@@ -181,6 +181,10 @@
           "enum": ["rect", "ellipse", "polygon", "text", "image", "qr", "group", "divider"]
         },
         "note": { "type": "string" },
+        "tag": {
+          "enum": ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "gray"],
+          "description": "Colour of the layer's row in the editor's layer list; never drawn"
+        },
         "label": {
           "type": "string",
           "description": "Divider title shown in the editor's layer list"
@@ -582,6 +586,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -697,6 +702,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -824,6 +830,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -966,6 +973,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -1075,6 +1083,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -1158,6 +1167,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -1256,6 +1266,7 @@
               "id": true,
               "type": true,
               "note": true,
+              "tag": true,
               "visible": true,
               "opacity": true,
               "rotate": true,
@@ -1340,7 +1351,7 @@
             }
           },
           "then": {
-            "properties": { "id": true, "type": true, "note": true, "label": true },
+            "properties": { "id": true, "type": true, "note": true, "tag": true, "label": true },
             "additionalProperties": false
           }
         }

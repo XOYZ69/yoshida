@@ -36,7 +36,20 @@
 	--logo-ink: light-dark(#ffffff, #1b1b1f);
 	/* File type icons in the Files tab (editor only). Each one is at least
 	   3:1 against --bg, --hover and --sel in both themes. */
+	/* Components (layers shared between designs); groups use the accent. */
+	--component: light-dark(#b23cc4, #e08cf0);
+	/* Colour tags of layers, mixed faintly into the row in the layer list. */
+	--tag-red: light-dark(#d9412e, #ff6b5c);
+	--tag-orange: light-dark(#e07a10, #f59a3c);
+	--tag-yellow: light-dark(#d4a900, #f0c63c);
+	--tag-green: light-dark(#2f8a3e, #5cc46c);
+	--tag-teal: light-dark(#0f8a8a, #3cc4c0);
+	--tag-blue: light-dark(#3b6cf6, #6e93ff);
+	--tag-purple: light-dark(#8a4fd6, #b48cff);
+	--tag-pink: light-dark(#c2387a, #f07ab0);
+	--tag-gray: light-dark(#6b7480, #9eabbc);
 	--file-design: light-dark(#3b6cf6, #6e93ff);
+	--file-component: var(--component);
 	--file-cards: light-dark(#2f8a3e, #5cc46c);
 	--file-json: light-dark(#a5650a, #e8a93c);
 	--file-font: light-dark(#8a4fd6, #b48cff);

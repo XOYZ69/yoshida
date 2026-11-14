@@ -39,6 +39,7 @@ import {
 	renameFont,
 } from "../fonts/project";
 import { loadPref, savePref } from "../ui/drag";
+import { componentAround, componentLabel } from "../components";
 import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
@@ -58,6 +59,9 @@ let {
 	fontText = "",
 	onfonts = () => {},
 	onopenfile = () => {},
+	componentUsers = () => [],
+	ondetach = () => {},
+	oncreatecomponent = () => {},
 	diagnostics,
 	designFile,
 	editLayer,
@@ -91,6 +95,12 @@ let {
 	onfonts?: (target?: { path?: string; upload?: boolean }) => void;
 	/** Opens a project file in the Advanced view (a group's component file). */
 	onopenfile?: (path: string) => void;
+	/** Other designs and components that include a component file. */
+	componentUsers?: (path: string) => string[];
+	/** Turns an including group into a plain group with its own copy of the layers. */
+	ondetach?: (id: string) => void;
+	/** Moves a group's layers into a new component file. */
+	oncreatecomponent?: (id: string) => void;
 	diagnostics: Diagnostic[];
 	designFile: string;
 	editLayer: (fn: (own: Obj) => void, key?: string) => void;
@@ -121,6 +131,14 @@ const own = $derived(
 );
 const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
 const ptr = $derived(id ? layerPointer(doc, id) : null);
+/** The component the selected layer is part of (its including group). */
+const around = $derived(id ? componentAround(doc, id) : null);
+const usedBy = (path: string) => {
+	const n = componentUsers(path).length;
+	return n
+		? `${n} other ${n === 1 ? "file uses" : "files use"} it`
+		: "no other design uses it yet";
+};
 const type = $derived(String(eff?.type ?? ""));
 const params = $derived(
 	isObj(doc.params)
@@ -775,6 +793,9 @@ let newFunction = $state("");
         <Field label="extends" kind="enum" optional value={ownVal(['extends'])} options={sameTypeIds} onchange={(v) => set(['extends'], v)} />
       {/if}
       <Field label="note" kind="text" optional value={ownVal(['note'])} onchange={(v) => set(['note'], v)} />
+      {#if around}
+        <p class="component-part"><Icon name="component" /> Part of the component <strong>{componentLabel(String(around.include))}</strong> (group '{around.id}'). Changes here show in every design that includes it; {usedBy(String(around.include))}.</p>
+      {/if}
       {@render problemChip()}
     </section>
   {/if}
@@ -787,8 +808,11 @@ let newFunction = $state("");
       <h3>Group contents</h3>
       {#if typeof eff.include === 'string'}
         <div class="component-note">
-          <p><strong>Component.</strong> The layers inside come from <code>{eff.include}</code>, which other designs can include too. Change them in that file; here you can move, hide, repeat or lay out the group as a whole.</p>
-          <button onclick={() => onopenfile(String(eff.include))}>Open component file</button>
+          <p><strong><Icon name="component" /> Component.</strong> The layers inside are shared: they live in <code>{eff.include}</code> ({usedBy(String(eff.include))}). Select one in the layer list or double-click it on the card to change it; the change shows in every design that includes the component. Moving, hiding, repeating or laying out this group only affects this design.</p>
+          <div class="row">
+            <button onclick={() => ondetach(id)} title="Keep a copy of the layers in this design and stop following the component">Detach</button>
+            <button onclick={() => onopenfile(String(eff.include))}>Open component file</button>
+          </div>
         </div>
       {:else}
         <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
@@ -800,6 +824,7 @@ let newFunction = $state("");
       {#if typeof eff.include !== 'string'}
         <div class="row">
           <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
+          <button disabled={!childCount} onclick={() => oncreatecomponent(id)} title="Move these layers into a component file that other designs can include"><Icon name="component" /> Create component</button>
         </div>
       {/if}
     </section>
@@ -1344,8 +1369,22 @@ let newFunction = $state("");
   .pad {
     padding: 10px 12px;
   }
+  .component-note :global(svg),
+  .component-part :global(svg) {
+    display: inline-block;
+    vertical-align: -2px;
+    margin: 0 2px 0 0;
+    color: var(--component);
+  }
+  .component-part {
+    font-size: 12px;
+    margin: 6px 0 0;
+    padding: 6px 8px;
+    border-left: 2px solid var(--component);
+    background: color-mix(in srgb, var(--component) 8%, transparent);
+  }
   .component-note {
-    border: 1px solid var(--accent, #6a8cff);
+    border: 1px solid var(--component);
     border-radius: 6px;
     padding: 8px 10px;
     margin: 4px 0 8px;

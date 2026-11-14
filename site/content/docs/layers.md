@@ -23,6 +23,7 @@ The design's `layers` array is drawn in order: the first layer is at the bottom,
 | `id` | ident | required | Unique in the whole design (also across groups), error 1108 otherwise |
 | `type` | enum | required | One of the types above |
 | `note` | text literal | | Comment |
+| `tag` | `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink` or `gray` | | Colour of the layer's row in the builder's layer list; never drawn, not inherited through `extends`. Also on groups and dividers |
 | `visible` | bool | `true` | `false`: the layer is not drawn, but its values can still be referenced |
 | `opacity` | number | `1` | 0 to 1, multiplies the layer's alpha |
 | `rotate` | number | `0` | Degrees clockwise, taken modulo 360. See below |

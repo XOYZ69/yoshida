@@ -1,7 +1,7 @@
 // Editing a design document as data: the visual builder changes the parsed
 // JSON with these helpers and writes it back through the formatter.
 
-import { HEX_COLOR } from "./hexcolor";
+import { HEX_COLOR } from "./hexcolor.ts";
 
 export type Json =
 	| null
@@ -232,7 +232,7 @@ export function descendantIds(layer: Obj): string[] {
 }
 
 const mergedKeys = new Set(["box", "at", "stroke", "repeat", "arc", "shape"]);
-const ownKeys = new Set(["id", "extends", "note"]);
+const ownKeys = new Set(["id", "extends", "note", "tag"]);
 
 /**
  * The layer with its `extends` chain applied: objects merge key by key,
@@ -370,9 +370,10 @@ export function moveLayer(
 	if (!own || !eff) return;
 	switch (eff.type) {
 		case "group": {
-			// With a translate, the layers inside are relative to it.
-			if (isObj(eff.translate)) {
-				const t = eff.translate as Obj;
+			// With a translate, the layers inside are relative to it. A
+			// component always moves by its translate: its layers are shared.
+			if (isObj(eff.translate) || typeof eff.include === "string") {
+				const t = (isObj(eff.translate) ? eff.translate : {}) as Obj;
 				setPath(own, ["translate", "x"], shiftValue(t.x ?? 0, dx, canvas.w));
 				setPath(own, ["translate", "y"], shiftValue(t.y ?? 0, dy, canvas.h));
 				return;

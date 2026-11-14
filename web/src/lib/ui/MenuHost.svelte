@@ -76,7 +76,7 @@ function onkeydown(e: KeyboardEvent) {
           disabled={it.disabled}
           onpointerenter={() => (active = i)}
           onclick={() => run(it)}>
-          <span class="icon">{#if it.icon}<Icon name={it.icon} />{/if}</span>
+          <span class="icon">{#if it.swatch}<span class="swatch" style:background={it.swatch}></span>{:else if it.icon}<Icon name={it.icon} />{/if}</span>
           <span class="label">{it.label}</span>
           {#if it.detail}<span class="detail">{it.detail}</span>{/if}
           {#if it.shortcut}<kbd>{it.shortcut}</kbd>{/if}
@@ -137,6 +137,13 @@ function onkeydown(e: KeyboardEvent) {
     width: 16px;
     text-align: center;
     color: var(--muted);
+  }
+  .swatch {
+    display: block;
+    width: 12px;
+    height: 12px;
+    margin: 0 auto;
+    border-radius: 50%;
   }
   .label {
     flex: 1;

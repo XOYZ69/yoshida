@@ -657,7 +657,7 @@ const Loader = struct {
 
 const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
-const common_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
+const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
 
 fn kindFields(kind: LayerKind) []const []const u8 {
     return switch (kind) {
@@ -1211,9 +1211,9 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
+const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
-const divider_fields = [_][]const u8{ "id", "type", "note", "label" };
+const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
 
 fn isGroup(n: *const Node) bool {
     const t = n.get("type") orelse return false;
@@ -1471,7 +1471,7 @@ fn merge(l: *Loader, raws: []Raw, r: *Raw) Allocator.Error!?Node {
     }
     var fields: std.ArrayList(Node.Field) = .empty;
     for (parent.data.object) |f| {
-        if (std.mem.eql(u8, f.key, "id") or std.mem.eql(u8, f.key, "extends") or std.mem.eql(u8, f.key, "note")) continue;
+        if (std.mem.eql(u8, f.key, "id") or std.mem.eql(u8, f.key, "extends") or std.mem.eql(u8, f.key, "note") or std.mem.eql(u8, f.key, "tag")) continue;
         try fields.append(l.arena, f);
     }
     for (r.node.data.object) |f| {
@@ -2003,6 +2003,30 @@ test "dividers and param groups" {
     try std.testing.expectEqual(@as(u16, 3002), diags.items.items[3].code);
     // Only the group and its rect are compiled.
     try std.testing.expectEqual(@as(usize, 3), d.layers.len);
+}
+
+test "colour tags are accepted on every layer kind and not inherited" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "d", "type": "divider", "tag": "gray" },
+        \\    { "id": "g", "type": "group", "tag": "blue", "layers": [
+        \\      { "id": "bg", "type": "rect", "tag": "red", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\    ] },
+        \\    { "id": "x", "type": "rect", "extends": "bg" },
+        \\    { "id": "t", "type": "text", "tag": "green", "at": { "x": 0, "y": 0 }, "text": "a", "size": 10 }
+        \\  ]
+        \\}
+    ;
+    _ = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.items.items.len);
 }
 
 test "list lookups by key and list counts" {

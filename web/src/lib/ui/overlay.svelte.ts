@@ -34,6 +34,8 @@ export type MenuItem =
 			disabled?: boolean;
 			danger?: boolean;
 			icon?: IconName;
+			/** A CSS colour shown as a dot in place of the icon. */
+			swatch?: string;
 			action: () => void;
 	  }
 	| { separator: true }

@@ -17,7 +17,6 @@
 		clone,
 		deleteLayer,
 		distributeLayers,
-		duplicateLayer,
 		effectiveLayer,
 		findLayer,
 		type Gesture,
@@ -59,7 +58,23 @@
 		rotateLayer,
 		stepLayer,
 		ungroupLayer,
+		uniqueId,
 	} from "./lib/design";
+	import {
+		componentAround,
+		componentLabel,
+		componentPath,
+		detached,
+		expandIncludes,
+		includeBlocker,
+		includedPaths,
+		includeOf,
+		includersOf,
+		isComponentFile,
+		type ReadText,
+		splitIncludes,
+	} from "./lib/components";
+	import { type LayerTag, layerTags, tagLabels } from "./lib/tags";
 	import {
 		type CheckResult,
 		type Diagnostic,
@@ -517,7 +532,11 @@
 			? textOf(files.get(designPath)!)
 			: "",
 	);
-	const parsed = $derived.by((): { doc: Obj | null; error: string } => {
+	const readText: ReadText = (p) => {
+		const d = files.get(p);
+		return d ? textOf(d) : undefined;
+	};
+	const rawParsed = $derived.by((): { doc: Obj | null; error: string } => {
 		if (!designPath) return { doc: null, error: "" };
 		try {
 			const d = JSON.parse(designText);
@@ -528,7 +547,40 @@
 			return { doc: null, error: (e as Error).message };
 		}
 	});
+	// The component files the design includes, as one string: the design is
+	// only filled in again when one of them changes, not on every file edit.
+	const includeTexts = $derived.by(() => {
+		const d = rawParsed.doc;
+		const out: Record<string, string> = {};
+		if (d)
+			for (const p of includedPaths(d, readText)) {
+				const t = readText(p);
+				if (t !== undefined) out[p] = t;
+			}
+		return JSON.stringify(out);
+	});
+	// The builder works on the design with its components filled in: a group
+	// with "include" also has the component's layers (see lib/components.ts).
+	const parsed = $derived.by((): { doc: Obj | null; error: string } => {
+		const d = rawParsed.doc;
+		if (!d) return rawParsed;
+		const texts = JSON.parse(includeTexts) as Record<string, string>;
+		return { doc: expandIncludes(d, (p) => texts[p]), error: "" };
+	});
 	const doc = $derived(parsed.doc);
+	/** Component files of the project, for including one. */
+	const componentFiles = $derived(
+		fileList.filter((p) => isComponentFile(p, readText(p))),
+	);
+	/** The layer a problem belongs to: one of the design, or one inside an included component. */
+	function diagnosticLayer(d: Diagnostic): string | null {
+		if (!doc || !d.file) return null;
+		if (d.file === designPath) return layerAtPointer(doc, d.path);
+		const g = layersOf(doc).find(
+			(l) => includeOf(l) === d.file && Array.isArray(l.layers),
+		);
+		return g ? (layerAtPointer(g, d.path) ?? String(g.id)) : null;
+	}
 	const canvasSize = $derived.by(() => {
 		if (image && imageSize) return imageSize;
 		const w =
@@ -543,8 +595,8 @@
 		const m = new Map<string, "error" | "warning">();
 		if (!doc || !Array.isArray(doc.layers)) return m;
 		for (const d of diagnostics) {
-			if (d.file !== designPath || d.severity === "hint") continue;
-			const id = layerAtPointer(doc, d.path);
+			if (d.severity === "hint") continue;
+			const id = diagnosticLayer(d);
 			if (!id) continue;
 			// A group shows the worst problem of the layers inside it.
 			for (const x of [id, ...ancestorsOf(doc, id)])
@@ -1393,9 +1445,8 @@
 				const l = findLayer(next, selectedLayer);
 				if (l) l.font = use;
 			}
-			const text = formatJson(next);
-			if (text !== designText)
-				changes.push({ path: designPath, data: bytesOf(text) });
+			for (const c of docChanges(next))
+				changes.push({ path: c.path, data: bytesOf(c.text) });
 		}
 		if (!changes.length) return;
 		recordMany(changes.map((c) => snap(c.path)));
@@ -1820,9 +1871,10 @@
 		if (!designPath || !doc) return;
 		const next = clone(doc);
 		design(next);
-		const changes: Snapshot = [
-			{ path: designPath, data: bytesOf(formatJson(next)) },
-		];
+		const changes: Snapshot = docChanges(next).map((c) => ({
+			path: c.path,
+			data: bytesOf(c.text),
+		}));
 		for (const s of sets) {
 			if (
 				s.design !== designPath ||
@@ -1839,6 +1891,7 @@
 				// A card file with a syntax error is left alone; the core reports it.
 			}
 		}
+		if (!changes.length) return;
 		recordMany(changes.map((c) => snap(c.path)));
 		writeFiles(changes);
 	}
@@ -1855,10 +1908,48 @@
 		if (!designPath || !doc) return;
 		const next = clone(doc);
 		fn(next);
-		const text = formatJson(next);
-		if (text === designText) return;
-		record(designPath, designText, key ? `design:${key}` : "");
-		updateFile(designPath, text, true);
+		writeDoc(next, key ? `design:${key}` : "");
+	}
+
+	type TextChange = { path: string; text: string };
+
+	/**
+	 * The files an edited design changes: the design file, and the component
+	 * file of each including group whose layers changed. `named` gives a
+	 * component file made by this edit its name.
+	 */
+	function docChanges(
+		next: Obj,
+		named?: { path: string; name: string },
+	): TextChange[] {
+		const { design, components } = splitIncludes(next, readText);
+		const out: TextChange[] = [];
+		const text = formatJson(design);
+		if (text !== designText) out.push({ path: designPath!, text });
+		for (const [path, c] of components) {
+			if (named?.path === path) c.name = named.name;
+			out.push({ path, text: formatJson(c) });
+		}
+		return out;
+	}
+
+	/** Writes an edited design as one undo step. False when nothing changed. */
+	function writeDoc(
+		next: Obj,
+		key = "",
+		named?: { path: string; name: string },
+	): boolean {
+		const changes = docChanges(next, named);
+		if (!changes.length) return false;
+		const only = changes.length === 1 ? changes[0] : null;
+		if (only && files.has(only.path)) {
+			record(only.path, currentText(only.path), key);
+			updateFile(only.path, only.text, true);
+		} else {
+			recordMany(changes.map((c) => snap(c.path)));
+			writeFiles(changes.map((c) => ({ path: c.path, data: bytesOf(c.text) })));
+		}
+		return true;
 	}
 
 	function editLayer(fn: (own: Obj) => void, key = "") {
@@ -2000,8 +2091,8 @@
 	 */
 	function pickOnCanvas(id: string, deep: boolean): string | null {
 		if (!doc) return id;
-		// A layer of a component file is not in this design: a click picks
-		// the group that includes it.
+		// A layer of a component that could not be filled in (included
+		// twice, say) is not in this design: a click picks its group.
 		if (!findLayer(doc, id)) {
 			const group = layout.find((b) => b.id === id)?.component;
 			return group && findLayer(doc, group) ? pickOnCanvas(group, false) : null;
@@ -2037,6 +2128,126 @@
 		});
 	}
 
+	// ---------------------------------------------------------------- components
+
+	/** Moves a group's layers into a new component file that the group then includes. */
+	async function createComponent(id: string) {
+		if (!doc) return;
+		const g = findLayer(doc, id);
+		if (!isGroup(g) || includeOf(g)) return;
+		const name = await askText({
+			title: "Create component",
+			message:
+				"The layers of this group move into a component file that other designs can include too. Changing them later changes every design that uses the component.",
+			value: id.replace(/_/g, " "),
+			confirm: "Create component",
+			validate: (v) => (v.trim() ? "" : "Give the component a name."),
+		}).catch(() => null);
+		if (!name?.trim() || !doc) return;
+		const path = componentPath(name, (p) => files.has(p));
+		const next = clone(doc);
+		const ng = findLayer(next, id);
+		if (!isGroup(ng)) return;
+		const layers = ng.layers ?? [];
+		delete ng.layers;
+		ng.include = path;
+		ng.layers = layers;
+		writeDoc(next, "", { path, name: name.trim() });
+		status = `Component '${name.trim()}' saved as ${path}.`;
+	}
+
+	/** Includes a component: in the empty group `into`, or as a new group above the selection. */
+	function includeComponent(path: string, into: string | null) {
+		if (!doc) return;
+		if (into) {
+			editDoc((d) => {
+				const g = findLayer(d, into);
+				if (!isGroup(g)) return;
+				delete g.layers;
+				g.include = path;
+			});
+			selectedLayers = [into];
+			return;
+		}
+		const base = componentLabel(path).replace(/[^A-Za-z0-9_]+/g, "_");
+		const stem = identRe.test(base) ? base : "component";
+		const id = findLayer(doc, stem) ? uniqueId(doc, `${stem}_`) : stem;
+		const layer: Obj = { id, type: "group", include: path };
+		editDoc((d) => insertLayer(d, layer, selectedLayer));
+		selectedLayers = [id];
+		leftTab = "layers";
+	}
+
+	/** The group keeps a copy of the component's layers and no longer follows the file. */
+	function detachComponent(id: string) {
+		editDoc((d) => {
+			const g = findLayer(d, id);
+			if (g) delete g.include;
+		});
+	}
+
+	/** Menu of the project's components, to include one. */
+	function componentMenu(x: number, y: number, into: string | null = null) {
+		if (!doc) return;
+		const items: MenuItem[] = [{ heading: "Include a component" }];
+		for (const p of componentFiles) {
+			const why = includeBlocker(doc, p, readText);
+			items.push({
+				label: componentLabel(p),
+				icon: "component",
+				detail: why || dirOf(p),
+				disabled: !!why,
+				action: () => includeComponent(p, into),
+			});
+		}
+		if (!componentFiles.length)
+			items.push({
+				label: "No components yet",
+				detail: "right-click a group, Create component",
+				disabled: true,
+				action: () => {},
+			});
+		openMenu(x, y, items);
+	}
+
+	/** Designs and components that include a component file, other than the open design. */
+	function componentUsers(path: string): string[] {
+		return includersOf(path, fileList, readText).filter(
+			(p) => p !== designPath,
+		);
+	}
+
+	function setTag(ids: string[], tag: LayerTag | null) {
+		editDoc((d) => {
+			for (const id of ids) {
+				const l = findLayer(d, id);
+				if (!l) continue;
+				if (tag) l.tag = tag;
+				else delete l.tag;
+			}
+		});
+	}
+
+	function tagMenu(x: number, y: number, ids: string[]) {
+		const cur = ids.length === 1 ? findLayer(doc!, ids[0])?.tag : undefined;
+		openMenu(x, y, [
+			{ heading: "Colour in the layer list" },
+			{
+				label: "None",
+				icon: cur === undefined ? "check" : undefined,
+				action: () => setTag(ids, null),
+			},
+			...layerTags.map(
+				(t): MenuItem => ({
+					label: tagLabels[t],
+					swatch: `var(--tag-${t})`,
+					detail: cur === t ? "current" : undefined,
+					action: () => setTag(ids, t),
+				}),
+			),
+		]);
+	}
+
 	/** Right-click menu for the layer list and the canvas. */
 	function layerMenu(e: MouseEvent, id: string | null) {
 		if (!doc) return;
@@ -2069,6 +2280,12 @@
 					icon: "divider",
 					detail: "only in this list",
 					action: () => addContainer("divider"),
+				},
+				{
+					label: "Component…",
+					icon: "component",
+					detail: "shared layers",
+					action: () => componentMenu(e.clientX + 8, e.clientY + 8),
 				},
 				{ separator: true },
 			);
@@ -2188,7 +2405,44 @@
 					action: () => editDoc((d) => reorderLayer(d, one, at)),
 				});
 		}
+		if (one && isGroup(l)) {
+			const inc = includeOf(l);
+			items.push({ separator: true });
+			if (inc)
+				items.push(
+					{
+						label: "Detach from component",
+						icon: "ungroup",
+						detail: "keeps a copy here",
+						action: () => detachComponent(one),
+					},
+					{
+						label: "Open component file",
+						icon: "braces",
+						action: () => openFileInCode(inc),
+					},
+				);
+			else if (childrenOf(l).length)
+				items.push({
+					label: "Create component…",
+					icon: "component",
+					detail: "share with other designs",
+					action: () => createComponent(one),
+				});
+			else
+				items.push({
+					label: "Include a component…",
+					icon: "component",
+					action: () => componentMenu(e.clientX + 8, e.clientY + 8, one),
+				});
+		}
 		items.push({ separator: true });
+		items.push({
+			label: "Colour…",
+			icon: "tag",
+			detail: "in this list",
+			action: () => tagMenu(e.clientX + 8, e.clientY + 8, ids),
+		});
 		if (l) {
 			items.push(
 				{
@@ -2232,7 +2486,7 @@
 	}
 
 	function copyToMemory(ids: string[]) {
-		clipboard = inStackOrder(ids).map((id) => clone(findLayer(doc!, id)!));
+		clipboard = inStackOrder(ids).map((id) => detached(findLayer(doc!, id)!));
 		navigator.clipboard
 			?.writeText(JSON.stringify({ yoshida_layers: clipboard }, null, 2))
 			.catch(() => {});
@@ -2258,14 +2512,12 @@
 
 	function duplicateMany(ids: string[]) {
 		if (!doc || !ids.length) return;
-		if (ids.length === 1) {
-			let copy: string | null = null;
-			editDoc((d) => (copy = duplicateLayer(d, ids[0])));
-			if (copy) selectedLayers = [copy];
-			return;
-		}
 		const order = inStackOrder(ids);
-		const layers = order.map((id) => clone(findLayer(doc!, id)!));
+		// A design can include a component once: the copy of an including
+		// group is a plain group with its own copy of the layers.
+		const layers = order.map((id) => detached(findLayer(doc!, id)!));
+		if (order.some((id) => includeOf(findLayer(doc!, id))))
+			status = "The copy is a plain group: a design can include a component once.";
 		let made: string[] = [];
 		editDoc((d) => (made = pasteLayers(d, layers, order.at(-1)!)));
 		selectedLayers = made;
@@ -2297,7 +2549,7 @@
 		if (!canUseClipboard(e) || !selectedLayers.length) return;
 		e.preventDefault();
 		clipboard = inStackOrder(selectedLayers).map((id) =>
-			clone(findLayer(doc!, id)!),
+			detached(findLayer(doc!, id)!),
 		);
 		e.clipboardData?.setData(
 			"text/plain",
@@ -2383,6 +2635,21 @@
 	// Canvas gestures are applied to the design as it was when the gesture
 	// started, so every move recomputes from the same base.
 	let gestureBase: string | null = null;
+	/** Files a live preview put into the worker with the gesture applied. */
+	let liveTouched = new Set<string>();
+
+	/** Puts the files of a candidate design into the worker (not into the project). */
+	async function putCandidate(d: Obj) {
+		const changes = docChanges(d);
+		const now = new Set(changes.map((c) => c.path));
+		for (const c of changes) {
+			liveTouched.add(c.path);
+			await engine.put(c.path, bytesOf(c.text));
+		}
+		// A file an earlier step changed and this one does not.
+		for (const p of liveTouched)
+			if (!now.has(p) && files.has(p)) await engine.put(p, files.get(p)!);
+	}
 
 	function applyGesture(d: Obj, g: Gesture) {
 		if (g.mode === "move") moveLayers(d, g.ids, g.dx, g.dy, canvasSize);
@@ -2541,7 +2808,7 @@
 				const d = JSON.parse(gestureBase!) as Obj;
 				applyGesture(d, want);
 				// The worker reads the design from its file system: put the candidate there.
-				await engine.put(designPath!, bytesOf(formatJson(d)));
+				await putCandidate(d);
 				if (liveToken !== token) break;
 				const scale = wantedScale;
 				const r = await engine.render({
@@ -2579,9 +2846,10 @@
 	});
 
 	function onGesture(g: Gesture, phase: "start" | "move" | "end") {
-		if (!designPath) return;
+		if (!designPath || !doc) return;
 		if (phase === "start") {
-			gestureBase = designText;
+			gestureBase = JSON.stringify(doc);
+			liveTouched = new Set();
 			previewSkipped = false;
 			spriteMove = { dx: 0, dy: 0 };
 			if (g.mode === "move" && dragPreview === "fast" && !needsLive(g.ids)) {
@@ -2617,15 +2885,17 @@
 			return;
 		}
 		applyGesture(d, g);
-		const text = formatJson(d);
-		if (text !== gestureBase) record(designPath, gestureBase);
-		lastKey = "";
 		gestureBase = null;
-		if (text !== designText) updateFile(designPath, text, true);
-		else {
+		const changed = new Set(docChanges(d).map((c) => c.path));
+		// A live preview left changed files in the worker: put back the ones
+		// that stay as they were.
+		for (const p of liveTouched)
+			if (!changed.has(p) && files.has(p)) engine.put(p, files.get(p)!);
+		liveTouched = new Set();
+		const wrote = writeDoc(d);
+		lastKey = "";
+		if (!wrote) {
 			dragSprite = null;
-			// A live preview left the changed card in the worker: put the card back.
-			if (live) engine.put(designPath, bytesOf(designText));
 			if (live || previewSkipped) refresh();
 		}
 	}
@@ -2712,9 +2982,7 @@
 		const ids = new Set([id, ...descendantsOf(id)]);
 		return {
 			label: `layer '${id}'`,
-			match: (d: Diagnostic) =>
-				d.file === designPath &&
-				ids.has(layerAtPointer(doc!, d.path) ?? ""),
+			match: (d: Diagnostic) => ids.has(diagnosticLayer(d) ?? ""),
 		};
 	});
 
@@ -2752,13 +3020,16 @@
 				renderPreview();
 			}
 		}
-		if (mode === "build" && d.file === designPath && doc) {
-			const id = layerAtPointer(doc, d.path);
+		if (mode === "build" && doc) {
+			const id = diagnosticLayer(d);
 			if (id) {
 				selectedLayers = [id];
 				leftTab = "layers";
+				layerReveal = { id, n: ++gotoCount };
 				return;
 			}
+		}
+		if (mode === "build" && d.file === designPath && doc) {
 			if (d.path.startsWith("/params")) {
 				leftTab = "params";
 				return;
@@ -4205,6 +4476,20 @@
 									></button
 								>
 							{/each}
+							<button
+								class="add-component"
+								disabled={!doc}
+								onclick={(e) => {
+									const b = e.currentTarget.getBoundingClientRect();
+									componentMenu(b.left, b.bottom + 4);
+								}}
+								aria-label="Include a component"
+								title="Include a component: layers shared between designs"
+								><Icon name="component" /><span
+									class="lbl"
+									aria-hidden="true">Component</span
+								></button
+							>
 						</span>
 					</span>
 					<span class="sep"></span>
@@ -4281,6 +4566,9 @@
 						fontText={fontLayer?.text ?? ""}
 						onfonts={openFonts}
 						onopenfile={openFileInCode}
+						{componentUsers}
+						ondetach={detachComponent}
+						oncreatecomponent={createComponent}
 						{diagnostics}
 						designFile={designPath ?? ""}
 						{editLayer}
