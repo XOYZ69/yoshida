@@ -330,22 +330,26 @@
     },
     "catalog": {
       "type": "list",
-      "item": { "name": "text", "en": "text" },
+      "item": {
+        "name": "text",
+        "en": "text",
+        "alc": { "type": "bool", "default": false }
+      },
       "default": [
         { "name": "Ananassaft", "en": "Pineapple juice" },
         { "name": "Aperitif alkoholfrei", "en": "Alcohol-free bitter aperitif" },
-        { "name": "Aperol", "en": "Aperol" },
-        { "name": "Blue Curaçao", "en": "Blue curaçao" },
+        { "name": "Aperol", "en": "Aperol", "alc": true },
+        { "name": "Blue Curaçao", "en": "Blue curaçao", "alc": true },
         { "name": "Blue Curaçao Sirup", "en": "Blue curaçao syrup" },
-        { "name": "Bombay Sapphire Gin", "en": "Bombay Sapphire gin" },
-        { "name": "Cachaça", "en": "Cachaça" },
-        { "name": "Campari", "en": "Campari" },
+        { "name": "Bombay Sapphire Gin", "en": "Bombay Sapphire gin", "alc": true },
+        { "name": "Cachaça", "en": "Cachaça", "alc": true },
+        { "name": "Campari", "en": "Campari", "alc": true },
         { "name": "Cola", "en": "Cola" },
         { "name": "Cranberrysaft", "en": "Cranberry juice" },
         { "name": "Crushed Ice", "en": "Crushed ice" },
-        { "name": "Dunkler Rum", "en": "Dark rum" },
+        { "name": "Dunkler Rum", "en": "Dark rum", "alc": true },
         { "name": "Erdbeersirup", "en": "Strawberry syrup" },
-        { "name": "Gin", "en": "Gin" },
+        { "name": "Gin", "en": "Gin", "alc": true },
         { "name": "Gin entalkoholisiert", "en": "Alcohol-free gin" },
         { "name": "Ginger Beer", "en": "Ginger beer" },
         { "name": "Grenadine", "en": "Grenadine" },
@@ -358,21 +362,21 @@
         { "name": "Maracujanektar", "en": "Passion fruit nectar" },
         { "name": "Minze", "en": "Mint" },
         { "name": "Orangensaft", "en": "Orange juice" },
-        { "name": "Pfirsichlikör", "en": "Peach schnapps" },
-        { "name": "Prosecco", "en": "Prosecco" },
-        { "name": "Puschkin Black Berries", "en": "Puschkin Black Berries" },
+        { "name": "Pfirsichlikör", "en": "Peach schnapps", "alc": true },
+        { "name": "Prosecco", "en": "Prosecco", "alc": true },
+        { "name": "Puschkin Black Berries", "en": "Puschkin Black Berries", "alc": true },
         { "name": "Rohrzucker", "en": "Cane sugar" },
-        { "name": "Roter Wermut", "en": "Sweet vermouth" },
+        { "name": "Roter Wermut", "en": "Sweet vermouth", "alc": true },
         { "name": "Rum alkoholfrei", "en": "Alcohol-free rum" },
         { "name": "Sekt alkoholfrei", "en": "Alcohol-free sparkling wine" },
         { "name": "Sodawasser", "en": "Soda water" },
-        { "name": "Tequila", "en": "Tequila" },
+        { "name": "Tequila", "en": "Tequila", "alc": true },
         { "name": "Tonic Water", "en": "Tonic water" },
-        { "name": "Triple Sec", "en": "Triple sec" },
-        { "name": "Vodka", "en": "Vodka" },
+        { "name": "Triple Sec", "en": "Triple sec", "alc": true },
+        { "name": "Vodka", "en": "Vodka", "alc": true },
         { "name": "Vodka alkoholfrei", "en": "Alcohol-free vodka" },
-        { "name": "Weißer Rum", "en": "White rum" },
-        { "name": "Whiskey", "en": "Whiskey" },
+        { "name": "Weißer Rum", "en": "White rum", "alc": true },
+        { "name": "Whiskey", "en": "Whiskey", "alc": true },
         { "name": "Zitronensaft", "en": "Lemon juice" },
         { "name": "Zuckersirup", "en": "Sugar syrup" }
       ],
@@ -406,6 +410,15 @@
       "args": { "v": "number" },
       "expr": "v <= 0 ? 0 : v < 8 ? 1 : v < 14 ? 2 : v < 20 ? 3 : 4",
       "note": "Strength 0 to 4 from % vol."
+    },
+    "bo": {
+      "args": { "x": "text" },
+      "expr": "get(catalog, x, 'alc', false) ? '<b>' : ''",
+      "note": "Opens a bold run when the catalog marks the ingredient as alcoholic (the text layer has markup on)."
+    },
+    "bc": {
+      "args": { "x": "text" },
+      "expr": "get(catalog, x, 'alc', false) ? '</b>' : ''"
     }
   },
   "consts": {
@@ -509,7 +522,14 @@
               "type": "ellipse",
               "anchor": "center",
               "box": { "x": 300, "y": "(row_h - 120) / 2", "w": 300, "h": 300 },
-              "fill": "d.color"
+              "fill": "d.color",
+              "gradient": {
+                "type": "radial",
+                "stops": [
+                  "mix(d.color, #FFFFFF, 0.4)",
+                  { "color": "d.color", "at": 0.7 }
+                ]
+              }
             },
             {
               "id": "d_name",
@@ -519,7 +539,7 @@
               "font": "script",
               "size": 172,
               "color": "ink",
-              "max_width": 1000,
+              "max_width": 930,
               "min_size": 88,
               "shrink_group": "menu_names",
               "at": { "x": 580, "y": 240 }
@@ -539,7 +559,7 @@
             {
               "id": "d_ing",
               "type": "text",
-              "text": "{nm(d.i1)}{sep(d.i2)}{nm(d.i2)}{sep(d.i3)}{nm(d.i3)}{sep(d.i4)}{nm(d.i4)}{sep(d.i5)}{nm(d.i5)}{sep(d.i6)}{nm(d.i6)}",
+              "text": "{bo(d.i1)}{nm(d.i1)}{bc(d.i1)}{sep(d.i2)}{bo(d.i2)}{nm(d.i2)}{bc(d.i2)}{sep(d.i3)}{bo(d.i3)}{nm(d.i3)}{bc(d.i3)}{sep(d.i4)}{bo(d.i4)}{nm(d.i4)}{bc(d.i4)}{sep(d.i5)}{bo(d.i5)}{nm(d.i5)}{bc(d.i5)}{sep(d.i6)}{bo(d.i6)}{nm(d.i6)}{bc(d.i6)}",
               "anchor": "top-left",
               "font": "body",
               "size": 80,
@@ -547,7 +567,10 @@
               "wrap": 1320,
               "line_spacing": 20,
               "max_lines": 4,
-              "at": { "x": 580, "y": 600 }
+              "at": { "x": 580, "y": 600 },
+              "markup": true,
+              "font_bold": "bold",
+              "note": "Alcoholic ingredients are bold: bo() and bc() add <b> and </b> around their names."
             },
             {
               "id": "d_vol",

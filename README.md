@@ -107,4 +107,6 @@ The **[documentation](https://yoshida.xoyz.dev/docs/)** has a page for every fea
 | [Contributing](https://yoshida.xoyz.dev/docs/contributing/) · [Testing](https://yoshida.xoyz.dev/docs/testing/)                                       | Setup, checks, PR titles, releases                |
 | [Known Gaps](https://yoshida.xoyz.dev/docs/known-gaps/) · [Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/)                         | What is missing, and where your data goes         |
 
-Working projects are in [`examples/`](examples): a full poker deck (`poker`) and a printable party board (`board-game`).
+For AI agents: [`llms-full.txt`](llms-full.txt) is the whole file format on one page (also at <https://yoshida.xoyz.dev/llms-full.txt>), [`llms.txt`](llms.txt) the index of the docs, and [`AGENTS.md`](AGENTS.md) says how to build and test.
+
+Working projects are in [`examples/`](examples): a full poker deck (`poker`), a printable party board (`board-game`), cocktail cards with a menu and a shopping list (`cocktails`) and a small engine-builder card game with icons in its text (`forge`).

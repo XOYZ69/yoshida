@@ -22,6 +22,7 @@ Run what CI runs (see [CI and Deployment](https://yoshida.xoyz.dev/docs/ci-and-d
 
 ```sh
 node scripts/version.mjs check
+node scripts/llms.mjs check          # llms.txt and llms-full.txt are generated: node scripts/llms.mjs
 zig fmt --check build.zig src
 zig build test
 zig build
@@ -36,7 +37,7 @@ npm run check && npm run test:unit && npm run build
 
 The browser tests need Playwright's Chromium once (`npx playwright install chromium`) and the built editor running on port 4173: start `npx vite preview --port 4173 --strictPort` in `web/` in a second terminal, then run `npm run test:ui`. [Testing](https://yoshida.xoyz.dev/docs/testing/) explains each suite and how to run a single file.
 
-Changes to a design or example file: format them with `yoshida fmt`. Changes to the format or an expression function: update the matching page in `site/content/docs/`.
+Changes to a design or example file: format them with `yoshida fmt`. Changes to the format or an expression function: update the matching page in `site/content/docs/`, the schema in `schema/` and the editor's catalog (`web/src/lib/expr/catalog.ts`), then run `node scripts/llms.mjs` to rebuild the reference for AI agents.
 
 ## Pull requests
 

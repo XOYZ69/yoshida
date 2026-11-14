@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../schema/cards.schema.json",
+  "format": 1,
+  "design": "designs/project.design.json",
+  "cards": [
+    {
+      "id": "foundry",
+      "title": "Foundry",
+      "cost": 3,
+      "art": "assets/art/foundry.svg",
+      "requirement": "2 {icon:steel} tags",
+      "effect": "<b>Action:</b> spend 1 {icon:energy} to gain 2 {icon:steel}. When you play a building, gain 1 {icon:gold}."
+    },
+    {
+      "id": "reactor",
+      "title": "Fusion Reactor",
+      "cost": 5,
+      "art": "assets/art/reactor.svg",
+      "requirement": "4 {icon:energy}",
+      "req_side": "right",
+      "top": "#0F2027",
+      "bottom": "#2C5364",
+      "effect": "Increase your {icon:energy} production by <b>3</b>. Draw 1 {icon:card}."
+    },
+    {
+      "id": "market",
+      "title": "Night Market",
+      "cost": 1,
+      "art": "assets/art/missing-market.png",
+      "panel": "#E3E9D7",
+      "effect": "Gain 2 {icon:gold}. <b>Each time</b> another player gains {icon:gold}, you may draw 1 {icon:card} and then discard 1 {icon:card} from your hand."
+    }
+  ]
+}

@@ -763,6 +763,68 @@ pub fn multiplyOpacity(b: *Bitmap, opacity: f32) void {
     }
 }
 
+/// Colors blended across an area, in bitmap pixels.
+pub const Gradient = struct {
+    radial: bool = false,
+    /// Linear: t = dot(p - origin, dir) (dir already divided by the
+    /// gradient's length). Radial: t = |p - origin| / radius.
+    origin: [2]f32,
+    dir: [2]f32 = .{ 1, 0 },
+    radius: f32 = 1,
+    /// Sorted by `at`; colors premultiplied (blended as in CSS), 0..65535.
+    stops: []const GradientStop,
+
+    fn at(g: *const Gradient, x: f32, y: f32) [4]f32 {
+        const dx = x - g.origin[0];
+        const dy = y - g.origin[1];
+        const t = if (g.radial) @sqrt(dx * dx + dy * dy) / g.radius else dx * g.dir[0] + dy * g.dir[1];
+        const st = g.stops;
+        if (t <= st[0].at) return st[0].color;
+        for (st[1..], 1..) |b, i| {
+            if (t <= b.at) {
+                const a = st[i - 1];
+                const span = b.at - a.at;
+                const f = if (span <= 1e-6) 1 else (t - a.at) / span;
+                var c: [4]f32 = undefined;
+                for (0..4) |k| c[k] = a.color[k] + (b.color[k] - a.color[k]) * f;
+                return c;
+            }
+        }
+        return st[st.len - 1].color;
+    }
+};
+
+pub const GradientStop = struct { at: f32, color: [4]f32 };
+
+/// Colors every pixel of `b` by the gradient, keeping its coverage: draw
+/// the shape opaque first, then tint it.
+pub fn tintGradient(b: *Bitmap, g: *const Gradient) void {
+    const r = b.inkRect() orelse return;
+    var y = r[1];
+    while (y < r[3]) : (y += 1) {
+        var x = r[0];
+        while (x < r[2]) : (x += 1) {
+            const o = b.px[(@as(usize, @intCast(y - b.y)) * b.w + @as(usize, @intCast(x - b.x))) * 4 ..][0..4];
+            if (o[3] == 0) continue;
+            const cov = @as(f32, @floatFromInt(o[3])) / 65535.0;
+            const c = g.at(@as(f32, @floatFromInt(x)) + 0.5, @as(f32, @floatFromInt(y)) + 0.5);
+            o.* = .{ q16(c[0] * cov), q16(c[1] * cov), q16(c[2] * cov), q16(c[3] * cov) };
+        }
+    }
+}
+
+/// Multiplies every pixel of `b` by the coverage of `mask` (a bitmap of
+/// the same position and size).
+pub fn maskBy(b: *Bitmap, mask: *const Bitmap) void {
+    std.debug.assert(b.x == mask.x and b.y == mask.y and b.w == mask.w and b.h == mask.h);
+    var i: usize = 0;
+    while (i < b.px.len) : (i += 4) {
+        const m: u32 = mask.px[i + 3];
+        if (m == 65535) continue;
+        inline for (0..4) |k| b.px[i + k] = @intCast((@as(u32, b.px[i + k]) * m + 32767) / 65535);
+    }
+}
+
 pub const Side = enum { top, bottom, left, right };
 
 /// Alpha ramps to transparent over the last `len` pixels toward `side`.
@@ -893,34 +955,61 @@ pub fn encodePng(gpa: Allocator, b: *const Bitmap, sixteen: bool) ![]u8 {
 
 /// `encodePng` with a chosen compression level.
 pub fn encodePngLevel(gpa: Allocator, b: *const Bitmap, sixteen: bool, compression: Compression) ![]u8 {
+    const Rows = struct {
+        b: *const Bitmap,
+        sixteen: bool,
+
+        fn row(r: @This(), y: usize, cur: []u8) void {
+            const bpp: usize = if (r.sixteen) 8 else 4;
+            for (0..r.b.w) |x| {
+                const p = r.b.px[(y * r.b.w + x) * 4 ..][0..4];
+                const a: u32 = p[3];
+                var st: [4]u16 = undefined;
+                if (a == 0) {
+                    st = .{ 0, 0, 0, 0 };
+                } else {
+                    inline for (0..3) |k| st[k] = @intCast(@min(65535, (@as(u32, p[k]) * 65535 + a / 2) / a));
+                    st[3] = p[3];
+                }
+                const o = x * bpp;
+                if (r.sixteen) {
+                    inline for (0..4) |k| std.mem.writeInt(u16, cur[o + k * 2 ..][0..2], st[k], .big);
+                } else {
+                    inline for (0..4) |k| cur[o + k] = @intCast((@as(u32, st[k]) * 255 + 32767) / 65535);
+                }
+            }
+        }
+    };
+    return encodeRows(gpa, b.w, b.h, sixteen, b.dpi, compression, Rows{ .b = b, .sixteen = sixteen });
+}
+
+/// Encodes straight-alpha 8-bit RGBA pixels (`w` x `h`, row-major) as PNG.
+pub fn encodePngRgba8(gpa: Allocator, w: u32, h: u32, rgba: []const u8, dpi: f64) ![]u8 {
+    const Rows = struct {
+        px: []const u8,
+        w: usize,
+
+        fn row(r: @This(), y: usize, cur: []u8) void {
+            @memcpy(cur, r.px[y * r.w * 4 ..][0 .. r.w * 4]);
+        }
+    };
+    return encodeRows(gpa, w, h, false, dpi, .default, Rows{ .px = rgba, .w = w });
+}
+
+/// PNG from rows that `src.row(y, out)` writes, RGBA at 8 or 16 bits.
+fn encodeRows(gpa: Allocator, width: u32, height: u32, sixteen: bool, dpi: f64, compression: Compression, src: anytype) ![]u8 {
     const bpp: usize = if (sixteen) 8 else 4;
-    const stride = @as(usize, b.w) * bpp;
+    const stride = @as(usize, width) * bpp;
     // Raw scanlines with a filter byte each (Paeth for every row).
-    const raw = try gpa.alloc(u8, (stride + 1) * b.h);
+    const raw = try gpa.alloc(u8, (stride + 1) * height);
     defer gpa.free(raw);
     const prev = try gpa.alloc(u8, stride);
     defer gpa.free(prev);
     const cur = try gpa.alloc(u8, stride);
     defer gpa.free(cur);
     @memset(prev, 0);
-    for (0..b.h) |y| {
-        for (0..b.w) |x| {
-            const p = b.px[(y * b.w + x) * 4 ..][0..4];
-            const a: u32 = p[3];
-            var s: [4]u16 = undefined;
-            if (a == 0) {
-                s = .{ 0, 0, 0, 0 };
-            } else {
-                inline for (0..3) |k| s[k] = @intCast(@min(65535, (@as(u32, p[k]) * 65535 + a / 2) / a));
-                s[3] = p[3];
-            }
-            const o = x * bpp;
-            if (sixteen) {
-                inline for (0..4) |k| std.mem.writeInt(u16, cur[o + k * 2 ..][0..2], s[k], .big);
-            } else {
-                inline for (0..4) |k| cur[o + k] = @intCast((@as(u32, s[k]) * 255 + 32767) / 65535);
-            }
-        }
+    for (0..height) |y| {
+        src.row(y, cur);
         const row = raw[y * (stride + 1) ..][0 .. stride + 1];
         row[0] = 4; // Paeth
         for (0..stride) |i| {
@@ -942,17 +1031,17 @@ pub fn encodePngLevel(gpa: Allocator, b: *const Bitmap, sixteen: bool, compressi
     const w = &out.writer;
     try w.writeAll("\x89PNG\r\n\x1a\n");
     var ihdr: [13]u8 = undefined;
-    std.mem.writeInt(u32, ihdr[0..4], b.w, .big);
-    std.mem.writeInt(u32, ihdr[4..8], b.h, .big);
+    std.mem.writeInt(u32, ihdr[0..4], width, .big);
+    std.mem.writeInt(u32, ihdr[4..8], height, .big);
     ihdr[8] = if (sixteen) 16 else 8;
     ihdr[9] = 6; // RGBA
     ihdr[10] = 0;
     ihdr[11] = 0;
     ihdr[12] = 0;
     try chunk(w, "IHDR", &ihdr);
-    if (b.dpi > 0) {
+    if (dpi > 0) {
         // Pixels per metre, unit 1 (metre).
-        const ppm: u32 = @intFromFloat(@round(b.dpi / 0.0254));
+        const ppm: u32 = @intFromFloat(@round(dpi / 0.0254));
         var phys: [9]u8 = undefined;
         std.mem.writeInt(u32, phys[0..4], ppm, .big);
         std.mem.writeInt(u32, phys[4..8], ppm, .big);
@@ -972,6 +1061,108 @@ pub fn encodePngLevel(gpa: Allocator, b: *const Bitmap, sixteen: bool, compressi
     try chunk(w, "IDAT", z.written());
     try chunk(w, "IEND", "");
     return out.toOwnedSlice();
+}
+
+/// Cards tiled left to right, top to bottom on one image, e.g. a deck sheet
+/// for a tabletop simulator. 8-bit straight RGBA, so a large sheet takes
+/// half the memory of a bitmap; empty cells stay transparent.
+pub const Sheet = struct {
+    cols: u32,
+    rows: u32,
+    cell_w: u32,
+    cell_h: u32,
+    w: u32,
+    h: u32,
+    px: []u8,
+    dpi: f64 = 0,
+
+    /// Largest side and pixel count of a sheet.
+    pub const max_side = 20000;
+    pub const max_pixels = 400_000_000;
+
+    pub fn init(gpa: Allocator, cols: u32, rows: u32, cell_w: u32, cell_h: u32) error{ OutOfMemory, TooLarge }!Sheet {
+        const w = @as(u64, cols) * cell_w;
+        const h = @as(u64, rows) * cell_h;
+        if (w == 0 or h == 0 or w > max_side or h > max_side or w * h > max_pixels) return error.TooLarge;
+        const px = try gpa.alloc(u8, @intCast(w * h * 4));
+        @memset(px, 0);
+        return .{ .cols = cols, .rows = rows, .cell_w = cell_w, .cell_h = cell_h, .w = @intCast(w), .h = @intCast(h), .px = px };
+    }
+
+    pub fn deinit(s: *Sheet, gpa: Allocator) void {
+        gpa.free(s.px);
+        s.* = undefined;
+    }
+
+    pub fn capacity(s: *const Sheet) usize {
+        return @as(usize, s.cols) * s.rows;
+    }
+
+    /// Puts `b` into cell `i` (counted along the rows), at the cell's
+    /// top-left corner and cut to the cell.
+    pub fn put(s: *Sheet, i: usize, b: *const Bitmap) void {
+        const cx: usize = (i % s.cols) * s.cell_w;
+        const cy: usize = (i / s.cols) * s.cell_h;
+        const w = @min(b.w, s.cell_w);
+        const h = @min(b.h, s.cell_h);
+        for (0..h) |y| {
+            for (0..w) |x| {
+                const p = b.px[(y * b.w + x) * 4 ..][0..4];
+                const o = s.px[((cy + y) * s.w + cx + x) * 4 ..][0..4];
+                const a: u32 = p[3];
+                if (a == 0) {
+                    @memset(o, 0);
+                    continue;
+                }
+                inline for (0..3) |k| {
+                    const straight: u32 = @min(65535, (@as(u32, p[k]) * 65535 + a / 2) / a);
+                    o[k] = @intCast((straight * 255 + 32767) / 65535);
+                }
+                o[3] = @intCast((a * 255 + 32767) / 65535);
+            }
+        }
+    }
+
+    pub fn encodePng(s: *const Sheet, gpa: Allocator) ![]u8 {
+        return encodePngRgba8(gpa, s.w, s.h, s.px, s.dpi);
+    }
+};
+
+test "sheet tiles cards along rows" {
+    const c = @import("c.zig");
+    const gpa = std.testing.allocator;
+    var red = try Bitmap.init(gpa, 0, 0, 4, 3);
+    defer red.deinit(gpa);
+    red.fill(.{ 65535, 0, 0, 65535 });
+    var blue = try Bitmap.init(gpa, 0, 0, 4, 3);
+    defer blue.deinit(gpa);
+    blue.fill(.{ 0, 0, 65535, 65535 });
+    var sheet = try Sheet.init(gpa, 2, 2, 4, 3);
+    defer sheet.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 4), sheet.capacity());
+    sheet.put(0, &red);
+    sheet.put(1, &blue);
+    sheet.put(2, &blue);
+    const png = try sheet.encodePng(gpa);
+    defer gpa.free(png);
+    var w: c_int = 0;
+    var h: c_int = 0;
+    var ch: c_int = 0;
+    const px = c.stbi_load_from_memory(png.ptr, @intCast(png.len), &w, &h, &ch, 4).?;
+    defer c.stbi_image_free(px);
+    try std.testing.expectEqual(@as(c_int, 8), w);
+    try std.testing.expectEqual(@as(c_int, 6), h);
+    const at = struct {
+        fn f(p: [*]const u8, x: usize, y: usize) [4]u8 {
+            return p[(y * 8 + x) * 4 ..][0..4].*;
+        }
+    }.f;
+    try std.testing.expectEqual([4]u8{ 255, 0, 0, 255 }, at(px, 1, 1));
+    try std.testing.expectEqual([4]u8{ 0, 0, 255, 255 }, at(px, 5, 1));
+    try std.testing.expectEqual([4]u8{ 0, 0, 255, 255 }, at(px, 1, 4));
+    // The fourth cell is empty.
+    try std.testing.expectEqual([4]u8{ 0, 0, 0, 0 }, at(px, 5, 4));
+    try std.testing.expectError(error.TooLarge, Sheet.init(gpa, 100, 100, 1000, 1000));
 }
 
 /// zlib-compresses `data` (PNG IDAT and PDF FlateDecode streams).

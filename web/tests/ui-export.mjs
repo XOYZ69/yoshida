@@ -130,6 +130,9 @@ const pageCount = (pdf) =>
 	Number(/\/Count (\d+)/.exec(pdf.toString("latin1"))?.[1] ?? 0);
 const hasImages = (pdf) => pdf.toString("latin1").includes("/Subtype /Image");
 
+// No yoshida server, whatever the preview's /api proxy reaches: the part
+// with a (mocked) server comes later.
+await p.route("**/api/capabilities", (r) => r.fulfill({ status: 404, body: "" }));
 await p.goto(base);
 await rendered();
 // The quick buttons work as before.
@@ -489,6 +492,14 @@ else {
 await p.reload();
 await rendered();
 await openDialog();
+// WebP is offered once the browser was checked for it.
+await p.waitForFunction(
+	(sel) =>
+		!document
+			.querySelector(sel)
+			?.innerText.includes("Checking whether this browser can write WebP"),
+	dialog,
+);
 ok(
 	"settings are kept after a reload",
 	(await p.isChecked(`${dialog} input[name=export-scope][value=card]`)) &&

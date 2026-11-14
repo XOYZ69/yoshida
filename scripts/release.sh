@@ -38,7 +38,9 @@ done
 rm -rf zig-out/bin
 zig build -Doptimize=ReleaseFast
 
-cp -r examples schema README.md LICENSE "$OUT/"
+# llms.txt and llms-full.txt: the docs index and the one-page reference for
+# AI agents (scripts/llms.mjs writes them; CI checks they are current).
+cp -r examples schema README.md LICENSE llms.txt llms-full.txt "$OUT/"
 # The notices live on the docs page; ship them as plain Markdown (front matter
 # turned into a heading, Zola's raw markers removed). The bundle's site has them at /docs/third-party-notices/.
 sed -e '1,/^+++$/{s/^title = "\(.*\)"$/# \1/p;d;}' -e 's/{% *raw *%}//g; s/{% *endraw *%}//g' \

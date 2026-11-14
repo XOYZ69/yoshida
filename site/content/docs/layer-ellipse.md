@@ -43,3 +43,7 @@ Use `@badge.bounds.cx` and `@badge.bounds.cy` to place something at the centre, 
 - `"pie": true` (the default) fills a slice through the centre, and the stroke goes around the slice.
 - `"pie": false` draws only the curve with the stroke; the fill is not used.
 - The layer's bounds stay the whole box.
+
+## Gradient
+
+`gradient` fills the layer with blended colors instead of `fill`, as on a [rect](@/docs/layer-rect.md#gradient).

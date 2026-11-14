@@ -799,6 +799,17 @@ pub const Template = struct {
     }
 };
 
+/// Length of `{icon:name}` at the start of `s` (markup for icons in text,
+/// never a valid expression), or null.
+fn iconMarkupLen(s: []const u8) ?usize {
+    if (!std.mem.startsWith(u8, s, "{icon:")) return null;
+    const end = std.mem.indexOfScalar(u8, s, '}') orelse return null;
+    const name = s[6..end];
+    if (name.len == 0) return null;
+    for (name) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '-' or ch == '.')) return null;
+    return end + 1;
+}
+
 pub fn parseTemplate(arena: Allocator, src: []const u8, problem: *?Problem) Error!Template {
     var parts: std.ArrayList(Template.Part) = .empty;
     var lit: std.ArrayList(u8) = .empty;
@@ -817,6 +828,12 @@ pub fn parseTemplate(arena: Allocator, src: []const u8, problem: *?Problem) Erro
         if (ch != '{') {
             try lit.append(arena, ch);
             i += 1;
+            continue;
+        }
+        // `{icon:name}` is markup for text layers, kept as it is.
+        if (iconMarkupLen(src[i..])) |n| {
+            try lit.appendSlice(arena, src[i .. i + n]);
+            i += n;
             continue;
         }
         // Find the matching '}', skipping quoted strings.
@@ -891,6 +908,11 @@ pub fn parseTemplateTolerant(arena: Allocator, src: []const u8, max: usize) Allo
             if (ch == '}') try diags.add(.{ .code = 3001, .start = @intCast(i), .end = @intCast(i + 1), .message = "stray '}' in text", .hint = "write '}}' for a literal brace" });
             if (lit_start == null) lit_start = i;
             i += 1;
+            continue;
+        }
+        if (iconMarkupLen(src[i..])) |n| {
+            if (lit_start == null) lit_start = i;
+            i += n;
             continue;
         }
         try flush(arena, &pieces, &lit_start, i);
@@ -972,6 +994,14 @@ pub const Scope = struct {
     /// false inside `canvas.width` / `canvas.height`.
     allow_units: bool = true,
     allow_builtins: bool = true,
+
+    /// True when `name` is a param, loop name or constant here.
+    pub fn knows(s: *const Scope, name: []const u8) bool {
+        for (s.params) |p| if (std.mem.eql(u8, p.name, name)) return true;
+        for (s.locals) |p| if (std.mem.eql(u8, p.name, name)) return true;
+        for (s.consts) |p| if (std.mem.eql(u8, p.name, name)) return true;
+        return false;
+    }
 };
 
 pub const Checker = struct {
@@ -2732,4 +2762,21 @@ fn expectHint(arena: Allocator, src: []const u8, want: []const u8) !void {
         return testing.expectEqualStrings(want, problem.?.hint orelse "");
     };
     return error.TestExpectedError;
+}
+
+test "templates keep {icon:name} as text" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var problem: ?Problem = null;
+    const t = try parseTemplate(a, "Pay {n} {icon:gold}.", &problem);
+    try std.testing.expect(problem == null);
+    try std.testing.expectEqual(@as(usize, 3), t.parts.len);
+    try std.testing.expectEqualStrings(" {icon:gold}.", t.parts[2].lit);
+    // A name with a space is no icon: the braces hold an expression again.
+    try std.testing.expectError(error.Invalid, parseTemplate(a, "{icon:x y}", &problem));
+    // The editor's tolerant parse sees it as text too.
+    const tol = try parseTemplateTolerant(a, "a {icon:gold}", 10);
+    try std.testing.expectEqual(@as(usize, 0), tol.problems.len);
+    try std.testing.expectEqual(@as(usize, 1), tol.pieces.len);
 }

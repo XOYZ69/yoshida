@@ -18,12 +18,13 @@ concurrency:
 jobs:
   # A pull request that only touches docs, the website content or repo
   # metadata does not need the five-target build or the browser tests. The
-  # core job still runs (it checks the version copies in the docs). Skipped
-  # jobs count as passed for required checks. Pushes and manual runs always
-  # run everything.
+  # core job still runs (it checks the version copies and the generated
+  # reference). Skipped jobs count as passed for required checks. Pushes and
+  # manual runs always run everything.
   changes:
     name: Changed files
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -39,7 +40,7 @@ jobs:
             exit 0
           fi
           files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
-          other='^(site/|[^/]+\.md$|LICENSE$|\.github/(ISSUE_TEMPLATE/|release-intro/|scripts/release-notes\.mjs$|CODEOWNERS$|dependabot\.yml$|labeler\.yml$|pull_request_template\.md$|release\.yml$|workflows/(pr-title|labeler|release-notes-preview)\.yml$))'
+          other='^(site/|[^/]+\.md$|llms(-full)?\.txt$|LICENSE$|\.github/(ISSUE_TEMPLATE/|release-intro/|scripts/release-notes\.mjs$|CODEOWNERS$|dependabot\.yml$|labeler\.yml$|pull_request_template\.md$|release\.yml$|workflows/(pr-title|labeler|release-notes-preview)\.yml$))'
           if printf '%s\n' "$files" | grep -qvE "$other"; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
@@ -50,14 +51,24 @@ jobs:
   core:
     name: Core and CLI
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-zig
+      # The scripts below need Node 22 (llms.mjs reads a TypeScript file).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       # build.zig.zon holds the version; the copies in web/ and the docs
       # must match it.
       - name: Version copies in sync
         run: node scripts/version.mjs check
+
+      # llms.txt and llms-full.txt are generated from the schemas, the
+      # function catalog, the CLI help and the docs.
+      - name: Reference for AI agents is up to date
+        run: node scripts/llms.mjs check
 
       - name: Zig formatting
         run: zig fmt --check build.zig src
@@ -65,8 +76,10 @@ jobs:
       - name: Unit tests
         run: zig build test
 
+      # ReleaseSafe keeps the safety checks of a debug build and renders the
+      # examples about ten times faster.
       - name: Build
-        run: zig build
+        run: zig build -Doptimize=ReleaseSafe
 
       - name: Example files are canonically formatted
         run: ./zig-out/bin/yoshida fmt --check examples
@@ -80,11 +93,11 @@ jobs:
           done
 
       # Examples that load images from the web are skipped, so a remote
-      # site cannot break the build.
+      # site cannot break the build. Other links (a QR code's text) are fine.
       - name: Examples render
         run: |
           for e in examples/*/; do
-            if grep -rqE 'https?://' "$e"designs "$e"cards 2>/dev/null; then
+            if grep -rqiE 'https?://[^"]*\.(png|jpe?g|webp|gif|bmp|svg)"' "$e"designs "$e"cards 2>/dev/null; then
               echo "skipping $e (uses web images)"
               continue
             fi
@@ -97,13 +110,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         target: [x86_64-linux-musl, aarch64-linux-musl, x86_64-macos, aarch64-macos, x86_64-windows-gnu]
     steps:
       - uses: actions/checkout@v4
+      # One cache per target: the five jobs share a job id.
       - uses: ./.github/actions/setup-zig
+        with:
+          cache-key: ${{ matrix.target }}
       - run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dstrip=true
 
   web:
@@ -111,6 +128,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
@@ -139,8 +157,26 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The browser download is cached by Playwright version; the system
+      # libraries it needs are installed either way.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Chromium for Playwright
+        if: steps.chromium.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.chromium.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: End-to-end test
         run: |
@@ -159,14 +195,10 @@ jobs:
   site:
     name: Website
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Zola
-        run: |
-          mkdir -p "$RUNNER_TEMP/zola"
-          curl -sSL "https://github.com/getzola/zola/releases/download/v0.23.6/zola-v0.23.6-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
-          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-zola
 
       # Fails on any broken internal link or anchor in the docs.
       - name: Build

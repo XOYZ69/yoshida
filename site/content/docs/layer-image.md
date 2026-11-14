@@ -28,7 +28,9 @@ Plus the [fields every layer has](@/docs/layers.md).
 
 ## Supported formats
 
-PNG, JPEG, WebP (lossy and lossless), GIF (first frame) and BMP. Images can be at most 50 megapixels.
+PNG, JPEG, WebP (lossy and lossless), GIF (first frame), BMP and SVG. Images can be at most 50 megapixels.
+
+SVG files work too. An SVG is drawn at the size it is used at (for `--scale` and PDF too), so it stays sharp; for `"auto"` box sizes and `fit` its own width and height (or viewBox) give the proportions. The SVG support covers paths, basic shapes, fills, strokes, gradients and transforms, but not text, filters, masks, embedded images or CSS stylesheets; convert such files to PNG first. In SVG and vector PDF output an SVG image is embedded as pixels at the `--scale` resolution.
 
 ## Box with `"auto"`
 
@@ -57,6 +59,12 @@ The result must be a project path or an `https://` URL. If the path is built fro
 - Found but cannot be decoded: error 4002.
 
 Both stop a normal render. The editor preview (and `yoshida render --preview`) draws a checkered placeholder and continues, so you can keep designing while an image is missing.
+
+A hidden image (`"visible": false`, or an expression that is false for the card) is not loaded, so its file may be missing. With `"optional": true` a missing file (or an empty `src`) hides the layer instead of being an error; other layers can read `@art.visible` to react to it.
+
+## Rounded corners and clipping
+
+`"radius": 24` clips the image to its box with rounded corners. `"clip"` clips it to a polygon, given as points like a [polygon layer](@/docs/layer-polygon.md): `"clip": [[0, 0], [400, 0], [400, 300], [0, 360]]`. In SVG and vector PDF output a clipped image stays pixels (at the `--scale` resolution).
 
 ## Images from the web
 

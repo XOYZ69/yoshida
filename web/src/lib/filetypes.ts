@@ -5,6 +5,7 @@ import { fontFormat, readFont } from "./fonts/sfnt.ts";
 
 export type FileType =
 	| "design"
+	| "component"
 	| "cards"
 	| "json"
 	| "font"
@@ -16,6 +17,7 @@ export type FileType =
 
 const types: [RegExp, FileType][] = [
 	[/\.design\.json$/i, "design"],
+	[/\.component\.json$/i, "component"],
 	[/\.cards\.(json|csv)$/i, "cards"],
 	[/\.json$/i, "json"],
 	[/\.(ttf|otf|ttc|woff2?)$/i, "font"],
@@ -67,6 +69,12 @@ export function describeFile(path: string, data: Uint8Array): string {
 		case "design": {
 			const title = jsonOf(data)?.name;
 			return typeof title === "string" && title ? `Design: ${title}` : "Design";
+		}
+		case "component": {
+			const title = jsonOf(data)?.name;
+			return typeof title === "string" && title
+				? `Component: ${title}`
+				: "Component";
 		}
 		case "cards": {
 			const n = cardCount(path, data);

@@ -31,6 +31,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 | `eye` | enum | `square` | Shape of the three corner squares: `square`, `rounded` or `circle` |
 | `eye_color` | color | same as `color` | Color of the corner squares |
 | `logo` | number | `0` | Clears a square in the middle for a logo, as a share of the code's side (0 to 0.5). See [Logo](#logo) |
+| `logo_src` | text | none | A picture drawn in the cleared middle: a path with `{...}` placeholders, so a file or an image param (`"{brand}"`). Without `logo` it clears 0.2 of the side. See [Logo](#logo) |
 
 ## Size
 
@@ -49,7 +50,16 @@ Keep a module at least 2 px wide on screen and at least 0.5 mm in print, or scan
 
 ## Logo
 
-`logo` leaves the middle of the code empty, as an odd number of modules so that it is centred. Place an image or any other layer on top, centred on the code:
+`logo_src` draws a picture in the middle of the code. It is a path like an image layer's `src`, so it can be a project file, an SVG, or an image param of the card:
+
+```json
+{ "id": "qr", "type": "qr", "text": "{recipe_url}", "level": "high", "logo_src": "{brand_logo}",
+  "box": { "x": 200, "y": 200, "w": 190, "h": 190 } }
+```
+
+The picture keeps its proportions and sits half a module inside the cleared square. `logo` sets the size of that square (0.2 of the side by default with `logo_src`). A missing file is error 4001.
+
+`logo` alone leaves the middle of the code empty, as an odd number of modules so that it is centred, for any other layer on top, centred on the code:
 
 ```json
 { "id": "qr", "type": "qr", "text": "{recipe_url}", "level": "high", "logo": 0.2,

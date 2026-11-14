@@ -17,7 +17,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const repo = process.env.GITHUB_REPOSITORY;
 const api = `${process.env.GITHUB_API_URL || 'https://api.github.com'}/repos/${repo}`;
 const MARKER = '<!-- release-notes-preview -->';
-const BASE = 'master';
+// The branch the notes are for: the PR's base branch in a preview, dev for a
+// pre-release from dev.
+const BASE = process.env.BASE_REF || 'master';
 
 async function gh(path, { method = 'GET', body } = {}) {
 	const res = await fetch(path.startsWith('http') ? path : api + path, {

@@ -39,6 +39,7 @@ import {
 	renameFont,
 } from "../fonts/project";
 import { loadPref, savePref } from "../ui/drag";
+import { componentAround, componentLabel } from "../components";
 import Icon from "../ui/Icon.svelte";
 import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
@@ -57,6 +58,10 @@ let {
 	fontLicenses = {},
 	fontText = "",
 	onfonts = () => {},
+	onopenfile = () => {},
+	componentUsers = () => [],
+	ondetach = () => {},
+	oncreatecomponent = () => {},
 	diagnostics,
 	designFile,
 	editLayer,
@@ -88,6 +93,14 @@ let {
 	fontText?: string;
 	/** Opens the Fonts window (on a font file, or to upload one). */
 	onfonts?: (target?: { path?: string; upload?: boolean }) => void;
+	/** Opens a project file in the Advanced view (a group's component file). */
+	onopenfile?: (path: string) => void;
+	/** Other designs and components that include a component file. */
+	componentUsers?: (path: string) => string[];
+	/** Turns an including group into a plain group with its own copy of the layers. */
+	ondetach?: (id: string) => void;
+	/** Moves a group's layers into a new component file. */
+	oncreatecomponent?: (id: string) => void;
 	diagnostics: Diagnostic[];
 	designFile: string;
 	editLayer: (fn: (own: Obj) => void, key?: string) => void;
@@ -118,6 +131,14 @@ const own = $derived(
 );
 const eff = $derived(id ? (effectiveLayer(doc, id) ?? null) : null);
 const ptr = $derived(id ? layerPointer(doc, id) : null);
+/** The component the selected layer is part of (its including group). */
+const around = $derived(id ? componentAround(doc, id) : null);
+const usedBy = (path: string) => {
+	const n = componentUsers(path).length;
+	return n
+		? `${n} other ${n === 1 ? "file uses" : "files use"} it`
+		: "no other design uses it yet";
+};
 const type = $derived(String(eff?.type ?? ""));
 const params = $derived(
 	isObj(doc.params)
@@ -772,6 +793,9 @@ let newFunction = $state("");
         <Field label="extends" kind="enum" optional value={ownVal(['extends'])} options={sameTypeIds} onchange={(v) => set(['extends'], v)} />
       {/if}
       <Field label="note" kind="text" optional value={ownVal(['note'])} onchange={(v) => set(['note'], v)} />
+      {#if around}
+        <p class="component-part"><Icon name="component" /> Part of the component <strong>{componentLabel(String(around.include))}</strong> (group '{around.id}'). Changes here show in every design that includes it; {usedBy(String(around.include))}.</p>
+      {/if}
       {@render problemChip()}
     </section>
   {/if}
@@ -782,14 +806,27 @@ let newFunction = $state("");
   {:else if ids.length === 1 && id && own && eff && isGroupLayer}
     <section>
       <h3>Group contents</h3>
-      <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
+      {#if typeof eff.include === 'string'}
+        <div class="component-note">
+          <p><strong><Icon name="component" /> Component.</strong> The layers inside are shared: they live in <code>{eff.include}</code> ({usedBy(String(eff.include))}). Select one in the layer list or double-click it on the card to change it; the change shows in every design that includes the component. Moving, hiding, repeating or laying out this group only affects this design.</p>
+          <div class="row">
+            <button onclick={() => ondetach(id)} title="Keep a copy of the layers in this design and stop following the component">Detach</button>
+            <button onclick={() => onopenfile(String(eff.include))}>Open component file</button>
+          </div>
+        </div>
+      {:else}
+        <p class="hint">Contains {childCount} layer{childCount === 1 ? '' : 's'}. Its opacity, rotation, visibility and effects apply to everything inside, drawn together as one picture.</p>
+      {/if}
       {@render alignBar(true)}
       <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
-      <div class="row">
-        <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
-      </div>
+      {#if typeof eff.include !== 'string'}
+        <div class="row">
+          <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
+          <button disabled={!childCount} onclick={() => oncreatecomponent(id)} title="Move these layers into a component file that other designs can include"><Icon name="component" /> Create component</button>
+        </div>
+      {/if}
     </section>
     <section>
       <h3>Origin</h3>
@@ -899,6 +936,11 @@ let newFunction = $state("");
         <Field label="eye" kind="enum" optional value={ownVal(['eye'])} fallback={String(effVal(['eye']) ?? 'square')} options={['square', 'rounded', 'circle']} title="Shape of the three corner squares" onchange={(v) => set(['eye'], v)} />
         <Field label="eye_color" kind="color" optional value={ownVal(['eye_color'])} fallback={effVal(['eye_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['eye_color'])} path={pathOf(['eye_color'])} title="Color of the corner squares" onchange={(v) => set(['eye_color'], v)} />
         <Field label="logo" kind="number" optional value={ownVal(['logo'])} fallback={effVal(['logo']) ?? 0} bindings={numberParams} error={errorAt(['logo'])} path={pathOf(['logo'])} title="Clears the middle for a logo: share of the code's side (0 to 0.5). Use level high" onchange={(v) => set(['logo'], v)} />
+        <Field label="logo_src" kind="template" optional value={ownVal(['logo_src'])} fallback={effVal(['logo_src'])} placeholder="none" bindings={imageParams} error={errorAt(['logo_src'])} path={pathOf(['logo_src'])} title="Picture in the cleared middle: a file or an image param. Clears a fifth of the side unless logo is set" onchange={(v) => set(['logo_src'], v === '' ? undefined : v)} />
+        <div class="field-like">
+          <span class="lbl"></span>
+          <ImagePicker {imageFiles} {upload} onpick={(v) => set(['logo_src'], v)} />
+        </div>
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
@@ -1326,5 +1368,32 @@ let newFunction = $state("");
   }
   .pad {
     padding: 10px 12px;
+  }
+  .component-note :global(svg),
+  .component-part :global(svg) {
+    display: inline-block;
+    vertical-align: -2px;
+    margin: 0 2px 0 0;
+    color: var(--component);
+  }
+  .component-part {
+    font-size: 12px;
+    margin: 6px 0 0;
+    padding: 6px 8px;
+    border-left: 2px solid var(--component);
+    background: color-mix(in srgb, var(--component) 8%, transparent);
+  }
+  .component-note {
+    border: 1px solid var(--component);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 4px 0 8px;
+    font-size: 12px;
+  }
+  .component-note p {
+    margin: 0 0 6px;
+  }
+  .component-note code {
+    word-break: break-all;
   }
 </style>

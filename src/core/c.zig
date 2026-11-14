@@ -78,6 +78,22 @@ export fn ystb_ldexp(x: f64, e: c_int) f64 {
     return std.math.ldexp(x, e);
 }
 
+export fn ystb_sin(x: f64) f64 {
+    return @sin(x);
+}
+
+export fn ystb_tan(x: f64) f64 {
+    return @tan(x);
+}
+
+export fn ystb_atan2(y: f64, x: f64) f64 {
+    return std.math.atan2(y, x);
+}
+
+export fn ystb_round(x: f64) f64 {
+    return @round(x);
+}
+
 // ---------------------------------------------------------------- stb_image
 
 pub extern fn stbi_load_from_memory(buffer: [*]const u8, len: c_int, x: *c_int, y: *c_int, channels_in_file: *c_int, desired_channels: c_int) ?[*]u8;
@@ -128,3 +144,20 @@ pub extern fn simplewebp_get_dimensions(webp: *simplewebp, width: *usize, height
 pub extern fn simplewebp_decode(webp: *simplewebp, buffer: [*]u8, settings: ?*anyopaque) c_int;
 pub extern fn simplewebp_unload(webp: *simplewebp) void;
 pub extern fn simplewebp_get_error_text(err: c_int) [*:0]const u8;
+
+// ---------------------------------------------------------------- nanosvg
+
+pub const NSVGimage = extern struct {
+    width: f32,
+    height: f32,
+    shapes: ?*anyopaque,
+};
+pub const NSVGrasterizer = opaque {};
+/// Parses a NUL-terminated SVG document; it changes the text while parsing.
+pub extern fn nsvgParse(input: [*:0]u8, units: [*:0]const u8, dpi: f32) ?*NSVGimage;
+pub extern fn nsvgDelete(image: *NSVGimage) void;
+pub extern fn nsvgCreateRasterizer() ?*NSVGrasterizer;
+pub extern fn nsvgDeleteRasterizer(r: *NSVGrasterizer) void;
+/// Draws `image` scaled by `scale` and moved by (tx, ty) into straight
+/// 8-bit RGBA pixels.
+pub extern fn nsvgRasterize(r: *NSVGrasterizer, image: *NSVGimage, tx: f32, ty: f32, scale: f32, dst: [*]u8, w: c_int, h: c_int, stride: c_int) void;

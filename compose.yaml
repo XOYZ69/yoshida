@@ -1,6 +1,11 @@
 services:
   yoshida:
-    build: .
+    # YOSHIDA_CHANNEL=dev docker compose up --build stamps the build as a
+    # preview (a red DEV beside the version); without it, a plain build.
+    build:
+      context: .
+      args:
+        YOSHIDA_CHANNEL: ${YOSHIDA_CHANNEL:-}
     container_name: yoshida
     image: yoshida:latest
     ports:

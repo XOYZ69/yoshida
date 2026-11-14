@@ -173,7 +173,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
     const clock = clockOf(&req);
 
     if (std.mem.eql(u8, op, "info")) {
-        try w.print("{{\"version\":\"{s}\",\"format\":{d}}}", .{ y.version, y.format_version });
+        try w.print("{{\"version\":\"{s}\",\"format\":{d},\"channel\":\"{s}\"}}", .{ y.version, y.format_version, y.channel });
         return 0;
     }
 

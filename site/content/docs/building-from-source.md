@@ -80,6 +80,20 @@ cd web && npm run wasm && npm run check && npm run test:unit
 
 [CI](@/docs/ci-and-deployment.md) runs these steps too, and also checks and renders every example, builds the editor, runs the browser tests and builds the website with Zola (which fails on a broken link or anchor), all described in [Testing](@/docs/testing.md).
 
+## Dev builds
+
+A build can be stamped as a preview, so nobody mistakes it for a release. Set the channel when you build:
+
+```sh
+zig build -Dchannel=dev                 # one build
+YOSHIDA_CHANNEL=dev npm run wasm        # the environment variable reaches every build step
+YOSHIDA_CHANNEL=dev sh scripts/release.sh
+docker build --build-arg YOSHIDA_CHANNEL=dev -t yoshida:dev .
+YOSHIDA_CHANNEL=dev docker compose up --build
+```
+
+With a channel, `yoshida version` prints `yoshida 0.6.2 (format 1) dev build`, the server's `/api/capabilities` and the WASM `info` call report `"channel": "dev"`, the editor shows a red **DEV** stamp beside the version, and the website (built with `YOSHIDA_CHANNEL` set) shows the stamp beside the logo and asks search engines not to index it. Without one, nothing changes. The `dev` branch is built this way for the preview site, see [CI and Deployment](@/docs/ci-and-deployment.md#the-dev-preview).
+
 ## The release bundle
 
 ```sh

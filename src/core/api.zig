@@ -174,7 +174,8 @@ pub fn writeMissingUrls(w: *Writer, assets: *const render.Assets) Writer.Error!v
     try w.writeByte(']');
 }
 
-/// `[{id, instance?, visible, x, y, w, h, px, py, rotate?, size?, points?}]` for the editor's canvas overlay.
+/// `[{id, instance?, component?, visible, x, y, w, h, px, py, rotate?, size?, points?}]` for the editor's canvas overlay.
+/// `component`: the layer comes from a component file; the id of the group that includes it.
 /// The pivot (px, py) is always written: a gesture that starts on an unrotated
 /// layer must turn it around the same point the renderer will use.
 pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void {
@@ -184,6 +185,10 @@ pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void 
         try w.writeAll("{\"id\":");
         try json.writeString(w, p.id);
         if (p.instance) |n| try w.print(",\"instance\":{d}", .{n});
+        if (p.component) |c| {
+            try w.writeAll(",\"component\":");
+            try json.writeString(w, c);
+        }
         try w.print(",\"visible\":{},\"x\":", .{p.visible});
         try value.writeNumber(w, p.left);
         try w.writeAll(",\"y\":");

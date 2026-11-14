@@ -11,4 +11,10 @@ int ystb_strncmp(const char *a, const char *b, size_t n);
 #define strlen(s) ystb_strlen(s)
 #define strcmp(a, b) ystb_strcmp(a, b)
 #define strncmp(a, b, n) ystb_strncmp(a, b, n)
+char *ystb_strchr(const char *s, int c);
+char *ystb_strstr(const char *h, const char *n);
+char *ystb_strncpy(char *d, const char *s, size_t n);
+#define strchr(s, c) ystb_strchr(s, c)
+#define strstr(h, n) ystb_strstr(h, n)
+#define strncpy(d, s, n) ystb_strncpy(d, s, n)
 #endif

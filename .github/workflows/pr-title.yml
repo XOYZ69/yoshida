@@ -2,14 +2,14 @@
 # conventional title: type(scope): description. This checks it and keeps the
 # type label (enhancement, bug, ...) in step with it.
 #
-# pull_request_target runs the workflow from master and gives fork PRs a token
+# pull_request_target runs the workflow from the base branch and gives fork PRs a token
 # that can label. Never check out or run the PR's own code here; the title is
 # only read as data.
 name: PR title
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, dev]
     types: [opened, reopened, edited, synchronize]
 
 permissions:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # No ref: pull_request_target checks out the base branch (master).
+      # No ref: pull_request_target checks out the base branch.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

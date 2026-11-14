@@ -269,7 +269,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
                 }
                 continue;
             };
-            const loaded = try design_mod.load(arena, diags, r.design, text);
+            const loaded = try design_mod.loadWith(arena, diags, r.design, text, vfs);
             try designs.put(arena, r.design, loaded);
             break :blk loaded;
         };

@@ -180,6 +180,8 @@ export class Engine {
 		}
 	>();
 	version = "";
+	/** "dev" for a preview build from the dev branch, empty for a release build. */
+	channel = "";
 
 	constructor() {
 		this.worker = new Worker(new URL("./worker.ts", import.meta.url), {
@@ -216,11 +218,12 @@ export class Engine {
 	}
 
 	async init(): Promise<void> {
-		const info = await this.call<{ version: string }>({
+		const info = await this.call<{ version: string; channel?: string }>({
 			op: "init",
 			url: new URL("yoshida.wasm", document.baseURI).href,
 		});
 		this.version = info.version;
+		this.channel = info.channel ?? "";
 	}
 
 	setFiles(files: Map<string, Uint8Array>) {

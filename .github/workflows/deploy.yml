@@ -1,15 +1,27 @@
 # Publishes the site to GitHub Pages: landing page, docs and release notes
-# built by Zola, with the web editor (Vite + WASM) under /editor/.
-# Runs after every push to master and whenever a release is published,
-# edited or deleted, so the release pages follow GitHub Releases.
+# built by Zola, with the web editor (Vite + WASM) under /editor/. The dev
+# branch is published next to it as a preview under /dev/, stamped DEV.
+#
+# Runs after every push to master or dev and whenever a release is
+# published, edited or deleted, so the release pages follow GitHub Releases.
+# Pages holds one site, so every run builds both branches and publishes them
+# together: master at /, dev at /dev/.
+#
+# One-time setup for the preview: Settings -> Environments -> github-pages ->
+# Deployment branches must allow `dev` as well as `master`.
 name: Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [master, dev]
   release:
     types: [published, edited, deleted]
   workflow_dispatch:
+    inputs:
+      checks:
+        description: Run the checks first (not needed when only the release pages changed)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -18,17 +30,25 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  ZOLA_VERSION: 0.23.6
-
 jobs:
+  # The checks run for the branch that was pushed. A release event or a run
+  # started by release.yml publishes commits that were checked when they were
+  # pushed, so it skips them.
   checks:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.checks)
     uses: ./.github/workflows/ci.yml
 
-  build:
-    name: Build the site
-    needs: checks
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      base_url: ${{ steps.url.outputs.base_url }}
+      site_ref: ${{ steps.refs.outputs.site_ref }}
+      dev_ref: ${{ steps.refs.outputs.dev_ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,60 +59,70 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: node scripts/version.mjs check --tag "$TAG"
 
-      # Editor: WASM core and Vite build, output in web/dist. Unlike the CI
-      # web job, --public leaves out the files listed in
-      # examples/.public-exclude (fonts that may not be redistributed).
-      - uses: ./.github/actions/setup-zig
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Build the editor
-        working-directory: web
-        run: |
-          npm ci
-          npm run wasm
-          npm run examples -- --public
-          npm run build
-
-      # Release pages: one Markdown page per published GitHub release.
-      - name: Fetch releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api --paginate "repos/${{ github.repository }}/releases" --jq '.[]' | jq -s . > releases.json
-          python3 scripts/releases-to-zola.py releases.json site
-
-      - name: Install Zola
-        run: |
-          mkdir -p "$RUNNER_TEMP/zola"
-          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
-          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
-
       - uses: actions/configure-pages@v5
         id: pages
 
-      # zola build checks every internal link and anchor and fails on a
-      # broken one. Run it from site/: with --root, a relative output folder
-      # breaks get_url(cachebust) on the compiled CSS. The editor is copied
-      # in afterwards because zola writes a fresh output folder.
-      - name: Build the site
-        working-directory: site
+      # https, without a trailing slash: the site follows the domain set
+      # under Settings -> Pages.
+      - name: Site address
+        id: url
         env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
-          zola build --base-url "https://${BASE_URL#*://}" --output-dir ../public
-          cp -r ../web/dist ../public/editor
+          url="https://${BASE_URL#*://}"
+          echo "base_url=${url%/}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: public
+      # The pushed branch is built at the pushed commit, the other one at its
+      # head. Any other event builds both heads, so editing an old release
+      # never publishes an old site. Without a dev branch there is no preview.
+      - name: What to build
+        id: refs
+        env:
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          site_ref=$DEFAULT
+          dev_ref=
+          if git ls-remote --exit-code --heads origin dev > /dev/null; then dev_ref=dev; fi
+          if [ "$EVENT" = push ] && [ "$BRANCH" = "$DEFAULT" ]; then site_ref=$GITHUB_SHA; fi
+          if [ "$EVENT" = push ] && [ "$BRANCH" = dev ]; then dev_ref=$GITHUB_SHA; fi
+          if [ "$DEFAULT" = dev ]; then dev_ref=; fi
+          echo "site_ref=$site_ref" >> "$GITHUB_OUTPUT"
+          echo "dev_ref=$dev_ref" >> "$GITHUB_OUTPUT"
+          echo "site: $site_ref, dev preview: ${dev_ref:-none}"
 
+  site:
+    name: Site
+    needs: [checks, plan]
+    # Runs when the checks passed or were skipped, not when they failed.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.checks.result == 'success' || needs.checks.result == 'skipped') }}
+    uses: ./.github/workflows/site.yml
+    with:
+      ref: ${{ needs.plan.outputs.site_ref }}
+      base-url: ${{ needs.plan.outputs.base_url }}
+      artifact: site
+
+  preview:
+    name: Dev preview
+    needs: [checks, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.dev_ref != '' && (needs.checks.result == 'success' || needs.checks.result == 'skipped') }}
+    uses: ./.github/workflows/site.yml
+    with:
+      ref: ${{ needs.plan.outputs.dev_ref }}
+      base-url: ${{ needs.plan.outputs.base_url }}/dev
+      channel: dev
+      artifact: site-dev
+
+  # A broken dev branch must not block the release site: a push to master
+  # (or a release) publishes without the preview when the preview does not
+  # build. A push to dev publishes only when the preview built.
   deploy:
     name: Deploy to GitHub Pages
-    needs: build
+    needs: [site, preview]
+    if: ${{ !cancelled() && needs.site.result == 'success' && (needs.preview.result == 'success' || github.ref_name != 'dev') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       pages: write
       id-token: write
@@ -100,5 +130,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: public
+
+      - uses: actions/download-artifact@v4
+        if: needs.preview.result == 'success'
+        with:
+          name: site-dev
+          path: public/dev
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
       - id: deployment
         uses: actions/deploy-pages@v4
