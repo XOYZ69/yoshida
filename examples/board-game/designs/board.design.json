@@ -214,7 +214,8 @@
       "id": "paper",
       "type": "rect",
       "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
-      "note": "A soft vignette: the paper color in the middle, a little darker towards the corners.",
+      "note": "A soft vignette: the paper color in the middle, a little darker towards the corners. The gradient is drawn instead of 'fill', which stays for layers and tools that read the plain color.",
+      "fill": "c_paper",
       "gradient": {
         "type": "radial",
         "stops": ["c_paper", "mix(c_paper, c_ink, 0.14)"]
