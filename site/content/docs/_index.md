@@ -11,29 +11,29 @@ headline = "Everything about yoshida"
 # "Start here" cards on the docs overview. The index of all pages below
 # them is generated from data/docs-nav.toml.
 [[extra.start]]
-want = "Try it and render my first card"
+want = "Make my first card"
 read = ["docs/getting-started.md"]
 [[extra.start]]
-want = "Render from a script or CI"
-read = ["docs/command-line.md"]
+want = "See what yoshida can do"
+read = ["docs/feature-tour.md", "docs/examples.md"]
 [[extra.start]]
-want = "Host the editor for myself or a team"
-read = ["docs/server-and-docker.md"]
-[[extra.start]]
-want = "Learn how a project is laid out"
-read = ["docs/project-layout-and-manifest.md"]
-[[extra.start]]
-want = "Design a card by hand"
-read = ["docs/designs.md", "docs/params.md", "docs/layers.md"]
+want = "Install it, or host it for a team"
+read = ["docs/installation.md", "docs/server-and-docker.md"]
 [[extra.start]]
 want = "Use the visual editor"
 read = ["docs/builder.md"]
 [[extra.start]]
+want = "Write a design by hand"
+read = ["docs/designs.md", "docs/params.md", "docs/layers.md"]
+[[extra.start]]
+want = "Render from a script or CI"
+read = ["docs/command-line.md"]
+[[extra.start]]
 want = "Fix an error message"
 read = ["docs/diagnostics.md"]
 [[extra.start]]
-want = "Learn from finished projects"
-read = ["docs/examples.md", "docs/example-board-game.md"]
+want = "Let an AI agent write designs"
+read = ["docs/formatting-and-schemas.md"]
 +++
 
 yoshida turns a **design** (layers, parameters and expressions in a JSON file) and a table of **card data** into finished card images. One core renders everything, and three front ends use it: a command-line tool, a visual editor that runs in the browser, and a small server.

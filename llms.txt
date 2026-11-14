@@ -14,12 +14,14 @@ To write or change yoshida files, read the reference first: it is one page with 
 
 ## Docs: Start
 
-- [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/): Three ways to use yoshida, and your first rendered card.
-- [Command Line](https://yoshida.xoyz.dev/docs/command-line/): Check projects, render cards and format files from a terminal or CI.
-- [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/): Host the editor and render whole card sets on your own server.
-- [Examples](https://yoshida.xoyz.dev/docs/examples/): The four example projects and what each one shows.
+- [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/): Your first card in five minutes: in the editor, from scratch and on the command line.
+- [Installation](https://yoshida.xoyz.dev/docs/installation/): Run yoshida in the browser, from the release zip, with Docker or from source.
+- [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/): What a design can do, one short snippet per feature, with links to the details.
+- [Examples](https://yoshida.xoyz.dev/docs/examples/): The four example projects, what each one shows and how to open them.
 - [Poker deck](https://yoshida.xoyz.dev/docs/example-poker/): A walk through the poker deck example: four designs in one project and extends.
 - [Board game](https://yoshida.xoyz.dev/docs/example-board-game/): A walk through the printable board game example.
+- [Command Line](https://yoshida.xoyz.dev/docs/command-line/): Check projects, render cards and format files from a terminal or CI.
+- [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/): Host the editor and render whole card sets on your own server.
 
 ## Docs: Format
 

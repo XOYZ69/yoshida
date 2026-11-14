@@ -2,6 +2,7 @@
 {% block body %}
 {% set x = section.extra %}
 {% set releases = get_section(path="releases/_index.md") %}
+{% set channel = get_env(name="YOSHIDA_CHANNEL", default="") %}
 <main id="main" class="landing">
   <section class="hero">
     <div class="hero-text">
@@ -14,6 +15,12 @@
       </p>
       {% if releases.pages %}{% set latest = releases.pages | first %}
       <p class="latest"><a href="{{ latest.permalink }}"><span class="pill">New</span> {{ latest.title }} · {{ latest.date | date(format="%B %-d, %Y") }}</a></p>
+      {% endif %}
+      {# The dev branch is published beside the release site under /dev/ (deploy.yml), so the release is one folder up. #}
+      {% if channel %}
+      <p class="preview"><span class="channel">{{ channel | upper }}</span> You are looking at the preview of the next version. <a href="{{ config.base_url }}/../">Back to the release</a></p>
+      {% else %}
+      <p class="preview"><a href="{{ config.base_url }}/dev/"><span class="channel">DEV</span> Try the preview of the next version →</a></p>
       {% endif %}
     </div>
     <div class="hand" aria-hidden="true">
@@ -40,6 +47,23 @@
     <img class="only-dark" src="{{ get_url(path='img/editor-dark.webp') }}" alt="The yoshida editor in dark mode" width="1500" height="950">
   </section>
 
+  <section class="game">
+    <h2 class="section-title">Made for card games</h2>
+    <p class="section-lead">Everything on these two cards comes from the <a href="{{ get_url(path='@/docs/examples.md#forge') }}">forge example</a>: two designs, a few lines of card data and some SVG files.</p>
+    <div class="game-grid">
+      <div class="game-cards" aria-hidden="true">
+        <img src="{{ get_url(path='img/cards/forge-foundry.webp') }}" alt="" width="500" height="700" loading="lazy">
+        <img src="{{ get_url(path='img/cards/forge-ironworks.webp') }}" alt="" width="500" height="700" loading="lazy">
+      </div>
+      <ul class="game-list">
+      {% for g in x.game %}
+        <li><a href="{{ get_url(path=g.link) }}"><h3>{{ g.title }}</h3><p>{{ g.text }}</p><code>{{ g.code }}</code></a></li>
+      {% endfor %}
+      </ul>
+    </div>
+    <p class="more"><a href="{{ get_url(path='@/docs/feature-tour.md') }}">Take the feature tour →</a></p>
+  </section>
+
   <section class="features">
     <h2 class="section-title">What's inside</h2>
     <div class="grid">
@@ -49,13 +73,30 @@
     </div>
   </section>
 
-  <section class="frontends">
-    <h2 class="section-title">One core, three ways to use it</h2>
-    <div class="grid">
-    {% for f in x.frontends %}
-      <a class="frontend" href="{{ get_url(path=f.link) }}"><h3>{{ f.title }}</h3><p>{{ f.text }}</p><span>{{ f.label }} →</span></a>
+  <section class="examples">
+    <h2 class="section-title">Start from an example</h2>
+    <p class="section-lead">Four finished projects ship with yoshida. Open one from the editor's project menu, change it, make it yours.</p>
+    <div class="example-grid">
+    {% for e in x.examples %}
+      <a class="example" href="{{ get_url(path=e.link) }}">
+        <span class="example-img"><img src="{{ get_url(path='img/examples/' ~ e.img ~ '.webp') }}" alt="" width="{{ e.w }}" height="{{ e.h }}" loading="lazy"></span>
+        <h3>{{ e.title }}</h3><p>{{ e.text }}</p>
+      </a>
     {% endfor %}
     </div>
+  </section>
+
+  <section class="frontends">
+    <h2 class="section-title">Three ways to start</h2>
+    <p class="section-lead">One core renders everything, so the editor, the command line and the server give you the same pixels.</p>
+    <div class="grid">
+    {% for f in x.frontends %}
+      <a class="frontend" href="{{ get_url(path=f.link) }}"><h3>{{ f.title }}</h3><p>{{ f.text }}</p>
+        <pre><code>{{ f.code | replace(from="\n", to="
+") }}</code></pre><span>{{ f.label }} →</span></a>
+    {% endfor %}
+    </div>
+    <p class="more"><a href="{{ get_url(path='@/docs/getting-started.md') }}">Quick start</a> · <a href="{{ get_url(path='@/docs/installation.md') }}">Download and install</a> · <a href="{{ config.extra.repo }}/releases/latest">Latest release on GitHub</a></p>
   </section>
 
   <section class="outro">{{ section.content | safe }}</section>
