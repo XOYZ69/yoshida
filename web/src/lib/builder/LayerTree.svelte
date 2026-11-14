@@ -12,7 +12,9 @@ let revealed = 0;
 // Dividers are titled rules that only organise the list. Right-click on
 // empty space opens the menu for adding layers.
 import { tick, untrack } from "svelte";
+import { componentLabel, includeOf } from "../components";
 import { childrenOf, isDivider, isGroup, type Obj } from "../design";
+import { isTag, tagColor } from "../tags";
 import Icon, { layerIcon } from "../ui/Icon.svelte";
 
 let {
@@ -56,10 +58,21 @@ type Row = {
 	divider: boolean;
 	count: number;
 	hiddenBy: boolean;
+	/** The component file this group includes. */
+	include: string | null;
+	/** Inside an including group: the layer lives in the component file. */
+	shared: boolean;
+	/** CSS colour of the layer's tag. */
+	tag: string | null;
 };
 const rows = $derived.by(() => {
 	const out: Row[] = [];
-	const walk = (list: Obj[], depth: number, hiddenBy: boolean) => {
+	const walk = (
+		list: Obj[],
+		depth: number,
+		hiddenBy: boolean,
+		shared = false,
+	) => {
 		for (let i = list.length - 1; i >= 0; i--) {
 			const l = list[i];
 			const id = String(l.id ?? `#${i}`);
@@ -73,9 +86,17 @@ const rows = $derived.by(() => {
 				divider: isDivider(l),
 				count: kids.filter((k) => !isDivider(k)).length,
 				hiddenBy,
+				include: includeOf(l),
+				shared,
+				tag: isTag(l.tag) ? tagColor(l.tag) : null,
 			});
 			if (group && !folded.has(id))
-				walk(kids, depth + 1, hiddenBy || l.visible === false);
+				walk(
+					kids,
+					depth + 1,
+					hiddenBy || l.visible === false,
+					shared || !!includeOf(l),
+				);
 		}
 	};
 	walk(layers, 0, false);
@@ -205,6 +226,10 @@ function finish() {
       class:drop-below={drop?.id === r.id && drop.where === 'below'}
       class:drop-into={drop?.id === r.id && drop.where === 'into'}
       class:dimmed={r.hiddenBy}
+      class:tagged={!!r.tag}
+      class:shared={r.shared}
+      data-tag={typeof r.l.tag === 'string' ? r.l.tag : undefined}
+      style:--tag={r.tag}
       style:--depth={r.depth}
       draggable="true"
       ondragstart={(e) => dragstart(e, r.id)}
@@ -244,16 +269,16 @@ function finish() {
             }}><Icon name="more" /></button>
         </span>
       {:else}
-        {@const kind = layerIcon(String(r.l.type))}
-        {#if r.group}
+        {@const kind = r.include ? 'component' : layerIcon(String(r.l.type))}
+        {#if r.group && (!r.include || Array.isArray(r.l.layers))}
           <button class="fold" aria-label={folded.has(r.id) ? 'Expand group' : 'Collapse group'} onclick={() => fold(r.id)}><Icon name={folded.has(r.id) ? 'chevron-right' : 'chevron-down'} /></button>
         {:else}
           <span class="fold-space"></span>
         {/if}
         <button class="row" onclick={(e) => pick(r.id, e)}>
-          <span class="icon" class:grp={r.group}>{#if kind}<Icon name={kind} />{/if}</span>
+          <span class="icon" class:grp={r.group && !r.include} class:cmp={!!r.include} title={r.include ? 'Component' : undefined}>{#if kind}<Icon name={kind} />{/if}</span>
           <span class="name" class:off={vis === false} title={r.id}>{r.id}</span>
-          {#if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
+          {#if r.include}<span class="badge component" title="Component: the layers inside are shared, they live in {r.include}">{componentLabel(r.include)}</span>{:else if r.group}<span class="badge" title="{r.count} layers">{r.count}</span>{/if}
           {#if r.l.repeat}<span class="badge" title="Repeated"><Icon name="repeat" /></span>{/if}
           {#if r.l.extends}<span class="badge" title="Extends {r.l.extends}"><Icon name="extends" />{r.l.extends}</span>{/if}
           {#if Array.isArray(r.l.effects) && r.l.effects.length}<span class="badge" title="Effects"><Icon name="effects" /></span>{/if}
@@ -320,11 +345,38 @@ function finish() {
     outline: 1px dashed var(--accent);
     outline-offset: -1px;
   }
+  /* --row is the row's (opaque) background; the tools that float over the
+     end of the name use it too. A colour tag is mixed into it faintly, so
+     it does not compete with the icon colours. */
+  li {
+    --row: var(--bg);
+    background: var(--row);
+  }
   li:hover {
-    background: var(--hover);
+    --row: var(--hover);
   }
   li.selected {
-    background: var(--sel);
+    --row: var(--sel);
+  }
+  li.tagged {
+    --row: color-mix(in srgb, var(--tag) 16%, var(--bg));
+    box-shadow: inset 3px 0 0 var(--tag);
+  }
+  li.tagged:hover {
+    --row: color-mix(in srgb, var(--tag) 24%, var(--hover));
+  }
+  li.tagged.selected {
+    --row: color-mix(in srgb, var(--tag) 22%, var(--sel));
+  }
+  /* Layers of a component: a rail in the component colour next to them. */
+  li.shared::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: calc(4px + (var(--depth) - 1) * 14px + 8px);
+    width: 1px;
+    background: color-mix(in srgb, var(--component) 55%, transparent);
   }
   li.dimmed {
     opacity: 0.55;
@@ -366,6 +418,9 @@ function finish() {
   }
   .icon.grp {
     color: var(--accent);
+  }
+  .icon.cmp {
+    color: var(--component);
   }
   .name {
     font-family: var(--mono);
@@ -410,15 +465,12 @@ function finish() {
     gap: 0;
     padding: 0 4px;
     visibility: hidden;
-    background: var(--hover);
+    background: var(--row);
   }
   li:hover .tools,
   li:focus-within .tools,
   li.selected .tools {
     visibility: visible;
-  }
-  li.selected .tools {
-    background: var(--sel);
   }
   .tool {
     all: unset;
@@ -481,5 +533,8 @@ function finish() {
     padding: 8px 12px;
     color: var(--muted);
     font-size: 12px;
+  }
+  .badge.component {
+    color: var(--component);
   }
 </style>

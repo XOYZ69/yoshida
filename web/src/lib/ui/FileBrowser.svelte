@@ -171,6 +171,7 @@ $effect(() => {
 
 const typeIcons: Record<FileType, IconName> = {
 	design: "design",
+	component: "component",
 	cards: "table",
 	json: "braces",
 	font: "font",
@@ -609,6 +610,9 @@ function dropOn(e: DragEvent, n: TreeNode | null) {
   }
   .icon[data-type='design'] {
     color: var(--file-design);
+  }
+  .icon[data-type='component'] {
+    color: var(--file-component);
   }
   .icon[data-type='cards'] {
     color: var(--file-cards);

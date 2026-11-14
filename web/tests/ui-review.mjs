@@ -175,7 +175,8 @@ const addBoxes = await adds.evaluateAll((els) =>
 );
 ok(
 	"layer buttons share height, padding and icon size",
-	addBoxes.length === 5 &&
+	// One button per layer type (rect, ellipse, text, image, qr, polygon) and one for components.
+	addBoxes.length === 7 &&
 		addBoxes.every(
 			(x) =>
 				x.h === addBoxes[0].h && x.pl === addBoxes[0].pl && x.icon === 14,

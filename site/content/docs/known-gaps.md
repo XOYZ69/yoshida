@@ -7,8 +7,9 @@ What does not work yet, so you do not have to find out the hard way.
 
 ## Format
 
-- **Rich text** (mixed fonts, sizes or colors inside one text layer) is not in the format.
-- **Shared design parts** (`include`) are not in the format, and `extends` only reaches layers of the same design. Designs that share a look repeat those layers, as the four designs of the [poker example](@/docs/example-poker.md) do.
+- **Rich text** is limited to bold, italic and inline icons ([`markup`](@/docs/layer-text.md#bold-italic-and-icons-markup)); there are no mixed sizes or colors inside one text layer, and italic needs an italic font.
+- **SVG images** are drawn by a small renderer: text, filters, masks, embedded images and CSS stylesheets inside an SVG are not supported.
+- **Shared components** ([`include`](@/docs/layer-group.md#shared-components-include)) can be included once per design (ids must be unique), and the builder does not show live values inside component files.
 - **Per-card layer overrides** are not in the format; cards change params only. (Single items of a default list can be changed, see [Params](@/docs/params.md#changing-single-items-of-the-default).)
 - The **layer limit** is fixed at 500 visible layers per card; it cannot be raised. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
 - A layer inside **two nested repeats** cannot be referenced from outside both (error 3005); an index picks one level only. See [Repeat](@/docs/repeat.md#reading-one-iteration).
@@ -26,6 +27,7 @@ What does not work yet, so you do not have to find out the hard way.
 ## Output
 
 - Image PDFs hold the card as an 8-bit image (no 16-bit). For sharper print or zoom, export at a higher resolution (2x to 4x; see [Resolution](@/docs/saving-images-and-privacy.md#resolution)) or as a vector file. [Vector PDFs and SVG files](@/docs/command-line.md#svg) draw the card as vectors, except:
+  - A layer with a `gradient`, or an image with `radius` or `clip`, is embedded as pixels at the export resolution.
   - A layer or group with a `sharpen`, `detail`, `edge_enhance` or `find_edges` [effect](@/docs/effects.md) is embedded as pixels, at the export resolution (the export dialog's **Resolution**, `--scale` or `"scale"`; 2x when not given).
   - Text becomes the outlines of its letters; it cannot be selected, searched or edited in the file.
   - Images are embedded with the pixels they have, and the viewer scales them, so a small image looks as soft (or as blocky, with `"smoothing": "nearest"`) as in the PNG.
@@ -45,7 +47,7 @@ Not planned or implemented yet:
 - Checking words compared with enum values in expressions.
 - Emoji and color font support.
 - Miter and bevel line joins.
-- Rich text and shared design parts.
+- Mixed sizes and colors in text.
 - Named time zones and month and day names in other languages.
 
 These are candidates for a later 1.x or 2 format. See [Limits and Versioning](@/docs/limits-and-versioning.md).

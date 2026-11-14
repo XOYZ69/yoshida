@@ -15,7 +15,8 @@ const usage =
     \\                            [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
     \\                            [--utc-offset HOURS] [--16bit] [--preview]
     \\                            [--offline] [--pdf] [--crop-marks] [--svg]
-    \\                            [--vector] [--scale N] [--format text|json]
+    \\                            [--vector] [--scale N] [--sheet COLSxROWS]
+    \\                            [--format text|json]
     \\  yoshida fmt    <project or file>  [--check]
     \\  yoshida version
     \\
@@ -32,6 +33,9 @@ const usage =
     \\        --scale N (1 to 4) renders PNGs and PDF images at N times the
     \\        canvas size, at the same print size. With --svg or --vector it
     \\        sets the resolution of the parts that stay pixels (default 2).
+    \\        --sheet 10x7 tiles the cards of each set left to right, top to
+    \\        bottom into <out>/<set>.png (a deck sheet for a tabletop
+    \\        simulator), and <set>-2.png ... when they do not fit on one.
     \\clock   --now is the UTC instant the cards are rendered at (render.now,
     \\        render.date, render.time). Without --now or --date it is the
     \\        current UTC time; --date alone pins the local date at midnight.
@@ -62,6 +66,7 @@ const Args = struct {
     scale: ?[]const u8 = null,
     svg: bool = false,
     vector: bool = false,
+    sheet: ?[]const u8 = null,
 };
 
 pub fn main(init: std.process.Init) !u8 {
@@ -105,6 +110,17 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.vector and !args.pdf) {
         try err.print("error: --vector goes with --pdf (--svg is always a vector file)\n", .{});
         return 2;
+    }
+    var sheet_grid: ?[2]u32 = null;
+    if (args.sheet) |s| {
+        sheet_grid = parseGrid(s) orelse {
+            try err.print("error: --sheet must be columns x rows like 10x7, got '{s}'\n", .{s});
+            return 2;
+        };
+        if (args.pdf or args.svg) {
+            try err.print("error: --sheet writes PNG sheets; it cannot be used with --pdf or --svg\n", .{});
+            return 2;
+        }
     }
     if (args.now) |n| if (!validUtcInstant(n)) {
         try err.print("error: --now must be a UTC instant like 2026-10-15T09:30:00Z, got '{s}'\n", .{n});
@@ -178,7 +194,7 @@ pub fn main(init: std.process.Init) !u8 {
             if (args.set) |s| if (!std.mem.eql(u8, s, set.name)) continue;
             matched_set = true;
             if (!set.ok) continue;
-            const dir = if (args.pdf) out_root else try std.fs.path.join(arena, &.{ out_root, set.name });
+            const dir = if (args.pdf or sheet_grid != null) out_root else try std.fs.path.join(arena, &.{ out_root, set.name });
             Io.Dir.cwd().createDirPath(io, dir) catch |e| {
                 try err.print("error: cannot create '{s}': {s}\n", .{ dir, @errorName(e) });
                 return 1;
@@ -187,6 +203,17 @@ pub fn main(init: std.process.Init) !u8 {
             defer if (pdf) |*p| p.deinit();
             var pdf_pages: usize = 0;
             var pdf_errors = false;
+            // --sheet: the sheet being filled, the cards on it and its number.
+            var sheet: ?y.raster.Sheet = null;
+            defer if (sheet) |*sh| sh.deinit(gpa);
+            var sheet_cards: usize = 0;
+            var sheet_errors = false;
+            var sheet_no: usize = 0;
+            var set_cards: usize = 0;
+            for (set.cards) |card| {
+                if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
+                set_cards += 1;
+            }
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
                 const errors_before = diags.errorCount();
@@ -229,6 +256,34 @@ pub fn main(init: std.process.Init) !u8 {
                     bmp.deinit(gpa);
                     bmp = marked;
                 }
+                if (sheet_grid) |grid| {
+                    if (sheet == null) {
+                        sheet = y.raster.Sheet.init(gpa, grid[0], grid[1], bmp.w, bmp.h) catch |e| switch (e) {
+                            error.OutOfMemory => return error.OutOfMemory,
+                            error.TooLarge => {
+                                try err.print("error: a {d}x{d} sheet of {d} x {d} cards is above the limit of {d} pixels per side\n", .{ grid[0], grid[1], bmp.w, bmp.h, y.raster.Sheet.max_side });
+                                return 1;
+                            },
+                        };
+                        sheet.?.dpi = bmp.dpi;
+                    }
+                    const sh = &sheet.?;
+                    if (bmp.w != sh.cell_w or bmp.h != sh.cell_h) try err.print("warning: card '{s}' is {d} x {d}, the sheet's cells are {d} x {d}; it is cut to the cell\n", .{ card.id, bmp.w, bmp.h, sh.cell_w, sh.cell_h });
+                    sh.put(sheet_cards, &bmp);
+                    sheet_cards += 1;
+                    if (card_errors > 0) sheet_errors = true;
+                    if (sheet_cards == sh.capacity()) {
+                        sheet_no += 1;
+                        const many = set_cards > sh.capacity();
+                        if (!try writeSheet(io, gpa, arena, sh, dir, set.name, if (many) sheet_no else null, sheet_cards, sheet_errors, args.json, out, err, &rendered_files, &failed_files)) return 1;
+                        rendered += sheet_cards;
+                        sheet.?.deinit(gpa);
+                        sheet = null;
+                        sheet_cards = 0;
+                        sheet_errors = false;
+                    }
+                    continue;
+                }
                 if (pdf) |*p| {
                     try p.addPage(&bmp);
                     pdf_pages += 1;
@@ -249,6 +304,12 @@ pub fn main(init: std.process.Init) !u8 {
                     try out.print("wrote {s} ({d} x {d}) with {d} error(s): parts of the card are missing\n", .{ file, bmp.w, bmp.h, card_errors });
                 } else try out.print("wrote {s} ({d} x {d})\n", .{ file, bmp.w, bmp.h });
             }
+            if (sheet) |*sh| if (sheet_cards > 0) {
+                sheet_no += 1;
+                const many = sheet_no > 1;
+                if (!try writeSheet(io, gpa, arena, sh, dir, set.name, if (many) sheet_no else null, sheet_cards, sheet_errors, args.json, out, err, &rendered_files, &failed_files)) return 1;
+                rendered += sheet_cards;
+            };
             if (pdf) |*p| if (pdf_pages > 0) {
                 const bytes = try p.finish();
                 defer gpa.free(bytes);
@@ -360,7 +421,7 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             if (i + 1 >= argv.len) return error.MissingOptionValue;
             i += 1;
             const v = argv[i];
-            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "scale")) a.scale = v else if (std.mem.eql(u8, name, "format")) {
+            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "scale")) a.scale = v else if (std.mem.eql(u8, name, "sheet")) a.sheet = v else if (std.mem.eql(u8, name, "format")) {
                 if (std.mem.eql(u8, v, "json")) a.json = true else if (!std.mem.eql(u8, v, "text")) return error.UnknownFormat;
             } else return error.UnknownOption;
         } else if (std.mem.eql(u8, s, "-h")) {
@@ -372,6 +433,31 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
         } else return error.TooManyArguments;
     }
     return a;
+}
+
+/// `10x7`: columns and rows of a sheet, each 1 to 100.
+fn parseGrid(s: []const u8) ?[2]u32 {
+    const x = std.mem.indexOfAny(u8, s, "xX") orelse return null;
+    const cols = std.fmt.parseInt(u32, s[0..x], 10) catch return null;
+    const rows = std.fmt.parseInt(u32, s[x + 1 ..], 10) catch return null;
+    if (cols < 1 or rows < 1 or cols > 100 or rows > 100) return null;
+    return .{ cols, rows };
+}
+
+/// Writes a filled (or the last) sheet of a set as `<set>.png`, or
+/// `<set>-<n>.png` when the set takes several. False when it cannot be written.
+fn writeSheet(io: Io, gpa: Allocator, arena: Allocator, sh: *const y.raster.Sheet, dir: []const u8, set_name: []const u8, n: ?usize, cards: usize, errors: bool, json: bool, out: *Io.Writer, err: *Io.Writer, written: *std.ArrayList([]const u8), failed: *std.ArrayList([]const u8)) !bool {
+    const png = try sh.encodePng(gpa);
+    defer gpa.free(png);
+    const file = if (n) |k| try std.fmt.allocPrint(arena, "{s}/{s}-{d}.png", .{ dir, set_name, k }) else try std.fmt.allocPrint(arena, "{s}/{s}.png", .{ dir, set_name });
+    Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = png }) catch |e| {
+        try err.print("error: cannot write '{s}': {s}\n", .{ file, @errorName(e) });
+        return false;
+    };
+    try written.append(arena, file);
+    if (errors) try failed.append(arena, file);
+    if (!json) try out.print("wrote {s} ({d} x {d}, {d}x{d} sheet, {d} card(s)){s}\n", .{ file, sh.w, sh.h, sh.cols, sh.rows, cards, if (errors) " with errors: parts of some cards are missing" else "" });
+    return true;
 }
 
 /// The current UTC instant as `YYYY-MM-DDTHH:MM:SSZ` (seconds precision).

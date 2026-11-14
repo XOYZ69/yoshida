@@ -31,6 +31,26 @@ Plus the [fields every layer has](@/docs/layers.md).
 
 A negative width or height is error 3101 at render time.
 
+## Gradient
+
+`gradient` fills the layer with colors blended across its bounds, instead of `fill`. It works on rect, ellipse and polygon layers.
+
+```json
+"gradient": { "type": "linear", "angle": 90, "stops": ["#2B5876", "#4E4376"] }
+```
+
+```json
+"gradient": { "type": "radial", "stops": [{ "color": "#FFE29F", "at": 0 }, { "color": "#FFE29F00", "at": 1 }] }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `type` | `linear` | `linear` or `radial` |
+| `angle` | `0` | Linear only: degrees clockwise, 0 runs left to right, 90 top to bottom. The gradient reaches the corners, as in CSS |
+| `stops` | — | Two or more colors, or `{ "color", "at" }` with `at` from 0 to 1. Stops without `at` are spread evenly |
+
+A radial gradient runs from the centre of the bounds to their corners. Colors and positions may be expressions. The stroke is drawn over the gradient. In SVG and vector PDF output a gradient layer stays pixels (at the `--scale` resolution).
+
 ## Stroke
 
 The stroke is drawn **centred on the edge**, so half of the width lies outside the box. `color` defaults to opaque black and `width` to `1` when left out.

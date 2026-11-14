@@ -64,3 +64,7 @@ With `shape` instead of `points`, the polygon fills `box`, and `anchor` and `rot
 `count` and `inner` are numbers or expressions.
 
 In the editor you drag polygon points on the canvas; a shape polygon gets box handles instead, and the inspector switches between points and a shape. See [Builder: Canvas](@/docs/builder-canvas.md).
+
+## Gradient
+
+`gradient` fills the layer with blended colors instead of `fill`, as on a [rect](@/docs/layer-rect.md#gradient).

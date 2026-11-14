@@ -11,6 +11,7 @@ description = "Licences of the fonts and libraries yoshida ships with."
 | --- | --- | --- |
 | stb_image, stb_truetype (Sean Barrett) | PNG, JPEG, GIF and BMP decoding; font rendering | Public domain or MIT |
 | simplewebp (Miku AuahDark) | WebP decoding | BSD-3-Clause (notice in `src/c/simplewebp.h`) |
+| nanosvg (Mikko Mononen) | SVG images | zlib license (`src/c/nanosvg-LICENSE.txt`) |
 | Lato (Łukasz Dziedzic) | Bundled default font | SIL Open Font License 1.1 (`src/core/assets/OFL.txt`) |
 | Noto Sans Symbols 2 (The Noto Project Authors), subset | Bundled fallback font for arrows, shapes, stars and other symbols | SIL Open Font License 1.1 (`src/core/assets/NotoSansSymbols2-OFL.txt`) |
 | Inter (The Inter Project Authors), Fraunces (The Fraunces Project Authors), JetBrains Mono (The JetBrains Mono Project Authors) | Fonts of this website (`site/static/fonts`) | SIL Open Font License 1.1 (`site/static/fonts/*-OFL.txt` in the repository, `/fonts/*-OFL.txt` on the website, `web/fonts/*-OFL.txt` in the release bundle) |
