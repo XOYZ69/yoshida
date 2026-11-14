@@ -1,0 +1,154 @@
+{
+  "$schema": "../../../schema/design.schema.json",
+  "format": 1,
+  "name": "Project",
+  "canvas": { "width": 500, "height": 700, "background": "#F4EDE0" },
+  "fonts": {
+    "body": "assets/fonts/Poppins-Medium.ttf",
+    "bold": "assets/fonts/Poppins-SemiBold.ttf"
+  },
+  "icons": "assets/icons/*.svg",
+  "params": {
+    "title": { "type": "text", "default": "Project" },
+    "cost": { "type": "integer", "default": 2, "min": 0, "max": 8 },
+    "art": { "type": "image", "default": "" },
+    "requirement": { "type": "text", "default": "" },
+    "req_side": {
+      "type": "enum",
+      "options": ["center", "right"],
+      "default": "center"
+    },
+    "effect": { "type": "text", "default": "" },
+    "panel": { "type": "color", "default": "#E9DDC8" },
+    "top": { "type": "color", "default": "#2B5876" },
+    "bottom": { "type": "color", "default": "#4E4376" }
+  },
+  "layers": [
+    { "id": "frame", "type": "divider", "label": "Frame" },
+    {
+      "id": "header",
+      "type": "rect",
+      "box": { "x": 20, "y": 20, "w": 460, "h": 110 },
+      "radius": 22,
+      "gradient": {
+        "angle": 90,
+        "stops": ["top", "bottom"]
+      }
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "font": "bold",
+      "text": "{title}",
+      "at": { "x": 40, "y": 75 },
+      "anchor": "left",
+      "size": 30,
+      "color": "#FFFFFF",
+      "max_width": 300
+    },
+    {
+      "id": "cost_row",
+      "type": "group",
+      "layout": { "gap": 4, "x": 460, "y": 75, "align": "end", "cross": "center" },
+      "layers": [
+        {
+          "id": "coin",
+          "type": "image",
+          "src": "assets/icons/gold.svg",
+          "repeat": { "count": "cost" },
+          "box": { "x": 0, "y": 0, "w": 30, "h": 30 }
+        }
+      ]
+    },
+    { "id": "picture", "type": "divider", "label": "Art (optional)" },
+    {
+      "id": "art",
+      "type": "image",
+      "src": "{art}",
+      "optional": true,
+      "fit": "cover",
+      "radius": 18,
+      "box": { "x": 30, "y": 150, "w": 440, "h": 290 }
+    },
+    {
+      "id": "no_art",
+      "type": "rect",
+      "visible": "not @art.visible",
+      "box": { "x": 30, "y": 150, "w": 440, "h": 290 },
+      "radius": 18,
+      "gradient": {
+        "type": "radial",
+        "stops": ["#EFE4D0", "#CDBD9F"]
+      }
+    },
+    {
+      "id": "no_art_label",
+      "type": "text",
+      "visible": "not @art.visible",
+      "font": "body",
+      "text": "no art yet",
+      "at": { "x": 250, "y": 295 },
+      "anchor": "center",
+      "size": 20,
+      "color": "#8A7A64"
+    },
+    { "id": "req", "type": "divider", "label": "Requirement" },
+    {
+      "id": "req_pill",
+      "type": "rect",
+      "visible": "requirement != ''",
+      "box": { "x": "@req_row.bounds.left - 14", "y": 454, "w": "@req_row.bounds.w + 28", "h": 44 },
+      "radius": 22,
+      "fill": "#3B2F2A"
+    },
+    {
+      "id": "req_row",
+      "type": "group",
+      "visible": "requirement != ''",
+      "layout": {
+        "gap": 8,
+        "x": "req_side == 'right' ? 456 : 250",
+        "y": 476,
+        "align": "req_side == 'right' ? 'end' : 'center'",
+        "cross": "center"
+      },
+      "layers": [
+        {
+          "id": "req_label",
+          "type": "text",
+          "font": "bold",
+          "text": "Requires",
+          "at": { "x": 0, "y": 0 },
+          "size": 18,
+          "color": "#F4EDE0"
+        },
+        {
+          "id": "req_text",
+          "type": "text",
+          "markup": true,
+          "font": "body",
+          "text": "{requirement}",
+          "at": { "x": 0, "y": 0 },
+          "size": 18,
+          "color": "#F4EDE0"
+        }
+      ]
+    },
+    {
+      "id": "effects",
+      "type": "group",
+      "include": "components/effect-row.component.json",
+      "translate": { "x": 30, "y": 520 }
+    },
+    {
+      "id": "footer",
+      "type": "text",
+      "font": "body",
+      "text": "FORGE  ·  {upper(card.id)}",
+      "at": { "x": 250, "y": 676 },
+      "anchor": "center",
+      "size": 13,
+      "color": "#A8987F"
+    }
+  ]
+}

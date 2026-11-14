@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../schema/component.schema.json",
+  "format": 1,
+  "name": "Effect row",
+  "note": "Shared by the project and corporation designs: a panel with the effect text. Uses the params 'effect' and 'panel' of the design that includes it.",
+  "layers": [
+    {
+      "id": "effect_bg",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": 440, "h": "@effect_text.bounds.h + 32" },
+      "radius": 16,
+      "fill": "panel"
+    },
+    {
+      "id": "effect_text",
+      "type": "text",
+      "markup": true,
+      "font": "body",
+      "font_bold": "bold",
+      "icon_scale": 1.1,
+      "text": "{effect}",
+      "at": { "x": 18, "y": 16 },
+      "wrap": 404,
+      "size": 22,
+      "line_spacing": 8,
+      "color": "#2A211D"
+    }
+  ]
+}
