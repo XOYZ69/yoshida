@@ -16,12 +16,13 @@
       "item": { "text": "text" },
       "group": "Texts",
       "default": [
-        { "text": "Everyone puts a pawn on START." },
+        { "text": "Everyone puts a pawn on <b>START</b>." },
         { "text": "Take turns rolling a die and move clockwise." },
         { "text": "Follow the tile you land on." },
         { "text": "Safe zones protect you from going back." },
-        { "text": "First to land on FINISH wins." }
-      ]
+        { "text": "First to land on <b>FINISH</b> wins." }
+      ],
+      "note": "Rule texts may use <b>bold</b> and <i>italic</i>."
     },
     "foot": {
       "type": "text",
@@ -213,7 +214,11 @@
       "id": "paper",
       "type": "rect",
       "box": { "x": 0, "y": 0, "w": "100%", "h": "100%" },
-      "fill": "c_paper"
+      "note": "A soft vignette: the paper color in the middle, a little darker towards the corners.",
+      "gradient": {
+        "type": "radial",
+        "stops": ["c_paper", "mix(c_paper, c_ink, 0.14)"]
+      }
     },
     {
       "id": "stripes",
@@ -281,105 +286,117 @@
           "text": "{i + 1}"
         },
         {
-          "id": "tile_icon",
+          "id": "tile_mark",
           "type": "group",
-          "note": "One icon per kind; the group moves left when the tile also shows a number.",
-          "visible": "t.kind != 'plain'",
-          "translate": { "x": "has_n(t.kind) ? -50.8 : 0", "y": 12.7 },
+          "note": "Icon and number side by side, centred on the tile whatever the number's width: a row layout measures both.",
+          "layout": { "gap": 10.6, "x": 180, "y": 146, "align": "center", "cross": "center" },
           "layers": [
             {
-              "id": "icon_arrow",
-              "type": "polygon",
-              "shape": { "type": "arrow" },
-              "anchor": "center",
-              "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 80.5 },
-              "fill": "c_ink",
-              "visible": "t.kind == 'forward'"
+              "id": "tile_icon",
+              "type": "group",
+              "note": "One icon per kind.",
+              "visible": "t.kind != 'plain'",
+              "layers": [
+                {
+                  "id": "icon_arrow",
+                  "type": "polygon",
+                  "shape": { "type": "arrow" },
+                  "anchor": "center",
+                  "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 80.5 },
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'forward'"
+                },
+                {
+                  "id": "icon_back",
+                  "type": "polygon",
+                  "shape": { "type": "arrow" },
+                  "extends": "icon_arrow",
+                  "rotate": 180,
+                  "visible": "t.kind == 'back'"
+                },
+                {
+                  "id": "icon_chev_a",
+                  "type": "polygon",
+                  "shape": { "type": "chevron", "inner": 0.45 },
+                  "anchor": "center",
+                  "box": { "x": 152.5, "y": 131.3, "w": 76.2, "h": 84.7 },
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'shortcut'"
+                },
+                {
+                  "id": "icon_chev_b",
+                  "type": "polygon",
+                  "shape": { "type": "chevron", "inner": 0.45 },
+                  "extends": "icon_chev_a",
+                  "box": { "x": 211.8 },
+                  "visible": "t.kind == 'shortcut'"
+                },
+                {
+                  "id": "icon_start",
+                  "type": "polygon",
+                  "shape": { "type": "triangle" },
+                  "anchor": "center",
+                  "rotate": 90,
+                  "box": { "x": 180, "y": 131.3, "w": 84.7, "h": 93.2 },
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'start'"
+                },
+                {
+                  "id": "icon_dare",
+                  "type": "polygon",
+                  "shape": { "type": "star", "inner": 0.45 },
+                  "anchor": "center",
+                  "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 114.4 },
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'dare'"
+                },
+                {
+                  "id": "icon_safe",
+                  "type": "polygon",
+                  "points": [
+                    [137.6, 93.2],
+                    [222.4, 93.2],
+                    [222.4, 139.8],
+                    [180, 182.1],
+                    [137.6, 139.8]
+                  ],
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'safe'"
+                },
+                {
+                  "id": "icon_skip",
+                  "type": "polygon",
+                  "points": [[146.1, 88.9], [213.9, 88.9], [146.1, 173.6], [213.9, 173.6]],
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'skip'"
+                },
+                {
+                  "id": "icon_finish",
+                  "type": "polygon",
+                  "points": [
+                    [152.5, 80.5],
+                    [220.2, 105.9],
+                    [152.5, 131.3],
+                    [152.5, 182.1],
+                    [139.8, 182.1],
+                    [139.8, 80.5]
+                  ],
+                  "fill": "c_ink",
+                  "visible": "t.kind == 'finish'"
+                }
+              ]
             },
             {
-              "id": "icon_back",
-              "type": "polygon",
-              "shape": { "type": "arrow" },
-              "extends": "icon_arrow",
-              "rotate": 180,
-              "visible": "t.kind == 'back'"
-            },
-            {
-              "id": "icon_chev_a",
-              "type": "polygon",
-              "shape": { "type": "chevron", "inner": 0.45 },
-              "anchor": "center",
-              "box": { "x": 152.5, "y": 131.3, "w": 76.2, "h": 84.7 },
-              "fill": "c_ink",
-              "visible": "t.kind == 'shortcut'"
-            },
-            {
-              "id": "icon_chev_b",
-              "type": "polygon",
-              "shape": { "type": "chevron", "inner": 0.45 },
-              "extends": "icon_chev_a",
-              "box": { "x": 211.8 },
-              "visible": "t.kind == 'shortcut'"
-            },
-            {
-              "id": "icon_start",
-              "type": "polygon",
-              "shape": { "type": "triangle" },
-              "anchor": "center",
-              "rotate": 90,
-              "box": { "x": 180, "y": 131.3, "w": 84.7, "h": 93.2 },
-              "fill": "c_ink",
-              "visible": "t.kind == 'start'"
-            },
-            {
-              "id": "icon_dare",
-              "type": "polygon",
-              "shape": { "type": "star", "inner": 0.45 },
-              "anchor": "center",
-              "box": { "x": 180, "y": 131.3, "w": 114.4, "h": 114.4 },
-              "fill": "c_ink",
-              "visible": "t.kind == 'dare'"
-            },
-            {
-              "id": "icon_safe",
-              "type": "polygon",
-              "points": [[137.6, 93.2], [222.4, 93.2], [222.4, 139.8], [180, 182.1], [137.6, 139.8]],
-              "fill": "c_ink",
-              "visible": "t.kind == 'safe'"
-            },
-            {
-              "id": "icon_skip",
-              "type": "polygon",
-              "points": [[146.1, 88.9], [213.9, 88.9], [146.1, 173.6], [213.9, 173.6]],
-              "fill": "c_ink",
-              "visible": "t.kind == 'skip'"
-            },
-            {
-              "id": "icon_finish",
-              "type": "polygon",
-              "points": [
-                [152.5, 80.5],
-                [220.2, 105.9],
-                [152.5, 131.3],
-                [152.5, 182.1],
-                [139.8, 182.1],
-                [139.8, 80.5]
-              ],
-              "fill": "c_ink",
-              "visible": "t.kind == 'finish'"
+              "id": "tile_n",
+              "type": "text",
+              "font": "bebas",
+              "size": 122.8,
+              "color": "c_ink",
+              "visible": "has_n(t.kind)",
+              "at": { "x": 0, "y": 0 },
+              "text": "{match(t.kind, 'back', '-', 'forward', '+', '')}{t.n}"
             }
           ]
-        },
-        {
-          "id": "tile_n",
-          "type": "text",
-          "font": "bebas",
-          "size": 122.8,
-          "color": "c_ink",
-          "anchor": "left",
-          "visible": "has_n(t.kind)",
-          "at": { "x": 196.9, "y": 148.2 },
-          "text": "{match(t.kind, 'back', '-', 'forward', '+', '')}{t.n}"
         },
         {
           "id": "tile_text",
@@ -541,56 +558,52 @@
               "at": { "x": 0, "y": 0 }
             },
             {
-              "id": "rule_measure",
-              "type": "text",
-              "visible": false,
-              "note": "Hidden ruler: stacks the rules by measuring each text above the previous one (a group cannot read its own contents for its translate).",
-              "text": "{r.text}",
-              "size": 76.2,
-              "min_size": 50.8,
-              "wrap": 1482.4,
-              "line_spacing": 12.7,
-              "anchor": "top-left",
-              "repeat": { "each": "rules", "item": "r", "index": "ri" },
-              "at": {
-                "x": 144,
-                "y": "ri == 0 ? @rules_head.bounds.bottom + 46.6 : @rule_measure[ri - 1].bounds.bottom + 42.4"
-              }
-            },
-            {
-              "id": "rule",
+              "id": "rule_list",
               "type": "group",
-              "note": "One group per rule, placed where its hidden ruler is.",
-              "repeat": { "each": "rules", "item": "r", "index": "ri" },
-              "translate": { "x": 0, "y": "@rule_measure[ri].bounds.top" },
+              "note": "The rules stacked top to bottom. A column layout measures every rule, so a rule that wraps pushes the next ones down.",
+              "layout": {
+                "direction": "column",
+                "gap": 29.6,
+                "x": 0,
+                "y": "@rules_head.bounds.bottom + 46.6"
+              },
               "layers": [
                 {
-                  "id": "rule_badge",
-                  "type": "ellipse",
-                  "box": { "x": 0, "y": 4.2, "w": 97.4, "h": 97.4 },
-                  "fill": "c_accent"
-                },
-                {
-                  "id": "rule_no",
-                  "type": "text",
-                  "font": "bebas",
-                  "text": "{ri + 1}",
-                  "size": 80.5,
-                  "color": "c_panel",
-                  "anchor": "center",
-                  "at": { "x": "@rule_badge.bounds.cx", "y": "@rule_badge.bounds.cy + 4.2" }
-                },
-                {
-                  "id": "rule_text",
-                  "type": "text",
-                  "text": "{r.text}",
-                  "size": 76.2,
-                  "min_size": 50.8,
-                  "wrap": 1482.4,
-                  "line_spacing": 12.7,
-                  "color": "c_text",
-                  "anchor": "top-left",
-                  "at": { "x": 144, "y": 0 }
+                  "id": "rule",
+                  "type": "group",
+                  "note": "One group per rule: badge, number and text.",
+                  "repeat": { "each": "rules", "item": "r", "index": "ri" },
+                  "layers": [
+                    {
+                      "id": "rule_badge",
+                      "type": "ellipse",
+                      "box": { "x": 0, "y": 4.2, "w": 97.4, "h": 97.4 },
+                      "fill": "c_accent"
+                    },
+                    {
+                      "id": "rule_no",
+                      "type": "text",
+                      "font": "bebas",
+                      "text": "{ri + 1}",
+                      "size": 80.5,
+                      "color": "c_panel",
+                      "anchor": "center",
+                      "at": { "x": "@rule_badge.bounds.cx", "y": "@rule_badge.bounds.cy + 4.2" }
+                    },
+                    {
+                      "id": "rule_text",
+                      "type": "text",
+                      "text": "{r.text}",
+                      "size": 76.2,
+                      "min_size": 50.8,
+                      "wrap": 1482.4,
+                      "line_spacing": 12.7,
+                      "color": "c_text",
+                      "anchor": "top-left",
+                      "at": { "x": 144, "y": 0 },
+                      "markup": true
+                    }
+                  ]
                 }
               ]
             }
@@ -705,8 +718,14 @@
               "type": "ellipse",
               "anchor": "bottom",
               "box": { "x": 0, "y": 122.8, "w": 144, "h": 114.4 },
-              "fill": "pawn_color(n)",
-              "stroke": { "color": "c_ink", "width": 10.6 }
+              "stroke": { "color": "c_ink", "width": 10.6 },
+              "gradient": {
+                "type": "radial",
+                "stops": [
+                  { "color": "mix(pawn_color(n), #FFFFFF, 0.55)", "at": 0 },
+                  { "color": "pawn_color(n)", "at": 0.75 }
+                ]
+              }
             },
             {
               "id": "pawn_head",

@@ -15,8 +15,11 @@ Cards: `road-trip` (uses every default of the design), `road-trip-night` (the sa
 What it shows:
 
 - **Constants and functions**: `tile`, `cols`, `rows`, `ox`, `oy` and friends are `consts`; `ring_col(i)`, `ring_row(i)`, `tile_x(i)`, `kind_color(k)`, `has_n(k)` and `pip(face, k)` are `functions`. Resize the ring by changing `cols` and `rows`.
-- **Repeated groups with `translate`**: one `tile` group per list item, `legend_row` and `rule` per list item, `dice`, `die_pips` (3 x 3 grid, pips shown by `pip()`), `pawns`, `title_stars`, `stripes`. Layers inside use local coordinates.
-- **Indexed references**: `@tile_bg[t.n - 1]` gives the target tile of a shortcut, and `rule_measure` stacks the rules by reading the previous iteration.
+- **Repeated groups with `translate`**: one `tile` group per list item, `legend_row` per list item, `dice`, `die_pips` (3 x 3 grid, pips shown by `pip()`), `pawns`, `title_stars`, `stripes`. Layers inside use local coordinates.
+- **Row and column layout**: `rule_list` is a column, so a rule that wraps pushes the next ones down without any measuring layers; `tile_mark` is a row that centres a tile's icon and number together, whatever the number's width.
+- **Bold in text**: the rules use `"markup": true`, so card data can write `<b>START</b>`.
+- **Gradients**: the paper has a soft radial vignette and the pawns a radial highlight.
+- **Indexed references**: `@tile_bg[t.n - 1]` gives the target tile of a shortcut.
 - **Auto-shrink with `shrink_group`**: every tile label uses the same size.
 - **Polygon shapes and arrows**: `shape` presets (arrow, chevron, star, triangle), a dashed open polygon with `"arrow": "end"` for the shortcut links, and text outlines (`stroke`) on the title.
 - **Symbol glyphs**: the `★` in the subtitle comes from the bundled symbol font, Bebas Neue has none.

@@ -194,7 +194,15 @@
             ["cx + 199.92", 980.3],
             ["cx + 221.3", 954.8]
           ],
-          "fill": "liquid"
+          "fill": "liquid",
+          "gradient": {
+            "angle": 90,
+            "stops": [
+              "mix(liquid, #FFFFFF, 0.32)",
+              { "color": "liquid", "at": 0.55 },
+              "mix(liquid, #24121C, 0.14)"
+            ]
+          }
         },
         {
           "id": "glass_stroke",

@@ -1030,7 +1030,19 @@
                 ["gw * hw((ts + (0.96 - ts) * 0.0833)) - 14", "gbh * (ts + (0.96 - ts) * 0.0833)"],
                 ["gw * hw((ts + (0.96 - ts) * 0)) - 14", "gbh * (ts + (0.96 - ts) * 0)"]
               ],
-              "fill": "liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid"
+              "fill": "liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid",
+              "note": "The drink. The gradient runs from a lighter surface to a deeper bottom; 'fill' stays so other layers can read the plain color.",
+              "gradient": {
+                "angle": 90,
+                "stops": [
+                  "mix((liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid), #FFFFFF, 0.32)",
+                  {
+                    "color": "(liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid)",
+                    "at": 0.55
+                  },
+                  "mix((liquid_mode == 'auto' ? (n > 0 ? @mix_acc[n - 1].fill : liquid) : liquid), #24121C, 0.14)"
+                ]
+              }
             },
             {
               "id": "foam",

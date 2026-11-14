@@ -24,6 +24,8 @@ What it shows:
 - **Sums without a fixed number of slots**: a repeated hidden layer chains boxes as wide as each ingredient, so the end of the last box is the total. The cards use it for volume and % vol, the shopping list for the amount per ingredient (rows sorted by ingredient, a box starts where the previous one of the same ingredient ends). Read the values through `@layer.bounds`, from a group that is not moved sideways: a translated group changes the `x` it reads.
 - **Glasses**: highball, tumbler, martini, hurricane, shot, coupe and wine glass. The outline and the drink are polygons whose points come from one width function, `hw`.
 - **Design functions**: `tr` picks the German or English label (`lang`), `dec`, `num` and `pct` print numbers, `ing_name`, `ing_color`, `ing_vol` read the catalog.
+- **Gradients**: the drink in the glass runs from a lighter surface to a deeper bottom, in the mixed color; the menu's color dots are radial.
+- **Bold in text**: on the menu, alcoholic ingredients are bold. The menu's catalog marks them with `alc`, and the functions `bo` and `bc` put `<b>` and `</b>` around the name in a text layer with `"markup": true`.
 - **QR code**: the `url` param becomes a `qr` layer (dots, rounded corner squares). Leave `url` empty to hide it. The layer warns (3208) when a module would print narrower than 0.5 mm: that depends on the printed size of the code and the length of the link, not on the resolution, so short links are the fix.
 - **Menu**: `menu.cards.json` is generated from the card data (names, % vol, mixed color); the ingredient names come from the same catalog.
 - **Shopping list**: the `party` param picks drinks (dropdown) and glasses per drink; the sheet adds a reserve and rounds up to bottles.

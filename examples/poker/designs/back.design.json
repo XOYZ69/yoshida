@@ -39,7 +39,15 @@
         "h": "canvas.h - 2 * margin"
       },
       "radius": "corner - margin / 2",
-      "fill": "color"
+      "gradient": {
+        "type": "radial",
+        "stops": [
+          "mix(color, #FFFFFF, 0.16)",
+          { "color": "color", "at": 0.55 },
+          "mix(color, #000000, 0.35)"
+        ]
+      },
+      "note": "A radial gradient: lighter behind the medal, darker towards the corners."
     },
     {
       "id": "lattice_row",
@@ -67,7 +75,6 @@
     {
       "id": "field_line",
       "type": "rect",
-      "extends": "field",
       "box": {
         "x": "margin + 16",
         "y": "margin + 16",
@@ -104,7 +111,10 @@
       "shape": { "type": "star", "count": 8, "inner": 0.42 },
       "box": { "x": "canvas.w / 2", "y": "canvas.h / 2 - 20", "w": 170, "h": 170 },
       "anchor": "center",
-      "fill": "gold"
+      "gradient": {
+        "angle": 90,
+        "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+      }
     },
     {
       "id": "medal_suits",

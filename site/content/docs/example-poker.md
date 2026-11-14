@@ -12,6 +12,7 @@ yoshida render examples/poker --out out --date 2026-10-11
 # ...
 # wrote out/back/back.png (750 x 1050)
 yoshida render examples/poker --out out --pdf   # one PDF per set
+yoshida render examples/poker --out out --sheet 10x7   # one deck image per set
 ```
 
 ![A selection of cards from the poker example](../images/poker-deck.png)
@@ -45,7 +46,7 @@ Number cards, court cards, the joker and the back look different enough that one
 ] }
 ```
 
-JSON card files do not need a manifest, but `yoshida.json` lists the four sets so they get short names (`numbers`, `courts`, `jokers`, `back`) and render in deck order. In the editor, the **Design** picker in the toolbar switches between them. The designs share their look by using the same params (`paper`, `red`, `black`, `gold`) and the same layer names for the card face and frame; a design cannot extend layers of another design.
+JSON card files do not need a manifest, but `yoshida.json` lists the four sets so they get short names (`numbers`, `courts`, `jokers`, `back`) and render in deck order. In the editor, the **Design** picker in the toolbar switches between them. The designs share their look by using the same params (`paper`, `red`, `black`, `gold`) and the same layer names for the card face and frame; a design cannot extend layers of another design. Layers that should be edited once for several designs can live in a [shared component](@/docs/layer-group.md#shared-components-include), as the effect panel of the `forge` example does.
 
 ## `extends` for mirrored corners
 
@@ -83,12 +84,12 @@ The number design has one hidden `pip` layer with the suit symbol, its size and 
 
 ## Double-ended court cards
 
-The portrait on a jack, queen or king is one group, `figure`, repeated twice. The second iteration is moved to the lower half and turned 180 degrees with `"rotate": "half_i * 180"`. A group turns around the centre of its bounds, so the first layer in the group, `figure_box`, is an invisible rect centred on the group's origin: it keeps the bounds centred, and the turned half lines up with the first one. The crown is one of three polygons, shown by `"visible": "rank == 'K'"` and so on. The banner's name is `title` when a card sets it, otherwise King, Queen or Jack.
+The portrait on a jack, queen or king is one group, `figure`, repeated twice. The second iteration is moved to the lower half and turned 180 degrees with `"rotate": "half_i * 180"`. A group turns around the centre of its bounds, so the first layer in the group, `figure_box`, is an invisible rect centred on the group's origin: it keeps the bounds centred, and the turned half lines up with the first one. The crown is one of three polygons, shown by `"visible": "rank == 'K'"` and so on, filled with a three-stop gold [gradient](@/docs/layer-rect.md#gradient) instead of a flat color. The banner's name is `title` when a card sets it, otherwise King, Queen or Jack.
 
 ## The joker and the back
 
 - **Joker**: the vertical index is one text with `\n` between the letters and a negative `line_spacing`; a 24-point star `shape` behind a dashed ring; the jester cap is a group with `translate`, so its polygon points are relative to the cap's centre. `tone` (red or black) swaps the two main colors.
-- **Back**: a nested repeat, one group per row and one diamond per column, sized from the `cols` and `rows` constants so the lattice fills the field exactly. `(r + c) % 2` alternates the two diamond colors. `color` and `deck_name` change the whole back.
+- **Back**: a nested repeat, one group per row and one diamond per column, sized from the `cols` and `rows` constants so the lattice fills the field exactly. `(r + c) % 2` alternates the two diamond colors. The field behind it is a radial gradient that darkens towards the corners. `color` and `deck_name` change the whole back.
 
 ## Ideas to try
 
