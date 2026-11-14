@@ -98,6 +98,15 @@ h1, h2, h3 { font-weight: 600; }
 .feature h3 { font-size: 22px; margin-top: 14px; }
 .frontend { background: var(--panel); border-radius: 16px; padding: 26px; box-shadow: var(--shadow); }
 .frontend h3 { font-size: 26px; }
+.frontend pre { background: var(--code-bg); border-radius: 8px; border: 1px solid var(--line); }
+.game-cards img { border-radius: 14px; box-shadow: var(--shadow), 0 2px 4px rgba(0,0,0,.08); transform: rotate(-4deg); }
+.game-cards img + img { transform: rotate(5deg); }
+.game-list a { background: var(--panel); border-radius: 12px; border: 1px solid var(--line); transition: border-color .15s; }
+.game-list a:hover, .example:hover { border-color: var(--accent); }
+.game-list code { color: var(--muted); }
+.example { background: var(--panel); border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); transition: border-color .15s; }
+.example-img { background: var(--soft); border-radius: 10px; }
+.more a { color: var(--link); }
 .outro { font-family: var(--font-head); font-style: italic; font-size: 24px; max-width: 760px; }
 
 .release { background: var(--panel); border-radius: 16px; padding: 4px 28px 20px; margin-bottom: 20px; box-shadow: var(--shadow); }
