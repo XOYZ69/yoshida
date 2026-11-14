@@ -23,6 +23,8 @@ pre { overflow-x: auto; padding: 14px 16px; }
        border-bottom: 1px solid var(--line); }
 .top .brand { flex: none; }
 .top .brand img { height: 1.75rem; width: auto; display: block; }
+// Preview builds only (YOSHIDA_CHANNEL): a red stamp beside the logo.
+.top .channel { flex: none; margin-left: -.35rem; padding: .05rem .4rem; border-radius: .3rem; background: #d92d20; color: #fff; font-size: .68rem; font-weight: 700; letter-spacing: .06em; cursor: default; }
 .top .links { display: flex; gap: .25rem; align-items: center; }
 .top .links a { text-decoration: none; color: var(--muted); padding: .4rem .7rem; border-radius: .5rem; font-weight: 500; }
 .top .links a:hover, .top .links a[aria-current] { color: var(--ink); }
@@ -67,6 +69,32 @@ pre { overflow-x: auto; padding: 14px 16px; }
 .feature p, .frontend p { margin: 0; color: var(--muted); }
 .frontend { display: block; text-decoration: none; color: var(--ink); }
 .frontend span { display: inline-block; margin-top: 14px; color: var(--link); font-weight: 600; }
+.frontend pre { margin: 14px 0 0; font-size: 13px; }
+.section-lead { max-width: 44em; margin: -16px auto 36px; text-align: center; color: var(--muted); font-size: 18px; }
+.more { text-align: center; margin: 32px 0 0; font-weight: 600; }
+.preview { font-size: 14px; margin: 10px 0 0; }
+.preview a { text-decoration: none; }
+.preview .channel { display: inline-block; margin-right: 6px; padding: .05rem .4rem; border-radius: .3rem; background: #d92d20;
+                    color: #fff; font-size: .68rem; font-weight: 700; letter-spacing: .06em; vertical-align: 1px; }
+
+.game-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: center; }
+.game-cards { display: flex; justify-content: center; padding: 16px 0; }
+.game-cards img { width: 54%; }
+.game-cards img + img { margin-left: -12%; margin-top: 12%; }
+.game-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.game-list li:last-child { grid-column: 1 / -1; }
+.game-list a { display: block; height: 100%; padding: 14px 16px; text-decoration: none; color: var(--ink); }
+.game-list h3 { margin: 0 0 4px; font-size: 18px; }
+.game-list p { margin: 0 0 10px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.game-list code { display: block; font-size: 12.5px; overflow-wrap: anywhere; }
+
+.example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.example { display: block; text-decoration: none; color: var(--ink); padding: 14px 14px 20px; }
+.example-img { display: block; aspect-ratio: 3 / 2; padding: 12px; }
+.example-img img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.example h3 { margin: 14px 8px 4px; font-size: 22px; }
+.example p { margin: 0 8px; color: var(--muted); }
+
 .outro { text-align: center; color: var(--muted); padding: 96px 16px !important; font-size: 18px; }
 
 // Releases
@@ -79,5 +107,9 @@ pre { overflow-x: auto; padding: 14px 16px; }
   .hero { grid-template-columns: 1fr; min-height: 0; }
   .hand { height: 360px; }
   .hand img { width: 180px; }
-  .steps, .features .grid, .frontends .grid { grid-template-columns: 1fr; }
+  .steps, .features .grid, .frontends .grid, .game-grid, .example-grid { grid-template-columns: 1fr; }
+  .game-grid { gap: 16px; }
+}
+@media (max-width: 520px) {
+  .game-list { grid-template-columns: 1fr; }
 }

@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "name": "Forge card game",
+  "note": "A small card game showing text markup with icons, row layout, gradients, clipped and SVG images, shared components, QR logos and deck sheets.",
+  "sets": [
+    {
+      "name": "projects",
+      "design": "designs/project.design.json",
+      "cards": "cards/projects.cards.json"
+    },
+    {
+      "name": "corporations",
+      "design": "designs/corporation.design.json",
+      "cards": "cards/corporations.cards.json"
+    }
+  ]
+}

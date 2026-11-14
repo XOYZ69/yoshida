@@ -14,10 +14,14 @@ export type ProjectMeta = {
 	count: number;
 };
 
-const DB = "yoshida";
+// A preview build (YOSHIDA_CHANNEL=dev) has its own store: it may write
+// projects that the release editor on the same site cannot read yet.
+const CHANNEL: string = import.meta.env?.VITE_CHANNEL ?? "";
+const SUFFIX = CHANNEL ? `-${CHANNEL}` : "";
+const DB = `yoshida${SUFFIX}`;
 const META = "meta";
 const FILES = "files";
-const LAST = "yoshida.last-project";
+const LAST = `yoshida${SUFFIX}.last-project`;
 
 let opening: Promise<IDBDatabase> | null = null;
 

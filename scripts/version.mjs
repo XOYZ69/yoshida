@@ -100,6 +100,14 @@ function set(arg) {
 	for (const copy of COPIES) setCopy(copy, version);
 	console.log(`${old} -> ${version}: ${SOURCE} and ${COPIES.length} copies updated`);
 
+	// llms-full.txt names the version it was generated from; rebuild it so
+	// the bump commit passes `node scripts/llms.mjs check` in CI.
+	try {
+		execFileSync(process.execPath, [join(root, 'scripts/llms.mjs')], { cwd: root, stdio: 'inherit' });
+	} catch {
+		console.error('could not rebuild llms.txt and llms-full.txt; run: node scripts/llms.mjs');
+	}
+
 	// Anything else that still names the old version is worth a look, but may
 	// be on purpose (release notes, a changelog), so it is only listed.
 	if (old !== version) {

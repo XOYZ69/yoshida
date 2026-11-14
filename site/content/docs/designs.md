@@ -66,6 +66,18 @@ In the editor, the [Fonts window](@/docs/builder-fonts.md) adds entries to `font
 
 See [Layer: text](@/docs/layer-text.md).
 
+## Icons
+
+`icons` names the pictures that text layers with [`markup`](@/docs/layer-text.md#bold-italic-and-icons-markup) put inline with `{icon:name}`: an object of name to path, or one path with `*` where the name goes.
+
+```json
+"icons": { "steel": "assets/icons/steel.png", "gold": "assets/icons/gold.png" }
+```
+
+```json
+"icons": "assets/icons/*.png"
+```
+
 ## Canvas and card data together
 
 Every card in a set uses the same design. The card supplies values for the design's [params](@/docs/params.md), see [Card Data](@/docs/card-data.md). Everything else (layer positions, colors, text) can be an expression that reads those params.

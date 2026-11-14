@@ -2,18 +2,22 @@
   <img src="logo.png" alt="yoshida" width="360">
 </p>
 <p align="center">
-  <strong>Design, Create, Export - Your cards, your data*</strong>
+  <strong>One design. Every card.</strong><br>
+  Design a card once, fill it from a table, export every card. Your cards, your data.
 </p>
 <p align="center">
-	*There is a toggle to render cards server-side which is <b>OPTIONAL</b> but this will cause your data to leave your local machine.
+  <a href="https://yoshida.xoyz.dev/editor/"><b>Open the editor</b></a> ·
+  <a href="https://yoshida.xoyz.dev/docs/getting-started/">Getting started</a> ·
+  <a href="https://yoshida.xoyz.dev/docs/">Docs</a> ·
+  <a href="https://yoshida.xoyz.dev/docs/examples/">Examples</a> ·
+  <a href="https://github.com/XOYZ69/yoshida/releases/latest">Download</a> ·
+  <a href="https://yoshida.xoyz.dev/dev/">Dev preview</a>
 </p>
 
-> If you are looking for the old version (the cursed origin of this) please checkout [0.3.1-python](https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python)
-
-yoshida is the card creator I always wanted. Way too complicated, way too many possibilties... and now with a functional Browser version.
+yoshida is the card creator I always wanted. Way too complicated, way too many possibilities... and now with a functional browser version.
 Design your cards and just apply the data, press export and happy playing, printing, whatever you wanna do.
 
-Designs are simple json files that are easy to share, modify and abuse as much as you want.
+Designs are simple JSON files that are easy to share, modify and abuse as much as you want. The editor runs in your browser and your cards stay there. (Rendering on a server is an **optional** switch for self-hosted setups; only then does your data leave your machine.)
 
 <!-- The same screenshot as the docs, retaken with `npm run docs:screenshots` in web/. -->
 <p align="center">
@@ -23,40 +27,75 @@ Designs are simple json files that are easy to share, modify and abuse as much a
   </picture>
 </p>
 
-> The full documentation lives on the [docs site](https://yoshida.xoyz.dev/docs/).
+## Try it
 
-## Features
+| | |
+| --- | --- |
+| **In the browser** | Open <https://yoshida.xoyz.dev/editor/>, nothing to install. Pick an example from the project menu, change it, export. |
+| **On your computer** | Download the [latest release](https://github.com/XOYZ69/yoshida/releases/latest) zip (Linux, macOS, Windows), unzip it and run `./start.sh`, `start.command` or `start.bat`. Then open <http://localhost:8080/editor/>. |
+| **With Docker** | `docker compose up --build`, then open <http://localhost:8080/editor/>. |
+| **From the command line** | `yoshida check examples/forge` and `yoshida render examples/forge --out out` (the `yoshida` program is in the release zip). |
 
-- Fully functional **Browser based Editor**
-- **Layers** to create any shape, text or effect you need (if something is missing open an issue)
-- Use **Formulas** to manipulate every value possible
-- **Clear error messages** - Probably the best feature
-- **Print ready**: PNG with dpi, or one PDF per set with bleed and crop marks
-- Easy **Docker** Deployment with `docker compose up --build`
+New here? [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/) takes you to a first card in five minutes.
 
-## Quick start
+> **Dev preview:** the `dev` branch, with what the next release will bring, is live at <https://yoshida.xoyz.dev/dev/> (editor: <https://yoshida.xoyz.dev/dev/editor/>). It carries a red **DEV** stamp and is not as well tested as a release.
 
-**Run the editor with Docker**
+## What it can do
 
-```sh
-docker build -t yoshida .
-docker run -p 8080:8080 yoshida
-```
+<p align="center">
+  <img src="site/static/docs/images/forge-cards.png" alt="Four cards of the forge example" width="100%">
+</p>
 
-**Or use a release zip** (prebuilt for Linux, macOS and Windows, nothing to install):
+- A **visual editor** in the browser: drag, resize and rotate layers, preview every card live
+- **Layers** for shapes, text, images, QR codes and groups (if something is missing, open an issue)
+- **Formulas** in almost every field: positions, colours and text that react to the card's data
+- **Card text with icons**: `<b>Action:</b> spend 1 {icon:energy}` just works, and text wraps, shrinks to fit and truncates
+- **Rows and columns** that measure their content, for cost coins, pills and chips
+- **Gradients**, **SVG** art, rounded and clipped images, optional images with a placeholder
+- **Components**: share layers between designs with `include`
+- **Card data** from JSON or a CSV spreadsheet, one row per card
+- **Print ready**: PNG with dpi, one PDF per set with bleed and crop marks, SVG, or a deck sheet for tabletop simulators (`--sheet 10x7`)
+- **Clear error messages** with file, line and a hint. Probably the best feature
+- The same pixels in the **editor**, on the **command line** and on a **server**
 
-unzip it and run `./start.sh` (Linux), double-click `start.command` (macOS) or `start.bat` (Windows), then open <http://localhost:8080/editor/>.
+The [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/) has a snippet for each of these.
 
-**Or render from the command line**
+## Examples
 
-```sh
-yoshida check  examples/poker
-yoshida render examples/poker --out out
-```
+Working projects are in [`examples/`](examples), and in the editor's project menu:
+
+| Example | What it shows |
+| --- | --- |
+| [`forge`](examples/forge) | A small engine-builder card game: icons in text, rows, gradients, SVG art, a shared component, a QR code. The one to copy for a new project |
+| [`poker`](examples/poker) | A full deck of 52 cards, jokers and a back from four designs |
+| [`cocktails`](examples/cocktails) | Recipe cards, a menu and a shopping list at 600 dpi from one ingredient list |
+| [`board-game`](examples/board-game) | A printable A3 party board built from one list |
+
+<p align="center">
+  <img src="site/static/docs/images/poker-deck.png" alt="A selection of cards from the poker example" width="49%">
+  <img src="site/static/docs/images/cocktails-cards.png" alt="Cards from the cocktails example" width="49%">
+</p>
 
 ## Project files
 
 The editor exports a whole project (designs, card files, images and fonts) as a single `.yoshida` file. It is a zip container, like `.docx`, so you can share it, open it again with **Open project file…** or by dropping it on the editor, and unpack it with any archive tool after renaming it to `.zip`. Plain `.zip` projects from older exports still open. See [Saving, Images and Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/#export-and-open-a-project-file).
+
+## Documentation
+
+The **[documentation](https://yoshida.xoyz.dev/docs/)** has a page for every feature:
+
+| I want to | Read |
+| --- | --- |
+| Make my first card | [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/) · [Installation](https://yoshida.xoyz.dev/docs/installation/) |
+| See what is possible | [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/) · [Examples](https://yoshida.xoyz.dev/docs/examples/) |
+| Use the visual editor | [Builder](https://yoshida.xoyz.dev/docs/builder/) |
+| Write designs by hand | [Designs](https://yoshida.xoyz.dev/docs/designs/) · [Params](https://yoshida.xoyz.dev/docs/params/) · [Layers](https://yoshida.xoyz.dev/docs/layers/) · [Expressions](https://yoshida.xoyz.dev/docs/expressions/) · [Card Data](https://yoshida.xoyz.dev/docs/card-data/) |
+| Render from scripts, or host it | [Command Line](https://yoshida.xoyz.dev/docs/command-line/) · [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/) |
+| Fix an error | [Diagnostics](https://yoshida.xoyz.dev/docs/diagnostics/) |
+| Know what is missing, and where my data goes | [Known Gaps](https://yoshida.xoyz.dev/docs/known-gaps/) · [Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/) |
+| Work on yoshida | [Contributing](https://yoshida.xoyz.dev/docs/contributing/) · [Architecture](https://yoshida.xoyz.dev/docs/architecture/) · [Testing](https://yoshida.xoyz.dev/docs/testing/) |
+
+For AI agents: [`llms-full.txt`](llms-full.txt) is the whole file format on one page (also at <https://yoshida.xoyz.dev/llms-full.txt>), [`llms.txt`](llms.txt) the index of the docs, and [`AGENTS.md`](AGENTS.md) says how to build and test.
 
 ## Build from source
 
@@ -73,10 +112,6 @@ npm run wasm && npm run examples && npm run dev    # editor on http://localhost:
 
 More in [Building from Source](https://yoshida.xoyz.dev/docs/building-from-source/).
 
-## License
-
-yoshida is released under the [MIT License](LICENSE). Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## Third-party code
 
 yoshida bundles a few small libraries so that it builds without any C dependencies installed:
@@ -91,20 +126,8 @@ yoshida bundles a few small libraries so that it builds without any C dependenci
 
 The C libraries are single-header files in [`src/c/`](src/c). Why they are large and how to update them is described in [`src/c/README.md`](src/c/README.md).
 
-## Documentation
+## License
 
-The **[documentation](https://yoshida.xoyz.dev/docs/)** has a page for every feature:
+yoshida is released under the [MIT License](LICENSE). Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-|                                                                                                                                                       |                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/)                                                                                     | First card, in the editor and on the command line |
-| [Command Line](https://yoshida.xoyz.dev/docs/command-line/) · [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/)                   | Options, exit codes, the HTTP API                 |
-| [Designs](https://yoshida.xoyz.dev/docs/designs/) · [Params](https://yoshida.xoyz.dev/docs/params/) · [Layers](https://yoshida.xoyz.dev/docs/layers/) | The file format                                   |
-| [Expressions](https://yoshida.xoyz.dev/docs/expressions/) · [Card Data](https://yoshida.xoyz.dev/docs/card-data/)                                     | Formulas, templates, JSON and CSV                 |
-| [Builder](https://yoshida.xoyz.dev/docs/builder/)                                                                                                     | The visual editor, panel by panel, with shortcuts |
-| [Diagnostics](https://yoshida.xoyz.dev/docs/diagnostics/)                                                                                             | Every error code and how to fix it                |
-| [Architecture](https://yoshida.xoyz.dev/docs/architecture/)                                                                                           | Core, WebAssembly, server                         |
-| [Contributing](https://yoshida.xoyz.dev/docs/contributing/) · [Testing](https://yoshida.xoyz.dev/docs/testing/)                                       | Setup, checks, PR titles, releases                |
-| [Known Gaps](https://yoshida.xoyz.dev/docs/known-gaps/) · [Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/)                         | What is missing, and where your data goes         |
-
-Working projects are in [`examples/`](examples): a full poker deck (`poker`) and a printable party board (`board-game`).
+> Looking for the old version (the cursed origin of this)? It lives on as [0.3.1-python](https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python).

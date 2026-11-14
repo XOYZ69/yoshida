@@ -187,8 +187,11 @@
             [130, -150],
             [118, -50]
           ],
-          "fill": "gold",
-          "stroke": { "color": "ink", "width": 4 }
+          "stroke": { "color": "ink", "width": 4 },
+          "gradient": {
+            "angle": 90,
+            "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+          }
         },
         {
           "id": "crown_q",
@@ -207,8 +210,11 @@
             [118, -124],
             [110, -50]
           ],
-          "fill": "gold",
-          "stroke": { "color": "ink", "width": 4 }
+          "stroke": { "color": "ink", "width": 4 },
+          "gradient": {
+            "angle": 90,
+            "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+          }
         },
         {
           "id": "crown_j",
@@ -223,8 +229,11 @@
             [100, -98],
             [112, -50]
           ],
-          "fill": "gold",
-          "stroke": { "color": "ink", "width": 4 }
+          "stroke": { "color": "ink", "width": 4 },
+          "gradient": {
+            "angle": 90,
+            "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+          }
         },
         {
           "id": "jack_feather",

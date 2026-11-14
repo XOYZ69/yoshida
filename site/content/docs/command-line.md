@@ -12,7 +12,8 @@ yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                           [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
                           [--utc-offset HOURS] [--16bit] [--preview]
                           [--offline] [--pdf] [--crop-marks] [--svg]
-                          [--vector] [--scale N] [--format text|json]
+                          [--vector] [--scale N] [--sheet COLSxROWS]
+                          [--format text|json]
 yoshida fmt    <project or file>  [--check]
 yoshida version
 ```
@@ -48,6 +49,7 @@ Renders cards to PNG files at `<out>/<set>/<card id>.png`, or to [SVG files](#sv
 | `--svg`             | Write one SVG file per card, `<out>/<set>/<card id>.svg`, instead of PNG files. See [SVG](#svg)                                                                                    |
 | `--vector`          | With `--pdf`: draw the pages as vectors instead of images. See [PDF](#pdf)                                                                                                            |
 | `--scale N`         | Render at N times the canvas size, 1 to 4 (default 1), for sharper print. The printed size stays the same: the PNG dpi is `canvas.dpi` times N and PDF pages keep their size. A side over 10000 pixels is error 5001. With `--svg` or `--vector` it is the resolution of the parts that stay pixels (default 2). See [Resolution](@/docs/saving-images-and-privacy.md#resolution) |
+| `--sheet COLSxROWS` | Tile the cards of each set into one PNG per set, e.g. `10x7` for a tabletop simulator deck. See [Sheets](#sheets) |
 | `--format json`     | Print one JSON document (diagnostics, sets, written files, files with errors) instead of text                                                                                         |
 
 ### Where the files go
@@ -103,6 +105,15 @@ yoshida render examples/poker --set courts --card JC --out out --svg
 - Rotation, opacity and the `crop` and `fade` [effects](@/docs/effects.md) stay vectors. The filters `sharpen`, `detail`, `edge_enhance` and `find_edges` have no vector form: a layer or group with one of them is drawn as pixels at the export resolution (`--scale`; 2x when not given) and embedded as an image.
 - `--crop-marks` and `--16bit` do not apply to SVG files.
 - Any viewer draws anti-aliasing and scaled images a little differently from yoshida's own renderer, so an SVG is very close to the PNG, not identical. See [Known Gaps](@/docs/known-gaps.md#output).
+
+### Sheets
+
+`--sheet 10x7` tiles the cards of each set left to right, top to bottom into one PNG, `<out>/<set>.png`, for deck images in a tabletop simulator. A set with more cards than one sheet holds is written as `<set>-1.png`, `<set>-2.png` and so on. Every sheet has the full grid (empty cells are transparent), and the cell size is the size of the first card. `--scale` and `--card` work as usual; `--sheet` cannot be combined with `--pdf` or `--svg`. A sheet may be at most 20000 pixels per side.
+
+```sh
+yoshida render my-game --sheet 10x7
+# wrote my-game/out/actions.png (7500 x 7350, 10x7 sheet, 70 card(s))
+```
 
 ### Images from the web
 

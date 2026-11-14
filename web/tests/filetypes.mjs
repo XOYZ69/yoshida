@@ -15,6 +15,7 @@ const poker = new URL("../../examples/poker/", import.meta.url);
 
 const types = {
 	"designs/a.design.json": "design",
+	"components/row.component.json": "component",
 	"cards/a.cards.json": "cards",
 	"cards/a.cards.csv": "cards",
 	"yoshida.json": "json",

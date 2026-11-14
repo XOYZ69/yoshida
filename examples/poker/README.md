@@ -6,6 +6,7 @@ A complete deck of playing cards: 52 cards, two jokers (red and black) and a car
 yoshida check examples/poker
 yoshida render examples/poker --out out --date 2026-10-11
 yoshida render examples/poker --out out --pdf   # one PDF per set
+yoshida render examples/poker --out out --sheet 10x7   # one deck image per set, e.g. for Tabletop Simulator
 ```
 
 Each card is 750 x 1050 px at 300 dpi, the usual poker size of 63.5 x 88.9 mm (2.5 x 3.5 in), with transparent rounded corners.
@@ -24,6 +25,7 @@ What it shows:
 - **Design functions**: `side_n`, `mid_n`, `side_t` and `mid_t` place the pips for every rank from 2 to 10; `flip` turns the lower pips upside down; `glyph` picks the suit symbol.
 - **Repeated groups**: the court portrait is one group drawn twice, the second time turned 180 degrees, so the card reads the same both ways up. The back's lattice is a nested repeat.
 - **Polygon shapes and points**: crowns, the jester cap, stars and diamonds.
+- **Gradients**: the gold of the crowns, the jester's brim and bells and the star on the back is a three-stop linear gradient; the back's field is a radial gradient that darkens towards the corners.
 - **Params for the whole deck**: `paper`, `red`, `black` and `gold` in every design, `color` and `deck_name` on the back, an optional `title` for court cards.
 - **Symbol fallback**: the suit symbols come from the bundled symbol font.
 

@@ -31,10 +31,10 @@
         "26": { "text": "Check the headlights" }
       },
       "rules": [
-        { "text": "Everyone puts a pawn on START." },
+        { "text": "Everyone puts a pawn on <b>START</b>." },
         { "text": "Roll, move clockwise and follow the tile." },
         { "text": "Safe zones protect you from going back." },
-        { "text": "Land on FINISH to win the night." }
+        { "text": "Land on <b>FINISH</b> to win the night." }
       ],
       "foot": "Print on A3 landscape at 100 %. Same board, new mood: the night card changes only five tiles."
     },

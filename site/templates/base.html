@@ -1,10 +1,13 @@
 <!doctype html>
+{# "dev" when a preview of the dev branch is built (deploy.yml sets YOSHIDA_CHANNEL), else empty. #}
+{% set channel = get_env(name="YOSHIDA_CHANNEL", default="") %}
 <html lang="{{ lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ config.title }}{% endblock %}</title>
   <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
+  {% if channel %}<meta name="robots" content="noindex">{% endif %}
   <link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ get_url(path='fonts/fonts.css') }}">
   <link rel="stylesheet" href="{{ get_url(path='site.css', cachebust=true) }}">
@@ -24,6 +27,8 @@
       <img src="{{ get_url(path='logo.svg') }}" alt="yoshida" class="logo-light" width="120" height="30">
       <img src="{{ get_url(path='logo-dark.svg') }}" alt="yoshida" class="logo-dark" width="120" height="30">
     </a>
+    {# A preview build (YOSHIDA_CHANNEL=dev when the site is built) is marked beside the logo. #}
+    {% if channel %}<span class="channel" title="Preview of the {{ channel }} branch: newer than the latest release and not as well tested">{{ channel | upper }}</span>{% endif %}
     <nav class="links" aria-label="Site">
       <a href="{{ get_url(path='@/docs/_index.md') }}" {% if current_path and current_path is starting_with(pat="/docs/") %}aria-current="true"{% endif %}>Docs</a>
       <a href="{{ get_url(path='@/releases/_index.md') }}" {% if current_path and current_path is starting_with(pat="/releases/") %}aria-current="true"{% endif %}>Releases</a>
@@ -47,8 +52,9 @@
   {% block body %}{% endblock %}
   <footer class="bottom">
     {% set releases = get_section(path="releases/_index.md") %}
-    yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %} · file format {{ config.extra.format_version }} ·
-    <a href="{{ get_url(path='@/docs/third-party-notices.md') }}">Third-party notices</a>
+    yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %}{% if channel %} · {{ channel }} preview{% endif %} · file format {{ config.extra.format_version }} ·
+    <a href="{{ get_url(path='@/docs/third-party-notices.md') }}">Third-party notices</a> ·
+    {% if channel %}<a href="{{ config.base_url }}/../">Release site</a>{% else %}<a href="{{ config.base_url }}/dev/">Dev preview</a>{% endif %}
   </footer>
   {# Search dialog, filled by static/docs.js from the index page (templates/search-data.html). #}
   <dialog class="search" aria-label="Search the docs">

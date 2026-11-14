@@ -151,8 +151,11 @@
           "box": { "x": 0, "y": 44, "w": 316, "h": 46 },
           "anchor": "center",
           "radius": 23,
-          "fill": "gold",
-          "stroke": { "color": "#00000066", "width": 4 }
+          "stroke": { "color": "#00000066", "width": 4 },
+          "gradient": {
+            "angle": 90,
+            "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+          }
         },
         {
           "id": "brim_dot",
@@ -168,8 +171,11 @@
           "repeat": { "count": 3, "index": "i" },
           "box": { "x": "bell_x(i)", "y": "bell_y(i)", "w": 46, "h": 46 },
           "anchor": "center",
-          "fill": "gold",
-          "stroke": { "color": "#00000066", "width": 4 }
+          "stroke": { "color": "#00000066", "width": 4 },
+          "gradient": {
+            "angle": 90,
+            "stops": ["mix(gold, #FFFFFF, 0.45)", "gold", "mix(gold, #000000, 0.18)"]
+          }
         }
       ]
     },

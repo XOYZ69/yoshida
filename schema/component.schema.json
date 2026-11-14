@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yoshida.local/schema/v1/component.schema.json",
+  "title": "yoshida component",
+  "description": "Layers shared by designs: a group takes them with \"include\"",
+  "type": "object",
+  "required": ["format", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": 1 },
+    "name": { "type": "string" },
+    "note": { "type": "string" },
+    "layers": {
+      "type": "array",
+      "description": "Layers of the component, first is bottom",
+      "items": { "$ref": "design.schema.json#/$defs/layer" }
+    }
+  }
+}

@@ -9,6 +9,7 @@ them as described below.
 | `stb_image.h`    | stb_image: PNG, JPEG, GIF and BMP decoding              | 2.30     | Public domain / MIT (dual)     | <https://github.com/nothings/stb>            |
 | `stb_truetype.h` | stb_truetype: TrueType font parsing and glyph rendering | 1.26     | Public domain / MIT (dual)     | <https://github.com/nothings/stb>            |
 | `simplewebp.h`   | simplewebp: WebP decoding                               | 20260718 | BSD-3-Clause (see end of file) | <https://github.com/MikuAuahDark/simplewebp> |
+| `nanosvg.h`, `nanosvgrast.h` | nanosvg: SVG parsing and rasterising          | commit 239e102 (2026-07-09) | zlib (`nanosvg-LICENSE.txt`) | <https://github.com/memononen/nanosvg> |
 
 ## Why they are so large
 
@@ -27,6 +28,7 @@ binaries.
 - The binaries are built without a libc. The small headers in `include/`
   (`stdlib.h`, `string.h`, `math.h`, `assert.h`, `stdio.h`) are stubs that map
   the few libc functions the libraries need to yoshida's own implementations.
+- nanosvg also needs `sscanf`, `strtol`, `strtoll`, `qsort`, `strchr`, `strstr` and `strncpy`; `stb_impl.c` has small versions written for exactly its uses. Its file functions (`nsvgParseFromFile`) compile against the stub `stdio.h` and always fail; yoshida does not use them.
 - Format switches live in `stb_impl.c`. Removing a format there (for example
   GIF or BMP) makes the binaries smaller without touching the vendored files.
 

@@ -89,6 +89,35 @@ Text that needs more lines than `max_lines` is cut after that many lines and the
 
 `font` names an entry in the design's `fonts`. See [Designs](@/docs/designs.md#fonts). In the editor, the [Fonts window](@/docs/builder-fonts.md) finds and imports fonts and sets them on the layer. Characters the font has no glyph for are drawn with the bundled default font (Lato), then with the bundled symbol font (a subset of Noto Sans Symbols 2: arrows, geometric shapes, stars ★, check marks ✓, dice faces ⚀ to ⚅, card suits, dingbats). So `"GO → ★"` works with a font that only has letters. Characters none of the three has (emoji, for example) are drawn as boxes and warning 4003 is reported.
 
+## Bold, italic and icons (`markup`)
+
+With `"markup": true` the text (after its `{...}` placeholders are filled in) can use:
+
+- `<b>...</b>` for bold and `<i>...</i>` for italic, nested as you like;
+- `{icon:name}` for an inline icon from the design's [`icons`](@/docs/designs.md#icons).
+
+```json
+{
+  "id": "effect", "type": "text", "markup": true,
+  "font": "body", "font_bold": "body_bold", "font_italic": "body_italic",
+  "text": "{effect}", "at": { "x": 40, "y": 600 }, "wrap": 670, "size": 28
+}
+```
+
+with card data such as `"effect": "Gain <b>2 {icon:steel}</b>, then <i>draw</i>."`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `markup` | `false` | Turns the markup on |
+| `font_bold` | — | Font for bold runs. Without it, bold is drawn by thickening the regular glyphs |
+| `font_italic` | — | Font for italic runs. Without it, italic runs are drawn upright (warning 3209) |
+| `font_bold_italic` | `font_bold`, then `font_italic` | Font for runs that are both |
+| `icon_scale` | `1` | Icon height in font sizes |
+
+Icons keep their aspect ratio, sit centred on the capital letters, and wrap with the word they are attached to (`2{icon:steel}` stays together). They are drawn in their own colors. An icon name the design does not know is warning 3209 and is left out; a missing icon file is error 4001. Unknown tags such as `<3` are plain text.
+
+In a design's own template text, `{icon:name}` is kept as it is (it is never an expression), so `"text": "Pay 2 {icon:gold}"` works too. Wrapping, alignment, justification, auto-shrink and `max_lines` all measure the styled text and the icons.
+
 ## Text in templates
 
 The `text` value is a [template](@/docs/expressions-templates.md): literal text with `{expression}` holes.

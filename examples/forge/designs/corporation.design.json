@@ -1,0 +1,75 @@
+{
+  "$schema": "../../../schema/design.schema.json",
+  "format": 1,
+  "name": "Corporation",
+  "canvas": { "width": 500, "height": 700, "background": "#1F1A17" },
+  "fonts": {
+    "body": "assets/fonts/Poppins-Medium.ttf",
+    "bold": "assets/fonts/Poppins-SemiBold.ttf"
+  },
+  "icons": "assets/icons/*.svg",
+  "params": {
+    "title": { "type": "text", "default": "Corporation" },
+    "start": { "type": "text", "default": "" },
+    "effect": { "type": "text", "default": "" },
+    "panel": { "type": "color", "default": "#E9DDC8" },
+    "logo": { "type": "image", "default": "assets/art/logo.svg" },
+    "url": { "type": "text", "default": "https://example.com/rules" }
+  },
+  "layers": [
+    {
+      "id": "band",
+      "type": "polygon",
+      "points": [[0, 0], [500, 0], [500, 170], [0, 230]],
+      "gradient": {
+        "angle": 0,
+        "stops": ["#C0392B", "#8E44AD"]
+      }
+    },
+    {
+      "id": "mark",
+      "type": "image",
+      "src": "{logo}",
+      "clip": [[80, 26], [126, 53], [126, 107], [80, 134], [34, 107], [34, 53]],
+      "box": { "x": 30, "y": 30, "w": 100, "h": 100 }
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "font": "bold",
+      "text": "{title}",
+      "at": { "x": 150, "y": 80 },
+      "anchor": "left",
+      "size": 32,
+      "color": "#FFFFFF",
+      "max_width": 320
+    },
+    {
+      "id": "start_text",
+      "type": "text",
+      "markup": true,
+      "font": "body",
+      "font_bold": "bold",
+      "text": "<b>Start:</b> {start}",
+      "at": { "x": 30, "y": 260 },
+      "wrap": 440,
+      "size": 22,
+      "color": "#F4EDE0"
+    },
+    {
+      "id": "effects",
+      "type": "group",
+      "include": "components/effect-row.component.json",
+      "translate": { "x": 30, "y": 340 }
+    },
+    {
+      "id": "rules",
+      "type": "qr",
+      "text": "{url}",
+      "level": "high",
+      "logo_src": "{logo}",
+      "margin": 2,
+      "box": { "x": 375, "y": 575, "w": 100, "h": 100 }
+    }
+  ]
+}

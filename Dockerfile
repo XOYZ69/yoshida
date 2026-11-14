@@ -7,11 +7,15 @@
 #   docker run -p 8080:8080 -e YOSHIDA_RENDER=0 yoshida # editor only (browser render)
 
 ARG ZIG_VERSION=0.16.0
+# "dev" stamps the build as a preview: docker build --build-arg YOSHIDA_CHANNEL=dev
+ARG YOSHIDA_CHANNEL=
 
 # Zig from PyPI (the ziglang package ships the official release binaries and
 # works on amd64 and arm64). Downloading the tarball from ziglang.org works too.
 FROM python:3.13-alpine AS zig
 ARG ZIG_VERSION
+ARG YOSHIDA_CHANNEL
+ENV YOSHIDA_CHANNEL=${YOSHIDA_CHANNEL}
 RUN pip install --no-cache-dir "ziglang==${ZIG_VERSION}"
 WORKDIR /src
 COPY build.zig build.zig.zon ./
@@ -20,6 +24,8 @@ RUN python3 -m ziglang build -Doptimize=ReleaseFast -Dstrip=true \
  && python3 -m ziglang build wasm
 
 FROM node:22-alpine AS web
+ARG YOSHIDA_CHANNEL
+ENV YOSHIDA_CHANNEL=${YOSHIDA_CHANNEL}
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -35,6 +41,8 @@ RUN npm run examples && npm run build
 # Zola publishes x86_64 and aarch64 Linux builds, matching amd64 and arm64.
 FROM debian:bookworm-slim AS site
 ARG ZOLA_VERSION=0.23.6
+ARG YOSHIDA_CHANNEL
+ENV YOSHIDA_CHANNEL=${YOSHIDA_CHANNEL}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
  && curl -fsSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-$(uname -m)-unknown-linux-gnu.tar.gz" | tar xz -C /usr/local/bin
 WORKDIR /src/site

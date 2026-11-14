@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../schema/cards.schema.json",
+  "format": 1,
+  "design": "designs/corporation.design.json",
+  "cards": [
+    {
+      "id": "ironworks",
+      "title": "Ironworks Ltd.",
+      "start": "40 {icon:gold}, 5 {icon:steel} and 1 {icon:energy} production.",
+      "effect": "<b>Effect:</b> your {icon:steel} is worth 1 {icon:gold} more when you pay for buildings."
+    }
+  ]
+}

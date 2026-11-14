@@ -34,7 +34,23 @@ export type MenuItem =
 			disabled?: boolean;
 			danger?: boolean;
 			icon?: IconName;
+			/** A CSS colour shown as a dot in place of the icon. */
+			swatch?: string;
 			action: () => void;
+	  }
+	| {
+			/**
+			 * A row of colour dots, picked with one click. `color` is a CSS
+			 * colour, or null for the "none" dot.
+			 */
+			swatches: {
+				label: string;
+				color: string | null;
+				current?: boolean;
+				action: () => void;
+			}[];
+			/** What the row sets, for screen readers. */
+			label: string;
 	  }
 	| { separator: true }
 	| { heading: string };

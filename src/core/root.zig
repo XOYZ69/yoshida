@@ -21,8 +21,11 @@ pub const api = @import("api.zig");
 pub const exprapi = @import("exprapi.zig");
 pub const fmt = @import("fmt.zig");
 pub const pdf = @import("pdf.zig");
+pub const qr = @import("qr.zig");
 
 pub const version = @import("build_options").version;
+/// "dev" for a preview build from the dev branch, empty for a release build.
+pub const channel = @import("build_options").channel;
 pub const format_version = 1;
 pub const default_font = render.default_font_data;
 

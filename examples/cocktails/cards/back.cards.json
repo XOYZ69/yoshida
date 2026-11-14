@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "design": "designs/back.design.json",
+  "cards": [
+    { "id": "back", "background": "#E85D75", "liquid": "#F4A6B7" }
+  ]
+}

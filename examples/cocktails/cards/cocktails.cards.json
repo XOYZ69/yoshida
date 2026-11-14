@@ -1,0 +1,487 @@
+{
+  "format": 1,
+  "design": "designs/cocktail.design.json",
+  "name": "Party cocktails",
+  "cards": [
+    {
+      "id": "001",
+      "cocktail_name": "Black Bombay",
+      "tagline": "dunkel, fruchtig, Gin",
+      "background": "#360210",
+      "liquid": "#8A2A5E",
+      "glass": "highball",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Gin", "amount": 4, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Maracujanektar", "amount": 3, "unit": "cl" },
+        { "ingredient": "Johannisbeernektar", "amount": 6, "unit": "cl" },
+        { "ingredient": "Blue Curaçao Sirup", "amount": 2, "unit": "cl" }
+      ],
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.black-bombay.r_id=Recipe_2525213.html",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "002",
+      "cocktail_name": "Paradiesvogel",
+      "tagline": "alkoholfrei, tropisch",
+      "background": "#ba6a08",
+      "liquid": "#FFA23A",
+      "glass": "hurricane",
+      "garnish": "orange",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Maracujanektar", "amount": 6, "unit": "cl" },
+        { "ingredient": "Ananassaft", "amount": 6, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 6, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 3, "unit": "cl" },
+        { "ingredient": "Crushed Ice", "amount": 0, "unit": "none" }
+      ],
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.paradiesvogel.r_id=Recipe_1872009.html",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "003",
+      "cocktail_name": "German Shooter",
+      "tagline": "kurz & fruchtig",
+      "background": "#63111a",
+      "liquid": "#E2527A",
+      "glass": "shot",
+      "garnish": "none",
+      "ice": false,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Maracujanektar", "amount": 1, "unit": "cl" },
+        { "ingredient": "Limettensirup", "amount": 1, "unit": "cl" },
+        { "ingredient": "Erdbeersirup", "amount": 1, "unit": "cl" },
+        { "ingredient": "Weißer Rum", "amount": 1, "unit": "cl" },
+        { "ingredient": "Puschkin Black Berries", "amount": 1.5, "unit": "cl" }
+      ],
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.deutschland-shooter.r_id=Recipe_2522447.html",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "004",
+      "cocktail_name": "Tropical Derby",
+      "tagline": "Sonnenuntergang im Glas",
+      "background": "#c33807",
+      "liquid": "#FF7A3D",
+      "glass": "highball",
+      "garnish": "cherry",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Gin", "amount": 5, "unit": "cl" },
+        { "ingredient": "Ananassaft", "amount": 1, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 3, "unit": "cl" },
+        { "ingredient": "Maracujanektar", "amount": 3, "unit": "cl" },
+        { "ingredient": "Grenadine", "amount": 2, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" }
+      ],
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.tropical-derby.r_id=Recipe_2525316.html",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "005",
+      "cocktail_name": "Whiskey Sour",
+      "tagline": "der Klassiker",
+      "background": "#bcae09",
+      "liquid": "#F2C14E",
+      "glass": "tumbler",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Zuckersirup", "amount": 2, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 5, "unit": "cl" },
+        { "ingredient": "Whiskey", "amount": 5, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 3, "unit": "cl" }
+      ],
+      "url": "https://filiale.kaufland.de/rezepte/rezeptsuche/rezept.whisky-sour.r_id=Recipe_2525682.html",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "006",
+      "cocktail_name": "Blue Hawaii",
+      "tagline": "Südsee zum Trinken",
+      "background": "#02be97",
+      "liquid": "#38C6D9",
+      "glass": "martini",
+      "garnish": "cherry",
+      "ice": false,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Vodka", "amount": 2, "unit": "cl", "vol": 37.5 },
+        { "ingredient": "Weißer Rum", "amount": 2, "unit": "cl", "vol": 40 },
+        { "ingredient": "Blue Curaçao", "amount": 1.5, "unit": "cl" },
+        { "ingredient": "Ananassaft", "amount": 9, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" },
+        { "ingredient": "Zuckersirup", "amount": 1.5, "unit": "cl" }
+      ],
+      "url": "https://cocktailbart.de/cocktails/cocktails-mit-rum/blue-hawaii/",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "007",
+      "cocktail_name": "Hurricane",
+      "tagline": "stark & süß",
+      "background": "#eb2a0a",
+      "liquid": "#E8453C",
+      "glass": "hurricane",
+      "garnish": "orange",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Dunkler Rum", "amount": 6, "unit": "cl" },
+        { "ingredient": "Weißer Rum", "amount": 6, "unit": "cl", "vol": 40 },
+        { "ingredient": "Maracujanektar", "amount": 6, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 3, "unit": "cl" },
+        { "ingredient": "Grenadine", "amount": 1.5, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 3, "unit": "cl" },
+        { "ingredient": "Zuckersirup", "amount": 1.5, "unit": "cl" }
+      ],
+      "url": "https://cocktailbart.de/cocktails/cocktails-mit-rum/hurricane-cocktail/",
+      "liquid_mode": "custom"
+    },
+    {
+      "id": "008",
+      "cocktail_name": "Piña Colada",
+      "tagline": "cremig, tropisch",
+      "background": "#E9B23C",
+      "liquid": "#FFF0C2",
+      "glass": "hurricane",
+      "garnish": "cherry",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 5, "unit": "cl", "vol": 40 },
+        { "ingredient": "Kokoscreme", "amount": 3, "unit": "cl" },
+        { "ingredient": "Ananassaft", "amount": 5, "unit": "cl" }
+      ],
+      "url": "https://www.chefkoch.de/rezepte/2556331400060550/Pina-Colada.html",
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "009",
+      "cocktail_name": "Moscow Mule",
+      "tagline": "scharf & frisch",
+      "background": "#B8683A",
+      "liquid": "#E9C46A",
+      "glass": "tumbler",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Vodka", "amount": 4.5, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1, "unit": "cl" },
+        { "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/moscow-mule/",
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "010",
+      "cocktail_name": "Mojito",
+      "tagline": "Minze & Limette",
+      "background": "#3FA66B",
+      "liquid": "#CFEFC4",
+      "glass": "highball",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 4.5, "unit": "cl", "vol": 40 },
+        { "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" },
+        { "ingredient": "Minze", "amount": 6, "unit": "pc" },
+        { "ingredient": "Sodawasser", "amount": 6, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/mojito/",
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "011",
+      "cocktail_name": "Aperol Spritz",
+      "tagline": "der Sommerklassiker",
+      "background": "#F26A1B",
+      "liquid": "#FF9E4A",
+      "glass": "wine",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Prosecco", "amount": 9, "unit": "cl" },
+        { "ingredient": "Aperol", "amount": 6, "unit": "cl" },
+        { "ingredient": "Sodawasser", "amount": 3, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/spritz/",
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "012",
+      "cocktail_name": "AIDA Honey Mule",
+      "tagline": "Honig, Gin & Ingwer",
+      "background": "#D99A1E",
+      "liquid": "#F1C24A",
+      "glass": "tumbler",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Bombay Sapphire Gin", "amount": 4, "unit": "cl" },
+        { "ingredient": "Honigsirup", "amount": 2, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" }
+      ],
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "013",
+      "cocktail_name": "Virgin Honey Mule",
+      "tagline": "alkoholfrei, mit 0,0%-Gin",
+      "background": "#7FA650",
+      "liquid": "#E8C44A",
+      "glass": "tumbler",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Gin entalkoholisiert", "amount": 4, "unit": "cl" },
+        { "ingredient": "Honigsirup", "amount": 2, "unit": "cl" },
+        { "ingredient": "Zitronensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" }
+      ],
+      "liquid_mode": "auto"
+    },
+    {
+      "id": "014",
+      "cocktail_name": "Margarita",
+      "tagline": "frisch, sauer, salzig",
+      "background": "#6DBE8C",
+      "liquid_mode": "auto",
+      "glass": "coupe",
+      "garnish": "lime",
+      "ice": false,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Tequila", "amount": 5, "unit": "cl" },
+        { "ingredient": "Triple Sec", "amount": 2, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/margarita/"
+    },
+    {
+      "id": "015",
+      "cocktail_name": "Daiquiri",
+      "tagline": "kubanischer Klassiker",
+      "background": "#3DB8A6",
+      "liquid_mode": "auto",
+      "glass": "coupe",
+      "garnish": "lime",
+      "ice": false,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 6, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/daiquiri/"
+    },
+    {
+      "id": "016",
+      "cocktail_name": "Cosmopolitan",
+      "tagline": "pink & elegant",
+      "background": "#D6457E",
+      "liquid_mode": "auto",
+      "glass": "martini",
+      "garnish": "orange",
+      "ice": false,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Vodka", "amount": 4, "unit": "cl" },
+        { "ingredient": "Triple Sec", "amount": 1.5, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1.5, "unit": "cl" },
+        { "ingredient": "Cranberrysaft", "amount": 3, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/cosmopolitan/"
+    },
+    {
+      "id": "017",
+      "cocktail_name": "Negroni",
+      "tagline": "bitter & kräftig",
+      "background": "#B3262E",
+      "liquid_mode": "auto",
+      "glass": "tumbler",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Gin", "amount": 3, "unit": "cl" },
+        { "ingredient": "Campari", "amount": 3, "unit": "cl" },
+        { "ingredient": "Roter Wermut", "amount": 3, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/negroni/"
+    },
+    {
+      "id": "018",
+      "cocktail_name": "Cuba Libre",
+      "tagline": "Rum, Cola & Limette",
+      "background": "#6B3F2A",
+      "liquid_mode": "auto",
+      "glass": "highball",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 5, "unit": "cl" },
+        { "ingredient": "Cola", "amount": 12, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/cuba-libre/"
+    },
+    {
+      "id": "019",
+      "cocktail_name": "Caipirinha",
+      "tagline": "Brasiliens Nationaldrink",
+      "background": "#7DBE3D",
+      "liquid_mode": "auto",
+      "glass": "tumbler",
+      "garnish": "lime",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Cachaça", "amount": 6, "unit": "cl" },
+        { "ingredient": "Limette", "amount": 1, "unit": "pc" },
+        { "ingredient": "Rohrzucker", "amount": 4, "unit": "tsp" },
+        { "ingredient": "Crushed Ice", "amount": 0, "unit": "none" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/caipirinha/"
+    },
+    {
+      "id": "020",
+      "cocktail_name": "Tequila Sunrise",
+      "tagline": "Sonnenaufgang im Glas",
+      "background": "#F28C28",
+      "liquid_mode": "auto",
+      "glass": "highball",
+      "garnish": "orange",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Tequila", "amount": 4.5, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 9, "unit": "cl" },
+        { "ingredient": "Grenadine", "amount": 1.5, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/tequila-sunrise/"
+    },
+    {
+      "id": "021",
+      "cocktail_name": "Sex on the Beach",
+      "tagline": "fruchtig & süß",
+      "background": "#F2735A",
+      "liquid_mode": "auto",
+      "glass": "highball",
+      "garnish": "orange",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Vodka", "amount": 4, "unit": "cl" },
+        { "ingredient": "Pfirsichlikör", "amount": 2, "unit": "cl" },
+        { "ingredient": "Orangensaft", "amount": 4, "unit": "cl" },
+        { "ingredient": "Cranberrysaft", "amount": 4, "unit": "cl" }
+      ],
+      "url": "https://iba-world.com/iba-cocktail/sex-on-the-beach/"
+    },
+    {
+      "id": "022",
+      "cocktail_name": "Gin Tonic",
+      "tagline": "klar, trocken, 1:3",
+      "background": "#4F9DB8",
+      "liquid_mode": "auto",
+      "glass": "wine",
+      "garnish": "lime",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Gin", "amount": 5, "unit": "cl" },
+        { "ingredient": "Tonic Water", "amount": 15, "unit": "cl" }
+      ]
+    },
+    {
+      "id": "023",
+      "cocktail_name": "Virgin Mojito",
+      "tagline": "alkoholfrei, Minze & Limette",
+      "background": "#3FA66B",
+      "liquid_mode": "auto",
+      "glass": "highball",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 4.5, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 2, "unit": "cl" },
+        { "ingredient": "Rohrzucker", "amount": 2, "unit": "tsp" },
+        { "ingredient": "Minze", "amount": 6, "unit": "pc" },
+        { "ingredient": "Sodawasser", "amount": 6, "unit": "cl" }
+      ],
+      "virgin": true,
+      "url": "https://iba-world.com/iba-cocktail/mojito/"
+    },
+    {
+      "id": "024",
+      "cocktail_name": "Virgin Mule",
+      "tagline": "alkoholfrei, scharf & frisch",
+      "background": "#B8683A",
+      "liquid_mode": "auto",
+      "glass": "tumbler",
+      "garnish": "lime",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Vodka", "amount": 4.5, "unit": "cl" },
+        { "ingredient": "Limettensaft", "amount": 1, "unit": "cl" },
+        { "ingredient": "Ginger Beer", "amount": 12, "unit": "cl" }
+      ],
+      "virgin": true,
+      "url": "https://iba-world.com/iba-cocktail/moscow-mule/"
+    },
+    {
+      "id": "025",
+      "cocktail_name": "Virgin Colada",
+      "tagline": "alkoholfrei, cremig",
+      "background": "#E9B23C",
+      "liquid_mode": "auto",
+      "glass": "hurricane",
+      "garnish": "cherry",
+      "ice": true,
+      "straw": true,
+      "ingredients": [
+        { "ingredient": "Weißer Rum", "amount": 5, "unit": "cl" },
+        { "ingredient": "Kokoscreme", "amount": 3, "unit": "cl" },
+        { "ingredient": "Ananassaft", "amount": 5, "unit": "cl" }
+      ],
+      "virgin": true
+    },
+    {
+      "id": "026",
+      "cocktail_name": "Spritz 0,0",
+      "tagline": "alkoholfreier Sommerklassiker",
+      "background": "#F26A1B",
+      "liquid_mode": "auto",
+      "glass": "wine",
+      "garnish": "orange",
+      "ice": true,
+      "straw": false,
+      "ingredients": [
+        { "ingredient": "Prosecco", "amount": 9, "unit": "cl" },
+        { "ingredient": "Aperol", "amount": 6, "unit": "cl" },
+        { "ingredient": "Sodawasser", "amount": 3, "unit": "cl" }
+      ],
+      "virgin": true,
+      "url": "https://iba-world.com/iba-cocktail/spritz/"
+    }
+  ]
+}

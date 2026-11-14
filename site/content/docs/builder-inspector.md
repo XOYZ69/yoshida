@@ -32,6 +32,8 @@ Instead of listing problems inside the inspector, each section shows a small chi
 
 A group shows rotate, visible, opacity, effects and **Ungroup**, its **Origin** (`translate.x`, `translate.y`) and **Repeat**. A group has no size of its own; with a translate, the layers inside use coordinates relative to it, and moving the group on the canvas changes only the translate. See [Layer: group](@/docs/layer-group.md).
 
+**Create component** moves the group's layers into a shared component file. A group that includes a component says so, with how many other files use it, and has **Detach** and **Open component file**; a layer inside a component shows a note that its changes reach every design that includes it. See [Components](@/docs/builder-layers.md#components).
+
 Expression fields of layers inside a repeated group suggest the group's loop names (`i`, the item and its fields).
 
 ## Nothing selected: the design

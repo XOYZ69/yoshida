@@ -1,0 +1,94 @@
+# yoshida
+
+> yoshida makes cards (playing cards, game cards, labels, boards) from JSON: a design of layers with formulas, filled from card data in JSON or CSV, rendered to PNG, SVG or PDF by a command line tool, a browser editor or a small server.
+
+To write or change yoshida files, read the reference first: it is one page with every field, function and command line option, generated from the JSON Schemas so it matches the tool. Validate what you write with `yoshida check <project>` and tidy it with `yoshida fmt <project>`.
+
+## Reference
+
+- [yoshida reference](https://yoshida.xoyz.dev/llms-full.txt): the whole file format, the expression language, the command line and the diagnostic codes on one page
+- [design.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/design.schema.json): JSON Schema of a design file
+- [cards.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/cards.schema.json): JSON Schema of a card file
+- [component.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/component.schema.json): JSON Schema of a shared component
+- [yoshida.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/yoshida.schema.json): JSON Schema of the project manifest
+
+## Docs: Start
+
+- [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/): Your first card in five minutes: in the editor, from scratch and on the command line.
+- [Installation](https://yoshida.xoyz.dev/docs/installation/): Run yoshida in the browser, from the release zip, with Docker or from source.
+- [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/): What a design can do, one short snippet per feature, with links to the details.
+- [Examples](https://yoshida.xoyz.dev/docs/examples/): The four example projects, what each one shows and how to open them.
+- [Poker deck](https://yoshida.xoyz.dev/docs/example-poker/): A walk through the poker deck example: four designs in one project and extends.
+- [Board game](https://yoshida.xoyz.dev/docs/example-board-game/): A walk through the printable board game example.
+- [Command Line](https://yoshida.xoyz.dev/docs/command-line/): Check projects, render cards and format files from a terminal or CI.
+- [Server and Docker](https://yoshida.xoyz.dev/docs/server-and-docker/): Host the editor and render whole card sets on your own server.
+
+## Docs: Format
+
+- [Project Layout and Manifest](https://yoshida.xoyz.dev/docs/project-layout-and-manifest/): A project folder, its paths and the yoshida.json manifest.
+- [Designs](https://yoshida.xoyz.dev/docs/designs/): A design file: canvas, fonts, params and the layers that are drawn.
+- [Params](https://yoshida.xoyz.dev/docs/params/): The inputs a card can set: types, defaults, lists and enums.
+- [Layers](https://yoshida.xoyz.dev/docs/layers/): How layers are drawn, and the fields every layer type shares.
+- [rect](https://yoshida.xoyz.dev/docs/layer-rect/): Rectangles with rounded corners, fill and stroke.
+- [ellipse](https://yoshida.xoyz.dev/docs/layer-ellipse/): Ellipses and circles that fill their box.
+- [polygon](https://yoshida.xoyz.dev/docs/layer-polygon/): Triangles, banners, stars, open lines with arrowheads and preset shapes.
+- [text](https://yoshida.xoyz.dev/docs/layer-text/): Text with wrapping, alignment, line limits and auto-shrink.
+- [image](https://yoshida.xoyz.dev/docs/layer-image/): Pictures from the project or the web, with fill, contain and cover fitting.
+- [qr](https://yoshida.xoyz.dev/docs/layer-qr/): QR codes made on the fly from text, for example a link on each card.
+- [group](https://yoshida.xoyz.dev/docs/layer-group/): Draw several layers as one picture: move, fade and clip them together.
+- [divider](https://yoshida.xoyz.dev/docs/layer-divider/): A heading in the layer list that draws nothing.
+- [Repeat](https://yoshida.xoyz.dev/docs/repeat/): Draw a layer once per item, for example a row of stars or one line per list item.
+- [Extends](https://yoshida.xoyz.dev/docs/extends/): Start a layer from another layer and change only what differs.
+- [Effects](https://yoshida.xoyz.dev/docs/effects/): Crop, fade and sharpen filters applied to a layer's own pixels.
+- [Expressions](https://yoshida.xoyz.dev/docs/expressions/): Small typed formulas that read params, other layers and the canvas.
+- [Literals and units](https://yoshida.xoyz.dev/docs/expressions-literals-and-units/): Numbers, units, strings, colours and lists.
+- [Names and references](https://yoshida.xoyz.dev/docs/expressions-names-and-references/): Params, layer fields, canvas and card names, and reserved words.
+- [Operators](https://yoshida.xoyz.dev/docs/expressions-operators/): Arithmetic, comparison and logic operators, by precedence.
+- [Functions](https://yoshida.xoyz.dev/docs/expressions-functions/): Every built-in function, with arguments and return types.
+- [Numbers](https://yoshida.xoyz.dev/docs/expressions-functions-numbers/): Roots, powers, trigonometry in radians, and interpolation between ranges.
+- [Text](https://yoshida.xoyz.dev/docs/expressions-functions-text/): Search, cut, pad, repeat and reshape text, counting characters.
+- [Lists](https://yoshida.xoyz.dev/docs/expressions-functions-lists/): Find, total, count and join the items of a list param.
+- [Dates and times](https://yoshida.xoyz.dev/docs/expressions-functions-dates/): Show, split and shift dates and times, with the render's instant and a UTC offset.
+- [Colors and random](https://yoshida.xoyz.dev/docs/expressions-functions-colors-and-random/): Build colors from hue, saturation and lightness, choose readable text, and make seeded random values.
+- [Templates](https://yoshida.xoyz.dev/docs/expressions-templates/): Text and path fields with {expression} holes.
+- [List lookup](https://yoshida.xoyz.dev/docs/expressions-list-lookup/): Read list params by key instead of by position.
+- [Constants and functions](https://yoshida.xoyz.dev/docs/expressions-constants-and-functions/): Name a value or formula once and reuse it in every layer.
+- [Card Data](https://yoshida.xoyz.dev/docs/card-data/): The table of values that fills a design, as JSON or CSV.
+- [Rendering Model](https://yoshida.xoyz.dev/docs/rendering-model/): How a card becomes pixels, step by step.
+- [Diagnostics](https://yoshida.xoyz.dev/docs/diagnostics/): How problems are reported, and every error code with its fix.
+- [Formatting and Schemas](https://yoshida.xoyz.dev/docs/formatting-and-schemas/): How every tool writes JSON, and the JSON Schemas for editors.
+- [Limits and Versioning](https://yoshida.xoyz.dev/docs/limits-and-versioning/): Size limits, the layer limit and how the format is versioned.
+
+## Optional
+
+- [Overview](https://yoshida.xoyz.dev/docs/builder/): The visual editor that runs in your browser, and how its panels fit together.
+- [Canvas](https://yoshida.xoyz.dev/docs/builder-canvas/): The live card preview: selecting, moving, resizing and rotating layers.
+- [Layers](https://yoshida.xoyz.dev/docs/builder-layers/): The layer tree: reorder, group, hide and lock layers.
+- [Inspector](https://yoshida.xoyz.dev/docs/builder-inspector/): Every field of the selected layer, with multi-select editing.
+- [Fonts](https://yoshida.xoyz.dev/docs/builder-fonts/): Find, preview, import and assign fonts, with their licenses.
+- [Params](https://yoshida.xoyz.dev/docs/builder-params/): Add and edit the params a card can set, in groups.
+- [Card data](https://yoshida.xoyz.dev/docs/builder-card-data/): Edit the cards of a set as a form or a table, in JSON or CSV.
+- [Files](https://yoshida.xoyz.dev/docs/builder-files/): The project's files as a folder tree: add, rename, move and delete.
+- [Problems](https://yoshida.xoyz.dev/docs/builder-problems/): Every error, warning and hint in one panel, with jump-to-source.
+- [Expression editor](https://yoshida.xoyz.dev/docs/builder-expression-editor/): Suggestions, signatures, hover info, formatting and the formula window for expression fields.
+- [Shortcuts](https://yoshida.xoyz.dev/docs/builder-shortcuts/): Keyboard shortcuts for the editor.
+- [Saving, Images and Privacy](https://yoshida.xoyz.dev/docs/saving-images-and-privacy/): Where the editor keeps your work, and what leaves your machine.
+
+## Docs: Contribute
+
+- [Contributing](https://yoshida.xoyz.dev/docs/contributing/): How to report, propose and send changes: setup, checks, PR titles, labels and releases.
+- [Building from Source](https://yoshida.xoyz.dev/docs/building-from-source/): Build the CLI, the server, the WASM core and the editor yourself.
+- [Testing](https://yoshida.xoyz.dev/docs/testing/): The test suites, what each one covers and how to run a single one.
+- [CI and Deployment](https://yoshida.xoyz.dev/docs/ci-and-deployment/): The GitHub Actions workflows for checks, releases and this website.
+- [Architecture](https://yoshida.xoyz.dev/docs/architecture/): One I/O-free core, three front ends, and how they fit together.
+- [WASM Interface](https://yoshida.xoyz.dev/docs/wasm-interface/): How the editor talks to the WASM core.
+- [Server API](https://yoshida.xoyz.dev/docs/server-api/): The HTTP API of yoshida-server.
+- [Known Gaps](https://yoshida.xoyz.dev/docs/known-gaps/): What does not work yet.
+- [Third-Party Notices](https://yoshida.xoyz.dev/docs/third-party-notices/): Licences of the fonts and libraries yoshida ships with.
+
+## Examples
+
+- [board-game](https://github.com/XOYZ69/yoshida/tree/master/examples/board-game): A printable party board: 40 tiles in a ring from START to FINISH, special tiles (safe zone, skip, go back N, go forward N, shortcut with a ghost arrow, dare), a centred title and rules panel with a tile guide, dice and pawns. The design is the board, and every card is a different board.
+- [cocktails](https://github.com/XOYZ69/yoshida/tree/master/examples/cocktails): Party cocktail cards, 63 x 88 mm with 3 mm bleed. Render the faces and the back as PDF with crop marks.
+- [forge](https://github.com/XOYZ69/yoshida/tree/master/examples/forge): A small card game showing text markup with icons, row layout, gradients, clipped and SVG images, shared components, QR logos and deck sheets.
+- [poker](https://github.com/XOYZ69/yoshida/tree/master/examples/poker): Sets are listed so they render in deck order: 40 number cards, 12 court cards, 2 jokers and the back.
