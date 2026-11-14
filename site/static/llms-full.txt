@@ -1,0 +1,782 @@
+# yoshida reference
+
+> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.6.2 by scripts/llms.mjs; do not edit by hand.
+
+Website and full docs: https://yoshida.xoyz.dev/docs/ · Source: https://github.com/XOYZ69/yoshida · Short index: https://yoshida.xoyz.dev/llms.txt
+
+## How yoshida works
+
+A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canvas with params and a list of layers. **Card data** (`cards/<name>.cards.json` or `.cards.csv`) is one row of param values per card. A **set** is one card file rendered with one design; `yoshida render` writes `<out>/<set>/<card id>.png`.
+
+- Every JSON file has `"format": 1`. Plain JSON: no comments, no trailing commas; any object takes a `"note"` for comments.
+- Paths in project files are relative to the project root, with `/`.
+- A JSON card file names its design (`"design": "designs/x.design.json"`). A CSV card file must be listed in a set of `yoshida.json`. A design no set uses renders one card with all defaults.
+- A card may only set params the design declares (an unknown one is warning 2001). A param needs `default` or `"required": true`.
+- Layers are drawn in array order: the first is at the bottom. Layer ids are unique in the whole design, groups included.
+
+## Rules that are easy to get wrong
+
+- **Expression or template.** Number, color and bool fields take a JSON value or an expression in a string: `"w": "canvas.w - 2 * margin"`. Text fields (`text`, `src`, `logo_src`) are templates: literal text with `{expression}` holes, `"text": "Level {level}"`. A bare name in a template is literal text; in an expression, text needs quotes: `"visible": "kind == 'spell'"`.
+- **No text concatenation.** `+` only adds numbers. Build text in a template, or with `join`, `replace`, `fmt`.
+- **Logic is words:** `and`, `or`, `not`, `==`, `!=`, `c ? a : b`. There is no `&&`, `||`, `!`, `^` or `1e3`. Put spaces around `%`.
+- **Colors** are `#RRGGBB` or `#RRGGBBAA`, bare in an expression: `"fill": "mix(accent, #FFFFFF, 0.5)"`.
+- **Position.** `rect`, `ellipse`, `image` and `qr` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
+- **Units.** Plain numbers are pixels. `50%` is half the canvas along the field's axis, `10vw` and `10vh` are percent of the canvas width and height.
+- **References.** `@id.bounds.bottom` reads another layer's final box (`left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy`), `@id.<field>` an evaluated field. They may point forward or backward; a cycle is error 3004. A repeated layer needs an index from outside: `@id[2].bounds.left`.
+- **Text size.** `max_width`, `max_height` and `min_size` shrink text to fit; `wrap` breaks lines at a width. Long card texts need one of them.
+- **Text markup.** With `"markup": true` a text may use `<b>`, `<i>` and `{icon:name}`; icons come from the design's `"icons": "assets/icons/*.svg"` pattern.
+- **Groups.** A group has no box of its own. `translate` moves its layers and makes their coordinates relative to it; `layout` places its children in a row or column by their measured size; `repeat` draws it once per iteration; `include` takes the layers from a component file.
+- **Reuse.** `extends` copies another layer of the same type and overrides the fields given (every inherited field, `gradient` included). `consts` are named expressions; `functions` take arguments. Constants cannot call the design's functions.
+- **Check your work.** `yoshida check <project>` reports every problem with file, line, code and a hint; `yoshida fmt <project>` writes the canonical layout that `fmt --check` in CI expects.
+
+## Command line
+
+```txt
+Usage:
+  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+                            [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
+  yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
+                            [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
+                            [--utc-offset HOURS] [--16bit] [--preview]
+                            [--offline] [--pdf] [--crop-marks] [--svg]
+                            [--vector] [--scale N] [--sheet COLSxROWS]
+                            [--format text|json]
+  yoshida fmt    <project or file>  [--check]
+  yoshida version
+
+check   loads every design and card file and evaluates every card
+        (without drawing), then reports problems.
+render  writes <out>/<set>/<card id>.png (default out: <project>/out).
+        Images given as https:// URLs are downloaded (once per run);
+        --offline turns that off. --pdf writes <out>/<set>.pdf instead,
+        one page per card; --crop-marks adds a margin with crop marks
+        at the trim line (canvas.bleed inside the edge).
+        --svg writes <out>/<set>/<card id>.svg, a vector file, instead of
+        a PNG. --pdf --vector draws the PDF pages as vectors (sharp at
+        any zoom) instead of as images.
+        --scale N (1 to 4) renders PNGs and PDF images at N times the
+        canvas size, at the same print size. With --svg or --vector it
+        sets the resolution of the parts that stay pixels (default 2).
+        --sheet 10x7 tiles the cards of each set left to right, top to
+        bottom into <out>/<set>.png (a deck sheet for a tabletop
+        simulator), and <set>-2.png ... when they do not fit on one.
+clock   --now is the UTC instant the cards are rendered at (render.now,
+        render.date, render.time). Without --now or --date it is the
+        current UTC time; --date alone pins the local date at midnight.
+        --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
+fmt     rewrites JSON files in the canonical layout; --check only lists
+        the files that are not formatted (exit status 1 if any).
+
+Exit status: 0 no errors, 1 errors were reported, 2 usage error.
+```
+
+## Project files
+
+### `yoshida.json`, the optional manifest
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string)
+- `note` (string)
+- `utc_offset` (number): Hours from UTC for render.date and render.time (default 0).
+- `sets` ([{ name, design, cards }, ...])
+  - `name` (string)
+  - `design` (string, required)
+  - `cards` (string)
+
+### `*.cards.json`, card data
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string)
+- `note` (string)
+- `design` (string, required)
+- `cards` ([{ id }, ...], required)
+  - `id` (string)
+
+### `*.component.json`, layers shared through a group's `include`
+
+Layers shared by designs: a group takes them with "include"
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string)
+- `note` (string)
+- `layers` ([layer, ...], required): Layers of the component, first is bottom
+
+### `*.design.json`, a design
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string, required)
+- `note` (string)
+- `canvas` ({ width, height, background, dpi, bleed }, required)
+  - `width` (number|expr, required)
+  - `height` (number|expr, required)
+  - `background` (color|expr)
+  - `dpi` (number|expr): Print resolution, stored in PNG and PDF files
+  - `bleed` (number|expr): Pixels cut off on every side; the trim line is this far inside
+- `fonts` ({ name: string | { path, note } })
+- `icons` (string | { name: string }): Icons for {icon:name} in text with markup: an object of name to path, or a path with '*' for the name
+- `params` ({ name: param })
+- `consts` ({ name: number|boolean|expr }): Named values every layer can use
+- `functions` ({ name: { args, expr, note } }): Named formulas with arguments
+- `layers` ([layer, ...], required): drawn in array order, the first is at the bottom
+
+## Params
+
+Each entry of a design's `params` declares one value a card can set. Card data is checked against it.
+
+- `type` ("number" | "integer" | "text" | "bool" | "color" | "enum" | "image" | "list", required)
+- `default` (any)
+- `required` (boolean)
+- `label` (string)
+- `note` (string)
+- `group` (string): Editor section the param is shown in
+- `min` (number)
+- `max` (number)
+- `max_length` (integer)
+- `options` ([string, ...])
+- `item` ({ name: "number" | "integer" | "text" | "bool" | "color" | { type, options, default } })
+
+## Layers
+
+Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `group`, `divider`. A field marked `|expr` takes a JSON value or an expression in a string.
+
+### Fields of every layer type except `group` and `divider`
+
+- `id` (string, required): Unique layer id
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `note` (string)
+- `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
+- `visible` (boolean|expr)
+- `opacity` (number|expr): 0 to 1
+- `rotate` (number|expr): Degrees clockwise around the anchor point (polygons: their centre)
+- `anchor` ("top-left" | "top" | "top-right" | "left" | "center" | "right" | "bottom-left" | "bottom" | "bottom-right" | "baseline-left" | "baseline" | "baseline-right" | string): One of the anchor names, or an expression that gives one
+- `repeat` ({ count, each, index, item })
+  - `count` (number|expr)
+  - `each` (string)
+  - `index` (string)
+  - `item` (string)
+- `extends` (string)
+- `effects` ([{ type, side, length, strength }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+  - `side` ("top" | "bottom" | "left" | "right")
+  - `length` (number|expr)
+  - `strength` (number|expr)
+
+### `rect`
+
+- `box` ({ x, y, w, h })
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `fill` (color|expr)
+- `radius` (number|expr)
+- `stroke` ({ color, width, dash, arrow })
+  - `color` (color|expr)
+  - `width` (number|expr)
+  - `dash` ([number|expr, ...]): Dash pattern in pixels: on, off, ...
+  - `arrow` ("none" | "start" | "end" | "both"): Arrowheads on open polygons
+- `gradient` ({ type, angle, stops }): Fill blended between colors across the layer (instead of fill)
+  - `type` ("linear" | "radial")
+  - `angle` (number|expr): Linear: degrees clockwise, 0 from left to right
+  - `stops` ([string | { color, at }, ...], required)
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `box.x`, `box.y`, `box.w`, `box.h`, `fill`, `stroke.color`, `stroke.width`, `radius`.
+
+### `ellipse`
+
+- `box` ({ x, y, w, h })
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `fill` (color|expr)
+- `stroke` ({ color, width, dash, arrow })
+  - `color` (color|expr)
+  - `width` (number|expr)
+  - `dash` ([number|expr, ...]): Dash pattern in pixels: on, off, ...
+  - `arrow` ("none" | "start" | "end" | "both"): Arrowheads on open polygons
+- `arc` ({ start, end, pie }): Part of the ellipse, degrees clockwise from the top
+  - `start` (number|expr)
+  - `end` (number|expr)
+  - `pie` (boolean)
+- `gradient` ({ type, angle, stops }): Fill blended between colors across the layer (instead of fill)
+  - `type` ("linear" | "radial")
+  - `angle` (number|expr): Linear: degrees clockwise, 0 from left to right
+  - `stops` ([string | { color, at }, ...], required)
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `box.x`, `box.y`, `box.w`, `box.h`, `fill`, `stroke.color`, `stroke.width`.
+
+### `polygon`
+
+- `points` ([[number|expr, ...], ...])
+- `closed` (boolean)
+- `fill` (color|expr)
+- `stroke` ({ color, width, dash, arrow })
+  - `color` (color|expr)
+  - `width` (number|expr)
+  - `dash` ([number|expr, ...]): Dash pattern in pixels: on, off, ...
+  - `arrow` ("none" | "start" | "end" | "both"): Arrowheads on open polygons
+- `shape` ({ type, count, inner }): A preset shape filling the box (instead of points)
+  - `type` ("star" | "polygon" | "triangle" | "diamond" | "arrow" | "cross" | "chevron", required)
+  - `count` (number|expr): Points of a star, sides of a polygon
+  - `inner` (number|expr): Star: inner radius; arrow: shaft; cross: arm; chevron: thickness (0 to 1)
+- `box` ({ x, y, w, h })
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `gradient` ({ type, angle, stops }): Fill blended between colors across the layer (instead of fill)
+  - `type` ("linear" | "radial")
+  - `angle` (number|expr): Linear: degrees clockwise, 0 from left to right
+  - `stops` ([string | { color, at }, ...], required)
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `fill`, `stroke.color`, `stroke.width`.
+
+### `text`
+
+- `text` (template)
+- `at` ({ x, y })
+  - `x` (number|expr)
+  - `y` (number|expr)
+- `font` (string)
+- `size` (number|expr)
+- `color` (color|expr)
+- `align` ("left" | "center" | "right" | "justify" | string): One of the align names, or an expression that gives one
+- `wrap` (number|expr)
+- `line_spacing` (number|expr)
+- `max_lines` (number|expr)
+- `max_width` (number|expr): Auto-shrink: reduce size until the block is at most this wide
+- `max_height` (number|expr): Auto-shrink: reduce size until the block is at most this tall
+- `min_size` (number|expr): Smallest size auto-shrink may use (default 8)
+- `stroke` ({ color, width }): Outline around the glyphs
+  - `color` (color|expr)
+  - `width` (number|expr)
+- `shrink_group` (string): Texts with the same name use the smallest auto-shrunk size of all of them
+- `markup` (boolean): Text: <b>, <i> and {icon:name} in the text are markup
+- `font_bold` (string)
+- `font_italic` (string)
+- `font_bold_italic` (string)
+- `icon_scale` (number|expr): Icon height in font sizes (default 1)
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `at.x`, `at.y`, `text`, `size`, `color`, `wrap`, `line_spacing`, `max_lines`.
+
+### `image`
+
+- `src` (template)
+- `box` ({ x, y, w, h })
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `fit` ("fill" | "contain" | "cover" | string): One of the fit names, or an expression that gives one
+- `smoothing` ("nearest" | "bilinear" | string): or an expression that gives one
+- `optional` (boolean): Image: a missing file hides the layer instead of being an error
+- `radius` (number|expr): Clips the image to a box with rounded corners
+- `clip` ([[number|expr, ...], ...]): Clips the image to this polygon
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `box.x`, `box.y`, `box.w`, `box.h`, `src`.
+
+### `qr`
+
+- `text` (string, required): What the code holds: text with {expression} placeholders, for example a link
+- `box` ({ x, y, w, h }, required): The code is drawn as a square with whole pixels per module, centred in this box
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `color` (string): Color of the dark modules. Default black
+- `fill` (string): Color behind the code, quiet zone included. Default white; #00000000 for none
+- `margin` (number|expr): Quiet zone around the code in modules, 0 to 16. Default 4
+- `level` ("low" | "medium" | "quartile" | "high" | string): Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one
+- `style` ("square" | "rounded" | "dots" | string): Shape of the data modules: square (default), rounded or dots; or an expression that gives one
+- `eye` ("square" | "rounded" | "circle" | string): Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one
+- `eye_color` (string): Color of the corner squares. Default: the color of the code
+- `logo` (number|expr): Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high
+- `logo_src` (string): Picture drawn in the cleared middle: a path with {expression} placeholders, like an image's src. Clears a fifth of the side unless logo is set
+
+### `group`
+
+- `id` (string, required): Unique layer id
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `note` (string)
+- `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
+- `visible` (boolean|expr)
+- `opacity` (number|expr): 0 to 1
+- `rotate` (number|expr): Degrees clockwise around the anchor point (polygons: their centre)
+- `effects` ([{ type, side, length, strength }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+  - `side` ("top" | "bottom" | "left" | "right")
+  - `length` (number|expr)
+  - `strength` (number|expr)
+- `layers` ([layer, ...]): Layers inside a group, first is bottom
+- `repeat` ({ count, each, index, item })
+  - `count` (number|expr)
+  - `each` (string)
+  - `index` (string)
+  - `item` (string)
+- `translate` ({ x, y }): Moves the layers inside; their coordinates are relative to it
+  - `x` (number|expr)
+  - `y` (number|expr)
+- `layout` ({ direction, gap, x, y, align, cross }): Places the children one after another; their own positions are replaced
+  - `direction` ("row" | "column")
+  - `gap` (number|expr)
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `align` ("start" | "center" | "end" | string): Which end of the line sits at x (row) or y (column); or an expression that gives one
+  - `cross` ("start" | "center" | "end" | string): Which side of every child sits at y (row) or x (column); or an expression that gives one
+- `include` (string): Takes the layers from a component file (a path from the project folder) instead of "layers"
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`.
+
+### `divider`
+
+- `id` (string, required): Unique layer id
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `note` (string)
+- `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
+- `label` (string): Divider title shown in the editor's layer list
+
+## Expressions
+
+### Units
+
+- `50%`: percent of the canvas along the field’s axis (x/w or y/h fields)
+- `10vw`: percent of the canvas width
+- `10vh`: percent of the canvas height
+
+### Literals
+
+- `'text'`: text in single (or double) quotes
+- `#RGB #RGBA`: color, short forms
+- `#RRGGBB #RRGGBBAA`: color, with alpha in the last pair
+- `true false`: bools
+
+### Operators
+
+- `+ - * / %`: arithmetic on numbers; % is floored, -7 % 3 is 2
+- `a % b`: put spaces around % (7%3 reads as 7 percent)
+- `< <= > >= == !=`: comparisons, give a bool
+- `v in [a, b]`: true if v equals one of the items
+- `and or not`: logic on bools
+- `c ? a : b`: a if c is true, else b (chains without brackets)
+- `match(v, k, r, …, d)`: r for the first k equal to v, else d
+- `list[n]  item.f`: index from 0, item field
+
+### Keywords
+
+- `and`: Both sides true (short-circuit).
+- `or`: Either side true (short-circuit).
+- `not`: Negates a bool.
+- `in`: True if the value equals one item of a bracket list, e.g. k in [0, 4].
+- `true`: Boolean true.
+- `false`: Boolean false.
+
+### Built-in names
+
+- `canvas.w` (number): Canvas width in pixels.
+- `canvas.h` (number): Canvas height in pixels.
+- `card.id` (text): The card's id.
+- `render.index` (number): Position of the card in its set, from 0.
+- `render.date` (text): Render date, YYYY-MM-DD.
+- `render.time` (text): Render time, HH:MM:SS local time.
+- `render.now` (text): Render date-time in UTC, YYYY-MM-DDTHH:MM:SSZ.
+- `pi` (number): The number pi, 3.14159…, for angles in radians: sin(pi / 2) is 1. A design param, const or local named pi takes its place.
+
+### Text templates
+
+Fields such as a text layer's `text` and an image's `src` are templates, not expressions:
+
+- `Hello {name}`: literal text with {expression} holes
+- `{{ }}`: literal braces
+- `{1 / 3}`: a number prints with at most 12 significant digits
+
+### Functions
+
+- `min(a, b, …)` -> number. The smallest of the arguments, or of a list's number field: min(list, 'field') (an empty list is an error). Example: `min(@title.bounds.w, 300)`
+- `max(a, b, …)` -> number. The largest of the arguments, or of a list's number field: max(list, 'field') (an empty list is an error). Example: `max(@title.bounds.bottom, 40) + 8`
+- `clamp(value, lo, hi)` -> number. The middle of the three numbers, so clamp(value, lo, hi) and the CSS order clamp(lo, value, hi) both limit value to the range lo to hi. Not an error when lo is above hi. Example: `clamp(level * 10, 0, 100)`
+- `abs(n)` -> number. Absolute value (drops the minus sign). Example: `abs(-3)`
+- `floor(n)` -> number. Rounds down to a whole number. Example: `floor(i / 3)`
+- `ceil(n)` -> number. Rounds up to a whole number. Example: `ceil(len(items) / 2)`
+- `round(n, [digits])` -> number. Rounds to `digits` decimals (default 0); halves go away from zero: round(1.005, 2) is 1.01, round(2.5) is 3. digits may be negative: round(1234, -2) is 1200. Example: `round(scale * 1.5, 1)`
+- `sign(n)` -> number. -1, 0 or 1 for the sign of n. Example: `sign(offset_x) * 4`
+- `sqrt(n)` -> number. Square root of n; n must not be negative. Example: `sqrt(area)`
+- `pow(base, exp)` -> number. base raised to the power exp. Example: `pow(1.2, i)`
+- `lerp(a, b, t)` -> number. Goes from a to b by t: t = 0 gives a, t = 1 gives b. t is not clamped. Example: `lerp(20, 180, i / 9)`
+- `remap(value, from_lo, from_hi, to_lo, to_hi)` -> number. Maps value from the range from_lo to from_hi onto to_lo to to_hi. Not clamped. Example: `remap(level, 0, 100, 0, 360)`
+- `wrap(value, n)` -> number. Wraps value into the range 0 up to n (n itself is not reached), for angles and cycles. Example: `wrap(i * 47, 360)`
+- `sin(rad)` -> number. Sine of an angle in radians; sin(pi) is 0. For degrees, use sin(rad(deg)). rotate, arc angles and hsl hue take degrees. Example: `sin(i * pi / 6) * radius`
+- `cos(rad)` -> number. Cosine of an angle in radians. For degrees, use cos(rad(deg)). Example: `cx + cos(angle) * radius`
+- `tan(rad)` -> number. Tangent of an angle in radians. For degrees, use tan(rad(deg)). Example: `tan(slope) * run`
+- `asin(x)` -> number. The angle in radians whose sine is x (x from -1 to 1). For degrees, wrap it in deg(). Example: `deg(asin(ratio))`
+- `acos(x)` -> number. The angle in radians whose cosine is x (x from -1 to 1). For degrees, wrap it in deg(). Example: `deg(acos(dot))`
+- `atan2(y, x)` -> number. The angle in radians from the x axis to the point (x, y), in (-pi, pi]. rotate takes degrees, so: rotate: deg(atan2(dy, dx)). Example: `deg(atan2(dy, dx))`
+- `deg(rad)` -> number. Converts an angle from radians to degrees: deg(pi) is 180. Example: `deg(atan2(dy, dx))`
+- `rad(deg)` -> number. Converts an angle from degrees to radians: rad(180) is pi. Example: `sin(rad(i * 30)) * radius`
+- `upper(s)` -> text. The text in UPPER CASE. Example: `upper(title)`
+- `lower(s)` -> text. The text in lower case. Example: `lower(card_type)`
+- `trim(s)` -> text. The text without spaces at the start and end. Example: `trim(title)`
+- `fmt(n, digits)` -> text. Formats a number with a fixed number of decimals, rounded as round(n, digits) does. A value that rounds to zero prints without a minus sign. Example: `fmt(0.5, 2)  → '0.50'`
+- `contains(text, part)` -> bool. True if text contains part. An empty part is always found. Example: `contains(title, 'Dragon')`
+- `starts_with(text, prefix)` -> bool. True if text starts with prefix. Example: `starts_with(card.id, 'A')`
+- `ends_with(text, suffix)` -> bool. True if text ends with suffix. Example: `ends_with(file, '.png')`
+- `replace(text, old, new)` -> text. Replaces every old in text with new. Example: `replace(title, ' ', '-')`
+- `slice(text, start, [end])` -> text. The characters from start up to end (counted from 0; a negative count is from the end). Example: `slice(title, 0, 3)`
+- `pad_start(text, width, [fill])` -> text. Pads text on the left up to width characters. fill is repeated as a whole, like JavaScript's padStart: pad_start('7', 3, 'ab') is 'ab7'. A number is written with fmt(n, 0) first. Example: `pad_start(card.id, 3, '0')`
+- `repeat(text, n)` -> text. text written n times (none when n is 0 or less). Example: `repeat('★', rating)`
+- `title_case(text)` -> text. Upper-cases the first letter of each word and keeps the rest of each word as it is. For all-caps input, lower it first: title_case(lower(name)) gives 'Hello' from 'HELLO'. Example: `title_case(lower(name))`
+- `roman(n)` -> text. The number n in Roman numerals, from 1 to 3999. Example: `roman(render.index + 1)`
+- `part(text, sep, n)` -> text. The n-th piece of text split on sep, counted from 0 (a negative n counts from the end); empty when there is none. Example: `part(card.id, '-', 0)`
+- `len(value)` -> number. Number of items in a list, or characters in a text. Example: `len(ingredients)`
+- `has(list, key)` -> bool. True if the list has an item with this key. Example: `has(prices, tier)`
+- `get(list, key, fallback)` or `get(list, key, field, fallback)` -> any. The value stored under key in a key and value list, else fallback. get(list, key, 'field', fallback) reads that field of the item with the key. Example: `get(prices, tier, 0)`
+- `index_of(list, key)` -> number. Position from 0 of the first item with this key, or -1 when there is none. Example: `index_of(levels, 'gold')`
+- `sum(list, [field])` -> number. The sum of a list of numbers, or of one number field of its items. Example: `sum(cards, 'cost')`
+- `avg(list, [field])` -> number. The average of a list of numbers, or of one number field of its items. An empty list is an error. Example: `avg(scores, 'points')`
+- `count(list, field, value)` -> number. How many items have field equal to value. Example: `count(cards, 'type', 'monster')`
+- `join(list, sep)` or `join(list, field, sep)` -> text. The items joined with sep. join(list, 'field', sep) joins one field of the items instead. Example: `join(tags, ', ')`
+- `last(list)` -> any. The last item of a list. An empty list is an error. Example: `last(steps)`
+- `year(t)` -> number. The year of a date or date-time. Example: `year(render.date)`
+- `month(t)` -> number. The month, 1 to 12, of a date or date-time. Example: `month(release)`
+- `day(t)` -> number. The day of the month of a date or date-time. Example: `day(render.date)`
+- `weekday(t)` -> number. The day of the week of a date or date-time: 1 for Monday up to 7 for Sunday. Example: `weekday(render.date) >= 6`
+- `hour(t)` -> number. The hour, 0 to 23, of a time or date-time. Example: `hour(start) < 12`
+- `minute(t)` -> number. The minute, 0 to 59, of a time or date-time. Example: `minute(start)`
+- `date_fmt(t, pattern)` -> text. Formats a date, time or date-time with a pattern such as 'D MMM YYYY' or 'HH:mm'. Tokens: YYYY (2026), YY (26); MMMM (March), MMM (Mar), MM (03), M (3) for the month; DD (05), D (5) for the day; dddd (Thursday), ddd (Thu); HH (00–23), H (0–23) for the hour; hh (01–12), h (1–12) for the 12-hour clock; mm for minutes; ss for seconds; A (AM/PM), a (am/pm). Text in [brackets] is literal: [week] ddd. MM is the month, mm the minutes. Example: `date_fmt(render.date, 'D MMM YYYY')`
+- `add_days(t, n)` -> text. The date or date-time n days later, in the same form. Example: `add_days(render.date, 7)`
+- `add_hours(t, h)` -> text. The date or date-time h hours later, as a date-time. Example: `add_hours(start, 1.5)`
+- `days_between(a, b)` -> number. Whole days from date a to date b; negative when b is earlier. Example: `days_between(render.date, due)`
+- `avg_color(img)` -> color. Average color of the opaque pixels of an image. Example: `avg_color(art)`
+- `mix(a, b, t)` -> color. Blends two colors: t = 0 gives a, t = 1 gives b. Example: `mix(accent, #FFFFFF, 0.3)`
+- `with_alpha(c, a)` -> color. The color with its alpha set to a (0 to 1). Example: `with_alpha(accent, 0.5)`
+- `rgb(r, g, b)` -> color. A color from red, green, blue channels, each 0 to 255. Example: `rgb(255, 128, 0)`
+- `rgba(r, g, b, a)` -> color. A color from channels 0 to 255 and alpha 0 to 1. Example: `rgba(0, 0, 0, 0.4)`
+- `hsl(h, s, l)` -> color. A color from hue in degrees, saturation and lightness, each 0 to 100 (hue wraps). Example: `hsl(i * 20, 70, 50)`
+- `hsla(h, s, l, a)` -> color. A color from hue in degrees, saturation and lightness 0 to 100, and alpha 0 to 1. Example: `hsla(hue, 60, 40, 0.5)`
+- `lighten(c, n)` -> color. The color lighter by n lightness points (0 to 100). Example: `lighten(accent, 15)`
+- `darken(c, n)` -> color. The color darker by n lightness points (0 to 100). Example: `darken(accent, 20)`
+- `luminance(c)` -> number. Relative brightness of a color, from 0 (black) to 1 (white). Alpha is ignored. Mid-grey #808080 is about 0.22, so pick a text colour with readable() or a threshold near 0.18. Example: `luminance(c_panel) > 0.18 ? #000000 : #FFFFFF`
+- `readable(bg, [light], [dark])` -> color. Whichever of light and dark has the higher contrast against bg. Example: `readable(c_panel)`
+- `rand(seed, …)` -> number. A number from 0 up to 1 that is the same for the same seeds. Use card.id and i to vary it per card. Example: `rand(card.id, i)`
+- `rand_int(lo, hi, seed, …)` -> number. A whole number from lo to hi, both included; the same for the same seeds. Example: `rand_int(1, 6, card.id, i)`
+- `pick(seed, a, b, …)` -> any. One of the choices (two or more, all one type), picked by the seeds. Example: `pick(card.id, 'Fire', 'Water', 'Earth')`
+- `match(value, key, result, …)` -> any. The result of the first key equal to value, else the default (the last argument). Only the chosen result is evaluated. Example: `match(k, 'start', c_start, 'finish', c_finish, c_plain)`
+
+## Diagnostic codes
+
+Reported as `file:line:column: severity[code]: message`; `yoshida check --format json` gives them as JSON. Codes are stable.
+
+- 1001 error: JSON syntax error
+- 1101 error: Unknown field
+- 1102 error: Missing required field (also: a CSV file that no set uses is a *warning* with this code)
+- 1103 error: Wrong JSON type for the field's kind, or a word that is not one of an enum's options
+- 1104 error: `format` missing
+- 1105 error: Unsupported `format` version
+- 1106 error: Param, constant or function name is invalid, is a reserved word, or collides with another param, constant or function name
+- 1107 error: Param has neither `default` nor `required`
+- 1108 error: Duplicate or invalid layer id
+- 1109 error: Polygon has fewer than 3 points (2 for an open polygon)
+- 1110 error: Image `w` and `h` both `auto`
+- 1111 error: `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape`
+- 1112 error: `extends` across different layer types (including a group), or of a divider
+- 1113 warning: A design function has the name of a built-in function; the design's function is used in this design instead of the built-in
+- 1201 error: File not found
+- 1202 error: CSV syntax error (also a missing header row, or a row with the wrong number of fields)
+- 1203 error: Path escapes the project root
+- 2001 warning: Card sets an unknown param
+- 2002 error: Value outside `min` / `max` / `max_length`
+- 2003 error: Required param missing
+- 2004 error: Duplicate card id
+- 2005 error: Card id not safe as a file name
+- 2006 error: Card value has the wrong type, or is not an enum option
+- 3001 error: Expression syntax error
+- 3002 error: Unknown name or function
+- 3003 error: Type mismatch or wrong function arguments
+- 3004 error: Reference or `extends` cycle (also: an iteration reading a later one, a group's `translate` reading a layer inside it)
+- 3005 error: Reference to a repeated layer without an iteration index, or into nested repeats
+- 3006 error: Unit not valid in this field
+- 3101 error: Negative width or height (at render time)
+- 3102 error: List index or iteration index out of range, or `last()` of an empty list (at render time)
+- 3103 error: Math error (division by zero, empty list average/min/max, result not a finite number, value outside a function's domain) (at render time)
+- 3104 error: List lookup by a key no item has (at render time)
+- 3105 error: Text is not a valid date, time or date-time, or a date token is used on a time-only value (at render time)
+- 3106 error: Text result over 10 000 bytes (at render time)
+- 3107 error: Argument out of range: `roman` outside 1 to 3999, an empty `part` separator, `rand_int` with `lo` greater than `hi` (at render time)
+- 3108 error: QR code text too long for its error correction level (at render time)
+- 3109 error: An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time)
+- 3201 warning: Text truncated by `max_lines`
+- 3202 hint: Layer entirely outside the canvas
+- 3203 warning: Text does not fit `max_width` / `max_height` even at `min_size`
+- 3204 warning: A module of a QR code is smaller than one pixel
+- 3205 warning: A QR code has little contrast against its fill, or is lighter than it
+- 3207 warning: A QR code with `logo` is not at level `high`, or the cleared middle covers more than 20 %
+- 3208 warning: A module of a QR code prints narrower than 0.5 mm at the canvas `dpi`
+- 3209 warning: Text with `markup` uses an icon the design does not know (left out), or `<i>` without `font_italic` (drawn upright)
+- 4001 error: Image not found or unreachable (placeholder in preview)
+- 4002 error: Image could not be decoded
+- 4003 warning: Neither the font nor the bundled fallback fonts have glyphs for some characters (drawn as boxes)
+- 4004 error: Font name not declared in `fonts`
+- 4005 warning: Font file missing or not a TrueType/OpenType font; the default font is used
+- 5001 error: A limit was exceeded: canvas size, layers after repeat (the message names the layers that use most of it), repeat iterations, group nesting, cards per set, image size. See Limits and Versioning
+
+## A complete small project
+
+The files of `examples/forge` (fonts, icons and art left out). Render it with `yoshida render examples/forge --out out`.
+
+`yoshida.json`:
+
+```json
+{
+  "format": 1,
+  "name": "Forge card game",
+  "note": "A small card game showing text markup with icons, row layout, gradients, clipped and SVG images, shared components, QR logos and deck sheets.",
+  "sets": [
+    {
+      "name": "projects",
+      "design": "designs/project.design.json",
+      "cards": "cards/projects.cards.json"
+    },
+    {
+      "name": "corporations",
+      "design": "designs/corporation.design.json",
+      "cards": "cards/corporations.cards.json"
+    }
+  ]
+}
+```
+
+`designs/project.design.json`:
+
+```json
+{
+  "$schema": "../../../schema/design.schema.json",
+  "format": 1,
+  "name": "Project",
+  "canvas": { "width": 500, "height": 700, "background": "#F4EDE0" },
+  "fonts": {
+    "body": "assets/fonts/Poppins-Medium.ttf",
+    "bold": "assets/fonts/Poppins-SemiBold.ttf"
+  },
+  "icons": "assets/icons/*.svg",
+  "params": {
+    "title": { "type": "text", "default": "Project" },
+    "cost": { "type": "integer", "default": 2, "min": 0, "max": 8 },
+    "art": { "type": "image", "default": "" },
+    "requirement": { "type": "text", "default": "" },
+    "req_side": {
+      "type": "enum",
+      "options": ["center", "right"],
+      "default": "center"
+    },
+    "effect": { "type": "text", "default": "" },
+    "panel": { "type": "color", "default": "#E9DDC8" },
+    "top": { "type": "color", "default": "#2B5876" },
+    "bottom": { "type": "color", "default": "#4E4376" }
+  },
+  "layers": [
+    { "id": "frame", "type": "divider", "label": "Frame" },
+    {
+      "id": "header",
+      "type": "rect",
+      "box": { "x": 20, "y": 20, "w": 460, "h": 110 },
+      "radius": 22,
+      "gradient": {
+        "angle": 90,
+        "stops": ["top", "bottom"]
+      }
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "font": "bold",
+      "text": "{title}",
+      "at": { "x": 40, "y": 75 },
+      "anchor": "left",
+      "size": 30,
+      "color": "#FFFFFF",
+      "max_width": 300
+    },
+    {
+      "id": "cost_row",
+      "type": "group",
+      "layout": { "gap": 4, "x": 460, "y": 75, "align": "end", "cross": "center" },
+      "layers": [
+        {
+          "id": "coin",
+          "type": "image",
+          "src": "assets/icons/gold.svg",
+          "repeat": { "count": "cost" },
+          "box": { "x": 0, "y": 0, "w": 30, "h": 30 }
+        }
+      ]
+    },
+    { "id": "picture", "type": "divider", "label": "Art (optional)" },
+    {
+      "id": "art",
+      "type": "image",
+      "src": "{art}",
+      "optional": true,
+      "fit": "cover",
+      "radius": 18,
+      "box": { "x": 30, "y": 150, "w": 440, "h": 290 }
+    },
+    {
+      "id": "no_art",
+      "type": "rect",
+      "visible": "not @art.visible",
+      "box": { "x": 30, "y": 150, "w": 440, "h": 290 },
+      "radius": 18,
+      "gradient": {
+        "type": "radial",
+        "stops": ["#EFE4D0", "#CDBD9F"]
+      }
+    },
+    {
+      "id": "no_art_label",
+      "type": "text",
+      "visible": "not @art.visible",
+      "font": "body",
+      "text": "no art yet",
+      "at": { "x": 250, "y": 295 },
+      "anchor": "center",
+      "size": 20,
+      "color": "#8A7A64"
+    },
+    { "id": "req", "type": "divider", "label": "Requirement" },
+    {
+      "id": "req_pill",
+      "type": "rect",
+      "visible": "requirement != ''",
+      "box": { "x": "@req_row.bounds.left - 14", "y": 454, "w": "@req_row.bounds.w + 28", "h": 44 },
+      "radius": 22,
+      "fill": "#3B2F2A"
+    },
+    {
+      "id": "req_row",
+      "type": "group",
+      "visible": "requirement != ''",
+      "layout": {
+        "gap": 8,
+        "x": "req_side == 'right' ? 456 : 250",
+        "y": 476,
+        "align": "req_side == 'right' ? 'end' : 'center'",
+        "cross": "center"
+      },
+      "layers": [
+        {
+          "id": "req_label",
+          "type": "text",
+          "font": "bold",
+          "text": "Requires",
+          "at": { "x": 0, "y": 0 },
+          "size": 18,
+          "color": "#F4EDE0"
+        },
+        {
+          "id": "req_text",
+          "type": "text",
+          "markup": true,
+          "font": "body",
+          "text": "{requirement}",
+          "at": { "x": 0, "y": 0 },
+          "size": 18,
+          "color": "#F4EDE0"
+        }
+      ]
+    },
+    {
+      "id": "effects",
+      "type": "group",
+      "include": "components/effect-row.component.json",
+      "translate": { "x": 30, "y": 520 }
+    },
+    {
+      "id": "footer",
+      "type": "text",
+      "font": "body",
+      "text": "FORGE  ·  {upper(card.id)}",
+      "at": { "x": 250, "y": 676 },
+      "anchor": "center",
+      "size": 13,
+      "color": "#A8987F"
+    }
+  ]
+}
+```
+
+`components/effect-row.component.json`:
+
+```json
+{
+  "$schema": "../../../schema/component.schema.json",
+  "format": 1,
+  "name": "Effect row",
+  "note": "Shared by the project and corporation designs: a panel with the effect text. Uses the params 'effect' and 'panel' of the design that includes it.",
+  "layers": [
+    {
+      "id": "effect_bg",
+      "type": "rect",
+      "box": { "x": 0, "y": 0, "w": 440, "h": "@effect_text.bounds.h + 32" },
+      "radius": 16,
+      "fill": "panel"
+    },
+    {
+      "id": "effect_text",
+      "type": "text",
+      "markup": true,
+      "font": "body",
+      "font_bold": "bold",
+      "icon_scale": 1.1,
+      "text": "{effect}",
+      "at": { "x": 18, "y": 16 },
+      "wrap": 404,
+      "size": 22,
+      "line_spacing": 8,
+      "color": "#2A211D"
+    }
+  ]
+}
+```
+
+`cards/projects.cards.json`:
+
+```json
+{
+  "$schema": "../../../schema/cards.schema.json",
+  "format": 1,
+  "design": "designs/project.design.json",
+  "cards": [
+    {
+      "id": "foundry",
+      "title": "Foundry",
+      "cost": 3,
+      "art": "assets/art/foundry.svg",
+      "requirement": "2 {icon:steel} tags",
+      "effect": "<b>Action:</b> spend 1 {icon:energy} to gain 2 {icon:steel}. When you play a building, gain 1 {icon:gold}."
+    },
+    {
+      "id": "reactor",
+      "title": "Fusion Reactor",
+      "cost": 5,
+      "art": "assets/art/reactor.svg",
+      "requirement": "4 {icon:energy}",
+      "req_side": "right",
+      "top": "#0F2027",
+      "bottom": "#2C5364",
+      "effect": "Increase your {icon:energy} production by <b>3</b>. Draw 1 {icon:card}."
+    },
+    {
+      "id": "market",
+      "title": "Night Market",
+      "cost": 1,
+      "art": "assets/art/missing-market.png",
+      "panel": "#E3E9D7",
+      "effect": "Gain 2 {icon:gold}. <b>Each time</b> another player gains {icon:gold}, you may draw 1 {icon:card} and then discard 1 {icon:card} from your hand."
+    }
+  ]
+}
+```
