@@ -24,6 +24,8 @@ RUN python3 -m ziglang build -Doptimize=ReleaseFast -Dstrip=true \
  && python3 -m ziglang build wasm
 
 FROM node:22-alpine AS web
+ARG YOSHIDA_CHANNEL
+ENV YOSHIDA_CHANNEL=${YOSHIDA_CHANNEL}
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
