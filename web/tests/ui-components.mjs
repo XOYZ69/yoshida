@@ -201,8 +201,8 @@ await settle();
 
 // --- Colour tags.
 await row("name").locator(".row").click({ button: "right" });
-await menuItem("Colour").click();
-await menuItem("Green").click();
+ok("the layer menu starts with the row of colour dots", (await p.locator(".menu > :first-child.swatches .dot").count()) === 10);
+await p.locator('.menu .swatches [aria-label="Green"]').click();
 await settle();
 des = JSON.parse(await fileText(design));
 ok("a colour tag is saved in the design", des.layers.find((l) => l.id === "name")?.tag === "green");
@@ -215,11 +215,12 @@ ok("the tag tints the row's background", bg[0] !== bg[1], bg.join(" / "));
 ok("a tagged design renders without problems", !/error|warning/i.test(await status()), await status());
 await p.screenshot({ path: `${shots}/components.png` });
 await row("name").locator(".row").click({ button: "right" });
-await menuItem("Colour").click();
-await menuItem("None").click();
+ok("the current colour is marked", (await p.locator('.menu .swatches [aria-checked="true"]').getAttribute("aria-label")) === "Green");
+await p.screenshot({ path: `${shots}/colour-row.png` });
+await p.locator('.menu .swatches [aria-label="No colour"]').click();
 await settle();
 des = JSON.parse(await fileText(design));
-ok("None removes the tag", des.layers.find((l) => l.id === "name")?.tag === undefined);
+ok("the empty dot removes the tag", des.layers.find((l) => l.id === "name")?.tag === undefined);
 
 async function hasFileIn(path) {
 	await p.click('button[role=tab]:has-text("Advanced")');

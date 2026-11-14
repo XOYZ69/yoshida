@@ -64,7 +64,7 @@ The builder does not show live values or field errors for layers inside a compon
 
 ## Colour tags
 
-**Colour…** in the layer menu gives the selected layers one of nine colours, or **None**. The colour tints the row's background faintly and adds a stripe on its left edge, so it does not compete with the icon colours. It is saved in the design as the layer's `tag` (for example `"tag": "green"`), travels with the project, and is never drawn on the card.
+The layer menu (right-click a layer) starts with a row of colour dots: one click gives the selected layers one of nine colours, and the empty dot with a stroke removes it. The dot of the current colour has a ring. The colour tints the row's background faintly and adds a stripe on its left edge, so it does not compete with the icon colours. It is saved in the design as the layer's `tag` (for example `"tag": "green"`), travels with the project, and is never drawn on the card.
 
 ## Copy, cut and paste
 

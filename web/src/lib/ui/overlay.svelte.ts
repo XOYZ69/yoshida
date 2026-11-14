@@ -38,6 +38,20 @@ export type MenuItem =
 			swatch?: string;
 			action: () => void;
 	  }
+	| {
+			/**
+			 * A row of colour dots, picked with one click. `color` is a CSS
+			 * colour, or null for the "none" dot.
+			 */
+			swatches: {
+				label: string;
+				color: string | null;
+				current?: boolean;
+				action: () => void;
+			}[];
+			/** What the row sets, for screen readers. */
+			label: string;
+	  }
 	| { separator: true }
 	| { heading: string };
 

@@ -2231,24 +2231,28 @@
 		});
 	}
 
-	function tagMenu(x: number, y: number, ids: string[]) {
-		const cur = ids.length === 1 ? findLayer(doc!, ids[0])?.tag : undefined;
-		openMenu(x, y, [
-			{ heading: "Colour in the layer list" },
-			{
-				label: "None",
-				icon: cur === undefined ? "check" : undefined,
-				action: () => setTag(ids, null),
-			},
-			...layerTags.map(
-				(t): MenuItem => ({
+	/** The row of colour dots at the top of the layer menu: one click sets the tag. */
+	function tagRow(ids: string[]): MenuItem {
+		// The current colour is marked when every selected layer has the same one.
+		const tags = new Set(ids.map((id) => findLayer(doc!, id)?.tag ?? null));
+		const cur = tags.size === 1 ? [...tags][0] : undefined;
+		return {
+			label: "Colour in the layer list",
+			swatches: [
+				{
+					label: "No colour",
+					color: null,
+					current: cur === null,
+					action: () => setTag(ids, null),
+				},
+				...layerTags.map((t) => ({
 					label: tagLabels[t],
-					swatch: `var(--tag-${t})`,
-					detail: cur === t ? "current" : undefined,
+					color: `var(--tag-${t})`,
+					current: cur === t,
 					action: () => setTag(ids, t),
-				}),
-			),
-		]);
+				})),
+			],
+		};
 	}
 
 	/** Right-click menu for the layer list and the canvas. */
@@ -2313,6 +2317,8 @@
 			openMenu(e.clientX, e.clientY, items);
 			return;
 		}
+		// Colour tags first: the dots are picked with one click.
+		if (ids.length) items.push(tagRow(ids), { separator: true });
 		if (one)
 			items.push({
 				label: "Rename…",
@@ -2440,12 +2446,6 @@
 				});
 		}
 		items.push({ separator: true });
-		items.push({
-			label: "Colour…",
-			icon: "tag",
-			detail: "in this list",
-			action: () => tagMenu(e.clientX + 8, e.clientY + 8, ids),
-		});
 		if (l) {
 			items.push(
 				{

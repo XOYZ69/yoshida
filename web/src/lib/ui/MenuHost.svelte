@@ -6,9 +6,12 @@ import { closeMenu, type MenuItem, overlay } from "./overlay.svelte";
 let el: HTMLDivElement | undefined = $state();
 let pos = $state({ left: 0, top: 0 });
 let active = $state(-1);
+// The dot the keyboard is on, in the active row of swatches.
+let dot = $state(0);
 
 const m = $derived(overlay.menu);
-const actionable = (it: MenuItem) => "action" in it && !it.disabled;
+const actionable = (it: MenuItem) =>
+	"swatches" in it || ("action" in it && !it.disabled);
 
 $effect(() => {
 	const cur = m;
@@ -26,6 +29,11 @@ function run(it: MenuItem) {
 	if (!("action" in it) || it.disabled) return;
 	closeMenu();
 	it.action();
+}
+
+function pick(action: () => void) {
+	closeMenu();
+	action();
 }
 
 function onkeydown(e: KeyboardEvent) {
@@ -46,9 +54,25 @@ function onkeydown(e: KeyboardEvent) {
 			if (actionable(cur.items[i])) break;
 		}
 		active = i;
+		const row = cur.items[i];
+		if ("swatches" in row)
+			dot = Math.max(
+				0,
+				row.swatches.findIndex((s) => s.current),
+			);
+	} else if (
+		(e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+		active >= 0 &&
+		"swatches" in cur.items[active]
+	) {
+		e.preventDefault();
+		const n = (cur.items[active] as { swatches: unknown[] }).swatches.length;
+		dot = (dot + (e.key === "ArrowRight" ? 1 : n - 1)) % n;
 	} else if (e.key === "Enter" && active >= 0) {
 		e.preventDefault();
-		run(cur.items[active]);
+		const it = cur.items[active];
+		if ("swatches" in it) pick(it.swatches[dot].action);
+		else run(it);
 	}
 }
 </script>
@@ -68,6 +92,26 @@ function onkeydown(e: KeyboardEvent) {
         <div class="sep" role="separator"></div>
       {:else if 'heading' in it}
         <div class="heading">{it.heading}</div>
+      {:else if 'swatches' in it}
+        <div class="swatches" role="group" aria-label={it.label}>
+          {#each it.swatches as s, k}
+            <button
+              role="menuitemradio"
+              aria-checked={!!s.current}
+              aria-label={s.label}
+              title={s.label}
+              class="dot"
+              class:none={s.color === null}
+              class:current={s.current}
+              class:active={i === active && k === dot}
+              style:--dot={s.color ?? "transparent"}
+              onpointerenter={() => {
+                active = i;
+                dot = k;
+              }}
+              onclick={() => pick(s.action)}></button>
+          {/each}
+        </div>
       {:else}
         <button
           role="menuitem"
@@ -161,6 +205,50 @@ function onkeydown(e: KeyboardEvent) {
     font-family: var(--mono);
     font-size: 11px;
     color: var(--muted);
+  }
+  /* A row of colour dots: one click picks. */
+  .swatches {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    padding: 4px 6px 5px;
+  }
+  button.dot {
+    position: relative;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--dot);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 25%, transparent);
+  }
+  /* "None": an empty dot with a stroke through it. */
+  button.dot.none::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    top: 50%;
+    height: 1.5px;
+    margin-top: -0.75px;
+    background: var(--muted);
+    transform: rotate(-45deg);
+  }
+  button.dot.current {
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 3.5px var(--fg);
+  }
+  button.dot.active:not(.current) {
+    background: var(--dot);
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 3.5px var(--muted);
+  }
+  button.dot.active.current {
+    background: var(--dot);
   }
   .sep {
     height: 1px;
