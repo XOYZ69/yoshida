@@ -1,0 +1,97 @@
+# Builds the website (landing page, docs, release pages) with the web editor
+# under editor/, from one branch, and uploads it as an artifact. deploy.yml
+# calls it twice: for the release site and for the dev preview under /dev/.
+#
+# The branch that is built can be older or newer than this file, so the steps
+# only use what both branches have: its own setup-zig action and npm scripts.
+# Zola is installed here, not by the branch.
+name: Build site
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch or commit to build
+        required: true
+        type: string
+      base-url:
+        description: The address the build is served at, without a trailing slash
+        required: true
+        type: string
+      channel:
+        description: "'dev' stamps the build as a preview (YOSHIDA_CHANNEL)"
+        type: string
+        default: ''
+      artifact:
+        description: Name of the uploaded artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  ZOLA_VERSION: 0.23.6
+  YOSHIDA_CHANNEL: ${{ inputs.channel }}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Editor: WASM core and Vite build, output in web/dist. Unlike the CI
+      # web job, --public leaves out the files listed in
+      # examples/.public-exclude (fonts that may not be redistributed).
+      - uses: ./.github/actions/setup-zig
+        with:
+          cache-key: ${{ inputs.artifact }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the editor
+        working-directory: web
+        run: |
+          npm ci
+          npm run wasm
+          npm run examples -- --public
+          npm run build
+
+      # Release pages: one Markdown page per published GitHub release.
+      - name: Fetch releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/releases" --jq '.[]' | jq -s . > releases.json
+          python3 scripts/releases-to-zola.py releases.json site
+
+      - name: Install Zola
+        run: |
+          mkdir -p "$RUNNER_TEMP/zola"
+          curl -fsSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
+          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+
+      # zola build checks every internal link and anchor and fails on a
+      # broken one. Run it from site/: with --root, a relative output folder
+      # breaks get_url(cachebust) on the compiled CSS. The editor is copied
+      # in afterwards because zola writes a fresh output folder.
+      - name: Build the site
+        working-directory: site
+        env:
+          BASE_URL: ${{ inputs.base-url }}
+        run: |
+          zola build --base-url "$BASE_URL" --output-dir ../public
+          cp -r ../web/dist ../public/editor
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: public
+          retention-days: 1
+          if-no-files-found: error

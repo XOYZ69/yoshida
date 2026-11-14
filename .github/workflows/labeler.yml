@@ -1,13 +1,13 @@
 # Adds area/* labels to pull requests from the files they change, using
-# .github/labeler.yml from master.
+# .github/labeler.yml from the base branch.
 #
-# pull_request_target runs the workflow from master and gives fork PRs a token
+# pull_request_target runs the workflow from the base branch and gives fork PRs a token
 # that can label. The PR's own code is never checked out or run here.
 name: Labeler
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, dev]
     types: [opened, reopened, synchronize]
 
 permissions:

@@ -4,17 +4,22 @@
 # release bundle (scripts/release.sh), attaches it as a zip and writes the
 # notes with .github/scripts/release-notes.mjs.
 #
+# The dev branch can publish pre-releases the same way: a version with a
+# pre-release part (0.7.0-rc.1) on dev becomes a GitHub pre-release, built as
+# a dev build. A plain version on dev is left for master.
+#
 # A release created with GITHUB_TOKEN does not trigger other workflows, so the
 # deploy.yml `release` trigger does not fire for it; this workflow starts
-# Deploy itself afterwards to add the release page to the site. That Deploy
-# run ends here again and stops at "Find the version", because the tag exists.
+# Deploy itself afterwards (without the checks, which this commit has passed)
+# to add the release page to the site. That Deploy run ends here again and
+# stops at "Find the version", because the tag exists.
 name: Release
 
 on:
   workflow_run:
     workflows: [Deploy]
     types: [completed]
-    branches: [master]
+    branches: [master, dev]
   workflow_dispatch:
 
 permissions:
@@ -23,9 +28,6 @@ permissions:
 concurrency:
   group: release
   cancel-in-progress: false
-
-env:
-  ZOLA_VERSION: 0.23.6
 
 jobs:
   version:
@@ -37,6 +39,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       sha: ${{ steps.version.outputs.sha }}
       release: ${{ steps.version.outputs.release }}
+      channel: ${{ steps.version.outputs.channel }}
     steps:
       # The commit that was deployed, not whatever master is by now.
       - uses: actions/checkout@v4
@@ -47,16 +50,24 @@ jobs:
       # counts as already released.
       - name: Find the version
         id: version
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
           version=$(node scripts/version.mjs)
           tag="v$version"
+          channel=
+          if [ "$BRANCH" = dev ]; then channel=dev; fi
           {
             echo "version=$version"
             echo "tag=$tag"
             echo "sha=$(git rev-parse HEAD)"
+            echo "channel=$channel"
           } >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" "refs/tags/$version" > /dev/null; then
             echo "$version is already tagged, nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          elif [ "$BRANCH" = dev ] && [ "${version#*-}" = "$version" ]; then
+            echo "$version on dev has no pre-release part (such as -rc.1): it is released from master"
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
             echo "$version has no tag yet, releasing $tag"
@@ -75,6 +86,8 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
       SHA: ${{ needs.version.outputs.sha }}
+      # "dev" stamps a pre-release built from the dev branch.
+      YOSHIDA_CHANNEL: ${{ needs.version.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,11 +103,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install Zola
-        run: |
-          mkdir -p "$RUNNER_TEMP/zola"
-          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C "$RUNNER_TEMP/zola"
-          echo "$RUNNER_TEMP/zola" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-zola
 
       - name: Install the editor's dependencies
         working-directory: web
@@ -120,6 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OUT: release-notes.md
+          BASE_REF: ${{ needs.version.outputs.channel == 'dev' && 'dev' || github.event.repository.default_branch }}
         run: node .github/scripts/release-notes.mjs release
 
       # A version with a pre-release part (0.6.0-rc.1) becomes a pre-release
@@ -139,4 +149,4 @@ jobs:
       - name: Deploy the site with the new release page
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run deploy.yml --ref master
+        run: gh workflow run deploy.yml --ref "${{ github.event.repository.default_branch }}" -f checks=false

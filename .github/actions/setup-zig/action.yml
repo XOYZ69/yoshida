@@ -1,10 +1,13 @@
 name: Set up Zig
-description: Installs Zig from PyPI (the ziglang package ships the official release binaries) and caches Zig's global cache.
+description: Installs Zig from PyPI (the ziglang package ships the official release binaries) and restores Zig's build cache.
 
 inputs:
   version:
     description: Zig version
     default: 0.16.0
+  cache-key:
+    description: Extra part of the cache key, for jobs that share a job id (a build matrix passes its target)
+    default: ''
 
 runs:
   using: composite
@@ -19,12 +22,27 @@ runs:
         python -m pip install --disable-pip-version-check "ziglang==${{ inputs.version }}"
         python -c "import ziglang, os; print(os.path.dirname(ziglang.__file__))" >> "$GITHUB_PATH"
 
+    # Pushes and manual runs save the cache. Pull requests only read it (the
+    # newest one of their base branch): a cache saved per pull request push
+    # would fill the repository's 10 GB and evict the ones that are shared.
     - name: Cache Zig builds
+      if: github.event_name != 'pull_request'
       uses: actions/cache@v4
       with:
         path: |
           ~/.cache/zig
           .zig-cache
-        key: zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**') }}
+        key: zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ inputs.cache-key }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**') }}
         restore-keys: |
-          zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-
+          zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ inputs.cache-key }}-
+
+    - name: Restore the Zig build cache
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cache/zig
+          .zig-cache
+        key: zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ inputs.cache-key }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**') }}
+        restore-keys: |
+          zig-${{ inputs.version }}-${{ runner.os }}-${{ github.job }}-${{ inputs.cache-key }}-

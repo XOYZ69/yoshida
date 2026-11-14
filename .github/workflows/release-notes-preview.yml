@@ -1,14 +1,14 @@
-# Posts (and keeps updating) one comment on every PR to master showing what
+# Posts (and keeps updating) one comment on every PR to master or dev showing what
 # the release notes will contain, including this PR.
 #
-# pull_request_target runs the workflow from master, so a PR cannot change the
+# pull_request_target runs the workflow from the base branch, so a PR cannot change the
 # script, and it gives fork PRs a token that can comment. Never check out or
 # run the PR's own code here; the title, body and labels are only read as data.
 name: Release notes preview
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, dev]
     types:
       [
         opened,
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # No ref: pull_request_target checks out the base branch (master).
+      # No ref: pull_request_target checks out the base branch.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -51,3 +51,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
