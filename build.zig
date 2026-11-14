@@ -5,9 +5,15 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const strip = b.option(bool, "strip", "Leave debug info out of the CLI and server binaries");
+    // "dev" marks a preview build: the CLI, the server and the editor show it
+    // beside the version. Release builds leave it empty. The environment
+    // variable lets CI set it once for every build step (npm run wasm,
+    // scripts/release.sh, docker build).
+    const channel = b.option([]const u8, "channel", "Build channel shown beside the version, e.g. dev (default: $YOSHIDA_CHANNEL, else none)") orelse
+        b.graph.environ_map.get("YOSHIDA_CHANNEL") orelse "";
 
     // The render core: no file or network I/O, used by every front end.
-    const core = createCore(b, target, optimize);
+    const core = createCore(b, target, optimize, channel);
 
     // CLI: yoshida check | render
     const cli = b.addExecutable(.{
@@ -43,7 +49,7 @@ pub fn build(b: *std.Build) void {
 
     // WebAssembly build for the browser editor.
     const wasm_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
-    const wasm_core = createCore(b, wasm_target, .ReleaseSmall);
+    const wasm_core = createCore(b, wasm_target, .ReleaseSmall, channel);
     const wasm = b.addExecutable(.{
         .name = "yoshida",
         .root_module = b.createModule(.{
@@ -83,7 +89,7 @@ pub fn build(b: *std.Build) void {
     b.step("test", "Run core tests").dependOn(&b.addRunArtifact(tests).step);
 }
 
-fn createCore(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+fn createCore(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, channel: []const u8) *std.Build.Module {
     const core = b.createModule(.{
         .root_source_file = b.path("src/core/root.zig"),
         .target = target,
@@ -93,6 +99,7 @@ fn createCore(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
     // and keeps the other copies (web/package.json, docs) in sync.
     const options = b.addOptions();
     options.addOption([]const u8, "version", manifest.version);
+    options.addOption([]const u8, "channel", channel);
     core.addOptions("build_options", options);
     core.addIncludePath(b.path("src/c/include"));
     core.addIncludePath(b.path("src/c"));

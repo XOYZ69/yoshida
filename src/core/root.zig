@@ -24,6 +24,8 @@ pub const pdf = @import("pdf.zig");
 pub const qr = @import("qr.zig");
 
 pub const version = @import("build_options").version;
+/// "dev" for a preview build from the dev branch, empty for a release build.
+pub const channel = @import("build_options").channel;
 pub const format_version = 1;
 pub const default_font = render.default_font_data;
 

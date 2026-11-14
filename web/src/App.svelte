@@ -224,6 +224,8 @@
 	const loadEditor = () => import("./lib/Editor.svelte");
 
 	const engine = new Engine();
+	// "dev" for a preview build, known once the engine has loaded.
+	let channel = $state("");
 
 	let status = $state("Starting…");
 	let fatal = $state("");
@@ -618,6 +620,7 @@
 			fatal = `Could not load yoshida.wasm: ${(e as Error).message}`;
 			return;
 		}
+		channel = engine.channel;
 		examples = await listExamples();
 		try {
 			const res = await fetch("api/capabilities");
@@ -4253,6 +4256,13 @@
 		<header class="top">
 			<span class="brand"><Logo size={26} /></span>
 			<span class="ver">{engine.version}</span>
+			{#if channel}
+				<span
+					class="channel"
+					title="Preview build from the {channel} branch: newer than the latest release and not as well tested"
+					>{channel.toUpperCase()}</span
+				>
+			{/if}
 			<button
 				class="project-btn"
 				onclick={projectMenu}
@@ -5064,6 +5074,19 @@
 	.ver {
 		color: var(--muted);
 		font-size: 12px;
+	}
+	/* Marks a preview build; release builds have no channel. */
+	.channel {
+		margin-left: -4px;
+		padding: 1px 5px;
+		border-radius: 4px;
+		background: #d92d20;
+		color: #fff;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		line-height: 1.4;
+		cursor: default;
 	}
 	.spacer {
 		flex: 1;

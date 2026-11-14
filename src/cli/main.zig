@@ -89,7 +89,7 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     };
     if (std.mem.eql(u8, args.command, "version")) {
-        try out.print("yoshida {s} (format {d})\n", .{ y.version, y.format_version });
+        try out.print("yoshida {s} (format {d}){s}\n", .{ y.version, y.format_version, if (y.channel.len > 0) " " ++ y.channel ++ " build" else "" });
         return 0;
     }
     if (args.command.len == 0 or std.mem.eql(u8, args.command, "help") or args.project == null) {

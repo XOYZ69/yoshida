@@ -1,7 +1,7 @@
 //! yoshida-server: serves the web editor and, when enabled, renders whole
 //! sets on the server ("hybrid" mode for home labs).
 //!
-//!   GET  /api/capabilities   {"version", "format", "render", "max_cards", "max_body_mb"}
+//!   GET  /api/capabilities   {"version", "channel", "format", "render", "max_cards", "max_body_mb"}
 //!   POST /api/render         {"files": {path: base64}, "set", "date", "now", "utc_offset", "format": "png"|"png16"|"pdf"|"svg"}
 //!                            -> application/zip with <set>/<card id>.png (.svg for "svg"), application/pdf for
 //!                            "pdf", or 422 with diagnostics
@@ -126,7 +126,7 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
     const path = if (std.mem.startsWith(u8, full_path, "/editor/api/")) full_path["/editor".len..] else full_path;
 
     if (std.mem.eql(u8, path, "/api/capabilities")) {
-        const body = try std.fmt.allocPrint(arena, "{{\"version\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d}}}", .{ y.version, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
+        const body = try std.fmt.allocPrint(arena, "{{\"version\":\"{s}\",\"channel\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d}}}", .{ y.version, y.channel, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
         return req.respond(body, .{ .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }} });
     }
     if (std.mem.eql(u8, path, "/api/render/progress")) return progressResponse(arena, req, target);
