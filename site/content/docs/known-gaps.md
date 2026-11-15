@@ -8,7 +8,7 @@ What does not work yet, so you do not have to find out the hard way.
 ## Format
 
 - **Rich text** is limited to bold, italic and inline icons ([`markup`](@/docs/layer-text.md#bold-italic-and-icons-markup)); there are no mixed sizes or colors inside one text layer, and italic needs an italic font.
-- **SVG images** are drawn by a small renderer: text, filters, masks, embedded images and CSS stylesheets inside an SVG are not supported.
+- **SVG images** are drawn by a small renderer: filters, masks, clip paths, `<use>`, embedded images and text on a path inside an SVG are not supported. Text is drawn with a font the design declares or the default font, never a system font; see [Fonts for SVG text](@/docs/layer-image.md#fonts-for-svg-text).
 - **Shared components** ([`include`](@/docs/layer-group.md#shared-components-include)) can be included once per design (ids must be unique), and the builder does not show live values inside component files.
 - **Per-card layer overrides** are not in the format; cards change params only. (Single items of a default list can be changed, see [Params](@/docs/params.md#changing-single-items-of-the-default).)
 - The **layer limit** is fixed at 500 visible layers per card; it cannot be raised. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).

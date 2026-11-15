@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Usage statistics · yoshida</title>
+<script>var t=null;try{t=localStorage.getItem("yoshida.theme")}catch(e){}if(t==="light"||t==="dark")document.documentElement.dataset.theme=t</script>
+<style>
+	/* The Paper palette of the editor and the website, as light-dark() pairs. */
+	:root {
+		color-scheme: light dark;
+		--bg: light-dark(#f5f0e6, #1a1814);
+		--panel: light-dark(#fffdf8, #211e1a);
+		--line: light-dark(#e3dccd, #36312a);
+		--ink: light-dark(#22201c, #efe9dd);
+		--muted: light-dark(#6b655a, #a99f8e);
+		--accent: light-dark(#3b6cf6, #6e93ff);
+		--soft: light-dark(#ece5d6, #2c2822);
+		--accent-soft: light-dark(#e6ecfd, #232a40);
+	}
+	:root[data-theme="light"] { color-scheme: light; }
+	:root[data-theme="dark"] { color-scheme: dark; }
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 15px/1.55 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+	main { max-width: 860px; margin: 0 auto; padding: 36px 16px 64px; }
+	h1 { font: 600 32px/1.2 Georgia, serif; margin: 0; }
+	h2 { font: 600 16px/1.3 Georgia, serif; margin: 28px 0 8px; }
+	p { margin: 0; }
+	.lead { margin-top: 6px; color: var(--muted); }
+	.bar-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 22px; color: var(--muted); font-size: 13.5px; }
+	select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+	.status { margin-top: 28px; color: var(--muted); }
+	.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 18px; }
+	.tile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+	.tile-label, .tile-note { color: var(--muted); font-size: 13px; }
+	.tile-label { font-weight: 600; }
+	.tile-value { font: 34px/1.2 Georgia, serif; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+	.tile-note { margin-top: auto; min-height: 1.5em; font-variant-numeric: tabular-nums; }
+	.spark-wrap { position: relative; margin: 6px -5px 4px; touch-action: pan-y; }
+	.spark { display: block; width: 100%; height: 44px; overflow: visible; }
+	.spark-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+	.spark-area { fill: var(--accent-soft); }
+	.spark-dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+	.bars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(10.5rem, max-content) 1fr minmax(2.5rem, max-content); gap: 8px 14px; align-items: center; }
+	.bars li { display: contents; }
+	.bar-name { font: 13px ui-monospace, monospace; overflow-wrap: anywhere; }
+	.bar-track { height: 10px; background: var(--soft); border-radius: 0 4px 4px 0; }
+	.bar-fill { display: block; height: 100%; min-width: 2px; background: var(--accent); border-radius: 0 4px 4px 0; }
+	.bar-value { text-align: right; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+	details { margin-top: 10px; font-size: 14px; }
+	summary { cursor: pointer; color: var(--muted); }
+	details .bars { margin-top: 8px; }
+	.about { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; max-width: 640px; }
+	@media (max-width: 480px) {
+		.bars { grid-template-columns: minmax(5rem, 40%) 1fr max-content; gap: 8px 10px; }
+	}
+</style>
+</head>
+<body>
+<main>
+	<h1>Usage statistics</h1>
+	<p class="lead">How the editor on this server is used, as far as its operator made it public.</p>
+	<div class="bar-top">
+		<label>Range
+			<select id="range">
+				<option value="30" selected>30 days</option>
+				<option value="90">90 days</option>
+				<option value="366">1 year</option>
+			</select>
+		</label>
+		<span id="period"></span>
+	</div>
+	<div id="out"><p class="status" role="status">Loading the numbers…</p></div>
+	<p class="about">Counts only, added up per day and stored on this server. No addresses, no accounts and nothing from anybody's projects. People choose in the editor (Privacy) how much they share. The same numbers are available as JSON from <code>/api/stats</code>.</p>
+</main>
+<script>
+"use strict";
+// Shows what GET /api/stats publishes. Everything from the answer is put into
+// the page as text, never as markup.
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+const BASE = [
+	["sessions", "Sessions", "editor sessions"],
+	["uniques", "Visitors", "counted per day; two days count twice"],
+	["advanced_sessions", "Sessions sharing details", "sessions at the Advanced level"],
+];
+const GROUPS = [["feature", "Features used"], ["export", "Exports by format"], ["error", "Problems shown, by code"]];
+const SHOWN = 8;
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en") : "–");
+
+function el(tag, cls, text) {
+	const e = document.createElement(tag);
+	if (cls) e.className = cls;
+	if (text != null) e.textContent = text;
+	return e;
+}
+function svg(tag, attrs) {
+	const e = document.createElementNS(SVG, tag);
+	for (const k in attrs) e.setAttribute(k, attrs[k]);
+	return e;
+}
+function day(date) {
+	const d = new Date(date + "T00:00:00Z");
+	return Number.isNaN(d.getTime()) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+// A small line over the days. Pointing at it shows that day in the tile's note line.
+function sparkline(points, note) {
+	const W = 200, H = 44, PAD = 5, last = points.length - 1;
+	const values = points.map((p) => p.value);
+	const lo = Math.min(...values), hi = Math.max(...values);
+	const x = (i) => PAD + (i * (W - 2 * PAD)) / last;
+	const y = (v) => (hi === lo ? H / 2 : H - PAD - ((v - lo) * (H - 2 * PAD)) / (hi - lo));
+	const line = points.map((p, i) => x(i).toFixed(1) + "," + y(p.value).toFixed(1)).join(" ");
+	const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "spark", role: "img", preserveAspectRatio: "none",
+		"aria-label": `From ${day(points[0].date)} (${num(points[0].value)}) to ${day(points[last].date)} (${num(points[last].value)})` });
+	s.appendChild(svg("polygon", { class: "spark-area", points: `${PAD},${H} ${line} ${W - PAD},${H}` }));
+	s.appendChild(svg("polyline", { class: "spark-line", points: line, "vector-effect": "non-scaling-stroke" }));
+	const wrap = el("div", "spark-wrap");
+	const dot = el("span", "spark-dot");
+	wrap.append(s, dot);
+	const rest = note.textContent;
+	const show = (i) => {
+		dot.style.left = (x(i) / W) * 100 + "%";
+		dot.style.top = (y(points[i].value) / H) * 100 + "%";
+	};
+	show(last);
+	wrap.addEventListener("pointermove", (ev) => {
+		const box = wrap.getBoundingClientRect();
+		const i = Math.max(0, Math.min(last, Math.round((((ev.clientX - box.left) / box.width) * W - PAD) / ((W - 2 * PAD) / last))));
+		show(i);
+		note.textContent = day(points[i].date) + ": " + num(points[i].value);
+	});
+	wrap.addEventListener("pointerleave", () => { show(last); note.textContent = rest; });
+	return wrap;
+}
+
+function bars(parent, rows, max) {
+	const list = parent.appendChild(el("ul", "bars"));
+	for (const [name, value] of rows) {
+		const li = list.appendChild(el("li"));
+		li.appendChild(el("span", "bar-name", name));
+		const fill = li.appendChild(el("span", "bar-track")).appendChild(el("span", "bar-fill"));
+		fill.style.width = (value / max) * 100 + "%";
+		li.appendChild(el("span", "bar-value", num(value)));
+	}
+}
+
+function message(text) {
+	$("period").textContent = "";
+	$("out").replaceChildren(el("p", "status", text));
+}
+
+function render(data) {
+	const days = (Array.isArray(data.days) ? data.days : []).filter((d) => d && typeof d.day === "string");
+	const out = document.createDocumentFragment();
+	let shown = false;
+
+	const tiles = el("div", "tiles");
+	for (const [key, label, note] of BASE) {
+		const points = days.filter((d) => typeof d[key] === "number" && Number.isFinite(d[key])).map((d) => ({ date: d.day, value: d[key] }));
+		if (!points.length) continue;
+		const tile = tiles.appendChild(el("div", "tile"));
+		tile.appendChild(el("div", "tile-label", label));
+		tile.appendChild(el("div", "tile-value", num(points.reduce((s, p) => s + p.value, 0))));
+		const n = el("div", "tile-note", note);
+		if (points.length > 1) tile.appendChild(sparkline(points, n));
+		tile.appendChild(n);
+		shown = true;
+	}
+	if (tiles.children.length) out.appendChild(tiles);
+
+	const events = {};
+	for (const d of days) {
+		const ev = d.events && typeof d.events === "object" ? d.events : {};
+		for (const k of Object.keys(ev)) if (typeof ev[k] === "number" && Number.isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
+	}
+	for (const [group, title] of GROUPS) {
+		const rows = Object.keys(events)
+			.filter((k) => k.startsWith(group + ":"))
+			.map((k) => [k.slice(group.length + 1), events[k]])
+			.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+		if (!rows.length) continue;
+		shown = true;
+		const max = rows[0][1] || 1;
+		out.appendChild(el("h2", null, title));
+		bars(out, rows.slice(0, SHOWN), max);
+		const more = rows.slice(SHOWN);
+		if (more.length) {
+			const details = out.appendChild(el("details"));
+			details.appendChild(el("summary", null, "Show " + more.length + " more"));
+			bars(details, more, max);
+		}
+	}
+
+	if (!shown) return message("Nothing is public yet. Either nothing was counted in this range, or the operator of this server has not made any statistics public.");
+	$("period").textContent = days.length === 1 ? day(days[0].day) : day(days[0].day) + " to " + day(days[days.length - 1].day);
+	$("out").replaceChildren(out);
+}
+
+async function load() {
+	try {
+		// This page is served at .../api/stats/page, the numbers at .../api/stats.
+		const res = await fetch("../stats?days=" + encodeURIComponent($("range").value), { credentials: "omit", cache: "no-store" });
+		if (res.status === 404) return message("This server does not collect usage statistics.");
+		if (!res.ok) throw new Error(String(res.status));
+		render(await res.json());
+	} catch {
+		message("The numbers could not be loaded. Try again in a moment.");
+	}
+}
+$("range").addEventListener("change", load);
+load();
+</script>
+</body>
+</html>

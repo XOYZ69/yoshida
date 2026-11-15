@@ -56,14 +56,14 @@ pub const Font = struct {
         return c.stbtt_FindGlyphIndex(f.info.ptr, @intCast(cp)) != 0;
     }
 
-    fn advance(f: *const Font, cp: u21) i32 {
+    pub fn advance(f: *const Font, cp: u21) i32 {
         var adv: c_int = 0;
         var lsb: c_int = 0;
         c.stbtt_GetCodepointHMetrics(f.info.ptr, @intCast(cp), &adv, &lsb);
         return adv;
     }
 
-    fn kern(f: *const Font, a: u21, b: u21) i32 {
+    pub fn kern(f: *const Font, a: u21, b: u21) i32 {
         return c.stbtt_GetCodepointKernAdvance(f.info.ptr, @intCast(a), @intCast(b));
     }
 

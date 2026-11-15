@@ -20,7 +20,7 @@
       {% if channel %}
       <p class="preview"><span class="channel">{{ channel | upper }}</span> You are looking at the preview of the next version. <a href="{{ config.base_url }}/../">Back to the release</a></p>
       {% else %}
-      <p class="preview"><a href="{{ config.base_url }}/dev/"><span class="channel">DEV</span> Try the preview of the next version →</a></p>
+      <p class="preview quiet"><a href="{{ config.base_url }}/dev/">Preview the next version →</a></p>
       {% endif %}
     </div>
     <div class="hand" aria-hidden="true">

@@ -150,8 +150,9 @@ pub extern fn simplewebp_get_error_text(err: c_int) [*:0]const u8;
 pub const NSVGimage = extern struct {
     width: f32,
     height: f32,
-    shapes: ?*anyopaque,
+    shapes: ?*NSVGshape,
 };
+pub const NSVGshape = opaque {};
 pub const NSVGrasterizer = opaque {};
 /// Parses a NUL-terminated SVG document; it changes the text while parsing.
 pub extern fn nsvgParse(input: [*:0]u8, units: [*:0]const u8, dpi: f32) ?*NSVGimage;
@@ -161,3 +162,15 @@ pub extern fn nsvgDeleteRasterizer(r: *NSVGrasterizer) void;
 /// Draws `image` scaled by `scale` and moved by (tx, ty) into straight
 /// 8-bit RGBA pixels.
 pub extern fn nsvgRasterize(r: *NSVGrasterizer, image: *NSVGimage, tx: f32, ty: f32, scale: f32, dst: [*]u8, w: c_int, h: c_int, stride: c_int) void;
+
+// Helpers in stb_impl.c for the pattern fills (render.zig draws those).
+// `stroke` picks the stroke paint (1) or the fill paint (0).
+pub extern fn ystb_nsvg_next(shape: *NSVGshape) ?*NSVGshape;
+/// 0 none, 1 color, 2 linear gradient, 3 radial gradient.
+pub extern fn ystb_nsvg_paint_type(shape: *NSVGshape, stroke: c_int) c_int;
+pub extern fn ystb_nsvg_paint_id(shape: *NSVGshape, stroke: c_int) [*:0]const u8;
+/// From image coordinates to the gradient's; null for other paints.
+pub extern fn ystb_nsvg_paint_xform(shape: *NSVGshape, stroke: c_int) ?*const [6]f32;
+pub extern fn ystb_nsvg_bounds(shape: *NSVGshape, xform: *const [6]f32, bounds: *[4]f32) void;
+pub extern fn ystb_nsvg_draw_range(r: *NSVGrasterizer, image: *NSVGimage, first: ?*NSVGshape, end: ?*NSVGshape, scale: f32, dst: [*]u8, w: c_int, h: c_int, stride: c_int) void;
+pub extern fn ystb_nsvg_draw_part(r: *NSVGrasterizer, image: *NSVGimage, shape: *NSVGshape, stroke: c_int, solid: c_int, scale: f32, dst: [*]u8, w: c_int, h: c_int, stride: c_int) void;

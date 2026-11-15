@@ -1,6 +1,6 @@
 // End-to-end checks for the Files tab: the icon of each file kind, image
-// thumbnails, the details of the selected file (pixel size, font name,
-// card count), the upload target line and its reset button, the marked
+// and SVG thumbnails, the details of the selected file (pixel size, font
+// name and preview, card count), the upload target line and its reset button, the marked
 // target folder, and the size column lining up at every depth. Uses the
 // poker example and the fixture project in tests/fixtures/editor-test.
 //
@@ -150,6 +150,22 @@ ok(
 	),
 	await details(),
 );
+// A font shows sample text set in the font itself
+await p
+	.waitForSelector(".file-info .font-preview", { timeout: 5000 })
+	.catch(() => null);
+const fontPreview = await p
+	.locator(".file-info .font-preview")
+	.evaluate((e) => {
+		const family = getComputedStyle(e).fontFamily;
+		return { family, loaded: document.fonts.check(`16px ${family}`) };
+	})
+	.catch(() => null);
+ok(
+	"a font shows a preview in its own face",
+	!!fontPreview && /yfont-\d+/.test(fontPreview.family) && fontPreview.loaded,
+	JSON.stringify(fontPreview),
+);
 ok(
 	"used by lists the files in a tooltip",
 	((await p.getAttribute(".file-info .used-by", "title")) ?? "").includes(
@@ -225,6 +241,47 @@ ok(
 	"a broken image shows the image icon",
 	(await row("broken.png").locator(".icon[data-type=image] svg").count()) ===
 		1 && (await row("broken.png").locator("img").count()) === 0,
+);
+
+// An SVG file is a picture too: thumbnail, preview, no pixel size
+const uploadSvg = p.waitForEvent("filechooser");
+await p.click('.browser .bar button[aria-label="Upload files"]');
+await (await uploadSvg).setFiles({
+	name: "mark.svg",
+	mimeType: "image/svg+xml",
+	buffer: Buffer.from(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect width="40" height="20" fill="#C00"/></svg>',
+	),
+});
+await p.waitForSelector('.ftree li[data-path="mark.svg"] img.thumb', {
+	timeout: 5000,
+});
+ok(
+	"an SVG shows a thumbnail",
+	await row("mark.svg")
+		.locator("img.thumb[data-type=image]")
+		.evaluate((e) => e.complete && e.naturalWidth > 0),
+);
+await row("mark.svg").locator(".row").click();
+await p.waitForSelector(".file-info img.file-preview.vector");
+const svgPreview = await p
+	.locator(".file-info img.file-preview.vector")
+	.evaluate(async (e) => {
+		await e.decode().catch(() => {});
+		const r = e.getBoundingClientRect();
+		return { drawn: e.naturalWidth > 0, w: r.width, h: r.height };
+	});
+ok(
+	"an SVG shows a preview that fills the preview area",
+	svgPreview.drawn && svgPreview.w > 100 && svgPreview.h > 50,
+	JSON.stringify(svgPreview),
+);
+ok(
+	"SVG details name the kind, not a pixel size",
+	/^SVG image · \d+ B$/.test(
+		((await details()) ?? "").replace(/\s+/g, " ").trim(),
+	),
+	await details(),
 );
 
 // Sizes line up at every depth, folders included

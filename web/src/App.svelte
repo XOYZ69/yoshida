@@ -7,6 +7,17 @@
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
 	import CardForm from "./lib/CardForm.svelte";
+	import TelemetryNotice from "./lib/telemetry/TelemetryNotice.svelte";
+	import TelemetryWindow from "./lib/telemetry/TelemetryWindow.svelte";
+	import {
+		initTelemetry,
+		noticeDue,
+		openSettings as openPrivacy,
+		telemetry,
+		track,
+		trackOnce,
+	} from "./lib/telemetry/state.svelte";
+	import type { ServerTelemetry } from "./lib/telemetry/core";
 	import Logo from "./lib/ui/Logo.svelte";
 	import ThemeToggle from "./lib/ui/ThemeToggle.svelte";
 	import {
@@ -116,6 +127,8 @@
 		formatJson,
 		importPath,
 		isImage,
+		isPicture,
+		pictureUrl,
 		isText,
 		listExamples,
 		loadExample,
@@ -253,6 +266,7 @@
 		max_cards: number;
 		max_body_mb?: number;
 		version?: string;
+		telemetry?: ServerTelemetry;
 	};
 	let server = $state<ServerInfo | null>(null);
 	let useServer = $state(false);
@@ -483,6 +497,13 @@
 		[d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join("\u0000");
 	// The project check covers every file; the preview render adds what the
 	// current card reports on top of it.
+	// Error codes that showed up, counted once per session and code (advanced telemetry).
+	$effect(() => {
+		for (const d of check?.diagnostics ?? [])
+			if (d.severity === "error")
+				trackOnce("error", String(d.code).padStart(4, "0"));
+	});
+
 	const diagnostics: Diagnostic[] = $derived.by(() => {
 		const seen = new Set<string>();
 		const out: Diagnostic[] = [];
@@ -518,9 +539,13 @@
 			: "",
 	);
 	const imageUrl = $derived.by(() => {
-		if (!selected || !isImage(selected)) return "";
+		if (!selected || !isPicture(selected)) return "";
 		const data = files.get(selected);
-		return data ? URL.createObjectURL(new Blob([data as BlobPart])) : "";
+		return data ? pictureUrl(selected, data) : "";
+	});
+	$effect(() => {
+		const u = imageUrl;
+		return () => u && URL.revokeObjectURL(u);
 	});
 
 	// The design the builder edits: the current set's, else the first one.
@@ -632,6 +657,8 @@
 		} catch {
 			server = null;
 		}
+		// Without a yoshida server there is nothing to send to: no notice, no requests.
+		initTelemetry(server?.telemetry);
 		myProjects = await listProjects();
 		const last = lastProject();
 		if (last && (await openSaved(last))) return;
@@ -684,6 +711,7 @@
 	async function openExample(name: string) {
 		const ex = examples.find((e) => e.name === name);
 		if (!ex) return;
+		track("feature", "example.open");
 		status = `Loading ${ex.title}…`;
 		await openProject(ex.name, await loadExample(ex));
 	}
@@ -761,6 +789,7 @@
 
 	/** The whole project, images and fonts included, as one .yoshida file. */
 	function exportProject() {
+		track("feature", "project.export");
 		const fileName = `${slug(projectName)}${PROJECT_EXT}`;
 		download(fileName, projectZip(projectName, files), PROJECT_MIME);
 		status = `Exported ${files.size} file(s) as ${fileName}.`;
@@ -1001,6 +1030,7 @@
 
 	/** Adds a blank design with its own card file to the open project. */
 	async function newDesign() {
+		track("feature", "design.new");
 		const name = (
 			await askText({
 				title: "New design",
@@ -1313,14 +1343,17 @@
 
 	const filesPreviewUrl = $derived.by(() => {
 		const p = filesSelected;
-		if (!p || !isImage(p)) return "";
+		if (!p || !isPicture(p)) return "";
 		const d = files.get(p);
-		return d ? URL.createObjectURL(new Blob([d as BlobPart])) : "";
+		return d ? pictureUrl(p, d) : "";
 	});
 	$effect(() => {
 		const u = filesPreviewUrl;
 		return () => u && URL.revokeObjectURL(u);
 	});
+	const isSvg = (path: string) => /\.svg$/i.test(path);
+	/** Sample text for a font preview. */
+	const fontSample = "The quick brown fox jumps over the lazy dog";
 	/** Pixel size of the previewed image, once the browser has decoded it. */
 	let filesPreviewSize = $state<{ url: string; w: number; h: number } | null>(
 		null,
@@ -1330,7 +1363,8 @@
 		const p = filesSelected;
 		const d = p ? files.get(p) : undefined;
 		if (!p || !d) return "";
-		if (filesPreviewUrl) {
+		// An SVG has no pixel size of its own; it is drawn at the size it is used at.
+		if (filesPreviewUrl && !isSvg(p)) {
 			const s = filesPreviewSize;
 			return s?.url === filesPreviewUrl ? `${s.w} × ${s.h} px` : "Image";
 		}
@@ -1374,6 +1408,7 @@
 	});
 
 	function openFonts(target: FontsTarget = {}) {
+		track("feature", "fonts.open");
 		fontsTarget = { ...target };
 	}
 
@@ -1981,6 +2016,7 @@
 
 	function addLayer(type: LayerType) {
 		if (!doc) return;
+		track("feature", `layer.add.${type}`);
 		const imageParams = paramsOf(doc)
 			.filter(([, p]) => p.type === "image")
 			.map(([n]) => n);
@@ -3103,6 +3139,7 @@
 
 	async function exportPng() {
 		if (!currentSet || !currentCard) return;
+		track("export", "png");
 		const card = currentCard;
 		const run = new Run(`Exporting ${card.id}.png`, []);
 		const clock = renderClock();
@@ -3142,6 +3179,7 @@
 
 	async function exportZip() {
 		if (!currentSet) return;
+		track("export", "zip");
 		if (onServer) return exportOnServer("png");
 		const set = currentSet;
 		const name = setName;
@@ -3227,6 +3265,7 @@
 	/** Every card in one PDF; with `canvas.bleed`, with crop marks. */
 	async function exportPdf() {
 		if (!currentSet) return;
+		track("export", "pdf");
 		if (onServer) return exportOnServer("pdf");
 		const n = currentSet.cards.length;
 		const clock = renderClock();
@@ -3658,6 +3697,7 @@
 		closeExport();
 		const plan = planExport(st, projectName, planSets, setName, cardIndex);
 		if (!plan.files) return;
+		for (const f of st.formats) track("export", f);
 		const clock = renderClock();
 		// With a target dpi, each design renders at the scale that gives it
 		// that dpi. The dialog measures the canvases when it opens; an export
@@ -4077,8 +4117,19 @@
 		{@const n = fileUses.get(f) ?? 0}
 		<div class="file-info">
 			<div class="file-name mono" title={f}>{f}</div>
+			{#if fontFaces[f]}
+				<div
+					class="font-preview"
+					style:font-family={`"${fontFaces[f]}"`}
+					title="Preview of the font"
+				>
+					<span class="font-preview-big">AaBbCc 123</span>
+					<span>{fontSample}</span>
+				</div>
+			{/if}
 			{#if filesPreviewUrl}<img
 					class="file-preview"
+					class:vector={isSvg(f)}
 					src={filesPreviewUrl}
 					alt={f}
 					onload={(e) => {
@@ -4283,7 +4334,7 @@
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
+				title="Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
@@ -4364,6 +4415,14 @@
 				aria-pressed={functionsRef.open}
 				title="Function reference: every function with a short example (F1)"
 				><span class="fn-mark" aria-hidden="true">ƒ</span> Functions</button
+			>
+			<button
+				class="fn-btn"
+				onclick={openPrivacy}
+				aria-pressed={telemetry.settingsOpen}
+				data-testid="privacy-button"
+				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what this browser sent"
+				><Icon name="lock" /> Privacy</button
 			>
 			<ThemeToggle />
 		</header>
@@ -4664,7 +4723,31 @@
 					{/await}
 				{:else if imageUrl}
 					<div class="image-view">
-						<img src={imageUrl} alt={selected} />
+						<img
+							class:vector={isSvg(selected!)}
+							src={imageUrl}
+							alt={selected}
+						/>
+					</div>
+				{:else if selected && fontFaces[selected]}
+					<div
+						class="font-view"
+						style:font-family={`"${fontFaces[selected]}"`}
+					>
+						<p class="font-view-name">
+							{describeFile(
+								selected,
+								files.get(selected) ?? new Uint8Array(),
+							)}
+						</p>
+						<p class="font-view-glyphs">
+							ABCDEFGHIJKLMNOPQRSTUVWXYZ<br />
+							abcdefghijklmnopqrstuvwxyz<br />
+							0123456789 .,:;!?&amp;@#%()+-=/
+						</p>
+						{#each [48, 32, 24, 16] as size (size)}
+							<p style:font-size={`${size}px`}>{fontSample}</p>
+						{/each}
 					</div>
 				{:else if selected}
 					<p class="muted pad">
@@ -4830,6 +4913,14 @@
 	{/key}
 {/if}
 
+{#if telemetry.settingsOpen}
+	<TelemetryWindow />
+{/if}
+
+{#if server?.telemetry?.enabled && noticeDue() && !telemetry.settingsOpen}
+	<TelemetryNotice />
+{/if}
+
 {#if functionsRef.open}
 	{#key functionsRef.nonce}
 		<FunctionsWindow
@@ -4944,6 +5035,30 @@
 		align-self: center;
 		background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 12px
 			12px;
+	}
+	/* An SVG has no pixel size to show it at: it fills the preview area. */
+	.file-preview.vector {
+		width: 100%;
+		height: min(180px, 25vh);
+	}
+	.font-preview {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 8px;
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		font-size: 14px;
+		line-height: 1.3;
+		overflow: hidden;
+	}
+	.font-preview span {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.font-preview-big {
+		font-size: 26px;
 	}
 	.small {
 		font-size: 11px;
@@ -5231,6 +5346,28 @@
 		background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 16px
 			16px;
 	}
+	.image-view img.vector {
+		width: 100%;
+		max-height: 70vh;
+		object-fit: contain;
+	}
+	.font-view {
+		overflow: auto;
+		padding: 16px 20px;
+		line-height: 1.25;
+	}
+	.font-view p {
+		margin: 0 0 14px;
+	}
+	.font-view-name {
+		font-family: system-ui, sans-serif;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.font-view-glyphs {
+		font-size: 28px;
+		word-break: break-all;
+	}
 	.preview-pane {
 		grid-area: preview;
 		display: flex;
@@ -5317,6 +5454,9 @@
 		}
 		.file-preview {
 			max-height: 10vh;
+		}
+		.file-preview.vector {
+			height: 10vh;
 		}
 		/* Without splitters the stacked panels need their own dividers. */
 		.files,

@@ -6,3 +6,4 @@ web/public/yoshida.wasm
 web/public/expr.wasm
 web/public/examples
 **/out
+.env

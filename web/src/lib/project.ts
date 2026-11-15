@@ -19,6 +19,20 @@ export function isImage(path: string) {
 	return /\.(png|jpe?g|gif|bmp|webp)$/i.test(path);
 }
 
+/** A file the browser can show as a picture: an image or an SVG file. */
+export function isPicture(path: string) {
+	return isImage(path) || /\.svg$/i.test(path);
+}
+
+/**
+ * An object URL that shows a picture file. The browser recognises the pixel
+ * formats by their first bytes, but draws an SVG only when told its type.
+ */
+export function pictureUrl(path: string, data: Uint8Array) {
+	const type = /\.svg$/i.test(path) ? "image/svg+xml" : "";
+	return URL.createObjectURL(new Blob([data as BlobPart], { type }));
+}
+
 const skipDirs = new Set([".git", ".yoshida", "node_modules", "out"]);
 
 export type Example = { name: string; title: string; files: string[] };

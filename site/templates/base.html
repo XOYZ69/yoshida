@@ -8,7 +8,8 @@
   <title>{% block title %}{{ config.title }}{% endblock %}</title>
   <meta name="description" content="{% block description %}{{ config.description }}{% endblock %}">
   {% if channel %}<meta name="robots" content="noindex">{% endif %}
-  <link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
+  {# A preview build has a red tab icon, so it is told apart from the release in a row of tabs. #}
+  <link rel="icon" href="{{ get_url(path=channel and 'favicon-dev.svg' or 'favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ get_url(path='fonts/fonts.css') }}">
   <link rel="stylesheet" href="{{ get_url(path='site.css', cachebust=true) }}">
   {# Code colours; theme.js retargets the media queries when a theme is picked. #}
@@ -54,6 +55,7 @@
     {% set releases = get_section(path="releases/_index.md") %}
     yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %}{% if channel %} · {{ channel }} preview{% endif %} · file format {{ config.extra.format_version }} ·
     <a href="{{ get_url(path='@/docs/third-party-notices.md') }}">Third-party notices</a> ·
+    <a href="{{ get_url(path='@/stats.md') }}">Stats</a> ·
     {% if channel %}<a href="{{ config.base_url }}/../">Release site</a>{% else %}<a href="{{ config.base_url }}/dev/">Dev preview</a>{% endif %}
   </footer>
   {# Search dialog, filled by static/docs.js from the index page (templates/search-data.html). #}

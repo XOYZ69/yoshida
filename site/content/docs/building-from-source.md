@@ -92,7 +92,7 @@ docker build --build-arg YOSHIDA_CHANNEL=dev -t yoshida:dev .
 YOSHIDA_CHANNEL=dev docker compose up --build
 ```
 
-With a channel, `yoshida version` prints `yoshida 0.6.2 (format 1) dev build`, the server's `/api/capabilities` and the WASM `info` call report `"channel": "dev"`, the editor shows a red **DEV** stamp beside the version, and the website (built with `YOSHIDA_CHANNEL` set) shows the stamp beside the logo and asks search engines not to index it. Without one, nothing changes. The `dev` branch is built this way for the preview site, see [CI and Deployment](@/docs/ci-and-deployment.md#the-dev-preview).
+With a channel, `yoshida version` prints `yoshida 0.6.2 (format 1) dev build`, the server's `/api/capabilities` and the WASM `info` call report `"channel": "dev"`, the editor shows a red **DEV** stamp beside the version, and the website (built with `YOSHIDA_CHANNEL` set) shows the stamp beside the logo and asks search engines not to index it. The editor and the website also get a red tab icon (`favicon-dev.svg`), so a preview is told apart from the release in a row of tabs. Without one, nothing changes. The `dev` branch is built this way for the preview site, see [CI and Deployment](@/docs/ci-and-deployment.md#the-dev-preview).
 
 ## The release bundle
 

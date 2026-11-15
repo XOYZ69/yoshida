@@ -70,6 +70,10 @@ jobs:
       - name: Reference for AI agents is up to date
         run: node scripts/llms.mjs check
 
+      # The collector behind the website's Stats page (stats.yml).
+      - name: Stats script tests
+        run: node --test scripts/stats.test.mjs
+
       - name: Zig formatting
         run: zig fmt --check build.zig src
 

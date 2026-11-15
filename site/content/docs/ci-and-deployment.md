@@ -16,6 +16,7 @@ There are two long-lived branches. `master` is what is released: the site at the
 | `pr-title.yml` | every pull request to `master` or `dev` | Fails unless the PR title is conventional (`type(scope): description`) and sets the matching type label |
 | `release-notes-preview.yml` | every pull request to `master` or `dev` | Comments the release notes the PR will produce |
 | `labeler.yml` | every pull request to `master` or `dev` | Adds `area/*` labels from the files the PR changes (`.github/labeler.yml`) |
+| `stats.yml` | once a day, and manually | Collects the numbers for the [Stats](@/stats.md) page, see [Public stats](#public-stats) |
 
 ## `ci.yml`
 
@@ -72,6 +73,21 @@ The project's site is published at <https://yoshida.xoyz.dev/>, a custom domain 
 The site is static: rendering runs in the visitor's browser (WebAssembly) and projects are stored in the visitor's browser only. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md).
 
 The public build copies the examples with `npm run examples -- --public`, which leaves out the files listed in `examples/.public-exclude`. The current examples only use fonts that may be shared, so the list is empty; add private fonts or images there if a local example needs them. A design whose font is left out falls back to the bundled Lato font and shows warning 4005. See [Third-Party Notices](@/docs/third-party-notices.md).
+
+## Public stats
+
+The [Stats](@/stats.md) page shows numbers that GitHub counts: stars, forks, release downloads and, optionally, views and clones of the repository. The site and its editor measure nothing.
+
+`stats.yml` runs `node scripts/stats.mjs collect` once a day. The script asks GitHub's API for the current numbers, merges them into the stored history and commits the result as `stats.json` to the `stats` branch, which holds nothing else. The first run creates the branch. The page loads the file from that branch in the visitor's browser (`stats_url` in `site/config.toml`), so a new day needs no deploy.
+
+Two optional settings under **Settings → Secrets and variables → Actions** add more:
+
+| Setting | Kind | What it adds |
+| --- | --- | --- |
+| `STATS_TRAFFIC_TOKEN` | secret | Views and clones of the repository. A fine-grained personal access token for this repository with the permission **Administration: read-only**; the workflow's own token may not read traffic. GitHub keeps traffic for 14 days, so the days accumulate from the first run on. |
+| `YOSHIDA_STATS_URL` | variable | The `/api/stats` address of a self-hosted server whose public stats are shown too. The workflow fetches it, not a visitor's browser. |
+
+GitHub runs schedules from the default branch only and pauses them after 60 days without a commit; start the workflow manually to resume. `node --test scripts/stats.test.mjs` tests the merging and runs in `ci.yml`.
 
 ## Run the end-to-end test locally
 

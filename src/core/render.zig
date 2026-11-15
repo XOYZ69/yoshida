@@ -15,6 +15,7 @@ const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const qr_mod = @import("qr.zig");
 const raster = @import("raster.zig");
+const svgread = @import("svgread.zig");
 const text = @import("text.zig");
 const vector = @import("vector.zig");
 const Allocator = std.mem.Allocator;
@@ -159,8 +160,22 @@ pub const Assets = struct {
     /// fetch them, add them under the URL as path, and render again.
     missing_urls: std.ArrayList([]const u8) = .empty,
     /// SVG files among `images` (whose entry is the SVG at its own size);
-    /// `sized` draws them again at the size they are used at.
-    svgs: std.StringHashMapUnmanaged(void) = .empty,
+    /// `sized` draws them again at the size they are used at. The value
+    /// is true for a file with `<text>`, which depends on `svg_fonts`.
+    svgs: std.StringHashMapUnmanaged(bool) = .empty,
+    /// The fonts of the design being rendered, for `<text>` in SVG files:
+    /// `font-family` is looked up among their names (see `useFonts`).
+    svg_fonts: []SvgFont = &.{},
+    /// Images dropped by `useFonts`. They are freed with the assets, as a
+    /// vector scene or a PDF being written may still point at them.
+    retired: std.ArrayList(*raster.Image) = .empty,
+
+    /// A font a design declares: its name in lower case letters and digits
+    /// only, and its normalized path.
+    const SvgFont = struct { name: []u8, path: []u8 };
+
+    /// How deep patterns may use patterns in an SVG file.
+    const svg_pattern_depth = 4;
 
     pub const ImageEntry = union(enum) {
         ok: *raster.Image,
@@ -189,6 +204,12 @@ pub const Assets = struct {
         var sit = a.svgs.keyIterator();
         while (sit.next()) |k| a.gpa.free(k.*);
         a.svgs.deinit(a.gpa);
+        a.freeSvgFonts(a.svg_fonts);
+        for (a.retired.items) |img| {
+            img.deinit(a.gpa);
+            a.gpa.destroy(img);
+        }
+        a.retired.deinit(a.gpa);
         var fit = a.fonts.iterator();
         while (fit.next()) |e| {
             if (e.value_ptr.*) |f| {
@@ -233,6 +254,124 @@ pub const Assets = struct {
             }
             a.gpa.free(kv.key);
         }
+        // SVG text drawn with this font is stale too.
+        for (a.svg_fonts) |f| if (std.mem.eql(u8, f.path, path)) {
+            a.dropSvgText() catch {};
+            break;
+        };
+    }
+
+    fn freeSvgFonts(a: *Assets, fonts: []SvgFont) void {
+        for (fonts) |f| {
+            a.gpa.free(f.name);
+            a.gpa.free(f.path);
+        }
+        a.gpa.free(fonts);
+    }
+
+    /// Tells the assets which fonts the design declares. `<text>` in an
+    /// SVG file is drawn with the declared font whose name is its
+    /// `font-family` (letters and digits compared, in any case), else with
+    /// the bundled default font. SVG files with text that were drawn with
+    /// other fonts are drawn again when they are next used.
+    pub fn useFonts(a: *Assets, fonts: []const design_mod.Font) Allocator.Error!void {
+        var arena_state = std.heap.ArenaAllocator.init(a.gpa);
+        defer arena_state.deinit();
+        var list: std.ArrayList(SvgFont) = .empty;
+        errdefer {
+            for (list.items) |f| {
+                a.gpa.free(f.name);
+                a.gpa.free(f.path);
+            }
+            list.deinit(a.gpa);
+        }
+        for (fonts) |f| {
+            const path = (try project.normalize(arena_state.allocator(), f.path)) orelse continue;
+            var buf: [128]u8 = undefined;
+            const name = try a.gpa.dupe(u8, plainName(&buf, &.{f.name}));
+            errdefer a.gpa.free(name);
+            const owned_path = try a.gpa.dupe(u8, path);
+            errdefer a.gpa.free(owned_path);
+            try list.append(a.gpa, .{ .name = name, .path = owned_path });
+        }
+        const next = try list.toOwnedSlice(a.gpa);
+        const same = next.len == a.svg_fonts.len and for (next, a.svg_fonts) |x, y| {
+            if (!std.mem.eql(u8, x.name, y.name) or !std.mem.eql(u8, x.path, y.path)) break false;
+        } else true;
+        if (same) return a.freeSvgFonts(next);
+        a.freeSvgFonts(a.svg_fonts);
+        a.svg_fonts = next;
+        try a.dropSvgText();
+    }
+
+    /// Forgets the drawings of SVG files with `<text>`.
+    fn dropSvgText(a: *Assets) Allocator.Error!void {
+        var stale: std.ArrayList([]const u8) = .empty;
+        defer stale.deinit(a.gpa);
+        var it = a.images.keyIterator();
+        while (it.next()) |k| {
+            const path = k.*[0 .. std.mem.indexOfScalar(u8, k.*, 0) orelse k.len];
+            if (a.svgs.get(path) orelse false) try stale.append(a.gpa, k.*);
+        }
+        try a.retired.ensureUnusedCapacity(a.gpa, stale.items.len);
+        for (stale.items) |k| {
+            const kv = a.images.fetchRemove(k).?;
+            switch (kv.value) {
+                .ok => |img| a.retired.appendAssumeCapacity(img),
+                .bad => |msg| a.gpa.free(msg),
+                .missing => {},
+            }
+            // The base entry goes with its mark; `image` decodes it again.
+            if (a.svgs.fetchRemove(kv.key)) |sv| a.gpa.free(sv.key);
+            a.gpa.free(kv.key);
+        }
+    }
+
+    /// `parts` joined, lower case letters and digits only: "Bebas Neue",
+    /// "bebas-neue" and "BebasNeue" are the same name.
+    fn plainName(buf: []u8, parts: []const []const u8) []const u8 {
+        var n: usize = 0;
+        for (parts) |part| for (part) |ch| {
+            if (n == buf.len) break;
+            if (std.ascii.isAlphanumeric(ch)) {
+                buf[n] = std.ascii.toLower(ch);
+                n += 1;
+            } else if (ch >= 0x80) {
+                buf[n] = ch;
+                n += 1;
+            }
+        };
+        return buf[0..n];
+    }
+
+    fn svgFontNamed(a: *Assets, name: []const u8) Allocator.Error!?*text.Font {
+        if (name.len == 0) return null;
+        for (a.svg_fonts) |f| if (std.mem.eql(u8, f.name, name)) {
+            if (try a.font(f.path)) |found| return found;
+        };
+        return null;
+    }
+
+    /// The font for `<text>` in an SVG file: the first family of the
+    /// `font-family` list that a declared font is named after. Bold and
+    /// italic look for "<family> bold", "<family> italic" and
+    /// "<family> bold italic" first; bold without such a font is the
+    /// regular one with an outline.
+    fn findSvgFont(ptr: *anyopaque, families: []const u8, bold: bool, italic: bool) Allocator.Error!svgread.Found {
+        const a: *Assets = @ptrCast(@alignCast(ptr));
+        var it = std.mem.splitScalar(u8, families, ',');
+        while (it.next()) |raw| {
+            const family = std.mem.trim(u8, raw, " \t\r\n'\"");
+            var buf: [160]u8 = undefined;
+            if (bold or italic) {
+                if (try a.svgFontNamed(plainName(&buf, &.{ family, if (bold) "bold" else "", if (italic) "italic" else "" }))) |f| return .{ .font = f };
+            }
+            if (bold and italic) {
+                if (try a.svgFontNamed(plainName(&buf, &.{ family, "bold" }))) |f| return .{ .font = f };
+            }
+            if (try a.svgFontNamed(plainName(&buf, &.{family}))) |f| return .{ .font = f, .faux_bold = bold };
+        }
+        return .{ .font = try a.defaultFont(), .faux_bold = bold };
     }
 
     fn dropImage(a: *Assets, key: []const u8) void {
@@ -280,31 +419,220 @@ pub const Assets = struct {
     /// Draws SVG `bytes`; with a size, scaled so it covers w x h (keeping
     /// its proportions), else at its own size.
     fn rasterSvg(a: *Assets, bytes: []const u8, w: ?f64, h: ?f64) Allocator.Error!ImageEntry {
+        const drawn = switch (try a.svgPixels(a.gpa, bytes, if (w != null and h != null) .{ w.?, h.? } else null, 0)) {
+            .ok => |d| d,
+            .bad => |msg| return .{ .bad = msg },
+        };
+        defer a.gpa.free(drawn.rgba);
+        const px = try a.gpa.alloc(u16, drawn.rgba.len);
+        defer a.gpa.free(px);
+        for (drawn.rgba, px) |b, *o| o.* = @as(u16, b) * 257;
+        const img = try a.gpa.create(raster.Image);
+        errdefer a.gpa.destroy(img);
+        img.* = try raster.Image.fromStraight(a.gpa, drawn.w, drawn.h, px);
+        return .{ .ok = img };
+    }
+
+    const SvgPixels = union(enum) {
+        /// Straight 8-bit RGBA, owned by the caller.
+        ok: struct { rgba: []u8, w: u32, h: u32 },
+        /// Why not, owned by the caller (allocated with `a.gpa`).
+        bad: []const u8,
+    };
+
+    /// Draws SVG `bytes` into pixels allocated with `out`: scaled to cover
+    /// `cover` (keeping its proportions), else at its own size. nanosvg
+    /// draws the shapes; text, gradients and patterns go through
+    /// svgread.zig first. `depth` counts patterns inside patterns.
+    fn svgPixels(a: *Assets, out: Allocator, bytes: []const u8, cover: ?[2]f64, depth: u8) Allocator.Error!SvgPixels {
+        var arena_state = std.heap.ArenaAllocator.init(a.gpa);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
         // nanosvg changes the text while parsing; it needs a copy with a 0 at the end.
-        const text_z = try a.gpa.allocSentinel(u8, bytes.len, 0);
-        defer a.gpa.free(text_z);
-        @memcpy(text_z, bytes);
+        var prep: ?svgread.Prepared = null;
+        const text_z: [:0]u8 = if (svgread.needed(bytes)) doc: {
+            prep = try svgread.prepare(arena, bytes, .{ .ptr = a, .findFn = findSvgFont }, depth < svg_pattern_depth);
+            break :doc prep.?.doc;
+        } else try arena.dupeZ(u8, bytes);
         const svg = c.nsvgParse(text_z.ptr, "px", 96) orelse return .{ .bad = try a.gpa.dupe(u8, "cannot parse SVG") };
         defer c.nsvgDelete(svg);
         const iw: f64 = if (svg.width > 0) svg.width else 100;
         const ih: f64 = if (svg.height > 0) svg.height else 100;
-        const s: f64 = if (w != null and h != null) @max(w.? / iw, h.? / ih) else 1;
+        const s: f64 = if (cover) |cv| @max(cv[0] / iw, cv[1] / ih) else 1;
         const pw: u32 = @intFromFloat(std.math.clamp(@ceil(iw * s), 1, 8192));
         const ph: u32 = @intFromFloat(std.math.clamp(@ceil(ih * s), 1, 8192));
         if (@as(u64, pw) * ph > limits.image_pixels) return .{ .bad = try std.fmt.allocPrint(a.gpa, "SVG drawn at {d} x {d}, above the 50 megapixel limit", .{ pw, ph }) };
         const rast = c.nsvgCreateRasterizer() orelse return error.OutOfMemory;
         defer c.nsvgDeleteRasterizer(rast);
-        const rgba8 = try a.gpa.alloc(u8, @as(usize, pw) * ph * 4);
-        defer a.gpa.free(rgba8);
+        const rgba8 = try out.alloc(u8, @as(usize, pw) * ph * 4);
+        errdefer out.free(rgba8);
         @memset(rgba8, 0);
-        c.nsvgRasterize(rast, svg, 0, 0, @floatCast(s), rgba8.ptr, @intCast(pw), @intCast(ph), @intCast(pw * 4));
-        const px = try a.gpa.alloc(u16, rgba8.len);
-        defer a.gpa.free(px);
-        for (rgba8, px) |b, *o| o.* = @as(u16, b) * 257;
-        const img = try a.gpa.create(raster.Image);
-        errdefer a.gpa.destroy(img);
-        img.* = try raster.Image.fromStraight(a.gpa, pw, ph, px);
-        return .{ .ok = img };
+        if (prep != null and prep.?.patterns.len > 0) {
+            try a.drawSvgPatterns(arena, rast, svg, &prep.?, @floatCast(s), rgba8, pw, ph, depth);
+        } else {
+            c.nsvgRasterize(rast, svg, 0, 0, @floatCast(s), rgba8.ptr, @intCast(pw), @intCast(ph), @intCast(pw * 4));
+        }
+        return .{ .ok = .{ .rgba = rgba8, .w = pw, .h = ph } };
+    }
+
+    /// One drawn pattern tile: premultiplied 8-bit RGBA.
+    const SvgTile = struct {
+        pattern: *const svgread.Pattern,
+        /// Tile and bounding box size it was made for.
+        size: [4]f32,
+        w: u32,
+        h: u32,
+        px: []const u8,
+    };
+
+    /// Draws an SVG with pattern fills into `dst` (straight RGBA, `pw` x
+    /// `ph`). nanosvg draws the shapes in runs; a shape painted with a
+    /// pattern is drawn by itself as a mask, which the pattern's tiles
+    /// then fill, so the stacking order of the file is kept.
+    fn drawSvgPatterns(a: *Assets, arena: Allocator, rast: *c.NSVGrasterizer, svg: *c.NSVGimage, prep: *const svgread.Prepared, s: f32, dst: []u8, pw: u32, ph: u32, depth: u8) Allocator.Error!void {
+        const iw: c_int = @intCast(pw);
+        const ih: c_int = @intCast(ph);
+        const stride: c_int = @intCast(pw * 4);
+        // The picture so far, premultiplied, and the part being added.
+        const acc = try arena.alloc(u8, dst.len);
+        @memset(acc, 0);
+        const part = try arena.alloc(u8, dst.len);
+        var tiles: std.ArrayList(SvgTile) = .empty;
+        var run_start = svg.shapes;
+        var cur = svg.shapes;
+        while (cur) |shape| {
+            const next = c.ystb_nsvg_next(shape);
+            cur = next;
+            const patterns: [2]?*const svgread.Pattern = .{ svgPatternOf(prep, shape, 0), svgPatternOf(prep, shape, 1) };
+            if (patterns[0] == null and patterns[1] == null) continue;
+            if (run_start != shape) {
+                c.ystb_nsvg_draw_range(rast, svg, run_start, shape, s, part.ptr, iw, ih, stride);
+                svgOver(acc, part);
+            }
+            run_start = next;
+            // The fill, then the stroke on top of it.
+            for (patterns, 0..) |pattern, stroke| {
+                if (pattern) |pt| {
+                    c.ystb_nsvg_draw_part(rast, svg, shape, @intCast(stroke), 1, s, part.ptr, iw, ih, stride);
+                    try a.svgPatternOver(arena, &tiles, prep, pt, shape, c.ystb_nsvg_paint_xform(shape, @intCast(stroke)).?, s, acc, part, pw, ph, depth);
+                } else if (c.ystb_nsvg_paint_type(shape, @intCast(stroke)) != 0) {
+                    c.ystb_nsvg_draw_part(rast, svg, shape, @intCast(stroke), 0, s, part.ptr, iw, ih, stride);
+                    svgOver(acc, part);
+                }
+            }
+        }
+        if (run_start != null) {
+            c.ystb_nsvg_draw_range(rast, svg, run_start, null, s, part.ptr, iw, ih, stride);
+            svgOver(acc, part);
+        }
+        var i: usize = 0;
+        while (i < dst.len) : (i += 4) {
+            const alpha: u32 = acc[i + 3];
+            if (alpha == 0) continue;
+            inline for (0..3) |k| dst[i + k] = @intCast(@min(255, (@as(u32, acc[i + k]) * 255 + alpha / 2) / alpha));
+            dst[i + 3] = @intCast(alpha);
+        }
+    }
+
+    /// The pattern a shape's fill (0) or stroke (1) is painted with: its
+    /// paint is the marker gradient svgread.zig left under the pattern's id.
+    fn svgPatternOf(prep: *const svgread.Prepared, shape: *c.NSVGshape, stroke: c_int) ?*const svgread.Pattern {
+        if (c.ystb_nsvg_paint_xform(shape, stroke) == null) return null;
+        return prep.pattern(std.mem.span(c.ystb_nsvg_paint_id(shape, stroke)));
+    }
+
+    /// Puts straight RGBA `src` over premultiplied `acc`.
+    fn svgOver(acc: []u8, src: []const u8) void {
+        var i: usize = 0;
+        while (i < acc.len) : (i += 4) {
+            const sa: u32 = src[i + 3];
+            if (sa == 0) continue;
+            inline for (0..3) |k| acc[i + k] = @intCast((@as(u32, src[i + k]) * sa + @as(u32, acc[i + k]) * (255 - sa) + 127) / 255);
+            acc[i + 3] = @intCast((sa * 255 + @as(u32, acc[i + 3]) * (255 - sa) + 127) / 255);
+        }
+    }
+
+    /// Fills the mask in `mask` (its alpha) with the tiles of `pattern`,
+    /// over `acc`. `to_user` maps image coordinates to the coordinates of
+    /// the shape, where the pattern is laid out.
+    fn svgPatternOver(a: *Assets, arena: Allocator, tiles: *std.ArrayList(SvgTile), prep: *const svgread.Prepared, pattern: *const svgread.Pattern, shape: *c.NSVGshape, to_user: *const [6]f32, s: f32, acc: []u8, mask: []const u8, pw: u32, ph: u32, depth: u8) Allocator.Error!void {
+        var bbox: [4]f32 = @splat(0);
+        c.ystb_nsvg_bounds(shape, to_user, &bbox);
+        const t = pattern.tile(bbox, prep.view) orelse return;
+        // Image coordinates to the pattern's own.
+        const to_pattern = svgread.then(to_user.*, svgread.inverse(pattern.transform) orelse return);
+        const det = @abs(to_pattern[0] * to_pattern[3] - to_pattern[2] * to_pattern[1]);
+        if (!(det > 0) or !std.math.isFinite(det)) return;
+        // Bitmap pixels per pattern unit; the tile has twice as many, and
+        // each pixel averages four samples of it.
+        const k = s / @sqrt(det);
+        const tw: u32 = @intFromFloat(std.math.clamp(@ceil(t.w * k * 2), 1, 2048));
+        const th: u32 = @intFromFloat(std.math.clamp(@ceil(t.h * k * 2), 1, 2048));
+        const size: [4]f32 = .{ t.w, t.h, bbox[2] - bbox[0], bbox[3] - bbox[1] };
+        const tile: SvgTile = for (tiles.items) |x| {
+            if (x.pattern == pattern and x.w == tw and x.h == th and std.mem.eql(f32, &x.size, &size)) break x;
+        } else made: {
+            const doc = try svgread.tileDoc(arena, prep, pattern, t, bbox, tw, th);
+            const drawn = switch (try a.svgPixels(arena, doc, null, depth + 1)) {
+                .ok => |d| d,
+                .bad => |msg| {
+                    a.gpa.free(msg);
+                    return;
+                },
+            };
+            if (drawn.w != tw or drawn.h != th) return;
+            var i: usize = 0;
+            while (i < drawn.rgba.len) : (i += 4) {
+                const alpha: u32 = drawn.rgba[i + 3];
+                inline for (0..3) |ch| drawn.rgba[i + ch] = @intCast((@as(u32, drawn.rgba[i + ch]) * alpha + 127) / 255);
+            }
+            const x: SvgTile = .{ .pattern = pattern, .size = size, .w = tw, .h = th, .px = drawn.rgba };
+            try tiles.append(arena, x);
+            break :made x;
+        };
+        const ftw: f32 = @floatFromInt(tw);
+        const fth: f32 = @floatFromInt(th);
+        const sub = [_]f32{ 0.25, 0.75 };
+        for (0..ph) |y| for (0..pw) |x| {
+            const i = (y * pw + x) * 4;
+            const m: f32 = @floatFromInt(mask[i + 3]);
+            if (m == 0) continue;
+            var sum: [4]f32 = @splat(0);
+            for (sub) |oy| for (sub) |ox| {
+                const p = svgread.apply(to_pattern, (@as(f32, @floatFromInt(x)) + ox) / s, (@as(f32, @floatFromInt(y)) + oy) / s);
+                var u = (p[0] - t.x) / t.w;
+                var v = (p[1] - t.y) / t.h;
+                u -= @floor(u);
+                v -= @floor(v);
+                // Between the four nearest tile pixels, around the edges too.
+                const fx = u * ftw - 0.5;
+                const fy = v * fth - 0.5;
+                const x0 = @floor(fx);
+                const y0 = @floor(fy);
+                const ax = fx - x0;
+                const ay = fy - y0;
+                const xs = [2]usize{ wrapIndex(x0, tw), wrapIndex(x0 + 1, tw) };
+                const ys = [2]usize{ wrapIndex(y0, th), wrapIndex(y0 + 1, th) };
+                const ws = [2][2]f32{ .{ (1 - ax) * (1 - ay), ax * (1 - ay) }, .{ (1 - ax) * ay, ax * ay } };
+                for (ys, 0..) |ty, yi| for (xs, 0..) |tx, xi| {
+                    const q = tile.px[(ty * tw + tx) * 4 ..][0..4];
+                    inline for (0..4) |ch| sum[ch] += @as(f32, @floatFromInt(q[ch])) * ws[yi][xi];
+                };
+            };
+            // Premultiplied tile color, thinned by the mask, over `acc`.
+            const cover = m / 255 / 4;
+            const sa = sum[3] * cover / 255;
+            inline for (0..4) |ch| {
+                const v = sum[ch] * cover + @as(f32, @floatFromInt(acc[i + ch])) * (1 - sa);
+                acc[i + ch] = @intFromFloat(std.math.clamp(@round(v), 0, 255));
+            }
+        };
+    }
+
+    /// Tile pixel `v` of `n`, repeating.
+    fn wrapIndex(v: f32, n: u32) usize {
+        const m = @mod(@as(i64, @intFromFloat(v)), @as(i64, n));
+        return @intCast(m);
     }
 
     fn decode(a: *Assets, path: []const u8) Allocator.Error!ImageEntry {
@@ -324,7 +652,7 @@ pub const Assets = struct {
         }
         if (looksLikeSvg(path, bytes)) {
             const entry = try a.rasterSvg(bytes, null, null);
-            if (entry == .ok) try a.svgs.put(a.gpa, try a.gpa.dupe(u8, path), {});
+            if (entry == .ok) try a.svgs.put(a.gpa, try a.gpa.dupe(u8, path), std.mem.indexOf(u8, bytes, "<text") != null);
             return entry;
         }
         const px = c.stbi_load_16_from_memory(bytes.ptr, @intCast(bytes.len), &w, &h, &ch, 4) orelse {
@@ -2812,6 +3140,7 @@ pub fn clockFor(arena: Allocator, opts: Options, project_offset: f64) Allocator.
 pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, index: usize, opts: Options, diags: *diag.List) Allocator.Error!?raster.Bitmap {
     const d = set.design;
     if (!d.ok or index >= set.cards.len) return null;
+    try assets.useFonts(d.fonts);
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -3875,6 +4204,140 @@ test "SVG images in a vector scene are pixels at the raster scale" {
     const im = rig.scene.items.items[0].image;
     try std.testing.expectEqual(@as(usize, 0), im.bytes.len);
     try std.testing.expectEqual(@as(u32, 200), im.image.w);
+}
+
+test "SVG gradients with bounding box fractions run across the shape" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 200, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "g.svg", "box": { "x": 0, "y": 0, "w": 200, "h": 200 } } ]
+        \\}
+    ;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "g.svg", @embedFile("testdata/svg-gradient.svg") }}, .{}, null)).?;
+    defer b.deinit(gpa);
+    // x2="1" is the right edge of the shape, not one pixel: red on the
+    // left, blue on the right, both halfway.
+    const left = pixel(&b, 5, 50);
+    const mid = pixel(&b, 100, 50);
+    const right = pixel(&b, 195, 50);
+    try std.testing.expect(left[0] > 60000 and left[2] < 5000);
+    try std.testing.expect(mid[0] > 25000 and mid[0] < 40000 and mid[2] > 25000 and mid[2] < 40000);
+    try std.testing.expect(right[0] < 5000 and right[2] > 60000);
+    // The second gradient takes its stops from the first (href) and runs down.
+    const top = pixel(&b, 100, 105);
+    const bottom = pixel(&b, 100, 195);
+    try std.testing.expect(top[0] > 60000 and top[2] < 5000);
+    try std.testing.expect(bottom[0] < 5000 and bottom[2] > 60000);
+    try std.testing.expectEqual(pixel(&b, 20, 150), pixel(&b, 180, 150));
+}
+
+test "SVG pattern fills are tiled, in the stacking order of the file" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 200, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "p.svg", "box": { "x": 0, "y": 0, "w": 200, "h": 200 } } ]
+        \\}
+    ;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "p.svg", @embedFile("testdata/svg-pattern.svg") }}, .{}, null)).?;
+    defer b.deinit(gpa);
+    const black = [4]u16{ 0, 0, 0, 65535 };
+    const yellow = [4]u16{ 65535, 65535, 0, 65535 };
+    const green = [4]u16{ 0, 65535, 0, 65535 };
+    const white = [4]u16{ 65535, 65535, 65535, 65535 };
+    // 10 unit tiles, 50 pixels each: the left half black, the right half
+    // open to the yellow rectangle below.
+    try std.testing.expectEqual(black, pixel(&b, 12, 10));
+    try std.testing.expectEqual(yellow, pixel(&b, 37, 10));
+    try std.testing.expectEqual(black, pixel(&b, 62, 10));
+    try std.testing.expectEqual(yellow, pixel(&b, 187, 90));
+    // The shape after the pattern is on top of it.
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 100, 50));
+    // Bounding box units: two tiles across the 40 x 20 shape, each with a
+    // 10 unit wide green bar.
+    try std.testing.expectEqual(green, pixel(&b, 25, 150));
+    try std.testing.expectEqual(white, pixel(&b, 75, 150));
+    try std.testing.expectEqual(green, pixel(&b, 125, 150));
+    try std.testing.expectEqual(white, pixel(&b, 175, 190));
+}
+
+/// The box around the pixels of `b` that are mostly red: x0, y0, x1, y1.
+fn redBox(b: *const raster.Bitmap) ?[4]usize {
+    var box: ?[4]usize = null;
+    for (0..b.h) |y| for (0..b.w) |x| {
+        const p = pixel(b, x, y);
+        if (p[0] < 50000 or p[1] > 20000) continue;
+        if (box) |*r| {
+            r.* = .{ @min(r[0], x), @min(r[1], y), @max(r[2], x), @max(r[3], y) };
+        } else box = .{ x, y, x, y };
+    };
+    return box;
+}
+
+test "SVG text is drawn with the default font" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "img", "type": "image", "src": "t.svg", "box": { "x": 0, "y": 0, "w": 200, "h": 100 } } ]
+        \\}
+    ;
+    var b = (try testRenderFiles(gpa, design, &.{.{ "t.svg", @embedFile("testdata/svg-text.svg") }}, .{}, null)).?;
+    defer b.deinit(gpa);
+    // A 16 unit "H" at 5 pixels per unit: about 57 pixels high, standing
+    // on the baseline y = 80 and centred on x = 100 (text-anchor).
+    const box = redBox(&b).?;
+    try std.testing.expect(box[3] >= 78 and box[3] <= 80);
+    try std.testing.expect(box[1] >= 20 and box[1] <= 26);
+    try std.testing.expect(box[0] + box[2] >= 196 and box[0] + box[2] <= 204);
+    try std.testing.expect(box[2] - box[0] > 40 and box[2] - box[0] < 60);
+}
+
+test "SVG text uses the declared font named like its font-family" {
+    const gpa = std.testing.allocator;
+    var fs = project.MemFs.init(gpa);
+    defer fs.deinit();
+    try fs.put("fonts/chip.ttf", default_font_data);
+    try fs.put("fonts/chip-bold.ttf", default_font_data);
+    try fs.put("t.svg", @embedFile("testdata/svg-text.svg"));
+    var assets = Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    try assets.useFonts(&.{
+        .{ .name = "chip-sans", .path = "fonts/chip.ttf", .pos = 0 },
+        .{ .name = "Chip Sans Bold", .path = "fonts/chip-bold.ttf", .pos = 0 },
+    });
+    const regular = (try assets.font("fonts/chip.ttf")).?;
+    const bold = (try assets.font("fonts/chip-bold.ttf")).?;
+    // The first family a font is declared for; letters and digits count.
+    var found = try Assets.findSvgFont(&assets, "Nope, 'Chip Sans', sans-serif", false, false);
+    try std.testing.expect(found.font == regular and !found.faux_bold);
+    found = try Assets.findSvgFont(&assets, "chip sans", true, false);
+    try std.testing.expect(found.font == bold and !found.faux_bold);
+    // No italic font: the bold one, or the regular one.
+    found = try Assets.findSvgFont(&assets, "chip sans", true, true);
+    try std.testing.expect(found.font == bold);
+    found = try Assets.findSvgFont(&assets, "chip sans", false, true);
+    try std.testing.expect(found.font == regular);
+    // Unknown families: the default font, bold as an outline.
+    found = try Assets.findSvgFont(&assets, "Nope", true, false);
+    try std.testing.expect(found.font == try assets.defaultFont() and found.faux_bold);
+
+    // A drawing with text is made again when the fonts change.
+    try std.testing.expect((try assets.image("t.svg")) == .ok);
+    try std.testing.expect(assets.images.contains("t.svg"));
+    try assets.useFonts(&.{.{ .name = "chip-sans", .path = "fonts/chip.ttf", .pos = 0 }});
+    try std.testing.expect(!assets.images.contains("t.svg"));
+    try std.testing.expect((try assets.image("t.svg")) == .ok);
+    // The same fonts again change nothing.
+    try assets.useFonts(&.{.{ .name = "Chip Sans", .path = "fonts/chip.ttf", .pos = 0 }});
+    try std.testing.expect(assets.images.contains("t.svg"));
 }
 
 test "groups include shared components" {

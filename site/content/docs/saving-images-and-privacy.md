@@ -87,7 +87,8 @@ That is a 63 x 88 mm poker card with 3 mm bleed: 744 + 2 x 35 by 1039 + 2 x 35 p
 
 ## Privacy
 
-- **Nothing is sent to a server.** Rendering runs in the browser (WebAssembly), and projects live in the browser's storage.
+- **Your project content is never sent to a server.** Rendering runs in the browser (WebAssembly), and projects live in the browser's storage.
+- **Usage statistics** are optional anonymous counts that go only to the server that hosts the editor, after a start-up notice. You can switch them off, or see exactly what was sent, in **Privacy** (top bar). A copy of the editor opened from plain files, or served by something other than `yoshida-server`, sends nothing. See [Usage Statistics](@/docs/telemetry.md).
 - **Google Fonts** in the [Fonts window](@/docs/builder-fonts.md) is off until you allow it. Once allowed, the browser contacts `fonts.googleapis.com`, `fonts.gstatic.com` and `raw.githubusercontent.com`. Google receives your IP address and the preview text. Project files are not sent. The choice is remembered in this browser, and you can turn it off in the Fonts window.
 - The only upload is the optional **Render on server** export (ZIP and PDF, and PNG, SVG and PDF files from the export dialog). The switch appears only when the editor is served by `yoshida-server` with rendering enabled, and nothing is sent unless you switch it on. The progress window then logs what is uploaded and where. See [Server and Docker](@/docs/server-and-docker.md).
 - Images given as `https://` URLs are downloaded by your browser directly from the site that hosts them.

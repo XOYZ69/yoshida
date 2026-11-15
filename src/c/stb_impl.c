@@ -30,6 +30,68 @@ int ystb_fontinfo_size(void) { return (int)sizeof(stbtt_fontinfo); }
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvgrast.h"
 
+/* Access to nanosvg's shapes for the pattern fills, which yoshida draws
+   itself (Assets.drawSvgPatterns in src/core/render.zig). `stroke` picks
+   the stroke paint (1) or the fill paint (0). */
+NSVGshape *ystb_nsvg_next(NSVGshape *s) { return s->next; }
+
+/* NSVG_PAINT_NONE (0), _COLOR (1), _LINEAR_GRADIENT (2) or _RADIAL_GRADIENT (3). */
+int ystb_nsvg_paint_type(NSVGshape *s, int stroke) { return stroke ? s->stroke.type : s->fill.type; }
+
+/* The id in the paint's url(#id), "" without one. */
+const char *ystb_nsvg_paint_id(NSVGshape *s, int stroke) { return stroke ? s->strokeGradient : s->fillGradient; }
+
+/* The transform of a gradient paint, from image coordinates to the
+   gradient's; 0 for other paints. */
+const float *ystb_nsvg_paint_xform(NSVGshape *s, int stroke) {
+	NSVGpaint *p = stroke ? &s->stroke : &s->fill;
+	if (p->type != NSVG_PAINT_LINEAR_GRADIENT && p->type != NSVG_PAINT_RADIAL_GRADIENT) return 0;
+	return p->gradient->xform;
+}
+
+/* The bounding box of the shape (x0, y0, x1, y1) after `xform`. */
+void ystb_nsvg_bounds(NSVGshape *s, const float *xform, float *bounds) {
+	float t[6];
+	memcpy(t, xform, sizeof t);
+	nsvg__getLocalBounds(bounds, s, t);
+}
+
+/* Draws the shapes from `first` up to, not including, `end`. */
+void ystb_nsvg_draw_range(NSVGrasterizer *r, NSVGimage *image, NSVGshape *first, NSVGshape *end, float scale, unsigned char *dst, int w, int h, int stride) {
+	NSVGshape *all = image->shapes, *last = first;
+	if (first == 0 || first == end) {
+		for (int y = 0; y < h; y++) memset(dst + y * stride, 0, (size_t)w * 4);
+		return;
+	}
+	while (last->next != end && last->next != 0) last = last->next;
+	NSVGshape *after = last->next;
+	last->next = 0;
+	image->shapes = first;
+	nsvgRasterize(r, image, 0, 0, scale, dst, w, h, stride);
+	image->shapes = all;
+	last->next = after;
+}
+
+/* Draws only the fill or the stroke of one shape; with `solid` in opaque
+   white, which makes the result a mask for that part. */
+void ystb_nsvg_draw_part(NSVGrasterizer *r, NSVGimage *image, NSVGshape *s, int stroke, int solid, float scale, unsigned char *dst, int w, int h, int stride) {
+	NSVGshape *all = image->shapes, *after = s->next;
+	NSVGpaint fill = s->fill, stroke_paint = s->stroke;
+	NSVGpaint *part = stroke ? &s->stroke : &s->fill;
+	(stroke ? &s->fill : &s->stroke)->type = NSVG_PAINT_NONE;
+	if (solid) {
+		part->type = NSVG_PAINT_COLOR;
+		part->color = 0xFFFFFFFFu;
+	}
+	s->next = 0;
+	image->shapes = s;
+	nsvgRasterize(r, image, 0, 0, scale, dst, w, h, stride);
+	image->shapes = all;
+	s->next = after;
+	s->fill = fill;
+	s->stroke = stroke_paint;
+}
+
 /* The libc functions nanosvg needs beyond the ones in include/, written
    for exactly the uses it has. */
 #include <stdarg.h>

@@ -74,6 +74,10 @@ pre { overflow-x: auto; padding: 14px 16px; }
 .more { text-align: center; margin: 32px 0 0; font-weight: 600; }
 .preview { font-size: 14px; margin: 10px 0 0; }
 .preview a { text-decoration: none; }
+// The release site only points at the preview: plain muted text, no stamp.
+.preview.quiet { font-size: 13px; margin-top: 6px; }
+.preview.quiet a { color: var(--muted); }
+.preview.quiet a:hover { color: var(--link); }
 .preview .channel { display: inline-block; margin-right: 6px; padding: .05rem .4rem; border-radius: .3rem; background: #d92d20;
                     color: #fff; font-size: .68rem; font-weight: 700; letter-spacing: .06em; vertical-align: 1px; }
 
@@ -113,3 +117,45 @@ pre { overflow-x: auto; padding: 14px 16px; }
 @media (max-width: 520px) {
   .game-list { grid-template-columns: 1fr; }
 }
+
+// Stats (templates/stats.html, filled by static/stats.js)
+.stats { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; }
+.stats h1 { font-size: clamp(32px, 4vw, 48px); margin-bottom: 0; }
+.stats .lead { margin: 8px 0 0; color: var(--muted); }
+.stats-status { margin: 32px 0; color: var(--muted); }
+.stats-block { margin-top: 40px; }
+.stats-block h2 { font-size: 24px; margin: 0 0 4px; }
+.stats-block > .meta { margin: 0 0 14px; }
+.stats-block h3 { font-size: 15px; margin: 22px 0 8px; }
+.stat-grid { display: grid; gap: 14px; margin-top: 14px; }
+.stat-grid.two { grid-template-columns: repeat(2, 1fr); }
+.stat-grid.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 620px) { .stat-grid.three { grid-template-columns: 1fr; } }
+@media (max-width: 420px) { .stat-grid.two { grid-template-columns: 1fr; } }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 0; margin: 14px 0 0; padding: 12px 0; }
+.facts div { flex: 1 1 150px; padding: 0 18px; }
+.facts dt { font-size: 12.5px; font-weight: 600; text-transform: capitalize; }
+.facts dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stat { display: flex; flex-direction: column; padding: 16px 18px; }
+.stat-label { font-size: 13px; font-weight: 600; text-transform: capitalize; }
+.stat-value { font-family: var(--font-head); font-size: 34px; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stat-note { margin-top: auto; min-height: 1.5em; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.spark-wrap { position: relative; margin: 6px -5px 4px; touch-action: pan-y; }
+.spark { display: block; width: 100%; height: 44px; overflow: visible; }
+.spark-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.spark-dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.bars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(7rem, max-content) 1fr minmax(2.5rem, max-content); gap: 8px 14px; align-items: center; }
+.bars li { display: contents; }
+.bar-name { font-family: var(--font-mono); font-size: 13.5px; }
+.bar-track { height: 10px; }
+.bar-fill { display: block; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; }
+.bar-value { text-align: right; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.stats-more { margin-top: 14px; font-size: 14px; }
+.stats-more summary { cursor: pointer; }
+.stats-more .bars { margin-top: 8px; font-size: 1rem; }
+.stats-table table { margin-top: 10px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stats-table th, .stats-table td { padding: 4px 16px 4px 0; text-align: right; }
+.stats-table th:first-child, .stats-table td:first-child { text-align: left; }
+.stats > .meta { margin-top: 28px; }
+.stats-about { margin-top: 48px; padding-top: 8px; max-width: 720px; }
+.stats-about h2 { font-size: 22px; }
