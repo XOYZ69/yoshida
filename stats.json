@@ -1,0 +1,214 @@
+{
+	"version": 1,
+	"repo": "XOYZ69/yoshida",
+	"generated_at": "2026-11-15T14:25:02.371Z",
+	"now": {
+		"stars": 1,
+		"forks": 0,
+		"watchers": 1,
+		"contributors": 1,
+		"releases": 7,
+		"downloads": 10,
+		"latest_release": {
+			"tag": "v0.7.0",
+			"published_at": "2026-11-14T16:20:24Z",
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.7.0"
+		}
+	},
+	"releases": [
+		{
+			"tag": "v0.7.0",
+			"published_at": "2026-11-14T16:20:24Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.7.0",
+			"downloads": 2,
+			"assets": [
+				{
+					"name": "yoshida-0.7.0.zip",
+					"downloads": 2
+				}
+			]
+		},
+		{
+			"tag": "v0.6.2",
+			"published_at": "2026-11-04T21:31:57Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.6.2",
+			"downloads": 4,
+			"assets": [
+				{
+					"name": "yoshida-0.6.2.zip",
+					"downloads": 4
+				}
+			]
+		},
+		{
+			"tag": "v0.6.1",
+			"published_at": "2026-10-20T16:47:34Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.6.1",
+			"downloads": 1,
+			"assets": [
+				{
+					"name": "yoshida-0.6.1.zip",
+					"downloads": 1
+				}
+			]
+		},
+		{
+			"tag": "v0.6.0",
+			"published_at": "2026-10-15T04:14:13Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.6.0",
+			"downloads": 1,
+			"assets": [
+				{
+					"name": "yoshida-0.6.0.zip",
+					"downloads": 1
+				}
+			]
+		},
+		{
+			"tag": "v0.5.0",
+			"published_at": "2026-10-12T00:50:58Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.5.0",
+			"downloads": 1,
+			"assets": [
+				{
+					"name": "yoshida-0.5.0.zip",
+					"downloads": 1
+				}
+			]
+		},
+		{
+			"tag": "0.4.0",
+			"published_at": "2026-10-09T11:52:01Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/0.4.0",
+			"downloads": 0,
+			"assets": []
+		},
+		{
+			"tag": "0.3.1-python",
+			"published_at": "2026-10-08T10:57:25Z",
+			"prerelease": true,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/0.3.1-python",
+			"downloads": 1,
+			"assets": [
+				{
+					"name": "yoshida-zig-concept.zip",
+					"downloads": 1
+				}
+			]
+		}
+	],
+	"history": [
+		{
+			"date": "2026-11-15",
+			"stars": 1,
+			"forks": 0,
+			"downloads": 10
+		}
+	],
+	"traffic": [
+		{
+			"date": "2026-11-01",
+			"views": 1,
+			"visitors": 1,
+			"clones": 3,
+			"cloners": 2
+		},
+		{
+			"date": "2026-11-02",
+			"views": 0,
+			"visitors": 0,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-03",
+			"views": 2,
+			"visitors": 2,
+			"clones": 2,
+			"cloners": 2
+		},
+		{
+			"date": "2026-11-04",
+			"views": 0,
+			"visitors": 0,
+			"clones": 51,
+			"cloners": 10
+		},
+		{
+			"date": "2026-11-05",
+			"views": 31,
+			"visitors": 31,
+			"clones": 2,
+			"cloners": 2
+		},
+		{
+			"date": "2026-11-06",
+			"views": 1,
+			"visitors": 1,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-07",
+			"views": 0,
+			"visitors": 0,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-08",
+			"views": 1,
+			"visitors": 1,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-09",
+			"views": 0,
+			"visitors": 0,
+			"clones": 0,
+			"cloners": 0
+		},
+		{
+			"date": "2026-11-10",
+			"views": 0,
+			"visitors": 0,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-11",
+			"views": 1,
+			"visitors": 1,
+			"clones": 1,
+			"cloners": 1
+		},
+		{
+			"date": "2026-11-12",
+			"views": 0,
+			"visitors": 0,
+			"clones": 0,
+			"cloners": 0
+		},
+		{
+			"date": "2026-11-13",
+			"views": 1,
+			"visitors": 1,
+			"clones": 19,
+			"cloners": 7
+		},
+		{
+			"date": "2026-11-14",
+			"views": 1,
+			"visitors": 1,
+			"clones": 174,
+			"cloners": 17
+		}
+	]
+}
