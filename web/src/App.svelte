@@ -116,6 +116,8 @@
 		formatJson,
 		importPath,
 		isImage,
+		isPicture,
+		pictureUrl,
 		isText,
 		listExamples,
 		loadExample,
@@ -518,9 +520,13 @@
 			: "",
 	);
 	const imageUrl = $derived.by(() => {
-		if (!selected || !isImage(selected)) return "";
+		if (!selected || !isPicture(selected)) return "";
 		const data = files.get(selected);
-		return data ? URL.createObjectURL(new Blob([data as BlobPart])) : "";
+		return data ? pictureUrl(selected, data) : "";
+	});
+	$effect(() => {
+		const u = imageUrl;
+		return () => u && URL.revokeObjectURL(u);
 	});
 
 	// The design the builder edits: the current set's, else the first one.
@@ -1313,14 +1319,17 @@
 
 	const filesPreviewUrl = $derived.by(() => {
 		const p = filesSelected;
-		if (!p || !isImage(p)) return "";
+		if (!p || !isPicture(p)) return "";
 		const d = files.get(p);
-		return d ? URL.createObjectURL(new Blob([d as BlobPart])) : "";
+		return d ? pictureUrl(p, d) : "";
 	});
 	$effect(() => {
 		const u = filesPreviewUrl;
 		return () => u && URL.revokeObjectURL(u);
 	});
+	const isSvg = (path: string) => /\.svg$/i.test(path);
+	/** Sample text for a font preview. */
+	const fontSample = "The quick brown fox jumps over the lazy dog";
 	/** Pixel size of the previewed image, once the browser has decoded it. */
 	let filesPreviewSize = $state<{ url: string; w: number; h: number } | null>(
 		null,
@@ -1330,7 +1339,8 @@
 		const p = filesSelected;
 		const d = p ? files.get(p) : undefined;
 		if (!p || !d) return "";
-		if (filesPreviewUrl) {
+		// An SVG has no pixel size of its own; it is drawn at the size it is used at.
+		if (filesPreviewUrl && !isSvg(p)) {
 			const s = filesPreviewSize;
 			return s?.url === filesPreviewUrl ? `${s.w} × ${s.h} px` : "Image";
 		}
@@ -4077,8 +4087,19 @@
 		{@const n = fileUses.get(f) ?? 0}
 		<div class="file-info">
 			<div class="file-name mono" title={f}>{f}</div>
+			{#if fontFaces[f]}
+				<div
+					class="font-preview"
+					style:font-family={`"${fontFaces[f]}"`}
+					title="Preview of the font"
+				>
+					<span class="font-preview-big">AaBbCc 123</span>
+					<span>{fontSample}</span>
+				</div>
+			{/if}
 			{#if filesPreviewUrl}<img
 					class="file-preview"
+					class:vector={isSvg(f)}
 					src={filesPreviewUrl}
 					alt={f}
 					onload={(e) => {
@@ -4664,7 +4685,31 @@
 					{/await}
 				{:else if imageUrl}
 					<div class="image-view">
-						<img src={imageUrl} alt={selected} />
+						<img
+							class:vector={isSvg(selected!)}
+							src={imageUrl}
+							alt={selected}
+						/>
+					</div>
+				{:else if selected && fontFaces[selected]}
+					<div
+						class="font-view"
+						style:font-family={`"${fontFaces[selected]}"`}
+					>
+						<p class="font-view-name">
+							{describeFile(
+								selected,
+								files.get(selected) ?? new Uint8Array(),
+							)}
+						</p>
+						<p class="font-view-glyphs">
+							ABCDEFGHIJKLMNOPQRSTUVWXYZ<br />
+							abcdefghijklmnopqrstuvwxyz<br />
+							0123456789 .,:;!?&amp;@#%()+-=/
+						</p>
+						{#each [48, 32, 24, 16] as size (size)}
+							<p style:font-size={`${size}px`}>{fontSample}</p>
+						{/each}
 					</div>
 				{:else if selected}
 					<p class="muted pad">
@@ -4944,6 +4989,30 @@
 		align-self: center;
 		background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 12px
 			12px;
+	}
+	/* An SVG has no pixel size to show it at: it fills the preview area. */
+	.file-preview.vector {
+		width: 100%;
+		height: min(180px, 25vh);
+	}
+	.font-preview {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 8px;
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		font-size: 14px;
+		line-height: 1.3;
+		overflow: hidden;
+	}
+	.font-preview span {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.font-preview-big {
+		font-size: 26px;
 	}
 	.small {
 		font-size: 11px;
@@ -5231,6 +5300,28 @@
 		background: repeating-conic-gradient(#ccc 0 25%, #eee 0 50%) 0 0 / 16px
 			16px;
 	}
+	.image-view img.vector {
+		width: 100%;
+		max-height: 70vh;
+		object-fit: contain;
+	}
+	.font-view {
+		overflow: auto;
+		padding: 16px 20px;
+		line-height: 1.25;
+	}
+	.font-view p {
+		margin: 0 0 14px;
+	}
+	.font-view-name {
+		font-family: system-ui, sans-serif;
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.font-view-glyphs {
+		font-size: 28px;
+		word-break: break-all;
+	}
 	.preview-pane {
 		grid-area: preview;
 		display: flex;
@@ -5317,6 +5408,9 @@
 		}
 		.file-preview {
 			max-height: 10vh;
+		}
+		.file-preview.vector {
+			height: 10vh;
 		}
 		/* Without splitters the stacked panels need their own dividers. */
 		.files,

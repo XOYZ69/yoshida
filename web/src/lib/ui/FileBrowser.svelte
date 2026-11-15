@@ -7,7 +7,7 @@
 
 import { type FileType, fileType } from "../filetypes";
 import { buildTree, dirOf, join, nameError, type TreeNode } from "../paths";
-import { type Files, isImage } from "../project";
+import { type Files, isPicture, pictureUrl } from "../project";
 import { formatSize } from "../store";
 import Icon, { type IconName } from "./Icon.svelte";
 import { askText, type MenuItem, openMenu } from "./overlay.svelte";
@@ -121,15 +121,15 @@ const rows = $derived.by(() => {
 	return out;
 });
 
-// Small previews for images; URLs are made once per file content.
+// Small previews for images and SVG files; URLs are made once per file content.
 const urlCache = new Map<Uint8Array, string>();
 const thumbs = $derived.by(() => {
 	const m = new Map<string, string>();
 	for (const [p, d] of files) {
-		if (!isImage(p)) continue;
+		if (!isPicture(p)) continue;
 		let u = urlCache.get(d);
 		if (!u) {
-			u = URL.createObjectURL(new Blob([d as BlobPart]));
+			u = pictureUrl(p, d);
 			urlCache.set(d, u);
 		}
 		m.set(p, u);
