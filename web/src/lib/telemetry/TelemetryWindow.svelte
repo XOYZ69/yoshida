@@ -113,6 +113,10 @@ function time(t: string): string {
 		<div class="row">
 			<button onclick={downloadData} data-testid="telemetry-download">Download my data</button>
 			<button onclick={clearLog} disabled={!telemetry.log.length}>Clear local log</button>
+			{#if available()}
+				<!-- Relative, like the API calls: the server answers under the editor's folder too. -->
+				<a class="public" href="api/stats/page" target="_blank" rel="noopener noreferrer" data-testid="telemetry-public">Public stats</a>
+			{/if}
 		</div>
 		<p class="note">
 			The log lives in this browser only. The server stores totals per day, not individual
@@ -213,5 +217,9 @@ function time(t: string): string {
 	.row {
 		display: flex;
 		gap: 8px;
+		align-items: center;
+	}
+	.public {
+		margin-left: auto;
 	}
 </style>

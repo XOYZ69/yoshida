@@ -267,10 +267,19 @@
     p.appendChild(document.createTextNode(" has the current ones."));
   }
 
-  fetch(root.dataset.src, { credentials: "omit", referrerPolicy: "no-referrer" })
-    .then(function (res) {
+  function load(src) {
+    return fetch(src, { credentials: "omit", referrerPolicy: "no-referrer" }).then(function (res) {
       if (!res.ok) throw new Error(String(res.status));
       return res.json();
+    });
+  }
+
+  // The published file first; a stats.json beside the site stands in when it
+  // cannot be loaded, which is the case in a local preview (site/README.md).
+  load(root.dataset.src)
+    .catch(function (err) {
+      if (!root.dataset.local) throw err;
+      return load(root.dataset.local);
     })
     .then(function (doc) {
       if (!doc || doc.version !== 1 || typeof doc.now !== "object") throw new Error("unknown format");

@@ -6,8 +6,9 @@
   <h1>{{ page.title }}</h1>
   <p class="lead">Numbers GitHub counts for the project. Nothing here is measured in your browser.</p>
 
-  {# Filled by static/stats.js from the stats.json that .github/workflows/stats.yml writes once a day. #}
-  <div id="stats" data-src="{{ config.extra.stats_url }}" data-repo="{{ config.extra.repo }}">
+  {# Filled by static/stats.js from the stats.json that .github/workflows/stats.yml writes once a day;
+     data-local is a copy beside the site, used when that file cannot be loaded (a local preview). #}
+  <div id="stats" data-src="{{ config.extra.stats_url }}" data-local="{{ get_url(path='stats.json') }}" data-repo="{{ config.extra.repo }}">
     <p class="stats-status" role="status">Loading the numbers…</p>
     <noscript><p class="stats-status">This page fills in the numbers with JavaScript. They are also on <a href="{{ config.extra.repo }}">GitHub</a>.</p></noscript>
   </div>

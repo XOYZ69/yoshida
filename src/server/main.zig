@@ -18,6 +18,7 @@
 //!   POST /api/telemetry/ping    optional, see telemetry.zig: one anonymous ping per editor session
 //!   POST /api/telemetry/events  {"events": [{"k": "feature"|"export"|"error", "n": name}]} (advanced level)
 //!   GET  /api/stats[?days=N]    only the stats the admin flagged public
+//!   GET  /api/stats/page        the same public stats as a page, for people
 //!   GET  /admin/telemetry       hidden admin page (404 unless an admin token is set)
 //!   GET  /api/admin/stats       all stats, with `Authorization: Bearer <admin token>`
 //!   PUT  /api/admin/public      {"public": [keys]} replaces the public flags (same auth)
@@ -82,7 +83,10 @@ pub fn main(init: std.process.Init) !u8 {
     if (env.get("YOSHIDA_TELEMETRY_FORCE")) |v| setTelemetryOption(tc, "force", v, &bad_option);
     if (env.get("YOSHIDA_TELEMETRY_RETENTION_DAYS")) |v| setTelemetryOption(tc, "retention", v, &bad_option);
     if (env.get("YOSHIDA_TELEMETRY_TRUST_PROXY")) |v| tc.trust_proxy = std.mem.eql(u8, v, "1");
-    if (env.get("YOSHIDA_ADMIN_TOKEN")) |v| tc.admin_token = v;
+    // An empty value (the line left blank in an env file) means no token.
+    if (env.get("YOSHIDA_ADMIN_TOKEN")) |v| if (v.len > 0) {
+        tc.admin_token = v;
+    };
 
     const argv = try init.minimal.args.toSlice(arena);
     var i: usize = 1;
@@ -239,7 +243,7 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
         if (!cfg.render) return jsonError(req, .forbidden, "server rendering is disabled on this server");
         return renderSet(io, gpa, arena, cfg, req);
     }
-    if (std.mem.startsWith(u8, path, "/api/telemetry/") or std.mem.eql(u8, path, "/api/stats") or std.mem.startsWith(u8, path, "/api/admin/") or std.mem.eql(u8, path, "/admin/telemetry")) {
+    if (std.mem.startsWith(u8, path, "/api/telemetry/") or std.mem.eql(u8, path, "/api/stats") or std.mem.eql(u8, path, "/api/stats/page") or std.mem.startsWith(u8, path, "/api/admin/") or std.mem.eql(u8, path, "/admin/telemetry")) {
         if (try telemetryRoute(io, arena, cfg, req, path, target, peer)) return;
     }
     if (std.mem.startsWith(u8, path, "/api/")) return jsonError(req, .not_found, "unknown API endpoint");
@@ -733,6 +737,7 @@ fn diagnosticsResponse(arena: Allocator, req: *std.http.Server.Request, diags: *
 // ---------------------------------------------------------------- telemetry
 
 const admin_page = @embedFile("admin.html");
+const stats_page = @embedFile("stats.html");
 
 fn capabilities(arena: Allocator, cfg: *const Config) ![]u8 {
     var aw: Io.Writer.Allocating = .init(arena);
@@ -905,6 +910,22 @@ fn telemetryRoute(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.S
             .{ .name = "content-type", .value = "application/json" },
             .{ .name = "cache-control", .value = "public, max-age=60" },
             .{ .name = "access-control-allow-origin", .value = "*" },
+        } });
+        return true;
+    }
+
+    if (std.mem.eql(u8, path, "/api/stats/page")) {
+        if (req.head.method != .GET and req.head.method != .HEAD) {
+            try jsonError(req, .method_not_allowed, "method not allowed");
+            return true;
+        }
+        // The page loads the numbers itself from /api/stats, so it can be cached.
+        try req.respond(stats_page, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/html; charset=utf-8" },
+            .{ .name = "cache-control", .value = "public, max-age=300" },
+            .{ .name = "referrer-policy", .value = "no-referrer" },
+            .{ .name = "x-robots-tag", .value = "noindex" },
+            .{ .name = "content-security-policy", .value = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'" },
         } });
         return true;
     }

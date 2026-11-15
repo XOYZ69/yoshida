@@ -13,6 +13,7 @@ description = "The HTTP API of yoshida-server."
 | `POST /api/telemetry/ping` | `{ "level": "basic" \| "advanced" }` | `204`. See [Usage Statistics](@/docs/telemetry.md) |
 | `POST /api/telemetry/events` | `{ "events": [{ "k": "feature" \| "export" \| "error", "n": name }] }` | `204` |
 | `GET /api/stats?days=N` |                                                                            | The stats the admin marked public, per day |
+| `GET /api/stats/page` |                                                                            | The same public stats as a page for people |
 | `GET /api/admin/stats`, `PUT /api/admin/public` | with `Authorization: Bearer <admin token>` | All stats; replace the public flags |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 

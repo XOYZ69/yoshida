@@ -52,7 +52,7 @@ The server counts unique visitors per day by hashing `daily random salt + client
 
 **Retention.** Old days are deleted when the server starts and once per UTC day. Everything is a total per day, so there is nothing finer to delete.
 
-**Data layout.** One small JSON file per day (`2026-11-09.json`) with the counters, plus `public.json` with the public flags. Files are written every 15 seconds when something changed, so a crash loses seconds, not days. In Docker, mount a folder that the container's user (`65534`) can write and point `YOSHIDA_TELEMETRY_DIR` at it; otherwise the counts are lost with the container.
+**Data layout.** One small JSON file per day (`2026-11-09.json`) with the counters, plus `public.json` with the public flags. Files are written every 15 seconds when something changed, so a crash loses seconds, not days. In Docker, mount a folder that the container's user (`65534`) can write and point `YOSHIDA_TELEMETRY_DIR` at it; otherwise the counts are lost with the container. With Docker Compose the variables go in `.env`, see [Docker Compose](@/docs/server-and-docker.md#docker-compose).
 
 ## Admin page
 
@@ -72,6 +72,8 @@ The admin page lets you tick which stats are public. Ticked stats are served to 
 ```
 
 A flag is a base stat (`sessions`, `uniques`, `advanced_sessions`), a group (`feature`, `export`, `error`) that includes every event in it, or one event (`export:pdf`). Nothing is public until you tick it. The endpoint sends `Access-Control-Allow-Origin: *`, so a web page can show your numbers.
+
+The server also shows them as a page: `/api/stats/page` (for example `http://localhost:8080/api/stats/page`) has the totals for sessions and visitors with a line per day, and the events as bars per group. It reads the same `GET /api/stats`, so it never shows more than you ticked, and it says so when nothing is public. It needs no token, loads nothing from other servers and follows the light or dark theme chosen in the editor. The admin page links to it, and so does **Privacy** in the editor (**Public stats**). With `--no-telemetry` it answers 404 like the other endpoints.
 
 ## Not included
 

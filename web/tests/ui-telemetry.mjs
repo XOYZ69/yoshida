@@ -91,6 +91,7 @@ const on = (extra = {}) => ({ enabled: true, default: "basic", force: null, rete
 	ok("download holds the local log", Array.isArray(data.events) && data.events.length >= 2, `${data.events?.length} events`);
 	ok("download names the level in force", data.settings.level_in_force === "off");
 	ok("download file name", file.suggestedFilename() === "yoshida-telemetry-log.json");
+	ok("settings link to the public stats page", (await p.locator('[data-testid="telemetry-public"]').getAttribute("href")) === "api/stats/page");
 	await ctx.close();
 }
 
@@ -149,6 +150,7 @@ const on = (extra = {}) => ({ enabled: true, default: "basic", force: null, rete
 	await p.click('[data-testid="privacy-button"]');
 	await p.waitForSelector('[data-testid="telemetry-window"]');
 	ok("settings explain that nothing is sent", /nothing is sent/i.test(await p.locator('[data-testid="telemetry-window"]').innerText()));
+	ok("disabled server: no public stats link", (await p.locator('[data-testid="telemetry-public"]').count()) === 0);
 	await ctx.close();
 }
 
