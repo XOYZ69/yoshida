@@ -13,7 +13,18 @@ export default defineConfig({
 			process.env.YOSHIDA_CHANNEL ?? "",
 		),
 	},
-	plugins: [svelte()],
+	plugins: [
+		svelte(),
+		// A preview build has a red tab icon (public/favicon-dev.*), so it is
+		// told apart from the release editor in a row of tabs.
+		{
+			name: "yoshida-channel-favicon",
+			transformIndexHtml: (html: string) =>
+				process.env.YOSHIDA_CHANNEL
+					? html.replace(/favicon\.(svg|ico)/g, "favicon-dev.$1")
+					: html,
+		},
+	],
 	worker: { format: "es" },
 	server: {
 		proxy: { "/api": "http://localhost:8080" },

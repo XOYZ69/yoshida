@@ -74,6 +74,10 @@ pre { overflow-x: auto; padding: 14px 16px; }
 .more { text-align: center; margin: 32px 0 0; font-weight: 600; }
 .preview { font-size: 14px; margin: 10px 0 0; }
 .preview a { text-decoration: none; }
+// The release site only points at the preview: plain muted text, no stamp.
+.preview.quiet { font-size: 13px; margin-top: 6px; }
+.preview.quiet a { color: var(--muted); }
+.preview.quiet a:hover { color: var(--link); }
 .preview .channel { display: inline-block; margin-right: 6px; padding: .05rem .4rem; border-radius: .3rem; background: #d92d20;
                     color: #fff; font-size: .68rem; font-weight: 700; letter-spacing: .06em; vertical-align: 1px; }
 
