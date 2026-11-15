@@ -15,6 +15,13 @@
 //!   GET  /api/render/progress?job=<hex id>
 //!                            {"found", "stage", "done", "total"} (stage: receiving, loading,
 //!                            rendering, packing, finished, failed)
+//!   POST /api/telemetry/ping    optional, see telemetry.zig: one anonymous ping per editor session
+//!   POST /api/telemetry/events  {"events": [{"k": "feature"|"export"|"error", "n": name}]} (advanced level)
+//!   GET  /api/stats[?days=N]    only the stats the admin flagged public
+//!   GET  /api/stats/page        the same public stats as a page, for people
+//!   GET  /admin/telemetry       hidden admin page (404 unless an admin token is set)
+//!   GET  /api/admin/stats       all stats, with `Authorization: Bearer <admin token>`
+//!   PUT  /api/admin/public      {"public": [keys]} replaces the public flags (same auth)
 //!   GET  /*                  static files from --web (the built editor, or the
 //!                            site with the editor in editor/)
 //!
@@ -24,6 +31,7 @@
 const std = @import("std");
 const y = @import("yoshida");
 const zip = @import("zip.zig");
+const tel = @import("telemetry.zig");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
@@ -35,14 +43,22 @@ const Config = struct {
     max_cards: usize = 1000,
     max_body_mb: usize = 200,
     threads: usize = 0,
+    telemetry: tel.Config = .{},
+    store: ?*tel.Store = null,
 };
 
 const usage =
     \\Usage: yoshida-server [--host ADDR] [--port N] [--web DIR] [--no-render]
     \\                      [--max-cards N] [--max-body-mb N] [--threads N]
+    \\                      [--no-telemetry] [--telemetry-dir DIR] [--telemetry-default off|basic|advanced]
+    \\                      [--telemetry-force off|basic] [--telemetry-retention-days N|infinite]
+    \\                      [--telemetry-trust-proxy] [--admin-token TOKEN]
     \\
     \\Environment variables YOSHIDA_HOST, YOSHIDA_PORT, YOSHIDA_WEB, YOSHIDA_RENDER (0/1),
-    \\YOSHIDA_MAX_CARDS, YOSHIDA_MAX_BODY_MB and YOSHIDA_THREADS set the same options.
+    \\YOSHIDA_MAX_CARDS, YOSHIDA_MAX_BODY_MB and YOSHIDA_THREADS set the same options, and
+    \\YOSHIDA_TELEMETRY (0/1), YOSHIDA_TELEMETRY_DIR, YOSHIDA_TELEMETRY_DEFAULT,
+    \\YOSHIDA_TELEMETRY_FORCE, YOSHIDA_TELEMETRY_RETENTION_DAYS, YOSHIDA_TELEMETRY_TRUST_PROXY (0/1)
+    \\and YOSHIDA_ADMIN_TOKEN the telemetry ones. Prefer the environment for the admin token.
     \\
 ;
 
@@ -59,6 +75,19 @@ pub fn main(init: std.process.Init) !u8 {
     if (env.get("YOSHIDA_MAX_BODY_MB")) |v| cfg.max_body_mb = std.fmt.parseInt(usize, v, 10) catch cfg.max_body_mb;
     if (env.get("YOSHIDA_THREADS")) |v| cfg.threads = std.fmt.parseInt(usize, v, 10) catch 0;
 
+    var bad_option: ?[]const u8 = null;
+    const tc = &cfg.telemetry;
+    if (env.get("YOSHIDA_TELEMETRY")) |v| tc.enabled = !std.mem.eql(u8, v, "0");
+    if (env.get("YOSHIDA_TELEMETRY_DIR")) |v| tc.dir = v;
+    if (env.get("YOSHIDA_TELEMETRY_DEFAULT")) |v| setTelemetryOption(tc, "default", v, &bad_option);
+    if (env.get("YOSHIDA_TELEMETRY_FORCE")) |v| setTelemetryOption(tc, "force", v, &bad_option);
+    if (env.get("YOSHIDA_TELEMETRY_RETENTION_DAYS")) |v| setTelemetryOption(tc, "retention", v, &bad_option);
+    if (env.get("YOSHIDA_TELEMETRY_TRUST_PROXY")) |v| tc.trust_proxy = std.mem.eql(u8, v, "1");
+    // An empty value (the line left blank in an env file) means no token.
+    if (env.get("YOSHIDA_ADMIN_TOKEN")) |v| if (v.len > 0) {
+        tc.admin_token = v;
+    };
+
     const argv = try init.minimal.args.toSlice(arena);
     var i: usize = 1;
     while (i < argv.len) : (i += 1) {
@@ -67,18 +96,35 @@ pub fn main(init: std.process.Init) !u8 {
             cfg.render = false;
             continue;
         }
+        if (std.mem.eql(u8, a, "--no-telemetry")) {
+            tc.enabled = false;
+            continue;
+        }
+        if (std.mem.eql(u8, a, "--telemetry-trust-proxy")) {
+            tc.trust_proxy = true;
+            continue;
+        }
         if (std.mem.eql(u8, a, "--help") or i + 1 >= argv.len) {
             std.debug.print(usage, .{});
             return if (std.mem.eql(u8, a, "--help")) 0 else 2;
         }
         i += 1;
         const v = argv[i];
-        if (std.mem.eql(u8, a, "--host")) cfg.host = v else if (std.mem.eql(u8, a, "--port")) cfg.port = try std.fmt.parseInt(u16, v, 10) else if (std.mem.eql(u8, a, "--web")) cfg.web = v else if (std.mem.eql(u8, a, "--max-cards")) cfg.max_cards = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, a, "--max-body-mb")) cfg.max_body_mb = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, a, "--threads")) cfg.threads = try std.fmt.parseInt(usize, v, 10) else {
+        if (std.mem.eql(u8, a, "--host")) cfg.host = v else if (std.mem.eql(u8, a, "--port")) cfg.port = try std.fmt.parseInt(u16, v, 10) else if (std.mem.eql(u8, a, "--web")) cfg.web = v else if (std.mem.eql(u8, a, "--max-cards")) cfg.max_cards = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, a, "--max-body-mb")) cfg.max_body_mb = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, a, "--threads")) cfg.threads = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, a, "--telemetry-dir")) tc.dir = v else if (std.mem.eql(u8, a, "--telemetry-default")) setTelemetryOption(tc, "default", v, &bad_option) else if (std.mem.eql(u8, a, "--telemetry-force")) setTelemetryOption(tc, "force", v, &bad_option) else if (std.mem.eql(u8, a, "--telemetry-retention-days")) setTelemetryOption(tc, "retention", v, &bad_option) else if (std.mem.eql(u8, a, "--admin-token")) tc.admin_token = v else {
             std.debug.print("unknown option {s}\n\n" ++ usage, .{a});
             return 2;
         }
     }
     if (cfg.threads == 0) cfg.threads = @max(1, std.Thread.getCpuCount() catch 1);
+    if (bad_option) |msg| {
+        std.debug.print("{s}\n", .{msg});
+        return 2;
+    }
+    if (tc.admin_token) |t| if (t.len < tel.min_token_len) {
+        std.debug.print("telemetry: the admin token needs at least {d} characters; the admin page is disabled\n", .{tel.min_token_len});
+        tc.admin_token = null;
+    };
+    if (tc.force != null and !tc.enabled) tc.force = null;
 
     const addr = try Io.net.IpAddress.parse(cfg.host, cfg.port);
     var server = try addr.listen(io, .{ .reuse_address = true });
@@ -87,8 +133,22 @@ pub fn main(init: std.process.Init) !u8 {
         y.version, cfg.host, cfg.port, cfg.web, if (cfg.render) "on" else "off", cfg.threads,
     });
 
+    var store = tel.Store.init(init.gpa, io, cfg.telemetry);
+    defer store.deinit();
     var group: Io.Group = .init;
     defer group.cancel(io);
+    if (cfg.telemetry.enabled) {
+        store.load(unixNow(io));
+        cfg.store = &store;
+        std.debug.print("telemetry: default {s}{s}, keeping {s}, data in {s}{s}\n", .{
+            cfg.telemetry.default_level.name(),
+            if (cfg.telemetry.force) |f| (if (f == .off) ", forced off" else ", forced basic") else "",
+            if (cfg.telemetry.retention_days) |d| std.fmt.allocPrint(arena, "{d} days", .{d}) catch "?" else "all days",
+            if (store.persist) cfg.telemetry.dir else "memory only",
+            if (cfg.telemetry.admin_token != null) ", admin page on" else "",
+        });
+        group.concurrent(io, flushLoop, .{ io, &store }) catch {};
+    }
     while (true) {
         const stream = server.accept(io) catch |e| {
             std.debug.print("accept failed: {s}\n", .{@errorName(e)});
@@ -100,8 +160,56 @@ pub fn main(init: std.process.Init) !u8 {
     }
 }
 
+/// The client address as bytes: used for the daily unique hash and nothing else.
+fn peerBytes(stream: Io.net.Stream, buf: *[16]u8) []const u8 {
+    switch (stream.socket.address) {
+        .ip4 => |a| {
+            buf[0..4].* = a.bytes;
+            return buf[0..4];
+        },
+        .ip6 => |a| {
+            buf.* = a.bytes;
+            return buf[0..16];
+        },
+    }
+}
+
+fn unixNow(io: Io) i64 {
+    return @intCast(@divFloor(Io.Clock.real.now(io).nanoseconds, std.time.ns_per_s));
+}
+
+fn flushLoop(io: Io, store: *tel.Store) void {
+    while (true) {
+        io.sleep(.fromSeconds(15), .awake) catch return;
+        store.flush(unixNow(io));
+    }
+}
+
+fn setTelemetryOption(tc: *tel.Config, which: []const u8, v: []const u8, bad: *?[]const u8) void {
+    if (std.mem.eql(u8, which, "default")) {
+        tc.default_level = tel.Level.parse(v) orelse {
+            bad.* = "telemetry: the default level must be off, basic or advanced";
+            return;
+        };
+    } else if (std.mem.eql(u8, which, "force")) {
+        if (v.len == 0 or std.ascii.eqlIgnoreCase(v, "none")) {
+            tc.force = null;
+        } else tc.force = tel.parseForce(v) orelse {
+            bad.* = "telemetry: a forced level can only be off or basic (the server may take data away, never add)";
+            return;
+        };
+    } else {
+        tc.retention_days = tel.parseRetention(v) orelse {
+            bad.* = "telemetry: the retention must be a number of days or \"infinite\"";
+            return;
+        };
+    }
+}
+
 fn serveConnection(io: Io, gpa: Allocator, cfg: *const Config, stream: Io.net.Stream) void {
     defer stream.close(io);
+    var peer_buf: [16]u8 = undefined;
+    const peer = peerBytes(stream, &peer_buf);
     var in_buf: [16 * 1024]u8 = undefined;
     var out_buf: [16 * 1024]u8 = undefined;
     var reader = stream.reader(io, &in_buf);
@@ -109,7 +217,7 @@ fn serveConnection(io: Io, gpa: Allocator, cfg: *const Config, stream: Io.net.St
     var http = std.http.Server.init(&reader.interface, &writer.interface);
     while (true) {
         var req = http.receiveHead() catch return;
-        handle(io, gpa, cfg, &req) catch |e| {
+        handle(io, gpa, cfg, &req, peer) catch |e| {
             std.debug.print("{s} {s}: {s}\n", .{ @tagName(req.head.method), req.head.target, @errorName(e) });
             return;
         };
@@ -117,7 +225,7 @@ fn serveConnection(io: Io, gpa: Allocator, cfg: *const Config, stream: Io.net.St
     }
 }
 
-fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Request) !void {
+fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Request, peer: []const u8) !void {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -126,7 +234,7 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
     const path = if (std.mem.startsWith(u8, full_path, "/editor/api/")) full_path["/editor".len..] else full_path;
 
     if (std.mem.eql(u8, path, "/api/capabilities")) {
-        const body = try std.fmt.allocPrint(arena, "{{\"version\":\"{s}\",\"channel\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d}}}", .{ y.version, y.channel, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
+        const body = try capabilities(arena, cfg);
         return req.respond(body, .{ .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }} });
     }
     if (std.mem.eql(u8, path, "/api/render/progress")) return progressResponse(arena, req, target);
@@ -134,6 +242,9 @@ fn handle(io: Io, gpa: Allocator, cfg: *const Config, req: *std.http.Server.Requ
         if (req.head.method != .POST) return jsonError(req, .method_not_allowed, "use POST");
         if (!cfg.render) return jsonError(req, .forbidden, "server rendering is disabled on this server");
         return renderSet(io, gpa, arena, cfg, req);
+    }
+    if (std.mem.startsWith(u8, path, "/api/telemetry/") or std.mem.eql(u8, path, "/api/stats") or std.mem.eql(u8, path, "/api/stats/page") or std.mem.startsWith(u8, path, "/api/admin/") or std.mem.eql(u8, path, "/admin/telemetry")) {
+        if (try telemetryRoute(io, arena, cfg, req, path, target, peer)) return;
     }
     if (std.mem.startsWith(u8, path, "/api/")) return jsonError(req, .not_found, "unknown API endpoint");
     if (req.head.method != .GET and req.head.method != .HEAD) return jsonError(req, .method_not_allowed, "method not allowed");
@@ -621,4 +732,271 @@ fn diagnosticsResponse(arena: Allocator, req: *std.http.Server.Request, diags: *
     try diags.writeJson(&aw.writer);
     try aw.writer.writeAll("}");
     return req.respond(aw.written(), .{ .status = .unprocessable_entity, .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }} });
+}
+
+// ---------------------------------------------------------------- telemetry
+
+const admin_page = @embedFile("admin.html");
+const stats_page = @embedFile("stats.html");
+
+fn capabilities(arena: Allocator, cfg: *const Config) ![]u8 {
+    var aw: Io.Writer.Allocating = .init(arena);
+    const w = &aw.writer;
+    try w.print("{{\"version\":\"{s}\",\"channel\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d},\"telemetry\":", .{ y.version, y.channel, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
+    if (cfg.store == null) {
+        try w.writeAll("{\"enabled\":false}");
+    } else {
+        const t = cfg.telemetry;
+        try w.print("{{\"enabled\":true,\"default\":\"{s}\",\"force\":", .{t.default_level.name()});
+        if (t.force) |f| try w.print("\"{s}\"", .{f.name()}) else try w.writeAll("null");
+        try w.writeAll(",\"retention_days\":");
+        if (t.retention_days) |d| try w.print("{d}", .{d}) else try w.writeAll("null");
+        try w.writeAll("}");
+    }
+    try w.writeAll("}");
+    return aw.toOwnedSlice();
+}
+
+/// A copy of a request header. Read them before the body: the head buffer
+/// is reused by the body reader.
+fn header(arena: Allocator, req: *std.http.Server.Request, name: []const u8) ?[]const u8 {
+    var it = req.iterateHeaders();
+    while (it.next()) |h| if (std.ascii.eqlIgnoreCase(h.name, name)) return arena.dupe(u8, h.value) catch null;
+    return null;
+}
+
+fn queryInt(target: []const u8, key: []const u8) ?u32 {
+    const q = std.mem.indexOfScalar(u8, target, '?') orelse return null;
+    var parts = std.mem.splitScalar(u8, target[q + 1 ..], '&');
+    while (parts.next()) |kv| {
+        if (kv.len > key.len and kv[key.len] == '=' and std.mem.eql(u8, kv[0..key.len], key))
+            return std.fmt.parseInt(u32, kv[key.len + 1 ..], 10) catch null;
+    }
+    return null;
+}
+
+/// Telemetry bodies must say how long they are (fetch and sendBeacon always do).
+fn lengthKnown(req: *std.http.Server.Request) bool {
+    return req.head.transfer_encoding != .none or req.head.content_length != null;
+}
+
+fn lengthRequired(req: *std.http.Server.Request) !void {
+    var buf: [128]u8 = undefined;
+    var w: Io.Writer = .fixed(&buf);
+    try w.writeAll("{\"error\":\"a body with a length is required\"}");
+    return req.respond(w.buffered(), .{ .status = .length_required, .keep_alive = false, .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }} });
+}
+
+fn readSmallBody(arena: Allocator, req: *std.http.Server.Request) ?[]u8 {
+    if (req.head.content_length) |n| if (n > tel.max_body) return null;
+    var buf: [1024]u8 = undefined;
+    const r = req.readerExpectNone(&buf);
+    return r.allocRemaining(arena, .limited(tel.max_body)) catch null;
+}
+
+fn noContent(req: *std.http.Server.Request) !void {
+    return req.respond("", .{ .status = .no_content, .extra_headers = &.{.{ .name = "cache-control", .value = "no-store" }} });
+}
+
+/// Returns false when the path is not a telemetry route.
+fn telemetryRoute(io: Io, arena: Allocator, cfg: *const Config, req: *std.http.Server.Request, path: []const u8, target: []const u8, peer: []const u8) !bool {
+    const store = cfg.store orelse {
+        // Disabled: the endpoints do not exist.
+        try jsonError(req, .not_found, "telemetry is not enabled on this server");
+        return true;
+    };
+    const tc = cfg.telemetry;
+    const now = unixNow(io);
+    const user_agent = header(arena, req, "user-agent") orelse "";
+    const forwarded = header(arena, req, "x-forwarded-for");
+    const auth = header(arena, req, "authorization") orelse "";
+
+    if (std.mem.eql(u8, path, "/admin/telemetry")) {
+        if (tc.admin_token == null) return false;
+        if (req.head.method != .GET and req.head.method != .HEAD) {
+            try jsonError(req, .method_not_allowed, "method not allowed");
+            return true;
+        }
+        try req.respond(admin_page, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/html; charset=utf-8" },
+            .{ .name = "cache-control", .value = "no-store" },
+            .{ .name = "referrer-policy", .value = "no-referrer" },
+            .{ .name = "x-robots-tag", .value = "noindex" },
+            .{ .name = "content-security-policy", .value = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'" },
+        } });
+        return true;
+    }
+
+    if (std.mem.eql(u8, path, "/api/telemetry/ping")) {
+        if (req.head.method != .POST) {
+            try jsonError(req, .method_not_allowed, "use POST");
+            return true;
+        }
+        if (tc.force != null and tc.force.? == .off) {
+            try jsonError(req, .forbidden, "telemetry is forced off on this server");
+            return true;
+        }
+        if (!lengthKnown(req)) {
+            try lengthRequired(req);
+            return true;
+        }
+        const body = readSmallBody(arena, req) orelse {
+            try jsonError(req, .bad_request, "bad body");
+            return true;
+        };
+        var level: tel.Level = .basic;
+        if (body.len > 0) {
+            if (y.json.parse(arena, body) catch null) |res| switch (res) {
+                .ok => |n| if (n.get("level")) |l| if (l.data == .string and std.mem.eql(u8, l.data.string, "advanced") and (tc.force == null)) {
+                    level = .advanced;
+                },
+                .err => {},
+            };
+        }
+        // The address is only used for the daily hash; with --telemetry-trust-proxy
+        // the first X-Forwarded-For entry stands in for it.
+        var client: []const u8 = peer;
+        if (tc.trust_proxy) if (forwarded) |xff| {
+            const first = std.mem.trim(u8, xff[0..(std.mem.indexOfScalar(u8, xff, ',') orelse xff.len)], " ");
+            if (first.len > 0) client = first;
+        };
+        store.ping(now, client, user_agent, level) catch {
+            try jsonError(req, .internal_server_error, "out of memory");
+            return true;
+        };
+        try noContent(req);
+        return true;
+    }
+
+    if (std.mem.eql(u8, path, "/api/telemetry/events")) {
+        if (req.head.method != .POST) {
+            try jsonError(req, .method_not_allowed, "use POST");
+            return true;
+        }
+        if (tc.force != null) {
+            try jsonError(req, .forbidden, "advanced telemetry is turned off on this server");
+            return true;
+        }
+        if (!lengthKnown(req)) {
+            try lengthRequired(req);
+            return true;
+        }
+        const body = readSmallBody(arena, req) orelse {
+            try jsonError(req, .bad_request, "bad body");
+            return true;
+        };
+        _ = store.events(now, body) catch |e| switch (e) {
+            error.BadRequest => {
+                try jsonError(req, .bad_request, "expected {\"events\":[{\"k\":...,\"n\":...}]}");
+                return true;
+            },
+            else => {
+                try jsonError(req, .internal_server_error, "out of memory");
+                return true;
+            },
+        };
+        try noContent(req);
+        return true;
+    }
+
+    if (std.mem.eql(u8, path, "/api/stats")) {
+        if (req.head.method != .GET) {
+            try jsonError(req, .method_not_allowed, "use GET");
+            return true;
+        }
+        const days = std.math.clamp(queryInt(target, "days") orelse 30, 1, 366);
+        const body = try store.statsJson(arena, now, days, true);
+        try req.respond(body, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "application/json" },
+            .{ .name = "cache-control", .value = "public, max-age=60" },
+            .{ .name = "access-control-allow-origin", .value = "*" },
+        } });
+        return true;
+    }
+
+    if (std.mem.eql(u8, path, "/api/stats/page")) {
+        if (req.head.method != .GET and req.head.method != .HEAD) {
+            try jsonError(req, .method_not_allowed, "method not allowed");
+            return true;
+        }
+        // The page loads the numbers itself from /api/stats, so it can be cached.
+        try req.respond(stats_page, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/html; charset=utf-8" },
+            .{ .name = "cache-control", .value = "public, max-age=300" },
+            .{ .name = "referrer-policy", .value = "no-referrer" },
+            .{ .name = "x-robots-tag", .value = "noindex" },
+            .{ .name = "content-security-policy", .value = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'" },
+        } });
+        return true;
+    }
+
+    if (std.mem.startsWith(u8, path, "/api/admin/")) {
+        if (tc.admin_token == null) return false;
+        const prefix = "Bearer ";
+        const supplied = if (std.mem.startsWith(u8, auth, prefix)) auth[prefix.len..] else "";
+        if (!tel.tokenOk(tc, supplied)) {
+            io.sleep(.fromMilliseconds(400), .awake) catch {};
+            try jsonError(req, .unauthorized, "missing or wrong admin token");
+            return true;
+        }
+        if (std.mem.eql(u8, path, "/api/admin/stats") and req.head.method == .GET) {
+            const days = std.math.clamp(queryInt(target, "days") orelse 90, 1, 3660);
+            const body = try store.statsJson(arena, now, days, false);
+            try req.respond(body, .{ .extra_headers = &.{
+                .{ .name = "content-type", .value = "application/json" },
+                .{ .name = "cache-control", .value = "no-store" },
+            } });
+            return true;
+        }
+        if (std.mem.eql(u8, path, "/api/admin/public") and (req.head.method == .PUT or req.head.method == .POST)) {
+            if (!lengthKnown(req)) {
+                try lengthRequired(req);
+                return true;
+            }
+            const body = readSmallBody(arena, req) orelse {
+                try jsonError(req, .bad_request, "bad body");
+                return true;
+            };
+            const doc = switch (try y.json.parse(arena, body)) {
+                .ok => |n| n,
+                .err => {
+                    try jsonError(req, .bad_request, "invalid JSON");
+                    return true;
+                },
+            };
+            const list = doc.get("public") orelse {
+                try jsonError(req, .bad_request, "missing \"public\"");
+                return true;
+            };
+            if (list.data != .array) {
+                try jsonError(req, .bad_request, "\"public\" must be an array of keys");
+                return true;
+            }
+            var keys: std.ArrayList([]const u8) = .empty;
+            for (list.data.array) |item| {
+                if (item.data != .string) {
+                    try jsonError(req, .bad_request, "\"public\" must hold strings");
+                    return true;
+                }
+                try keys.append(arena, item.data.string);
+            }
+            store.setPublic(keys.items) catch |e| switch (e) {
+                error.BadRequest => {
+                    try jsonError(req, .bad_request, "unknown or too many keys");
+                    return true;
+                },
+                else => return e,
+            };
+            store.flush(now);
+            try noContent(req);
+            return true;
+        }
+        try jsonError(req, .not_found, "unknown API endpoint");
+        return true;
+    }
+    return false;
+}
+
+test {
+    _ = tel;
 }

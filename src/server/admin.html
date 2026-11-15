@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>yoshida telemetry</title>
+<style>
+	:root {
+		color-scheme: light dark;
+		--bg: #f6f6f8; --panel: #fff; --text: #1d1d22; --muted: #6b6b76;
+		--line: #dcdce2; --accent: #4f46e5; --bar: #c7c4f7; --danger: #b3261e;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root { --bg: #14141a; --panel: #1d1d25; --text: #ececf1; --muted: #9a9aa6; --line: #33333e; --accent: #8b85ff; --bar: #3b3880; --danger: #ff8a80; }
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+	main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+	h1 { font-size: 20px; margin: 0 0 4px; }
+	h2 { font-size: 15px; margin: 28px 0 8px; }
+	p, .muted { color: var(--muted); margin: 0 0 12px; }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+	form, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+	input, select, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+	input[type=password] { min-width: 260px; }
+	button { cursor: pointer; }
+	button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+	button:disabled { opacity: .5; cursor: default; }
+	.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+	.tile b { display: block; font-size: 24px; }
+	table { width: 100%; border-collapse: collapse; }
+	th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+	td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+	td.bar { width: 40%; }
+	.bar i { display: block; height: 10px; background: var(--bar); border-radius: 3px; }
+	.err { color: var(--danger); min-height: 1.5em; }
+	[hidden] { display: none !important; }
+	code { font: 12px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<main>
+	<h1>yoshida telemetry</h1>
+	<p>Counts only, stored on this server. No addresses, no accounts, no project content.</p>
+
+	<form id="login" class="panel">
+		<input id="token" type="password" autocomplete="off" placeholder="Admin token" aria-label="Admin token">
+		<button class="primary" type="submit">Show stats</button>
+		<span id="loginerr" class="err" role="alert"></span>
+	</form>
+
+	<div id="app" hidden>
+		<div class="row" style="margin-top:16px">
+			<label>Range
+				<select id="range">
+					<option value="7">7 days</option>
+					<option value="30" selected>30 days</option>
+					<option value="90">90 days</option>
+					<option value="365">1 year</option>
+					<option value="3660">All</option>
+				</select>
+			</label>
+			<button id="refresh" type="button">Refresh</button>
+			<span id="retention" class="muted"></span>
+			<span style="flex:1"></span>
+			<button id="logout" type="button">Sign out</button>
+		</div>
+
+		<h2>Totals</h2>
+		<div id="tiles" class="tiles"></div>
+		<p class="muted" style="margin-top:8px">Uniques are counted per day (a visitor on two days counts twice) with a salted hash that is replaced every UTC day and never stored.</p>
+
+		<h2>Per day</h2>
+		<div class="panel"><table id="days"></table></div>
+
+		<h2>Events (advanced level)</h2>
+		<div id="events"></div>
+
+		<h2>Public stats</h2>
+		<p>Ticked entries are served to everybody by <code>GET /api/stats</code> and shown on the <a href="/api/stats/page" target="_blank" rel="noopener noreferrer">public stats page</a>. Ticking a group shows all of its events, including ones that appear later.</p>
+		<div class="panel">
+			<div id="flags" class="row"></div>
+			<div class="row" style="margin-top:12px">
+				<button id="save" class="primary" type="button">Save public stats</button>
+				<span id="saved" class="muted"></span>
+			</div>
+		</div>
+	</div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const BASE = ["sessions", "uniques", "advanced_sessions"];
+const LABEL = { sessions: "Sessions", uniques: "Daily uniques", advanced_sessions: "Advanced sessions" };
+const GROUPS = ["feature", "export", "error"];
+let token = "";
+let data = null;
+
+function el(tag, text, cls) {
+	const e = document.createElement(tag);
+	if (text !== undefined) e.textContent = text;
+	if (cls) e.className = cls;
+	return e;
+}
+
+async function api(path, init) {
+	const r = await fetch(path, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token } });
+	if (r.status === 401) throw new Error("Wrong token");
+	if (!r.ok && r.status !== 204) throw new Error("Request failed (" + r.status + ")");
+	return r.status === 204 ? null : r.json();
+}
+
+async function load() {
+	data = await api("/api/admin/stats?days=" + $("range").value);
+	render();
+}
+
+function totals() {
+	const t = { sessions: 0, uniques: 0, advanced_sessions: 0, events: {} };
+	for (const d of data.days) {
+		for (const b of BASE) t[b] += d[b] || 0;
+		for (const [k, v] of Object.entries(d.events)) t.events[k] = (t.events[k] || 0) + v;
+	}
+	return t;
+}
+
+function render() {
+	const t = totals();
+	$("retention").textContent = data.retention_days ? "Kept " + data.retention_days + " days" : "Kept forever";
+	const tiles = $("tiles");
+	tiles.replaceChildren();
+	for (const b of BASE) {
+		const tile = el("div", undefined, "panel tile");
+		tile.append(el("b", String(t[b])), el("span", LABEL[b], "muted"));
+		tiles.append(tile);
+	}
+
+	const days = $("days");
+	days.replaceChildren();
+	const head = el("tr");
+	for (const h of ["Day", ...BASE.map((b) => LABEL[b])]) head.append(el("th", h, h === "Day" ? "" : "n"));
+	days.append(head);
+	for (const d of [...data.days].reverse()) {
+		const tr = el("tr");
+		tr.append(el("td", d.day));
+		for (const b of BASE) tr.append(el("td", String(d[b] || 0), "n"));
+		days.append(tr);
+	}
+	if (!data.days.length) {
+		const tr = el("tr");
+		tr.append(el("td", "No data yet."));
+		days.append(tr);
+	}
+
+	const ev = $("events");
+	ev.replaceChildren();
+	for (const g of GROUPS) {
+		const rows = Object.entries(t.events).filter(([k]) => k.startsWith(g + ":")).sort((a, b) => b[1] - a[1]);
+		if (!rows.length) continue;
+		const max = rows[0][1];
+		const panel = el("div", undefined, "panel");
+		panel.style.marginBottom = "10px";
+		panel.append(el("b", g));
+		const table = el("table");
+		for (const [k, v] of rows) {
+			const tr = el("tr");
+			tr.append(el("td", k.slice(g.length + 1)), el("td", String(v), "n"));
+			const bar = el("td", undefined, "bar");
+			const i = el("i");
+			i.style.width = Math.max(2, (v / max) * 100) + "%";
+			bar.append(i);
+			tr.append(bar);
+			table.append(tr);
+		}
+		panel.append(table);
+		ev.append(panel);
+	}
+	if (!ev.children.length) ev.append(el("p", "No advanced events yet."));
+
+	const flags = $("flags");
+	flags.replaceChildren();
+	const keys = [...BASE, ...GROUPS, ...Object.keys(t.events).sort()];
+	for (const k of new Set([...keys, ...data.public])) {
+		const lab = el("label");
+		const cb = el("input");
+		cb.type = "checkbox";
+		cb.value = k;
+		cb.checked = data.public.includes(k);
+		lab.append(cb, " " + k);
+		lab.style.marginRight = "12px";
+		flags.append(lab);
+	}
+}
+
+$("login").addEventListener("submit", async (e) => {
+	e.preventDefault();
+	token = $("token").value;
+	$("loginerr").textContent = "";
+	try {
+		await load();
+		$("login").hidden = true;
+		$("app").hidden = false;
+	} catch (err) {
+		$("loginerr").textContent = err.message;
+	}
+});
+$("range").addEventListener("change", () => load().catch((e) => alert(e.message)));
+$("refresh").addEventListener("click", () => load().catch((e) => alert(e.message)));
+$("logout").addEventListener("click", () => location.reload());
+$("save").addEventListener("click", async () => {
+	const picked = [...$("flags").querySelectorAll("input:checked")].map((c) => c.value);
+	$("saved").textContent = "";
+	try {
+		await api("/api/admin/public", { method: "PUT", body: JSON.stringify({ public: picked }) });
+		data.public = picked;
+		$("saved").textContent = "Saved";
+	} catch (err) {
+		$("saved").textContent = err.message;
+	}
+});
+</script>
+</body>
+</html>

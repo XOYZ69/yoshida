@@ -10,6 +10,11 @@ description = "The HTTP API of yoshida-server."
 | `GET /api/capabilities` |                                                                            | `{ "version", "channel", "format", "render", "max_cards", "max_body_mb" }`             |
 | `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "now", "utc_offset", "format": "png" \| "png16" \| "pdf" \| "svg", "vector", "scale", "crop_marks", "compression" }` | `application/zip` with `<set>/<card id>.png` (`.svg` for `svg`), or `application/pdf` for `pdf`, or 422 with `{ "error", "diagnostics" }` |
 | `GET /api/render/progress?job=<id>` |                                                               | `{ "found", "stage", "done", "total" }` for a render sent with `x-yoshida-job: <id>` |
+| `POST /api/telemetry/ping` | `{ "level": "basic" \| "advanced" }` | `204`. See [Usage Statistics](@/docs/telemetry.md) |
+| `POST /api/telemetry/events` | `{ "events": [{ "k": "feature" \| "export" \| "error", "n": name }] }` | `204` |
+| `GET /api/stats?days=N` |                                                                            | The stats the admin marked public, per day |
+| `GET /api/stats/page` |                                                                            | The same public stats as a page for people |
+| `GET /api/admin/stats`, `PUT /api/admin/public` | with `Authorization: Bearer <admin token>` | All stats; replace the public flags |
 | `GET /*`                |                                                                            | Static files from `--web`                                                              |
 
 The API also answers under `/editor/api/`, where the editor's calls land when it is served from `/editor/`. A folder asked for without its trailing slash (`/editor`) redirects to `/editor/`. A missing static file answers 404 with `--web`'s `404.html` when there is one, otherwise with a JSON error.
@@ -25,9 +30,17 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 	"format": 1,
 	"render": true,
 	"max_cards": 1000,
-	"max_body_mb": 200
+	"max_body_mb": 200,
+	"telemetry": {
+		"enabled": true,
+		"default": "basic",
+		"force": null,
+		"retention_days": 90
+	}
 }
 ```
+
+`telemetry` is `{ "enabled": false }` when the server runs with `--no-telemetry`; `force` is `null`, `"off"` or `"basic"` and `retention_days` is `null` when nothing is deleted. The editor reads it to decide whether to show the usage statistics notice.
 
 ## `POST /api/render`
 

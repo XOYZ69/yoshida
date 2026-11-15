@@ -1,0 +1,68 @@
+# Collects the numbers for the website's Stats page once a day: stars, forks,
+# release downloads and, with a token, repository traffic. Everything comes
+# from GitHub's API (scripts/stats.mjs); nothing is measured in a browser.
+#
+# The result is one file, stats.json, on the `stats` branch, which holds
+# nothing else. The Stats page loads it from there, so a new day needs no
+# deploy. The first run creates the branch.
+#
+# Optional settings (Settings -> Secrets and variables -> Actions):
+#   secret   STATS_TRAFFIC_TOKEN  a fine-grained token for this repository
+#                                 with Administration: read-only. Adds views
+#                                 and clones; the workflow's own token may
+#                                 not read them.
+#   variable YOSHIDA_STATS_URL    the /api/stats address of a self-hosted
+#                                 instance whose public stats are shown too.
+#
+# GitHub runs schedules from the default branch only and pauses them after
+# 60 days without a commit.
+name: Stats
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stats
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect
+    # A fork has its own numbers and did not ask for a daily job.
+    if: github.event_name != 'schedule' || !github.event.repository.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check out the stats branch
+        run: |
+          if git fetch --depth 1 origin stats 2> /dev/null; then
+            git worktree add -B stats out FETCH_HEAD
+          else
+            git worktree add --orphan -b stats out
+          fi
+
+      - name: Collect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STATS_TRAFFIC_TOKEN: ${{ secrets.STATS_TRAFFIC_TOKEN }}
+          YOSHIDA_STATS_URL: ${{ vars.YOSHIDA_STATS_URL }}
+        run: node scripts/stats.mjs collect --repo "$GITHUB_REPOSITORY" --prev out/stats.json --out out/stats.json
+
+      - name: Store
+        working-directory: out
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stats.json
+          git commit -m "stats: $(date -u +%F)"
+          git push origin stats

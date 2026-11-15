@@ -20,7 +20,7 @@ yoshida-server [--host ADDR] [--port N] [--web DIR] [--no-render]
 | `--max-body-mb` | `YOSHIDA_MAX_BODY_MB` | `200` | Largest request body |
 | `--threads` | `YOSHIDA_THREADS` | all CPUs | Worker threads used to render a set |
 
-Command-line options win over environment variables.
+Command-line options win over environment variables. The server can also keep optional, anonymous [usage statistics](@/docs/telemetry.md) (on by default at the basic level, see that page for its options: `--no-telemetry`, `--telemetry-dir`, `--telemetry-default`, `--telemetry-force`, `--telemetry-retention-days`, `--admin-token`).
 
 ## Running the release zip
 
@@ -46,27 +46,21 @@ The image sets `YOSHIDA_WEB=/web` and `YOSHIDA_PORT=8080` and exposes port 8080.
 
 ### Docker Compose
 
-`compose.yaml` spells the options out:
+`compose.yaml` builds and starts the container. Its settings are in a file named `.env` beside it, one environment variable per line (table above). `.env.example` lists them all with their defaults; copy it and edit the copy:
 
-```yaml
-services:
-  yoshida:
-    build: .
-    container_name: yoshida
-    image: yoshida:latest
-    ports:
-      - "8080:8080"
-    environment:
-      YOSHIDA_RENDER: "1"        # 0: editor only, rendering stays in the browser
-      YOSHIDA_MAX_CARDS: "1000"
-      YOSHIDA_MAX_BODY_MB: "200"
-      # YOSHIDA_THREADS: "4"     # default: all CPUs
-    restart: unless-stopped
+```sh
+cp .env.example .env
+docker compose up --build
 ```
 
 ```sh
-docker compose up
+YOSHIDA_RENDER=1
+YOSHIDA_MAX_CARDS=1000
+YOSHIDA_MAX_BODY_MB=200
+#YOSHIDA_THREADS=4
 ```
+
+Compose reads `.env` by itself: for `YOSHIDA_CHANNEL`, which it passes to the build, for `YOSHIDA_PUBLISH_PORT`, the port on your machine (default 8080), and for the variables it hands to the container. `.env` is not committed and is left out of the image, so an admin token in it stays on your machine. Without a `.env` the server runs with its defaults. A variable set in the shell (`YOSHIDA_CHANNEL=dev docker compose up --build`) wins over the file for the build and the port; the container only gets what is in the file.
 
 The image also contains the `yoshida` CLI at `/yoshida`, which you can run with `docker run --rm -v "$PWD:/p" --entrypoint /yoshida yoshida render /p/my-cards`.
 
@@ -92,4 +86,4 @@ The server never downloads images from URLs; upload images with the project inst
 
 ## HTTP API
 
-The API is small and documented in [Server API](@/docs/server-api.md): `GET /api/capabilities`, `POST /api/render`, and static files for everything else. You can call it from your own tools.
+The API is small and documented in [Server API](@/docs/server-api.md): `GET /api/capabilities`, `POST /api/render`, the [usage statistics](@/docs/telemetry.md) endpoints, and static files for everything else. You can call it from your own tools.

@@ -17,6 +17,7 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/): Your first card in five minutes: in the editor, from scratch and on the command line.
 - [Installation](https://yoshida.xoyz.dev/docs/installation/): Run yoshida in the browser, from the release zip, with Docker or from source.
 - [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/): What a design can do, one short snippet per feature, with links to the details.
+- [Usage Statistics](https://yoshida.xoyz.dev/docs/telemetry/): Optional anonymous counts, kept only on the server that hosts the editor.
 - [Examples](https://yoshida.xoyz.dev/docs/examples/): The four example projects, what each one shows and how to open them.
 - [Poker deck](https://yoshida.xoyz.dev/docs/example-poker/): A walk through the poker deck example: four designs in one project and extends.
 - [Board game](https://yoshida.xoyz.dev/docs/example-board-game/): A walk through the printable board game example.

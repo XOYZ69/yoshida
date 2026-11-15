@@ -11,5 +11,9 @@ web/test-results/
 /public/
 site/public/
 releases.json
+# A local copy of the numbers for previewing the Stats page (site/README.md).
+site/static/stats.json
+# Local settings for docker compose (may hold the admin token); .env.example is the template.
+.env
 site/content/releases/*.md
 !site/content/releases/_index.md
