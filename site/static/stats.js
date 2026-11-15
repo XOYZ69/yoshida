@@ -176,23 +176,87 @@
     })));
   }
 
-  // The public stats of a self-hosted instance, as that server reports them:
-  // every number in the answer, named by its place in it.
+  // A list of names with a bar each, largest first; all bars share one scale.
+  function countBars(parent, rows, max) {
+    var list = parent.appendChild(el("ul", "bars"));
+    rows.forEach(function (r) {
+      var li = list.appendChild(el("li"));
+      li.appendChild(el("span", "bar-name", r[0]));
+      var fill = li.appendChild(el("span", "bar-track")).appendChild(el("span", "bar-fill"));
+      fill.style.width = (r[1] / max) * 100 + "%";
+      li.appendChild(el("span", "bar-value", num(r[1])));
+    });
+  }
+
+  // The public stats of a self-hosted instance. A yoshida server answers
+  // GET /api/stats with { retention_days, days: [{ day, sessions?, uniques?,
+  // advanced_sessions?, events: { "group:name": count } }] }, holding only what
+  // its operator made public. The days are added up here.
+  var EVENT_GROUPS = [["feature", "Features used"], ["export", "Exports by format"], ["error", "Problems shown, by code"]];
+  var EVENTS_SHOWN = 8;
+  function instanceDays(s, days) {
+    var totals = {}, events = {};
+    days.forEach(function (d) {
+      ["sessions", "uniques", "advanced_sessions"].forEach(function (k) {
+        if (typeof d[k] === "number" && isFinite(d[k])) totals[k] = (totals[k] || 0) + d[k];
+      });
+      var ev = d.events && typeof d.events === "object" ? d.events : {};
+      Object.keys(ev).forEach(function (k) {
+        if (typeof ev[k] === "number" && isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
+      });
+    });
+    var items = [];
+    if ("sessions" in totals) items.push(["Sessions", totals.sessions]);
+    if ("uniques" in totals) items.push(["Visitors, counted per day", totals.uniques]);
+    if ("advanced_sessions" in totals) items.push(["Sessions sharing details", totals.advanced_sessions]);
+    if (items.length) facts(s, items);
+    var shown = items.length > 0;
+    EVENT_GROUPS.forEach(function (group) {
+      var rows = Object.keys(events)
+        .filter(function (k) { return k.indexOf(group[0] + ":") === 0; })
+        .map(function (k) { return [k.slice(group[0].length + 1), events[k]]; })
+        .sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); });
+      if (!rows.length) return;
+      shown = true;
+      s.appendChild(el("h3", null, group[1]));
+      countBars(s, rows.slice(0, EVENTS_SHOWN), rows[0][1] || 1);
+      var more = rows.slice(EVENTS_SHOWN);
+      if (more.length) {
+        var details = s.appendChild(el("details", "stats-more"));
+        details.appendChild(el("summary", null, "Show " + more.length + " more"));
+        countBars(details, more, rows[0][1] || 1);
+      }
+    });
+    return shown;
+  }
+
   function instance(doc) {
     var inst = doc.instance;
     if (!inst || typeof inst.stats !== "object" || !inst.stats) return;
-    var rows = [];
-    (function walk(value, path, depth) {
-      if (rows.length >= 24) return;
-      if (typeof value === "number" && isFinite(value)) rows.push([path.join(" · ").replace(/[_-]+/g, " "), value]);
-      else if (value && typeof value === "object" && !Array.isArray(value) && depth < 3) {
-        Object.keys(value).forEach(function (k) { walk(value[k], path.concat(k), depth + 1); });
-      }
-    })(inst.stats, [], 0);
-    if (!rows.length) return;
     var host = typeof inst.host === "string" ? inst.host : "a self-hosted instance";
-    var s = section("Editor at " + host, "Counted by that server and shared by its operator" + (inst.fetched_at ? ", as of " + day(String(inst.fetched_at).slice(0, 10)) : "") + ".");
-    facts(s, rows);
+    var days = (Array.isArray(inst.stats.days) ? inst.stats.days : [])
+      .filter(function (d) { return d && typeof d === "object" && typeof d.day === "string"; });
+    var lead = "Counted by that server and shared by its operator";
+    if (days.length) lead += ", " + (days.length === 1 ? day(days[0].day) : day(days[0].day) + " to " + day(days[days.length - 1].day));
+    else if (inst.fetched_at) lead += ", as of " + day(String(inst.fetched_at).slice(0, 10));
+    var s = el("section", "stats-block");
+    s.appendChild(el("h2", null, "Editor at " + host));
+    s.appendChild(el("p", "meta", lead + "."));
+    var shown = false;
+    if (days.length) shown = instanceDays(s, days);
+    else {
+      // Another shape: every number in the answer, named by its place in it.
+      var rows = [];
+      (function walk(value, path, depth) {
+        if (rows.length >= 24) return;
+        if (typeof value === "number" && isFinite(value)) rows.push([path.join(" · ").replace(/[_-]+/g, " "), value]);
+        else if (value && typeof value === "object" && !Array.isArray(value) && depth < 3) {
+          Object.keys(value).forEach(function (k) { walk(value[k], path.concat(k), depth + 1); });
+        }
+      })(inst.stats, [], 0);
+      if (rows.length) { facts(s, rows); shown = true; }
+    }
+    if (shown) root.appendChild(s);
   }
 
   function fail() {

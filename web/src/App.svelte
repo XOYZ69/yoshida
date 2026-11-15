@@ -7,6 +7,17 @@
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
 	import CardForm from "./lib/CardForm.svelte";
+	import TelemetryNotice from "./lib/telemetry/TelemetryNotice.svelte";
+	import TelemetryWindow from "./lib/telemetry/TelemetryWindow.svelte";
+	import {
+		initTelemetry,
+		noticeDue,
+		openSettings as openPrivacy,
+		telemetry,
+		track,
+		trackOnce,
+	} from "./lib/telemetry/state.svelte";
+	import type { ServerTelemetry } from "./lib/telemetry/core";
 	import Logo from "./lib/ui/Logo.svelte";
 	import ThemeToggle from "./lib/ui/ThemeToggle.svelte";
 	import {
@@ -255,6 +266,7 @@
 		max_cards: number;
 		max_body_mb?: number;
 		version?: string;
+		telemetry?: ServerTelemetry;
 	};
 	let server = $state<ServerInfo | null>(null);
 	let useServer = $state(false);
@@ -485,6 +497,13 @@
 		[d.severity, d.code, d.file, d.path, d.line, d.col, d.message].join("\u0000");
 	// The project check covers every file; the preview render adds what the
 	// current card reports on top of it.
+	// Error codes that showed up, counted once per session and code (advanced telemetry).
+	$effect(() => {
+		for (const d of check?.diagnostics ?? [])
+			if (d.severity === "error")
+				trackOnce("error", String(d.code).padStart(4, "0"));
+	});
+
 	const diagnostics: Diagnostic[] = $derived.by(() => {
 		const seen = new Set<string>();
 		const out: Diagnostic[] = [];
@@ -638,6 +657,8 @@
 		} catch {
 			server = null;
 		}
+		// Without a yoshida server there is nothing to send to: no notice, no requests.
+		initTelemetry(server?.telemetry);
 		myProjects = await listProjects();
 		const last = lastProject();
 		if (last && (await openSaved(last))) return;
@@ -690,6 +711,7 @@
 	async function openExample(name: string) {
 		const ex = examples.find((e) => e.name === name);
 		if (!ex) return;
+		track("feature", "example.open");
 		status = `Loading ${ex.title}…`;
 		await openProject(ex.name, await loadExample(ex));
 	}
@@ -767,6 +789,7 @@
 
 	/** The whole project, images and fonts included, as one .yoshida file. */
 	function exportProject() {
+		track("feature", "project.export");
 		const fileName = `${slug(projectName)}${PROJECT_EXT}`;
 		download(fileName, projectZip(projectName, files), PROJECT_MIME);
 		status = `Exported ${files.size} file(s) as ${fileName}.`;
@@ -1007,6 +1030,7 @@
 
 	/** Adds a blank design with its own card file to the open project. */
 	async function newDesign() {
+		track("feature", "design.new");
 		const name = (
 			await askText({
 				title: "New design",
@@ -1384,6 +1408,7 @@
 	});
 
 	function openFonts(target: FontsTarget = {}) {
+		track("feature", "fonts.open");
 		fontsTarget = { ...target };
 	}
 
@@ -1991,6 +2016,7 @@
 
 	function addLayer(type: LayerType) {
 		if (!doc) return;
+		track("feature", `layer.add.${type}`);
 		const imageParams = paramsOf(doc)
 			.filter(([, p]) => p.type === "image")
 			.map(([n]) => n);
@@ -3113,6 +3139,7 @@
 
 	async function exportPng() {
 		if (!currentSet || !currentCard) return;
+		track("export", "png");
 		const card = currentCard;
 		const run = new Run(`Exporting ${card.id}.png`, []);
 		const clock = renderClock();
@@ -3152,6 +3179,7 @@
 
 	async function exportZip() {
 		if (!currentSet) return;
+		track("export", "zip");
 		if (onServer) return exportOnServer("png");
 		const set = currentSet;
 		const name = setName;
@@ -3237,6 +3265,7 @@
 	/** Every card in one PDF; with `canvas.bleed`, with crop marks. */
 	async function exportPdf() {
 		if (!currentSet) return;
+		track("export", "pdf");
 		if (onServer) return exportOnServer("pdf");
 		const n = currentSet.cards.length;
 		const clock = renderClock();
@@ -3668,6 +3697,7 @@
 		closeExport();
 		const plan = planExport(st, projectName, planSets, setName, cardIndex);
 		if (!plan.files) return;
+		for (const f of st.formats) track("export", f);
 		const clock = renderClock();
 		// With a target dpi, each design renders at the scale that gives it
 		// that dpi. The dialog measures the canvases when it opens; an export
@@ -4304,7 +4334,7 @@
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; nothing is sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
+				title="Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
@@ -4385,6 +4415,14 @@
 				aria-pressed={functionsRef.open}
 				title="Function reference: every function with a short example (F1)"
 				><span class="fn-mark" aria-hidden="true">ƒ</span> Functions</button
+			>
+			<button
+				class="fn-btn"
+				onclick={openPrivacy}
+				aria-pressed={telemetry.settingsOpen}
+				data-testid="privacy-button"
+				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what this browser sent"
+				><Icon name="lock" /> Privacy</button
 			>
 			<ThemeToggle />
 		</header>
@@ -4873,6 +4911,14 @@
 		onclose={() => (fontsTarget = null)}
 	/>
 	{/key}
+{/if}
+
+{#if telemetry.settingsOpen}
+	<TelemetryWindow />
+{/if}
+
+{#if server?.telemetry?.enabled && noticeDue() && !telemetry.settingsOpen}
+	<TelemetryNotice />
 {/if}
 
 {#if functionsRef.open}

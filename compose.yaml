@@ -14,5 +14,12 @@ services:
       YOSHIDA_RENDER: "1"        # 0: editor only, rendering stays in the browser
       YOSHIDA_MAX_CARDS: "1000"
       YOSHIDA_MAX_BODY_MB: "200"
-    # YOSHIDA_THREADS: "4"     # default: all CPUs
+      # YOSHIDA_THREADS: "4"     # default: all CPUs
+      # Usage statistics (see docs/telemetry): stored only in this container's data folder.
+      # YOSHIDA_TELEMETRY: "0"                  # 0: no statistics at all
+      # YOSHIDA_TELEMETRY_DEFAULT: "basic"      # off | basic | advanced, what the notice preselects
+      # YOSHIDA_TELEMETRY_FORCE: "off"          # lock everybody to off or basic
+      YOSHIDA_TELEMETRY_RETENTION_DAYS: "90"  # or "infinite"
+      # YOSHIDA_TELEMETRY_DIR: "/data"          # mount a volume that uid 65534 can write
+      YOSHIDA_ADMIN_TOKEN: "RANDOM_SECRET_ADMIN"   # enables /admin/telemetry
     restart: unless-stopped

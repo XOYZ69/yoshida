@@ -20,7 +20,7 @@ yoshida-server [--host ADDR] [--port N] [--web DIR] [--no-render]
 | `--max-body-mb` | `YOSHIDA_MAX_BODY_MB` | `200` | Largest request body |
 | `--threads` | `YOSHIDA_THREADS` | all CPUs | Worker threads used to render a set |
 
-Command-line options win over environment variables.
+Command-line options win over environment variables. The server can also keep optional, anonymous [usage statistics](@/docs/telemetry.md) (on by default at the basic level, see that page for its options: `--no-telemetry`, `--telemetry-dir`, `--telemetry-default`, `--telemetry-force`, `--telemetry-retention-days`, `--admin-token`).
 
 ## Running the release zip
 
@@ -92,4 +92,4 @@ The server never downloads images from URLs; upload images with the project inst
 
 ## HTTP API
 
-The API is small and documented in [Server API](@/docs/server-api.md): `GET /api/capabilities`, `POST /api/render`, and static files for everything else. You can call it from your own tools.
+The API is small and documented in [Server API](@/docs/server-api.md): `GET /api/capabilities`, `POST /api/render`, the [usage statistics](@/docs/telemetry.md) endpoints, and static files for everything else. You can call it from your own tools.
