@@ -20,7 +20,7 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 
 ```json
 {
-	"version": "0.7.0",
+	"version": "0.7.1",
 	"channel": "",
 	"format": 1,
 	"render": true,
