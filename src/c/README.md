@@ -29,6 +29,7 @@ binaries.
   (`stdlib.h`, `string.h`, `math.h`, `assert.h`, `stdio.h`) are stubs that map
   the few libc functions the libraries need to yoshida's own implementations.
 - nanosvg also needs `sscanf`, `strtol`, `strtoll`, `qsort`, `strchr`, `strstr` and `strncpy`; `stb_impl.c` has small versions written for exactly its uses. Its file functions (`nsvgParseFromFile`) compile against the stub `stdio.h` and always fail; yoshida does not use them.
+- nanosvg has no `<text>` and no `<pattern>`. `../core/svgread.zig` rewrites an SVG file before nanosvg parses it (text becomes glyph outlines, patterns are taken out), and `stb_impl.c` has a few `ystb_nsvg_*` functions that let `../core/render.zig` draw single shapes for the pattern fills. They use the `NSVGshape` fields `fill`, `stroke`, `fillGradient`, `strokeGradient` and `next`; check them when updating nanosvg.
 - Format switches live in `stb_impl.c`. Removing a format there (for example
   GIF or BMP) makes the binaries smaller without touching the vendored files.
 

@@ -16,6 +16,7 @@ pub const raster = @import("raster.zig");
 pub const text = @import("text.zig");
 pub const vector = @import("vector.zig");
 pub const svg = @import("svg.zig");
+pub const svgread = @import("svgread.zig");
 pub const render = @import("render.zig");
 pub const api = @import("api.zig");
 pub const exprapi = @import("exprapi.zig");
