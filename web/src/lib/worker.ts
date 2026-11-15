@@ -36,6 +36,7 @@ type Reply = {
 
 type Msg = { id: number } & (
 	| { op: "init"; url: string }
+	| { op: "limits"; limits: object }
 	| { op: "files"; files: [string, Uint8Array][] }
 	| { op: "put"; path: string; data: Uint8Array }
 	| { op: "remove"; path: string }
@@ -45,6 +46,9 @@ type Msg = { id: number } & (
 	| { op: "pdfBegin" }
 	| { op: "pdfPage"; args: object }
 	| { op: "pdfFinish" }
+	| { op: "sheetBegin"; cols: number; rows: number }
+	| { op: "sheetCard"; args: object }
+	| { op: "sheetFinish" }
 	| { op: "svg"; args: object }
 	| { op: "renderAll"; args: object; ids: string[] }
 	| { op: "checkCards"; set: string; date: string; now: string }
@@ -200,6 +204,8 @@ async function handle(
 			wasm = instance.exports as unknown as Exports;
 			return { result: request({ op: "info" }).json };
 		}
+		case "limits":
+			return { result: request({ op: "limits", limits: msg.limits }).json };
 		case "files": {
 			wasm!.vfs_clear();
 			for (const [path, data] of msg.files) put(path, data);
@@ -239,6 +245,17 @@ async function handle(
 			return { result: request({ op: "pdf_page", ...msg.args }).json };
 		case "pdfFinish": {
 			const r = request({ op: "pdf_finish" });
+			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
+		}
+		case "sheetBegin":
+			return {
+				result: request({ op: "sheet_begin", cols: msg.cols, rows: msg.rows })
+					.json,
+			};
+		case "sheetCard":
+			return { result: request({ op: "sheet_card", ...msg.args }).json };
+		case "sheetFinish": {
+			const r = request({ op: "sheet_finish" });
 			return { result: { ...r.json, bin: r.bin }, transfer: [r.bin.buffer] };
 		}
 		case "svg": {

@@ -58,7 +58,7 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [Rendering Model](https://yoshida.xoyz.dev/docs/rendering-model/): How a card becomes pixels, step by step.
 - [Diagnostics](https://yoshida.xoyz.dev/docs/diagnostics/): How problems are reported, and every error code with its fix.
 - [Formatting and Schemas](https://yoshida.xoyz.dev/docs/formatting-and-schemas/): How every tool writes JSON, and the JSON Schemas for editors.
-- [Limits and Versioning](https://yoshida.xoyz.dev/docs/limits-and-versioning/): Size limits, the layer limit and how the format is versioned.
+- [Limits and Versioning](https://yoshida.xoyz.dev/docs/limits-and-versioning/): Size limits, how to raise them and how the format is versioned.
 
 ## Optional
 

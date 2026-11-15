@@ -1123,8 +1123,32 @@ pub const Sheet = struct {
         }
     }
 
+    /// Like `put`, for a card that is already 8-bit RGBA with straight
+    /// alpha (a decoded PNG), `w` x `h` pixels.
+    pub fn putRgba8(s: *Sheet, i: usize, px: []const u8, w: u32, h: u32) void {
+        const cx: usize = (i % s.cols) * s.cell_w;
+        const cy: usize = (i / s.cols) * s.cell_h;
+        const cw: usize = @min(w, s.cell_w);
+        const ch: usize = @min(h, s.cell_h);
+        for (0..ch) |y| {
+            const from = px[(y * w) * 4 ..][0 .. cw * 4];
+            @memcpy(s.px[((cy + y) * s.w + cx) * 4 ..][0 .. cw * 4], from);
+        }
+    }
+
     pub fn encodePng(s: *const Sheet, gpa: Allocator) ![]u8 {
         return encodePngRgba8(gpa, s.w, s.h, s.px, s.dpi);
+    }
+
+    /// The name of sheet `n` (from 1) of a set: `<set>.png` when the set
+    /// fits one sheet, `<set>-<n>.png` when it takes `many`.
+    pub fn fileName(arena: Allocator, set: []const u8, n: usize, many: bool) Allocator.Error![]u8 {
+        return if (many) std.fmt.allocPrint(arena, "{s}-{d}.png", .{ set, n }) else std.fmt.allocPrint(arena, "{s}.png", .{set});
+    }
+
+    /// Columns and rows of a sheet: 1 to 100 each.
+    pub fn validGrid(cols: f64, rows: f64) bool {
+        return cols >= 1 and cols <= 100 and rows >= 1 and rows <= 100 and cols == @floor(cols) and rows == @floor(rows);
     }
 };
 
@@ -1143,6 +1167,9 @@ test "sheet tiles cards along rows" {
     sheet.put(0, &red);
     sheet.put(1, &blue);
     sheet.put(2, &blue);
+    // A decoded card goes in as it is; here over the third cell.
+    sheet.putRgba8(2, &(.{ 0, 0, 255, 255 } ** 12), 4, 3);
+    try std.testing.expect(Sheet.validGrid(10, 7) and !Sheet.validGrid(0, 7) and !Sheet.validGrid(2.5, 7) and !Sheet.validGrid(101, 1));
     const png = try sheet.encodePng(gpa);
     defer gpa.free(png);
     var w: c_int = 0;

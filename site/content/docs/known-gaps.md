@@ -11,7 +11,7 @@ What does not work yet, so you do not have to find out the hard way.
 - **SVG images** are drawn by a small renderer: filters, masks, clip paths, `<use>`, embedded images and text on a path inside an SVG are not supported. Text is drawn with a font the design declares or the default font, never a system font; see [Fonts for SVG text](@/docs/layer-image.md#fonts-for-svg-text).
 - **Shared components** ([`include`](@/docs/layer-group.md#shared-components-include)) can be included once per design (ids must be unique), and the builder does not show live values inside component files.
 - **Per-card layer overrides** are not in the format; cards change params only. (Single items of a default list can be changed, see [Params](@/docs/params.md#changing-single-items-of-the-default).)
-- The **layer limit** is fixed at 500 visible layers per card; it cannot be raised. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
+- The **layer limit** is 500 visible layers per card unless it is raised with `YOSHIDA_MAX_LAYERS` ([Limits](@/docs/limits-and-versioning.md#raising-a-limit)); a project cannot raise it from its own files. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
 - A layer inside **two nested repeats** cannot be referenced from outside both (error 3005); an index picks one level only. See [Repeat](@/docs/repeat.md#reading-one-iteration).
 - **Functions** cannot read layers or loop names (pass them as arguments) and cannot call themselves. See [Constants and functions](@/docs/expressions-constants-and-functions.md).
 - A typo in a word compared with an **enum** value inside an expression (`t.kind == 'saef'`) is not reported; card values of enum params and enum item fields are checked.
@@ -43,7 +43,7 @@ What does not work yet, so you do not have to find out the hard way.
 
 Not planned or implemented yet:
 
-- A configurable layer limit.
+- A layer limit set in the project's files (it is set with an environment variable).
 - Checking words compared with enum values in expressions.
 - Emoji and color font support.
 - Miter and bevel line joins.

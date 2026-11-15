@@ -12,7 +12,10 @@ import {
 	type ExportFormat,
 	type ExportSettings,
 	MAX_SCALE,
+	MAX_SHEET_GRID,
 	MAX_SIDE,
+	cleanGrid,
+	sheetProblem,
 	MIN_SCALE,
 	type PlanSet,
 	SCALE_STEP,
@@ -114,14 +117,27 @@ const unavailable = $derived<Partial<Record<ExportFormat, string>>>(
 const formats = $derived(s.formats.filter((f) => !unavailable[f]));
 const chosen = (f: ExportFormat) => formats.includes(f);
 const plan = $derived(
-	planExport({ scope: s.scope, formats }, project, sets, current, card),
+	planExport(
+		{
+			scope: s.scope,
+			formats,
+			sheetCols: cleanGrid(s.sheetCols, defaultExportSettings.sheetCols),
+			sheetRows: cleanGrid(s.sheetRows, defaultExportSettings.sheetRows),
+		},
+		project,
+		sets,
+		current,
+		card,
+	),
 );
 /** Vector formats use the resolution only for the parts that stay pixels. */
 const vectorChosen = $derived(
 	formats.includes("svg") || (formats.includes("pdf") && s.pdfVector),
 );
 const rasterChosen = $derived(
-	formats.some((f) => f === "png" || f === "jpeg" || f === "webp") ||
+	formats.some(
+		(f) => f === "png" || f === "jpeg" || f === "webp" || f === "sheet",
+	) ||
 		(formats.includes("pdf") && !s.pdfVector),
 );
 const vectorOnly = $derived(vectorChosen && !rasterChosen);
@@ -303,6 +319,18 @@ const where = $derived.by(() => {
 	return `The server renders ${listOf(names(there))}; ${listOf(names(here))} ${verb} in this browser.`;
 });
 
+/** The first design whose sheet is over the core's sheet size, and why. */
+const sheetOver = $derived.by(() => {
+	if (!formats.includes("sheet")) return "";
+	const cols = cleanGrid(s.sheetCols, defaultExportSettings.sheetCols);
+	const rows = cleanGrid(s.sheetRows, defaultExportSettings.sheetRows);
+	for (const o of outputs) {
+		const why = sheetProblem(o.size, cols, rows);
+		if (why) return outputs.length > 1 ? `${o.label}: ${why}` : why;
+	}
+	return "";
+});
+
 /** Why Export is off, said in place of the summary; empty when it is on. */
 const blocked = $derived.by(() => {
 	if (!formats.length)
@@ -320,6 +348,7 @@ const blocked = $derived.by(() => {
 		return "Measuring the designs…";
 	if (over.length)
 		return `Over the limit of ${MAX_SIDE} px on each side: lower the resolution.`;
+	if (sheetOver) return `Sheet too large: ${sheetOver}.`;
 	return "";
 });
 const canExport = $derived(!blocked && plan.files > 0);
@@ -419,6 +448,8 @@ function submit() {
 	onexport({
 		...s,
 		formats,
+		sheetCols: cleanGrid(s.sheetCols, defaultExportSettings.sheetCols),
+		sheetRows: cleanGrid(s.sheetRows, defaultExportSettings.sheetRows),
 		webpLossless: s.webpLossless && lossless,
 		scale: sliderScale,
 		dpi: byDpi ? clampDpi(s.dpi) : s.dpi,
@@ -587,6 +618,22 @@ $effect(() => {
             </span>
           {:else}
             <span class="more muted" id="export-about-pdf">For print: one PDF per design, a page per card</span>
+          {/if}
+        </div>
+
+        <div class="fmt">
+          <label class="opt"><input type="checkbox" checked={s.formats.includes("sheet")} aria-describedby={chosen("sheet") ? undefined : "export-about-sheet"} onchange={(e) => toggle("sheet", e.currentTarget.checked)} /> Sheet</label>
+          {#if chosen("sheet")}
+            <span class="more">
+              <span class="ctl">Columns
+                <input type="number" min="1" max={MAX_SHEET_GRID} aria-label="Sheet columns: cards per row" title="Cards per row, 1 to {MAX_SHEET_GRID}" bind:value={s.sheetCols} onchange={() => (s.sheetCols = cleanGrid(s.sheetCols, defaultExportSettings.sheetCols))} />
+              </span>
+              <span class="ctl">Rows
+                <input type="number" min="1" max={MAX_SHEET_GRID} aria-label="Sheet rows" title="Rows per sheet, 1 to {MAX_SHEET_GRID}; a design with more cards gets several sheets" bind:value={s.sheetRows} onchange={() => (s.sheetRows = cleanGrid(s.sheetRows, defaultExportSettings.sheetRows))} />
+              </span>
+            </span>
+          {:else}
+            <span class="more muted" id="export-about-sheet">For tabletop simulators: the cards of a design tiled into one PNG</span>
           {/if}
         </div>
       </div>

@@ -2,7 +2,11 @@
 // files, their names and the archive around them. No rendering here.
 
 export type ExportScope = "card" | "design" | "all";
-export type ExportFormat = "png" | "jpeg" | "webp" | "svg" | "pdf";
+/**
+ * "sheet": the cards of a design tiled into PNG sheets (a deck image for a
+ * tabletop simulator), like `yoshida render --sheet`.
+ */
+export type ExportFormat = "png" | "jpeg" | "webp" | "svg" | "pdf" | "sheet";
 export type PngCompression = "fast" | "default" | "smallest";
 export type CropMarks = "auto" | "on" | "off";
 
@@ -31,6 +35,9 @@ export type ExportSettings = {
 	cropMarks: CropMarks;
 	/** PDF pages as vector drawing or as one image per page. */
 	pdfVector: boolean;
+	/** Cards per row and rows per sheet. */
+	sheetCols: number;
+	sheetRows: number;
 };
 
 export const EXPORT_FORMATS: ExportFormat[] = [
@@ -39,7 +46,13 @@ export const EXPORT_FORMATS: ExportFormat[] = [
 	"webp",
 	"svg",
 	"pdf",
+	"sheet",
 ];
+
+/** Columns and rows of a sheet: 1 to this (what the core accepts). */
+export const MAX_SHEET_GRID = 100;
+/** The core's limit for each side of a sheet, in pixels. */
+export const SHEET_MAX_SIDE = 20000;
 
 /** The scales an export renders at (what the server and the CLI accept). */
 export const MIN_SCALE = 1;
@@ -50,8 +63,21 @@ export const SCALE_STEP = 0.25;
 /** The highest target dpi kept in the settings (four times the core's highest canvas.dpi). */
 const MAX_DPI = 40000;
 
-/** The core's limit for each side of a rendered bitmap. */
-export const MAX_SIDE = 10000;
+/**
+ * The core's limit for each side of a rendered bitmap. 10000 unless the
+ * server that hosts the editor raised it (YOSHIDA_MAX_CANVAS).
+ */
+export let MAX_SIDE = 10000;
+
+/** What "unlimited" means for a side of the canvas (core/limits.zig). */
+export const MAX_SIDE_CEILING = 65535;
+
+/** Follows the canvas limit of the core: a number of pixels, or null for unlimited. */
+export function setMaxSide(side: number | null | undefined) {
+	if (side === null) MAX_SIDE = MAX_SIDE_CEILING;
+	else if (typeof side === "number" && Number.isFinite(side) && side >= 1)
+		MAX_SIDE = Math.min(Math.floor(side), MAX_SIDE_CEILING);
+}
 
 export const defaultExportSettings: ExportSettings = {
 	scope: "design",
@@ -67,6 +93,9 @@ export const defaultExportSettings: ExportSettings = {
 	webpLossless: false,
 	cropMarks: "auto",
 	pdfVector: true,
+	// Ten by seven: the largest deck image the common tabletop simulators take.
+	sheetCols: 10,
+	sheetRows: 7,
 };
 
 const extensions: Record<ExportFormat, string> = {
@@ -75,6 +104,7 @@ const extensions: Record<ExportFormat, string> = {
 	webp: "webp",
 	svg: "svg",
 	pdf: "pdf",
+	sheet: "png",
 };
 
 export const formatLabels: Record<ExportFormat, string> = {
@@ -83,6 +113,7 @@ export const formatLabels: Record<ExportFormat, string> = {
 	webp: "WebP",
 	svg: "SVG",
 	pdf: "PDF",
+	sheet: "Sheet",
 };
 
 const clampInt = (v: unknown, lo: number, hi: number, fallback: number) =>
@@ -96,6 +127,10 @@ const within = (v: unknown, lo: number, hi: number, fallback: number) =>
 /** A typed quality, 1 to 100: out of range is clamped, anything else gives `fallback`. */
 export const cleanQuality = (v: unknown, fallback: number) =>
 	clampInt(v, 1, 100, fallback);
+
+/** A typed number of columns or rows: 1 to 100, anything else gives `fallback`. */
+export const cleanGrid = (v: unknown, fallback: number) =>
+	clampInt(v, 1, MAX_SHEET_GRID, fallback);
 
 /** Settings read back from storage: anything unknown becomes the default. */
 export function cleanSettings(raw: unknown): ExportSettings {
@@ -132,6 +167,8 @@ export function cleanSettings(raw: unknown): ExportSettings {
 			typeof r.webpLossless === "boolean" ? r.webpLossless : d.webpLossless,
 		cropMarks: pick(r.cropMarks, ["auto", "on", "off"] as const, d.cropMarks),
 		pdfVector: typeof r.pdfVector === "boolean" ? r.pdfVector : d.pdfVector,
+		sheetCols: cleanGrid(r.sheetCols, d.sheetCols),
+		sheetRows: cleanGrid(r.sheetRows, d.sheetRows),
 	};
 }
 
@@ -161,6 +198,9 @@ export type ExportPlan = {
 	/** Card images (PNG, JPEG, WebP, SVG) per card, and PDFs per set. */
 	imageFormats: ExportFormat[];
 	pdf: boolean;
+	/** Sheets are written, and how many files that makes over all sets. */
+	sheet: boolean;
+	sheets: number;
 	cards: number;
 	files: number;
 	/** The one file to download: the file itself, or the ZIP around many. */
@@ -177,12 +217,42 @@ export const imagePath = (set: string, card: string, f: ExportFormat) =>
 /** Path of a set's PDF inside the ZIP. */
 export const pdfPath = (set: string) => `${set}.pdf`;
 
+/** How many sheets of `cols` x `rows` hold `cards` cards. */
+export const sheetCount = (cards: number, cols: number, rows: number) =>
+	cards > 0 ? Math.ceil(cards / Math.max(1, cols * rows)) : 0;
+
+/**
+ * Path of sheet `n` (from 1) of a set inside the ZIP: `<set>.png`, or
+ * `<set>-<n>.png` when the set takes `many` sheets (the names the command
+ * line writes).
+ */
+export const sheetPath = (set: string, n: number, many: boolean) =>
+	many ? `${set}-${n}.png` : `${set}.png`;
+
+/**
+ * Why a sheet of `cols` x `rows` cards of `size` pixels cannot be made
+ * (the core's limits for a sheet), or "" when it can.
+ */
+export function sheetProblem(
+	size: { w: number; h: number } | null,
+	cols: number,
+	rows: number,
+): string {
+	if (!size) return "";
+	const w = size.w * cols;
+	const h = size.h * rows;
+	if (w > SHEET_MAX_SIDE || h > SHEET_MAX_SIDE)
+		return `a ${cols} x ${rows} sheet would be ${w} x ${h} px; the limit is ${SHEET_MAX_SIDE} px on each side`;
+	return "";
+}
+
 /**
  * What an export of `scope` writes. `current` is the set shown, `card` the
  * index of the card shown.
  */
 export function planExport(
-	s: Pick<ExportSettings, "scope" | "formats">,
+	s: Pick<ExportSettings, "scope" | "formats"> &
+		Partial<Pick<ExportSettings, "sheetCols" | "sheetRows">>,
 	project: string,
 	sets: PlanSet[],
 	current: string,
@@ -190,9 +260,12 @@ export function planExport(
 ): ExportPlan {
 	// In the order of EXPORT_FORMATS, whatever order they were chosen in.
 	const imageFormats = EXPORT_FORMATS.filter(
-		(f) => f !== "pdf" && s.formats.includes(f),
+		(f) => f !== "pdf" && f !== "sheet" && s.formats.includes(f),
 	);
 	const pdf = s.formats.includes("pdf");
+	const sheet = s.formats.includes("sheet");
+	const cols = s.sheetCols ?? defaultExportSettings.sheetCols;
+	const rows = s.sheetRows ?? defaultExportSettings.sheetRows;
 	const targets: PlanTarget[] = [];
 	const skipped: string[] = [];
 	const chosen =
@@ -211,7 +284,11 @@ export function planExport(
 		if (cards.length) targets.push({ set: set.name, cards });
 	}
 	const cards = targets.reduce((a, t) => a + t.cards.length, 0);
-	const files = cards * imageFormats.length + (pdf ? targets.length : 0);
+	const sheets = sheet
+		? targets.reduce((a, t) => a + sheetCount(t.cards.length, cols, rows), 0)
+		: 0;
+	const files =
+		cards * imageFormats.length + (pdf ? targets.length : 0) + sheets;
 	let fileName =
 		s.scope === "all" ? `${project}.zip` : `${project}-${current}.zip`;
 	const zip = files !== 1;
@@ -219,10 +296,22 @@ export function planExport(
 		const t = targets[0];
 		const id = sets.find((x) => x.name === t.set)?.cards[t.cards[0]] ?? "";
 		if (imageFormats.length) fileName = `${id}.${extensions[imageFormats[0]]}`;
+		else if (sheet) fileName = `${project}-${t.set}.png`;
 		else if (s.scope === "card") fileName = `${id}.pdf`;
 		else fileName = `${project}-${t.set}.pdf`;
 	}
-	return { targets, skipped, imageFormats, pdf, cards, files, fileName, zip };
+	return {
+		targets,
+		skipped,
+		imageFormats,
+		pdf,
+		sheet,
+		sheets,
+		cards,
+		files,
+		fileName,
+		zip,
+	};
 }
 
 /** One line before the Export button: what will be written. */
@@ -232,6 +321,7 @@ export function planSummary(p: ExportPlan): string {
 	// The files of each format: "40 PNG", "1 PDF".
 	const counts = p.imageFormats.map((f) => `${p.cards} ${formatLabels[f]}`);
 	if (p.pdf) counts.push(`${p.targets.length} PDF`);
+	if (p.sheet) counts.push(`${p.sheets} ${formatLabels.sheet}`);
 	return counts.length === 1
 		? `${counts[0]} files in ${p.fileName}`
 		: `${p.files} files in ${p.fileName}: ${counts.join(", ")}`;

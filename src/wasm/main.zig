@@ -2,6 +2,8 @@
 //! files into an in-memory file system, then sends JSON requests:
 //!
 //!   {"op":"info"}
+//!   {"op":"limits","limits":{"layers":2000,"repeat":null}}: raises the core's
+//!   limits (null: unlimited); the editor sends what its server allows.
 //!   {"op":"check"}
 //!   {"op":"render","set":"name","card":0,"date":"2026-10-07","preview":true,"format":"rgba"|"png"|"png16","layout":true,
 //!    "scale":0.5,"compression":"fast"|"default"|"smallest","only":["id",...] | "except":["id",...]}
@@ -22,6 +24,11 @@
 //!   With "vector": true the pages are drawn as vectors (sharp at any zoom,
 //!   text as outlines) and "scale" works as for svg. The page size does not
 //!   change with the scale.
+//!   {"op":"sheet_begin","cols":10,"rows":7}, then {"op":"sheet_card","set":"name","card":0,"date":"...","scale":1}
+//!   per card until its answer says "full": true (or the cards are done), then
+//!   {"op":"sheet_finish"}: the cards tiled left to right, top to bottom into
+//!   one PNG (result_bin), like `yoshida render --sheet`. Begin again for the
+//!   next sheet of a set with more cards than one sheet holds.
 //!   {"op":"scope","set":"name","path":"/layers/3/fill"}: the names and types an
 //!   expression field can use.
 //!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
@@ -48,6 +55,19 @@ var result_json: std.ArrayList(u8) = .empty;
 var result_bin: []u8 = &.{};
 /// The PDF being built by pdf_begin / pdf_page / pdf_finish.
 var pdf_pages: ?y.pdf.Writer = null;
+
+/// The sheet being filled by sheet_begin / sheet_card / sheet_finish: its
+/// grid, the sheet itself (made when the first card gives the cell size)
+/// and the cards on it.
+var sheet_grid: ?[2]u32 = null;
+var sheet_now: ?y.raster.Sheet = null;
+var sheet_cards: usize = 0;
+
+fn sheetReset() void {
+    if (sheet_now) |*s| s.deinit(gpa);
+    sheet_now = null;
+    sheet_cards = 0;
+}
 
 fn getAssets() *y.render.Assets {
     if (assets == null) assets = y.render.Assets.init(gpa, fs.vfs());
@@ -174,6 +194,31 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
 
     if (std.mem.eql(u8, op, "info")) {
         try w.print("{{\"version\":\"{s}\",\"format\":{d},\"channel\":\"{s}\"}}", .{ y.version, y.format_version, y.channel });
+        return 0;
+    }
+
+    // {"op":"limits","limits":{"layers":2000,"repeat":null,...}}: the limits of
+    // the server that hosts the editor, as its /api/capabilities gives them.
+    // A number sets a limit, null removes it, a missing or other value keeps
+    // it. Answers with the limits now in force.
+    if (std.mem.eql(u8, op, "limits")) {
+        if (req.get("limits")) |given| if (given.data == .object) {
+            for (y.limits.settings) |setting| {
+                const v = given.get(setting.key) orelse continue;
+                switch (v.data) {
+                    .null => y.limits.set(setting, setting.ceiling),
+                    .number => |n| if (n >= 1 and n == @floor(n)) {
+                        const scaled = n * @as(f64, @floatFromInt(setting.factor));
+                        const ceiling: f64 = @floatFromInt(setting.ceiling);
+                        y.limits.set(setting, if (scaled >= ceiling) setting.ceiling else @intFromFloat(scaled));
+                    },
+                    else => {},
+                }
+            }
+        };
+        try w.writeAll("{\"limits\":");
+        try y.limits.writeJson(w, y.limits.current);
+        try w.writeAll("}");
         return 0;
     }
 
@@ -392,6 +437,68 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         const pages = pdf.pages.items.len;
         if (pages > 0) result_bin = try pdf.finish();
         try w.print("{{\"pages\":{d}}}", .{pages});
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "sheet_begin")) {
+        sheetReset();
+        const cols = if (req.get("cols")) |c| (if (c.data == .number) c.data.number else 0) else 0;
+        const rows = if (req.get("rows")) |r| (if (r.data == .number) r.data.number else 0) else 0;
+        if (!y.raster.Sheet.validGrid(cols, rows)) {
+            sheet_grid = null;
+            try w.writeAll("{\"error\":\"a sheet needs cols and rows from 1 to 100\"}");
+            return 1;
+        }
+        sheet_grid = .{ @intFromFloat(cols), @intFromFloat(rows) };
+        try w.writeAll("{\"cards\":0}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "sheet_card")) {
+        const grid = sheet_grid orelse {
+            try w.writeAll("{\"error\":\"no sheet_begin\"}");
+            return 1;
+        };
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        if (sheet_now) |*full| if (sheet_cards >= full.capacity()) {
+            try w.writeAll("{\"error\":\"the sheet is full: sheet_finish first\"}");
+            return 1;
+        };
+        if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .scale = scaleOf(&req) }, &diags)) |bmp_const| {
+            var bmp = bmp_const;
+            defer bmp.deinit(gpa);
+            if (sheet_now == null) {
+                sheet_now = y.raster.Sheet.init(gpa, grid[0], grid[1], bmp.w, bmp.h) catch |e| switch (e) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.TooLarge => {
+                        try w.print("{{\"error\":\"a {d}x{d} sheet of {d} x {d} cards is above the limit of {d} pixels per side\"}}", .{ grid[0], grid[1], bmp.w, bmp.h, y.raster.Sheet.max_side });
+                        return 1;
+                    },
+                };
+                sheet_now.?.dpi = bmp.dpi;
+            }
+            sheet_now.?.put(sheet_cards, &bmp);
+            sheet_cards += 1;
+        };
+        const full = if (sheet_now) |*s| sheet_cards >= s.capacity() else false;
+        try w.print("{{\"cards\":{d},\"full\":{},\"diagnostics\":", .{ sheet_cards, full });
+        try diags.writeJson(w);
+        try w.writeAll("}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "sheet_finish")) {
+        defer sheetReset();
+        if (sheet_now) |*s| {
+            if (sheet_cards > 0) result_bin = try s.encodePng(gpa);
+            try w.print("{{\"cards\":{d},\"width\":{d},\"height\":{d}}}", .{ sheet_cards, s.w, s.h });
+        } else try w.writeAll("{\"cards\":0,\"width\":0,\"height\":0}");
         return 0;
     }
 

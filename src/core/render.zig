@@ -18,6 +18,7 @@ const raster = @import("raster.zig");
 const svgread = @import("svgread.zig");
 const text = @import("text.zig");
 const vector = @import("vector.zig");
+const limits_mod = @import("limits.zig");
 const Allocator = std.mem.Allocator;
 const Value = value.Value;
 const Color = value.Color;
@@ -29,12 +30,13 @@ pub const default_font_data = @embedFile("assets/Lato-Regular.ttf");
 /// Arrows, shapes, stars, check marks, dice: the last fallback for glyphs.
 pub const symbol_font_data = @embedFile("assets/NotoSansSymbols2-Subset.ttf");
 
-pub const limits = struct {
-    pub const canvas_side = 10000;
-    pub const layers = 500;
-    pub const iterations = 1000;
-    pub const image_pixels = 50_000_000;
-};
+/// The limits in force (limits.zig: defaults, and how a front end raises them).
+pub const limits: *const limits_mod.Limits = &limits_mod.current;
+
+/// A limit as a float, for comparing with sizes that are computed as floats.
+fn limitF(v: u64) f64 {
+    return @floatFromInt(v);
+}
 
 /// An expression (or template) evaluated in place of the field at `pos` of
 /// design `file`, the first time the card evaluates that field, with every
@@ -461,7 +463,7 @@ pub const Assets = struct {
         const s: f64 = if (cover) |cv| @max(cv[0] / iw, cv[1] / ih) else 1;
         const pw: u32 = @intFromFloat(std.math.clamp(@ceil(iw * s), 1, 8192));
         const ph: u32 = @intFromFloat(std.math.clamp(@ceil(ih * s), 1, 8192));
-        if (@as(u64, pw) * ph > limits.image_pixels) return .{ .bad = try std.fmt.allocPrint(a.gpa, "SVG drawn at {d} x {d}, above the 50 megapixel limit", .{ pw, ph }) };
+        if (@as(u64, pw) * ph > limits.image_pixels) return .{ .bad = try std.fmt.allocPrint(a.gpa, "SVG drawn at {d} x {d}, above the {d} megapixel limit", .{ pw, ph, limits_mod.megapixels(limits.image_pixels) }) };
         const rast = c.nsvgCreateRasterizer() orelse return error.OutOfMemory;
         defer c.nsvgDeleteRasterizer(rast);
         const rgba8 = try out.alloc(u8, @as(usize, pw) * ph * 4);
@@ -663,7 +665,7 @@ pub const Assets = struct {
         const uw: u32 = @intCast(w);
         const uh: u32 = @intCast(h);
         if (@as(u64, uw) * uh > limits.image_pixels) {
-            return .{ .bad = try std.fmt.allocPrint(a.gpa, "image is {d} x {d}, above the 50 megapixel limit", .{ uw, uh }) };
+            return .{ .bad = try std.fmt.allocPrint(a.gpa, "image is {d} x {d}, above the {d} megapixel limit", .{ uw, uh, limits_mod.megapixels(limits.image_pixels) }) };
         }
         const img = try a.gpa.create(raster.Image);
         errdefer a.gpa.destroy(img);
@@ -683,7 +685,7 @@ pub const Assets = struct {
         var h: usize = 0;
         c.simplewebp_get_dimensions(webp.?, &w, &h);
         if (w == 0 or h == 0 or @as(u64, w) * h > limits.image_pixels) {
-            return .{ .bad = try std.fmt.allocPrint(a.gpa, "image is {d} x {d}, above the 50 megapixel limit", .{ w, h }) };
+            return .{ .bad = try std.fmt.allocPrint(a.gpa, "image is {d} x {d}, above the {d} megapixel limit", .{ w, h, limits_mod.megapixels(limits.image_pixels) }) };
         }
         const rgba8 = try a.gpa.alloc(u8, w * h * 4);
         defer a.gpa.free(rgba8);
@@ -2081,7 +2083,7 @@ const Ctx = struct {
         var list: []const []const Value = &.{};
         if (rep.count) |p| {
             const n = @floor(try ctx.num(&e, l, p));
-            if (n > limits.iterations) {
+            if (n > limitF(limits.iterations)) {
                 try ctx.report(.err, 5001, p.pos, null, try ctx.layerMsg(l, "repeat count {d} is above the limit of {d}", .{ n, limits.iterations }), null);
                 return error.Failed;
             }
@@ -2227,7 +2229,7 @@ const Ctx = struct {
             y1 = @ceil(r.top + r.h + 2);
         }
         if (x1 - x0 < 1 or y1 - y0 < 1) return null;
-        if ((r.rotate == 0 and l.effects.len == 0) or (x1 - x0) * (y1 - y0) * ctx.k * ctx.k > limits.image_pixels) {
+        if ((r.rotate == 0 and l.effects.len == 0) or (x1 - x0) * (y1 - y0) * ctx.k * ctx.k > limitF(limits.image_pixels)) {
             x0 = 0;
             y0 = 0;
             x1 = ctx.canvas_w;
@@ -2337,7 +2339,7 @@ const Ctx = struct {
             var by0 = @floor(y0);
             var bx1 = @ceil(x1);
             var by1 = @ceil(y1);
-            if ((l.effects.len == 0 and !rotated) or (bx1 - bx0) * (by1 - by0) * ctx.k * ctx.k > limits.image_pixels) {
+            if ((l.effects.len == 0 and !rotated) or (bx1 - bx0) * (by1 - by0) * ctx.k * ctx.k > limitF(limits.image_pixels)) {
                 bx0 = @max(bx0, 0);
                 by0 = @max(by0, 0);
                 bx1 = @min(bx1, ctx.canvas_w);
@@ -3198,8 +3200,8 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
         try ctx.report(.err, 3101, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "the canvas is {d} x {d}; both sides must be at least 1", .{ w, h }), null);
         return null;
     }
-    if (w > limits.canvas_side or h > limits.canvas_side) {
-        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "the canvas is {d} x {d}; the limit is 10000 x 10000", .{ w, h }), null);
+    if (w > limitF(limits.canvas_side) or h > limitF(limits.canvas_side)) {
+        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "the canvas is {d} x {d}; the limit is {d} x {d}", .{ w, h, limits.canvas_side, limits.canvas_side }), null);
         return null;
     }
     ctx.canvas_w = w;
@@ -3224,8 +3226,14 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     ctx.k = if (ctx.scene == null and opts.scale > 0 and std.math.isFinite(opts.scale)) opts.scale else 1;
     const pw = @max(1, @round(w * ctx.k));
     const ph = @max(1, @round(h * ctx.k));
-    if (ctx.scene == null and (pw > limits.canvas_side or ph > limits.canvas_side)) {
-        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "at {d}x the image would be {d} x {d} pixels; the limit is 10000 x 10000", .{ ctx.k, pw, ph }), "choose a lower resolution");
+    if (ctx.scene == null and (pw > limitF(limits.canvas_side) or ph > limitF(limits.canvas_side))) {
+        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "at {d}x the image would be {d} x {d} pixels; the limit is {d} x {d}", .{ ctx.k, pw, ph, limits.canvas_side, limits.canvas_side }), "choose a lower resolution");
+        return null;
+    }
+    // With a raised canvas limit: the bitmap's size in bytes has to fit the
+    // address space, which is 4 GB in the browser.
+    if (ctx.scene == null and !opts.dry and pw * ph > limitF(limits_mod.max_bitmap_pixels)) {
+        try ctx.report(.err, 5001, d.canvas_w.?.pos, null, try std.fmt.allocPrint(arena, "an image of {d} x {d} pixels is more than this program can hold in memory", .{ pw, ph }), "choose a lower resolution or a smaller canvas");
         return null;
     }
     var canvas = if (opts.dry or ctx.scene != null) try raster.Bitmap.init(gpa, 0, 0, 1, 1) else try raster.Bitmap.init(gpa, 0, 0, @intFromFloat(pw), @intFromFloat(ph));
@@ -3467,6 +3475,50 @@ test "export scale keeps the print size and scales text" {
         const got: f64 = @floatFromInt(b[i]);
         try std.testing.expect(@abs(got - want) <= 4);
     }
+}
+
+test "the layer and repeat limits follow limits.current" {
+    const gpa = std.testing.allocator;
+    const saved = limits_mod.current;
+    defer limits_mod.current = saved;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 60, "height": 40, "background": "#FFFFFF" },
+        \\  "params": { "n": { "type": "integer", "default": 600 } },
+        \\  "layers": [
+        \\    { "id": "dot", "type": "rect", "repeat": { "count": "n" }, "box": { "x": "i % 60", "y": "floor(i / 60)", "w": 1, "h": 1 }, "fill": "#000000" }
+        \\  ]
+        \\}
+    ;
+    const run = struct {
+        fn code(g: Allocator, d: []const u8) !u16 {
+            var found: u16 = 0;
+            if (try testRenderDesign(g, d, .{}, &found)) |bmp| {
+                var b = bmp;
+                b.deinit(g);
+            }
+            return found;
+        }
+    }.code;
+    // 600 layers: over the default of 500, the unchanged error.
+    try std.testing.expectEqual(@as(u16, 5001), try run(gpa, design));
+    // Raised, and unlimited.
+    limits_mod.current.layers = 1000;
+    try std.testing.expectEqual(@as(u16, 0), try run(gpa, design));
+    limits_mod.current.layers = limits_mod.no_count_limit;
+    try std.testing.expectEqual(@as(u16, 0), try run(gpa, design));
+    // Lowered below the design.
+    limits_mod.current.layers = 599;
+    try std.testing.expectEqual(@as(u16, 5001), try run(gpa, design));
+    // One repeat of 1500: the repeat limit of 1000 stops it until that is raised too.
+    const big = try std.mem.replaceOwned(u8, gpa, design, "\"default\": 600", "\"default\": 1500");
+    defer gpa.free(big);
+    limits_mod.current.layers = limits_mod.no_count_limit;
+    try std.testing.expectEqual(@as(u16, 5001), try run(gpa, big));
+    limits_mod.current.iterations = 2000;
+    try std.testing.expectEqual(@as(u16, 0), try run(gpa, big));
 }
 
 test "export scale over the side limit is an error" {

@@ -43,6 +43,13 @@ const usage =
     \\fmt     rewrites JSON files in the canonical layout; --check only lists
     \\        the files that are not formatted (exit status 1 if any).
     \\
+    \\Limits can be raised with environment variables: YOSHIDA_MAX_LAYERS
+    \\(visible layers per card, default 500), YOSHIDA_MAX_REPEAT (iterations
+    \\of one repeat, 1000), YOSHIDA_MAX_CANVAS (pixels per side, 10000),
+    \\YOSHIDA_MAX_IMAGE_MP (megapixels per image, 50) and
+    \\YOSHIDA_MAX_SET_CARDS (cards per set, 10000). Each takes a whole number
+    \\or the word unlimited.
+    \\
     \\Exit status: 0 no errors, 1 errors were reported, 2 usage error.
     \\
 ;
@@ -97,6 +104,16 @@ pub fn main(init: std.process.Init) !u8 {
         return if (args.command.len == 0 or std.mem.eql(u8, args.command, "help")) 0 else 2;
     }
     if (std.mem.eql(u8, args.command, "fmt")) return formatCommand(io, arena, args, out, err);
+    // The YOSHIDA_MAX_* variables raise the core's limits (core/limits.zig).
+    for (y.limits.settings) |setting| {
+        const text = init.environ_map.get(setting.env) orelse continue;
+        const v = y.limits.parse(setting, text) catch {
+            var buf: [320]u8 = undefined;
+            try err.print("error: {s}\n", .{y.limits.invalidMessage(&buf, setting, text)});
+            return 2;
+        } orelse continue;
+        y.limits.set(setting, v);
+    }
     const is_render = std.mem.eql(u8, args.command, "render");
     if (!is_render and !std.mem.eql(u8, args.command, "check")) {
         try err.print("error: unknown command '{s}'\n\n", .{args.command});

@@ -321,5 +321,49 @@ ok(
 		cleanQuality(72.4, 90) === 72,
 );
 
+// Sheets: the cards of a design tiled into PNG files.
+{
+	const mod = await import("../src/lib/exportPlan.ts");
+	const sets = [
+		{ name: "a", label: "A", ok: true, cards: Array.from({ length: 40 }, (_, i) => `c${i}`) },
+		{ name: "b", label: "B", ok: true, cards: ["x", "y", "z"] },
+	];
+	const plan = (over) =>
+		mod.planExport({ scope: "design", formats: ["sheet"], sheetCols: 10, sheetRows: 7, ...over }, "game", sets, "a", 0);
+	let pl = plan();
+	ok("sheet: one file for a design that fits", pl.sheet && pl.sheets === 1 && pl.files === 1 && !pl.zip && pl.fileName === "game-a.png" && pl.imageFormats.length === 0);
+	pl = plan({ sheetCols: 5, sheetRows: 3 });
+	ok("sheet: 40 cards on 5 x 3 take three sheets in a zip", pl.sheets === 3 && pl.zip && pl.fileName === "game-a.zip" && mod.planSummary(pl) === "3 Sheet files in game-a.zip", mod.planSummary(pl));
+	pl = plan({ scope: "all", formats: ["png", "sheet"] });
+	ok("sheet: with PNG and every design", pl.files === 43 + 2 && mod.planSummary(pl) === "45 files in game.zip: 43 PNG, 2 Sheet", mod.planSummary(pl));
+	pl = mod.planExport({ scope: "design", formats: ["sheet"] }, "game", sets, "a", 0);
+	ok("sheet: 10 x 7 without a grid", pl.sheets === 1);
+	ok("sheet: count and names", mod.sheetCount(0, 10, 7) === 0 && mod.sheetCount(70, 10, 7) === 1 && mod.sheetCount(71, 10, 7) === 2 && mod.sheetPath("a", 1, false) === "a.png" && mod.sheetPath("a", 2, true) === "a-2.png");
+	ok(
+		"sheet: the size limits",
+		mod.sheetProblem({ w: 750, h: 1050 }, 10, 7) === "" &&
+			mod.sheetProblem(null, 100, 100) === "" &&
+			mod.sheetProblem({ w: 2000, h: 2500 }, 10, 8) === "" &&
+			/22500 x 1050 px; the limit is 20000/.test(mod.sheetProblem({ w: 750, h: 1050 }, 30, 1)),
+	);
+	const c = mod.cleanSettings({ sheetCols: 0, sheetRows: 250, formats: ["sheet", "nope"] });
+	ok("sheet: stored grid is kept within 1 to 100", c.sheetCols === 1 && c.sheetRows === 100 && c.formats.join() === "sheet" && mod.cleanSettings({}).sheetCols === 10 && mod.cleanSettings({}).sheetRows === 7 && mod.cleanGrid("x", 4) === 4 && mod.cleanGrid(2.6, 4) === 3);
+}
+
+// The side limit follows the server's canvas limit (YOSHIDA_MAX_CANVAS).
+{
+	const mod = await import("../src/lib/exportPlan.ts");
+	ok("side limit: 10000 by default", mod.MAX_SIDE === 10000 && !mod.scaleFits({ w: 6000, h: 100 }, 2));
+	mod.setMaxSide(undefined);
+	mod.setMaxSide("big");
+	mod.setMaxSide(0);
+	ok("side limit: nonsense keeps it", mod.MAX_SIDE === 10000);
+	mod.setMaxSide(20000);
+	ok("side limit: raised", mod.MAX_SIDE === 20000 && mod.scaleFits({ w: 6000, h: 100 }, 2) && !mod.scaleFits({ w: 6000, h: 100 }, 4));
+	mod.setMaxSide(null);
+	ok("side limit: unlimited is the core's ceiling", mod.MAX_SIDE === 65535);
+	mod.setMaxSide(10000);
+}
+
 console.log(failed ? `${failed} failed` : "all passed");
 process.exit(failed ? 1 : 0);

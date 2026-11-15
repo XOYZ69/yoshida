@@ -1,7 +1,8 @@
 //! yoshida-server: serves the web editor and, when enabled, renders whole
 //! sets on the server ("hybrid" mode for home labs).
 //!
-//!   GET  /api/capabilities   {"version", "channel", "format", "render", "max_cards", "max_body_mb"}
+//!   GET  /api/capabilities   {"version", "channel", "format", "render", "max_cards", "max_body_mb",
+//!                            "limits": {"layers", "repeat", "canvas", "image_mp", "set_cards"}} (null: unlimited)
 //!   POST /api/render         {"files": {path: base64}, "set", "date", "now", "utc_offset", "format": "png"|"png16"|"pdf"|"svg"}
 //!                            -> application/zip with <set>/<card id>.png (.svg for "svg"), application/pdf for
 //!                            "pdf", or 422 with diagnostics
@@ -11,6 +12,8 @@
 //!                            the image pdf, default 1; of the parts that stay pixels for svg and the vector pdf,
 //!                            default 2), "vector" (bool, PDF only: pages drawn as vectors), "crop_marks" (bool,
 //!                            PDF only), "compression" ("fast"|"default"|"smallest", PNG only)
+//!                            "sheet": {"cols", "rows"} (PNG only) tiles the cards into sheets
+//!                            (<set>.png, or <set>-1.png and so on) like `yoshida render --sheet`
 //!                            An `x-yoshida-job: <hex id>` header makes its progress readable:
 //!   GET  /api/render/progress?job=<hex id>
 //!                            {"found", "stage", "done", "total"} (stage: receiving, loading,
@@ -60,6 +63,10 @@ const usage =
     \\YOSHIDA_TELEMETRY_FORCE, YOSHIDA_TELEMETRY_RETENTION_DAYS, YOSHIDA_TELEMETRY_TRUST_PROXY (0/1)
     \\and YOSHIDA_ADMIN_TOKEN the telemetry ones. Prefer the environment for the admin token.
     \\
+    \\YOSHIDA_MAX_LAYERS (default 500), YOSHIDA_MAX_REPEAT (1000), YOSHIDA_MAX_CANVAS (10000),
+    \\YOSHIDA_MAX_IMAGE_MP (50) and YOSHIDA_MAX_SET_CARDS (10000) raise the limits of a design;
+    \\each takes a whole number or the word unlimited. The editor served by this server follows them.
+    \\
 ;
 
 pub fn main(init: std.process.Init) !u8 {
@@ -74,6 +81,17 @@ pub fn main(init: std.process.Init) !u8 {
     if (env.get("YOSHIDA_MAX_CARDS")) |v| cfg.max_cards = std.fmt.parseInt(usize, v, 10) catch cfg.max_cards;
     if (env.get("YOSHIDA_MAX_BODY_MB")) |v| cfg.max_body_mb = std.fmt.parseInt(usize, v, 10) catch cfg.max_body_mb;
     if (env.get("YOSHIDA_THREADS")) |v| cfg.threads = std.fmt.parseInt(usize, v, 10) catch 0;
+
+    // The core's limits (layers per card and so on), see core/limits.zig.
+    for (y.limits.settings) |setting| {
+        const text = env.get(setting.env) orelse continue;
+        const v = y.limits.parse(setting, text) catch {
+            var buf: [320]u8 = undefined;
+            std.debug.print("{s}\n", .{y.limits.invalidMessage(&buf, setting, text)});
+            return 2;
+        } orelse continue;
+        y.limits.set(setting, v);
+    }
 
     var bad_option: ?[]const u8 = null;
     const tc = &cfg.telemetry;
@@ -132,6 +150,16 @@ pub fn main(init: std.process.Init) !u8 {
     std.debug.print("yoshida-server {s} listening on http://{s}:{d} (web: {s}, server render: {s}, {d} threads)\n", .{
         y.version, cfg.host, cfg.port, cfg.web, if (cfg.render) "on" else "off", cfg.threads,
     });
+
+    for (y.limits.settings) |setting| {
+        const now = y.limits.shown(setting, y.limits.current);
+        if (now != null and now.? == y.limits.shown(setting, y.limits.defaults).?) continue;
+        if (now) |n| {
+            std.debug.print("limits: {d} {s} ({s})\n", .{ n, setting.unit, setting.env });
+        } else {
+            std.debug.print("limits: unlimited {s} ({s})\n", .{ setting.unit, setting.env });
+        }
+    }
 
     var store = tel.Store.init(init.gpa, io, cfg.telemetry);
     defer store.deinit();
@@ -525,6 +553,16 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         if (c.data != .bool) return jsonError(req, .bad_request, "\"crop_marks\" must be true or false");
         crop_marks = c.data.bool;
     }
+    // "sheet": {"cols", "rows"}: the cards tiled into PNG sheets instead of one file each.
+    var sheet_grid: ?[2]u32 = null;
+    if (doc.get("sheet")) |sh| {
+        const cols = if (sh.get("cols")) |c| (if (c.data == .number) c.data.number else 0) else 0;
+        const rows = if (sh.get("rows")) |r| (if (r.data == .number) r.data.number else 0) else 0;
+        if (sh.data != .object or !y.raster.Sheet.validGrid(cols, rows)) return jsonError(req, .bad_request, "\"sheet\" must be {\"cols\": 1 to 100, \"rows\": 1 to 100}");
+        if (want_pdf or want_svg or sixteen) return jsonError(req, .bad_request, "\"sheet\" goes with \"format\": \"png\"");
+        if (crop_marks) return jsonError(req, .bad_request, "\"sheet\" cannot have crop marks");
+        sheet_grid = .{ @intFromFloat(cols), @intFromFloat(rows) };
+    }
     var scale: ?f64 = null;
     if (doc.get("scale")) |k| {
         if (k.data != .number or !(k.data.number >= 1 and k.data.number <= 4)) return jsonError(req, .bad_request, "\"scale\" must be a number from 1 to 4");
@@ -634,6 +672,23 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
     }
 
     var entries: std.ArrayList(zip.Entry) = .empty;
+    if (sheet_grid) |grid| {
+        const made = sheetEntries(gpa, arena, set.name, grid, pngs, &entries) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.TooLarge => {
+                std.debug.print("render #{d}: the sheet is too large\n", .{req_n});
+                return jsonError(req, .unprocessable_entity, try std.fmt.allocPrint(arena, "a {d}x{d} sheet of these cards is above the limit of {d} pixels per side", .{ grid[0], grid[1], y.raster.Sheet.max_side }));
+            },
+        };
+        const archive = try zip.store(arena, entries.items);
+        const disposition = try std.fmt.allocPrint(arena, "attachment; filename=\"{s}.zip\"", .{set.name});
+        std.debug.print("render #{d}: done, {d} cards on {d} sheet(s) of {d}x{d} in {d} ms, sending {d:.1} MB of zip\n", .{ req_n, set.cards.len, made, grid[0], grid[1], started.untilNow(io, .awake).toMilliseconds(), mb(archive.len) });
+        ok = true;
+        return req.respond(archive, .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "application/zip" },
+            .{ .name = "content-disposition", .value = disposition },
+        } });
+    }
     for (set.cards, 0..) |card, ci| {
         if (pngs[ci].len == 0) continue;
         try entries.append(arena, .{ .name = try std.fmt.allocPrint(arena, "{s}/{s}.{s}", .{ set.name, card.id, if (want_svg) "svg" else "png" }), .data = pngs[ci] });
@@ -646,6 +701,54 @@ fn renderSet(io: Io, gpa: Allocator, arena: Allocator, cfg: *const Config, req: 
         .{ .name = "content-type", .value = "application/zip" },
         .{ .name = "content-disposition", .value = disposition },
     } });
+}
+
+/// Tiles the cards' PNGs into sheets of `grid` (columns, rows), like
+/// `yoshida render --sheet`: `<set>.png`, or `<set>-1.png`, `<set>-2.png`
+/// when the set takes several. Returns the number of sheets.
+fn sheetEntries(gpa: Allocator, arena: Allocator, set_name: []const u8, grid: [2]u32, pngs: []const []const u8, entries: *std.ArrayList(zip.Entry)) error{ OutOfMemory, TooLarge }!usize {
+    var drawn: usize = 0;
+    for (pngs) |p| {
+        if (p.len > 0) drawn += 1;
+    }
+    const capacity = @as(usize, grid[0]) * grid[1];
+    const many = drawn > capacity;
+    var sheet: ?y.raster.Sheet = null;
+    defer if (sheet) |*s| s.deinit(gpa);
+    var on_sheet: usize = 0;
+    var made: usize = 0;
+    for (pngs) |png| {
+        if (png.len == 0) continue;
+        var w: c_int = 0;
+        var h: c_int = 0;
+        var ch: c_int = 0;
+        const px = y.c.stbi_load_from_memory(png.ptr, @intCast(png.len), &w, &h, &ch, 4) orelse continue;
+        defer y.c.stbi_image_free(px);
+        const uw: u32 = @intCast(w);
+        const uh: u32 = @intCast(h);
+        if (sheet == null) sheet = try y.raster.Sheet.init(gpa, grid[0], grid[1], uw, uh);
+        sheet.?.putRgba8(on_sheet, px[0 .. @as(usize, uw) * uh * 4], uw, uh);
+        on_sheet += 1;
+        if (on_sheet == capacity) {
+            made += 1;
+            try entries.append(arena, .{ .name = try y.raster.Sheet.fileName(arena, set_name, made, many), .data = try sheetPng(gpa, arena, &sheet.?) });
+            sheet.?.deinit(gpa);
+            sheet = null;
+            on_sheet = 0;
+        }
+    }
+    if (sheet) |*s| {
+        made += 1;
+        try entries.append(arena, .{ .name = try y.raster.Sheet.fileName(arena, set_name, made, many), .data = try sheetPng(gpa, arena, s) });
+    }
+    return made;
+}
+
+/// A sheet as PNG bytes that live in `arena`.
+fn sheetPng(gpa: Allocator, arena: Allocator, sheet: *const y.raster.Sheet) Allocator.Error![]const u8 {
+    const bytes = sheet.encodePng(gpa) catch return error.OutOfMemory;
+    defer gpa.free(bytes);
+    return arena.dupe(u8, bytes);
 }
 
 const VectorPdf = struct {
@@ -742,7 +845,9 @@ const stats_page = @embedFile("stats.html");
 fn capabilities(arena: Allocator, cfg: *const Config) ![]u8 {
     var aw: Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
-    try w.print("{{\"version\":\"{s}\",\"channel\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d},\"telemetry\":", .{ y.version, y.channel, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
+    try w.print("{{\"version\":\"{s}\",\"channel\":\"{s}\",\"format\":{d},\"render\":{},\"max_cards\":{d},\"max_body_mb\":{d},\"limits\":", .{ y.version, y.channel, y.format_version, cfg.render, cfg.max_cards, cfg.max_body_mb });
+    try y.limits.writeJson(w, y.limits.current);
+    try w.writeAll(",\"telemetry\":");
     if (cfg.store == null) {
         try w.writeAll("{\"enabled\":false}");
     } else {

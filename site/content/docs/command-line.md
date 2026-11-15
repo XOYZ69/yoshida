@@ -115,6 +115,8 @@ yoshida render my-game --sheet 10x7
 # wrote my-game/out/actions.png (7500 x 7350, 10x7 sheet, 70 card(s))
 ```
 
+The editor makes the same sheets: **Export…**, then **Sheet** ([export dialog](@/docs/builder.md#export-dialog)). So does the server, with `"sheet"` in a [render request](@/docs/server-api.md).
+
 ### Images from the web
 
 Image paths that are `https://` or `http://` URLs are downloaded once per run. Use `--offline` to forbid that (a URL is then an error 4001, or a placeholder with `--preview`). Behind a TLS-intercepting proxy the download can fail; use `--offline` with local files.
@@ -157,6 +159,14 @@ yoshida fmt examples --check    # list files that would change, change nothing
 ```
 
 With `--check` the exit status is 1 if any file is not formatted, which is what [CI](@/docs/ci-and-deployment.md) uses.
+
+## Limits
+
+`check` and `render` read the environment variables `YOSHIDA_MAX_LAYERS`, `YOSHIDA_MAX_REPEAT`, `YOSHIDA_MAX_CANVAS`, `YOSHIDA_MAX_IMAGE_MP` and `YOSHIDA_MAX_SET_CARDS`, which raise (or lower) the [limits](@/docs/limits-and-versioning.md#raising-a-limit) of a design. Each takes a whole number or the word `unlimited`; a value that is neither is a usage error.
+
+```sh
+YOSHIDA_MAX_LAYERS=2000 yoshida render my-game
+```
 
 ## Exit status
 

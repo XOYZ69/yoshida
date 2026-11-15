@@ -69,7 +69,7 @@ async function openDialog() {
  */
 async function choose(scope, formats, scale = 1) {
 	await p.check(`${dialog} input[name=export-scope][value=${scope}]`);
-	for (const f of ["PNG", "JPEG", "WebP", "SVG", "PDF"]) {
+	for (const f of ["PNG", "JPEG", "WebP", "SVG", "PDF", "Sheet"]) {
 		const box = p.locator(`${dialog} label.opt:has-text("${f}") input`);
 		if (await box.isDisabled()) continue;
 		await box.setChecked(formats.includes(f));
@@ -162,9 +162,9 @@ ok(
 f = await download(() => p.click('.exports button:has-text("PDF")'));
 const quickPdf = f.data;
 ok(
-	"quick PDF: one image page per card, no crop marks without a bleed",
+	"quick PDF: one vector page per card, no crop marks without a bleed",
 	pageCount(f.data) === 40 &&
-		hasImages(f.data) &&
+		!hasImages(f.data) &&
 		mediaBoxes(f.data).every(([w, h]) => w === 180 && h === 252),
 	`${f.name} ${JSON.stringify(mediaBoxes(f.data)[0])}`,
 );
@@ -426,11 +426,16 @@ ok(
 	`${JSON.stringify(mediaBoxes(off)[0])} ${JSON.stringify(mediaBoxes(on)[0])}`,
 );
 ok(
-	"the vector PDF is under a fifth of the image PDF",
-	off.length < quickPdf.length / 5,
+	"the quick PDF is the same vector PDF",
+	Math.abs(off.length - quickPdf.length) < off.length / 50,
 	`${off.length} vs ${quickPdf.length} bytes`,
 );
 const img = await pdfWith("On", "Image");
+ok(
+	"the vector PDF is under a fifth of the image PDF",
+	on.length < img.length / 5,
+	`${on.length} vs ${img.length} bytes`,
+);
 ok(
 	"Pages: Image gives image pages of the same size",
 	pageCount(img) === 40 &&
@@ -440,6 +445,63 @@ ok(
 		),
 	JSON.stringify(mediaBoxes(img)[0]),
 );
+
+// Sheet: the cards of a design tiled into one PNG, or several.
+{
+	const grid = async (cols, rows) => {
+		await p.locator(`${dialog} input[aria-label^="Sheet columns"]`).fill(String(cols));
+		await p.locator(`${dialog} input[aria-label="Sheet rows"]`).fill(String(rows));
+	};
+	await openDialog();
+	await choose("design", ["Sheet"]);
+	ok(
+		"Sheet: 10 x 7 by default",
+		(await p.inputValue(`${dialog} input[aria-label^="Sheet columns"]`)) === "10" &&
+			(await p.inputValue(`${dialog} input[aria-label="Sheet rows"]`)) === "7",
+	);
+	await grid(10, 4);
+	let sheetFile = await exportNow();
+	let info = pngInfo(sheetFile.data);
+	ok(
+		"Sheet: 40 cards on 10 x 4 are one PNG of 7500 x 4200",
+		sheetFile.name === "poker-numbers.png" && info.png && info.w === 7500 && info.h === 4200,
+		`${sheetFile.name} ${info.w} x ${info.h}`,
+	);
+	await openDialog();
+	ok(
+		"Sheet: the grid is kept",
+		(await p.inputValue(`${dialog} input[aria-label^="Sheet columns"]`)) === "10" &&
+			(await p.inputValue(`${dialog} input[aria-label="Sheet rows"]`)) === "4",
+	);
+	await grid(6, 4);
+	sheetFile = await exportNow();
+	const sheets = unzipSync(sheetFile.data);
+	info = pngInfo(Buffer.from(sheets["numbers-2.png"] ?? new Uint8Array(32)));
+	ok(
+		"Sheet: 40 cards on 6 x 4 are two sheets, each the full grid",
+		sheetFile.name === "poker-numbers.zip" &&
+			Object.keys(sheets).sort().join() === "numbers-1.png,numbers-2.png" &&
+			info.w === 4500 && info.h === 4200,
+		`${sheetFile.name} ${Object.keys(sheets).join()} ${info.w} x ${info.h}`,
+	);
+	await openDialog();
+	await grid(30, 1);
+	await p.waitForFunction(
+		(sel) => /Sheet too large/.test(document.querySelector(sel)?.textContent ?? ""),
+		dialog,
+		{ timeout: 10000 },
+	).catch(() => {});
+	ok(
+		"Sheet: a sheet over 20000 px a side turns Export off and says why",
+		(await exportOff()) && /Sheet too large: a 30 x 1 sheet would be 22500 x 1050 px/.test(await p.locator(dialog).innerText()),
+	);
+	await grid(0, 7);
+	await p.locator(`${dialog} input[aria-label="Sheet rows"]`).press("Tab");
+	ok("Sheet: a column count of 0 becomes 1", (await p.inputValue(`${dialog} input[aria-label^="Sheet columns"]`)) === "1");
+	await grid(10, 7);
+	await p.keyboard.press("Escape");
+	await p.waitForSelector(dialog, { state: "detached" });
+}
 
 // 16-bit PNG at 2x, with the smallest compression.
 await openDialog();
