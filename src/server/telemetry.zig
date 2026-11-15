@@ -293,12 +293,13 @@ pub const Store = struct {
     /// unusable dir only means counts are not kept across restarts.
     pub fn load(s: *Store, now_secs: i64) void {
         const cwd = Io.Dir.cwd();
-        cwd.createDirPath(s.io, s.cfg.dir) catch |e| {
-            std.debug.print("telemetry: cannot use {s} ({s}); counts are kept in memory only\n", .{ s.cfg.dir, @errorName(e) });
-            return;
-        };
-        var dir = cwd.openDir(s.io, s.cfg.dir, .{ .iterate = true }) catch return;
+        cwd.createDirPath(s.io, s.cfg.dir) catch |e| return s.unusable("create", e);
+        var dir = cwd.openDir(s.io, s.cfg.dir, .{ .iterate = true }) catch |e| return s.unusable("open", e);
         defer dir.close(s.io);
+        // A folder that exists but is read-only for this user would lose every
+        // count without a word, so try a write now.
+        writeAtomic(s.io, dir, write_test_name, "") catch |e| return s.unusable("write to", e);
+        dir.deleteFile(s.io, write_test_name) catch {};
         s.persist = true;
 
         var arena_state = std.heap.ArenaAllocator.init(s.gpa);
@@ -322,6 +323,17 @@ pub const Store = struct {
             }
         }
         s.purgeLocked(&dir, epochDay(now_secs));
+    }
+
+    /// Says why the data dir is not used and what to do about it.
+    fn unusable(s: *Store, what: []const u8, e: anyerror) void {
+        std.debug.print(
+            \\telemetry: cannot {s} the data folder {s} ({s}).
+            \\           Counts are kept in memory only and are lost when the server stops.
+            \\           Make the folder writable for the user the server runs as (in Docker: uid 65534),
+            \\           or choose another one with --telemetry-dir or YOSHIDA_TELEMETRY_DIR.
+            \\
+        , .{ what, s.cfg.dir, @errorName(e) });
     }
 
     fn loadPublic(s: *Store, arena: Allocator, data: []const u8) void {
@@ -433,6 +445,9 @@ fn freeDay(gpa: Allocator, d: *Day) void {
 fn lessString(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
+
+/// Written and removed at start-up to find out whether the data dir can be written.
+const write_test_name = ".write-test";
 
 fn writeAtomic(io: Io, dir: Io.Dir, name: []const u8, data: []const u8) !void {
     var tmp_buf: [48]u8 = undefined;

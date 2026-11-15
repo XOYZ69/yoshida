@@ -15,4 +15,11 @@ services:
     env_file:
       - path: .env
         required: false
+    volumes:
+      # The usage counts. A named volume survives `docker compose down` and a
+      # rebuild; `docker compose down -v` deletes it.
+      - yoshida-data:/data
     restart: unless-stopped
+
+volumes:
+  yoshida-data:

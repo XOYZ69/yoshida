@@ -20,6 +20,8 @@ yoshida-server [--host ADDR] [--port N] [--web DIR] [--no-render]
 | `--max-body-mb` | `YOSHIDA_MAX_BODY_MB` | `200` | Largest request body |
 | `--threads` | `YOSHIDA_THREADS` | all CPUs | Worker threads used to render a set |
 
+The limits of a design (500 layers per card and the others) are raised with `YOSHIDA_MAX_LAYERS`, `YOSHIDA_MAX_REPEAT`, `YOSHIDA_MAX_CANVAS`, `YOSHIDA_MAX_IMAGE_MP` and `YOSHIDA_MAX_SET_CARDS`, environment variables only; the editor served by the server follows them. See [Raising a limit](@/docs/limits-and-versioning.md#raising-a-limit).
+
 Command-line options win over environment variables. The server can also keep optional, anonymous [usage statistics](@/docs/telemetry.md) (on by default at the basic level, see that page for its options: `--no-telemetry`, `--telemetry-dir`, `--telemetry-default`, `--telemetry-force`, `--telemetry-retention-days`, `--admin-token`).
 
 ## Running the release zip
@@ -42,7 +44,7 @@ docker run -p 8080:8080 yoshida                       # editor + server render
 docker run -p 8080:8080 -e YOSHIDA_RENDER=0 yoshida   # editor only (render in the browser)
 ```
 
-The image sets `YOSHIDA_WEB=/web` and `YOSHIDA_PORT=8080` and exposes port 8080. All other options are environment variables (table above).
+The image sets `YOSHIDA_WEB=/web`, `YOSHIDA_PORT=8080` and `YOSHIDA_TELEMETRY_DIR=/data`, and exposes port 8080. All other options are environment variables (table above).
 
 ### Docker Compose
 
@@ -60,13 +62,13 @@ YOSHIDA_MAX_BODY_MB=200
 #YOSHIDA_THREADS=4
 ```
 
-Compose reads `.env` by itself: for `YOSHIDA_CHANNEL`, which it passes to the build, for `YOSHIDA_PUBLISH_PORT`, the port on your machine (default 8080), and for the variables it hands to the container. `.env` is not committed and is left out of the image, so an admin token in it stays on your machine. Without a `.env` the server runs with its defaults. A variable set in the shell (`YOSHIDA_CHANNEL=dev docker compose up --build`) wins over the file for the build and the port; the container only gets what is in the file.
+Compose reads `.env` by itself: for `YOSHIDA_CHANNEL`, which it passes to the build, for `YOSHIDA_PUBLISH_PORT`, the port on your machine (default 8080), and for the variables it hands to the container. `.env` is not committed and is left out of the image, so an admin token in it stays on your machine. Without a `.env` the server runs with its defaults. The usage counts are kept in the volume `yoshida-data`, see [Where the counts are stored](@/docs/telemetry.md#where-the-counts-are-stored). A variable set in the shell (`YOSHIDA_CHANNEL=dev docker compose up --build`) wins over the file for the build and the port; the container only gets what is in the file.
 
 The image also contains the `yoshida` CLI at `/yoshida`, which you can run with `docker run --rm -v "$PWD:/p" --entrypoint /yoshida yoshida render /p/my-cards`.
 
 ## Using server rendering from the editor
 
-When the editor is served by `yoshida-server` with rendering enabled, the toolbar shows a **Render on server** switch next to the export buttons. Switched on, **ZIP** and **PDF** upload the project's files to `POST /api/render` and download the result; otherwise rendering happens in the browser. The [export dialog](@/docs/builder.md#export-dialog) sends PNG, SVG and PDF files of whole designs the same way, one request per design and format, with its resolution, crop marks, PDF pages (vector or image) and PNG settings; JPEG and WebP still render in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
+When the editor is served by `yoshida-server` with rendering enabled, the toolbar shows a **Render on server** switch next to the export buttons. Switched on, **ZIP** and **PDF** upload the project's files to `POST /api/render` and download the result; otherwise rendering happens in the browser. The [export dialog](@/docs/builder.md#export-dialog) sends PNG, SVG and PDF files and sheets of whole designs the same way, one request per design and format, with its resolution, crop marks, PDF pages (vector or image) and PNG settings; JPEG and WebP still render in the browser. See [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) for what is and is not sent.
 
 The progress window shows each step (pack, upload with the bytes sent, render on the server with the cards done, download, save) and an activity log; the same lines go to the browser console as `[yoshida] …`. The cards done come from [`GET /api/render/progress`](@/docs/server-api.md#get-api-render-progress).
 

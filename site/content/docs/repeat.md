@@ -58,7 +58,7 @@ A card with `level` 3 gets three stars, centred as a row.
 
 - The `repeat` expressions themselves see params, [constants](@/docs/expressions-constants-and-functions.md) and the loop names of the [repeated groups](@/docs/layer-group.md#repeat) around the layer, not the layer's own loop names.
 - Loop names follow the same rule as [param names](@/docs/params.md#names), `[a-z_][a-z0-9_]*`, and must not be reserved words (error 1103): `"index": "tile"` and `"index": "row_2"` work, `"index": "Tile"` does not.
-- More than **1000 iterations** is error 5001.
+- More than **1000 iterations** is error 5001 (`YOSHIDA_MAX_REPEAT` raises it).
 - A card may draw at most **500 layers** after expansion. See [the layer limit](#the-layer-limit) below.
 - A repeated layer has no single position, so `@layer.field` is error 3005. Read one iteration with an index, see [reading one iteration](#reading-one-iteration); `@group.bounds.*` of a [group](@/docs/layer-group.md) around the repeated layers covers all iterations.
 - A [group](@/docs/layer-group.md#repeat) can repeat too: everything inside is drawn once per iteration, as one unit, with its own origin (`translate`).
@@ -81,7 +81,7 @@ A card with `level` 3 gets three stars, centred as a row.
 
 ## The layer limit
 
-A card may draw at most 500 layers. The count is taken while the card is drawn:
+A card may draw at most 500 layers, unless the limit is raised with `YOSHIDA_MAX_LAYERS` ([Limits](@/docs/limits-and-versioning.md#raising-a-limit)). The count is taken while the card is drawn:
 
 - Every **visible** iteration of a repeated layer counts as one layer. Iterations whose `visible` is false do not count, so one repeated layer per variant with `"visible": "t.kind == 'safe'"` costs only the iterations that are actually drawn.
 - A visible group counts as one, plus its visible layers. The layers of a hidden group do not count.

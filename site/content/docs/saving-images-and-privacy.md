@@ -52,7 +52,7 @@ Every PNG that yoshida writes (command line, editor, server) contains only the i
 
 JPEG and WebP files from the export dialog are written by the browser's encoders and hold only the image; JPEG files carry the dpi in their JFIF header, WebP files carry none.
 
-Image PDF files (the editor's **PDF** button, the export dialog's PDF with **Pages: Image**, `yoshida render --pdf`, the server's `"format": "pdf"`) hold the cards as images, one page per card, and the page sizes; nothing else from the project. See [Command Line: PDF](@/docs/command-line.md#pdf). Vector PDFs are described [below](#svg-and-vector-pdf).
+Image PDF files (the export dialog's PDF with **Pages as: Image**, `yoshida render --pdf`, the server's `"format": "pdf"`) hold the cards as images, one page per card, and the page sizes; nothing else from the project. See [Command Line: PDF](@/docs/command-line.md#pdf). Vector PDFs are described [below](#svg-and-vector-pdf).
 
 ### Resolution
 
@@ -60,7 +60,7 @@ Exports can be rendered at up to 4x the design size, in between too (the export 
 
 ### SVG and vector PDF
 
-SVG files (the export dialog's **SVG**, `yoshida render --svg`, the server's `"format": "svg"`) and vector PDFs (the export dialog's PDF with **Pages: Vector**, `yoshida render --pdf --vector`, the server's `"vector": true`) hold each card as a drawing that stays sharp at any zoom:
+SVG files (the export dialog's **SVG**, `yoshida render --svg`, the server's `"format": "svg"`) and vector PDFs (the editor's **PDF** button, the export dialog's PDF with **Pages as: Vector**, `yoshida render --pdf --vector`, the server's `"vector": true`) hold each card as a drawing that stays sharp at any zoom:
 
 - Shapes as paths, and text as the outlines of the letters it uses. The font files are not in the file, and neither are the characters, so the text cannot be selected or searched.
 - Every image the card shows, **whole**, even when the layer shows only part of it (`fit: cover`, a crop, the edge of the canvas). An SVG keeps the compressed image data of PNG and JPEG images, a vector PDF that of JPEG images; other images are stored as pixels. Text chunks, EXIF data (camera, date, location), XMP, color profiles and anything appended to an image file are left out.
@@ -90,7 +90,7 @@ That is a 63 x 88 mm poker card with 3 mm bleed: 744 + 2 x 35 by 1039 + 2 x 35 p
 - **Your project content is never sent to a server.** Rendering runs in the browser (WebAssembly), and projects live in the browser's storage.
 - **Usage statistics** are optional anonymous counts that go only to the server that hosts the editor, after a start-up notice. You can switch them off, or see exactly what was sent, in **Privacy** (top bar). A copy of the editor opened from plain files, or served by something other than `yoshida-server`, sends nothing. See [Usage Statistics](@/docs/telemetry.md).
 - **Google Fonts** in the [Fonts window](@/docs/builder-fonts.md) is off until you allow it. Once allowed, the browser contacts `fonts.googleapis.com`, `fonts.gstatic.com` and `raw.githubusercontent.com`. Google receives your IP address and the preview text. Project files are not sent. The choice is remembered in this browser, and you can turn it off in the Fonts window.
-- The only upload is the optional **Render on server** export (ZIP and PDF, and PNG, SVG and PDF files from the export dialog). The switch appears only when the editor is served by `yoshida-server` with rendering enabled, and nothing is sent unless you switch it on. The progress window then logs what is uploaded and where. See [Server and Docker](@/docs/server-and-docker.md).
+- The only upload is the optional **Render on server** export (ZIP and PDF, and PNG, SVG and PDF files and sheets from the export dialog). The switch appears only when the editor is served by `yoshida-server` with rendering enabled, and nothing is sent unless you switch it on. The progress window then logs what is uploaded and where. See [Server and Docker](@/docs/server-and-docker.md).
 - Images given as `https://` URLs are downloaded by your browser directly from the site that hosts them.
 - The hosted editor at <https://yoshida.xoyz.dev/editor/> is a static site on GitHub Pages: it has no backend that could receive your data. See [CI and Deployment](@/docs/ci-and-deployment.md).
 

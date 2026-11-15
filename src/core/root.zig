@@ -18,6 +18,7 @@ pub const vector = @import("vector.zig");
 pub const svg = @import("svg.zig");
 pub const svgread = @import("svgread.zig");
 pub const render = @import("render.zig");
+pub const limits = @import("limits.zig");
 pub const api = @import("api.zig");
 pub const exprapi = @import("exprapi.zig");
 pub const fmt = @import("fmt.zig");

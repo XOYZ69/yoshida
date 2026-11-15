@@ -6,6 +6,7 @@
 const std = @import("std");
 const json = @import("json.zig");
 const diag = @import("diag.zig");
+const limits = @import("limits.zig");
 const value = @import("value.zig");
 const design_mod = @import("design.zig");
 const Allocator = std.mem.Allocator;
@@ -391,8 +392,8 @@ fn loadCardsJson(arena: Allocator, diags: *diag.List, src: diag.Source, d: *cons
         try b.report(.err, 1103, cards.pos, "/cards", "\"cards\" must be an array", null);
         return &.{};
     }
-    if (cards.data.array.len > 10000) {
-        try b.report(.err, 5001, cards.pos, "/cards", "more than 10000 cards in one set", null);
+    if (cards.data.array.len > limits.current.cards) {
+        try b.report(.err, 5001, cards.pos, "/cards", try std.fmt.allocPrint(b.arena, "more than {d} cards in one set", .{limits.current.cards}), null);
         return &.{};
     }
     for (cards.data.array, 0..) |*c, n| {
@@ -491,8 +492,8 @@ fn loadCsv(arena: Allocator, diags: *diag.List, src: diag.Source, d: *const Desi
         try diags.at(.err, 1202, src, 0, "", "the CSV file needs a header row", null);
         return &.{};
     }
-    if (rows.len - 1 > 10000) {
-        try diags.at(.err, 5001, src, 0, "", "more than 10000 cards in one set", null);
+    if (rows.len - 1 > limits.current.cards) {
+        try diags.at(.err, 5001, src, 0, "", try std.fmt.allocPrint(arena, "more than {d} cards in one set", .{limits.current.cards}), null);
         return &.{};
     }
     var b: CardBuilder = .{ .arena = arena, .diags = diags, .src = src, .d = d };

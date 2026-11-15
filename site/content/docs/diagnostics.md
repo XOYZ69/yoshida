@@ -154,7 +154,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
-| 5001 | error | A limit was exceeded: canvas size, layers after repeat (the message names the layers that use most of it), repeat iterations, group nesting, cards per set, image size. See [Limits and Versioning](@/docs/limits-and-versioning.md) |
+| 5001 | error | A limit was exceeded: canvas size, layers after repeat (the message names the layers that use most of it), repeat iterations, group nesting, cards per set, image size. Most can be [raised](@/docs/limits-and-versioning.md#raising-a-limit). See [Limits and Versioning](@/docs/limits-and-versioning.md) |
 
 ## Common fixes
 
@@ -166,7 +166,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | `3002 unknown name` | Typo in a param or `@layer` | Check [Names and references](@/docs/expressions-names-and-references.md) |
 | `3003` in a text | A list or item inside `{...}` | Use a field or an index |
 | `3005` | Referencing a layer that uses `repeat` | Pick an iteration, `@layer[0].bounds.cx`, or reference a group around it |
-| `5001 ... visible layers after repeat` | A card draws more than 500 layers | Hide variants with `visible`, see [the layer limit](@/docs/repeat.md#the-layer-limit) |
+| `5001 ... visible layers after repeat` | A card draws more layers than the limit (500 by default) | Hide variants with `visible`, see [the layer limit](@/docs/repeat.md#the-layer-limit), or raise the limit with [`YOSHIDA_MAX_LAYERS`](@/docs/limits-and-versioning.md#raising-a-limit) |
 | `3006` | `%` in `size`, `radius`, ... | Use `vw` or `vh` |
 | `3104` | `stats.Speed` on a card without that key | Add the item, or check spelling and case; `get(stats, 'Speed', 0)` gives a fallback |
 | `3103` from `avg`, `min` or `max` | An empty list | Guard with `len(list) > 0`, or give a fallback in the expression |

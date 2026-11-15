@@ -88,6 +88,7 @@
 	import { type LayerTag, layerTags, tagLabels } from "./lib/tags";
 	import {
 		type CheckResult,
+		type CoreLimits,
 		type Diagnostic,
 		Engine,
 		type Param,
@@ -185,6 +186,9 @@
 		type PlanSet,
 		planExport,
 		setJpegDpi,
+		setMaxSide,
+		sheetCount,
+		sheetPath,
 	} from "./lib/exportPlan";
 	import {
 		type DragPreview,
@@ -266,6 +270,7 @@
 		max_cards: number;
 		max_body_mb?: number;
 		version?: string;
+		limits?: CoreLimits;
 		telemetry?: ServerTelemetry;
 	};
 	let server = $state<ServerInfo | null>(null);
@@ -656,6 +661,17 @@
 				server = await res.json();
 		} catch {
 			server = null;
+		}
+		// A server that raised its limits (YOSHIDA_MAX_LAYERS and the others):
+		// the editor's own engine follows, so both accept the same designs.
+		if (server?.limits && typeof server.limits === "object") {
+			try {
+				// A plain copy: the state proxy cannot be posted to the worker.
+				const allowed = $state.snapshot(server.limits) as CoreLimits;
+				setMaxSide((await engine.setLimits(allowed)).canvas);
+			} catch {
+				// An engine without the request keeps its defaults.
+			}
 		}
 		// Without a yoshida server there is nothing to send to: no notice, no requests.
 		initTelemetry(server?.telemetry);
@@ -3262,7 +3278,11 @@
 		};
 	}
 
-	/** Every card in one PDF; with `canvas.bleed`, with crop marks. */
+	/**
+	 * Every card in one PDF, the pages drawn as vectors (sharp at any zoom,
+	 * small files); with `canvas.bleed`, with crop marks. The export dialog
+	 * offers pages as images instead.
+	 */
 	async function exportPdf() {
 		if (!currentSet) return;
 		track("export", "pdf");
@@ -3290,10 +3310,17 @@
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
-			const r = await engine.pdf(setName, clock, bleed, n, (done) => {
-				run.count(done, n);
-				run.detail(0, `${done} / ${n}`);
-			});
+			const r = await engine.pdf(
+				setName,
+				clock,
+				bleed,
+				n,
+				(done) => {
+					run.count(done, n);
+					run.detail(0, `${done} / ${n}`);
+				},
+				{},
+			);
 			perCardMs = (Date.now() - t0) / Math.max(1, n);
 			run.log(
 				`Rendered ${r.pages} page(s) in ${formatMs(Date.now() - t0)} (${(perCardMs / 1000).toFixed(2)} s per page)`,
@@ -3544,7 +3571,13 @@
 			);
 			// Let the overlay draw before the (blocking) encoding.
 			await new Promise((r) => setTimeout(r, 30));
-			const body = serverBody(run, { set: name, ...clock, format });
+			// The quick PDF has vector pages, like the one made in this browser.
+			const body = serverBody(run, {
+				set: name,
+				...clock,
+				format,
+				...(format === "pdf" ? { vector: true } : {}),
+			});
 			if (!body) return;
 			const t0 = Date.now();
 			const res = await postRender(run, body, n, [1, 2, 3], ctl);
@@ -3716,13 +3749,16 @@
 		// JPEG and WebP are encoded by the browser, so they render here.
 		const viaServer = onServer && st.scope !== "card";
 		const remote: ExportFormat[] = viaServer
-			? (["png", "svg", "pdf"] as const).filter((f) => st.formats.includes(f))
+			? (["png", "svg", "pdf", "sheet"] as const).filter((f) =>
+					st.formats.includes(f),
+				)
 			: [];
 		const localPng =
 			plan.imageFormats.includes("png") && !remote.includes("png");
 		const localSvg =
 			plan.imageFormats.includes("svg") && !remote.includes("svg");
 		const localPdf = plan.pdf && !remote.includes("pdf");
+		const localSheet = plan.sheet && !remote.includes("sheet");
 		const encodings = [
 			...(plan.imageFormats.includes("jpeg")
 				? [
@@ -3747,7 +3783,8 @@
 			(localPng ? 1 : 0) +
 			(encodings.length ? 1 : 0) +
 			(localSvg ? 1 : 0) +
-			(localPdf ? 1 : 0);
+			(localPdf ? 1 : 0) +
+			(localSheet ? 1 : 0);
 		const units = plan.cards * passes;
 		const steps: [string, number][] = [
 			...(remote.length
@@ -3805,9 +3842,17 @@
 						const req = {
 							set: t.set,
 							...clock,
-							format: f === "png" && st.pngDepth === 16 ? "png16" : f,
+							format:
+								f === "sheet"
+									? "png"
+									: f === "png" && st.pngDepth === 16
+										? "png16"
+										: f,
 							scale: scaleOf(t.set),
 							...(f === "png" ? { compression: st.pngCompression } : {}),
+							...(f === "sheet"
+								? { sheet: { cols: st.sheetCols, rows: st.sheetRows } }
+								: {}),
 							...(f === "pdf"
 								? {
 										crop_marks: cropMarksFor(info, st.cropMarks),
@@ -3835,6 +3880,10 @@
 						}
 						const bytes = new Uint8Array(await res.blob.arrayBuffer());
 						if (f === "pdf") out[pdfPath(t.set)] = bytes;
+						else if (f === "sheet")
+							// <set>.png, or <set>-1.png and so on: the names of the ZIP.
+							for (const [name, data] of Object.entries(unzipSync(bytes)))
+								out[name.slice(name.lastIndexOf("/") + 1)] = data;
 						else
 							for (const [name, data] of Object.entries(unzipSync(bytes))) {
 								// Entries are <set>/<card id>.<ext> or <card id>.<ext>.
@@ -3937,6 +3986,42 @@
 						}
 						const r = await engine.pdfFinish();
 						if (r.bin.length) out[pdfPath(t.set)] = r.bin;
+					}
+					if (localSheet) {
+						const many =
+							sheetCount(t.cards.length, st.sheetCols, st.sheetRows) > 1;
+						let n = 0;
+						let open = false;
+						const close = async () => {
+							const r = await engine.sheetFinish();
+							open = false;
+							if (!r.bin.length) return;
+							n++;
+							out[sheetPath(t.set, n, many)] = r.bin;
+							run.log(
+								`Sheet ${n} of '${info.design_name}': ${r.cards} card(s), ${r.width} × ${r.height} px`,
+							);
+						};
+						for (const i of t.cards) {
+							if (!open) {
+								await engine.sheetBegin(st.sheetCols, st.sheetRows);
+								open = true;
+							}
+							const r = await engine.sheetCard({
+								set: t.set,
+								card: i,
+								...clock,
+								scale,
+							});
+							if (stop) {
+								await engine.sheetFinish();
+								return cancelled();
+							}
+							diagnostics.push(...r.diagnostics);
+							tick();
+							if (r.full) await close();
+						}
+						if (open) await close();
 					}
 				}
 				if (area === 1 && localPng && passes === 1)
@@ -4373,7 +4458,7 @@
 						onclick={exportPdf}
 						disabled={!!busy || !currentSet?.ok}
 						title="Export all {currentSet?.cards.length ??
-							0} cards of this design in one PDF, one page per card (with crop marks when the design has a bleed){onServer
+							0} cards of this design in one PDF, one vector page per card, sharp at any zoom (with crop marks when the design has a bleed){onServer
 							? ', rendered on the server'
 							: ''}">PDF</button
 					>

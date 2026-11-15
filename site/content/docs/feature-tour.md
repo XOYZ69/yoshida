@@ -124,7 +124,7 @@ yoshida render my-game --out out --svg
 yoshida render my-game --out out --sheet 10x7
 ```
 
-`canvas.dpi` and `canvas.bleed` in the design make the files print ready. The editor exports PNG, ZIP and PDF with the same options. Details: [Command Line](@/docs/command-line.md#yoshida-render), [Builder](@/docs/builder.md).
+`canvas.dpi` and `canvas.bleed` in the design make the files print ready. The editor exports PNG, ZIP and PDF with the same options, and deck sheets from its export dialog. Details: [Command Line](@/docs/command-line.md#yoshida-render), [Builder](@/docs/builder.md).
 
 ## Errors that help
 

@@ -168,6 +168,15 @@ export type ScopeResult = {
 	layer_refs: { id: string; kind: string; ref: "ok" | "index" | "none" }[];
 };
 
+/** The core's size limits; null is unlimited. Images are in megapixels. */
+export type CoreLimits = {
+	layers?: number | null;
+	repeat?: number | null;
+	canvas?: number | null;
+	image_mp?: number | null;
+	set_cards?: number | null;
+};
+
 export class Engine {
 	private worker: Worker;
 	private nextId = 1;
@@ -224,6 +233,16 @@ export class Engine {
 		});
 		this.version = info.version;
 		this.channel = info.channel ?? "";
+	}
+
+	/**
+	 * Raises the core's limits to what the server that hosts the editor allows
+	 * (the "limits" of its /api/capabilities; null means unlimited). Returns
+	 * the limits now in force.
+	 */
+	async setLimits(limits: CoreLimits): Promise<CoreLimits> {
+		const r = await this.call<{ limits: CoreLimits }>({ op: "limits", limits });
+		return r.limits;
 	}
 
 	setFiles(files: Map<string, Uint8Array>) {
@@ -387,6 +406,40 @@ export class Engine {
 
 	pdfFinish() {
 		return this.call<{ pages: number; bin: Uint8Array }>({ op: "pdfFinish" });
+	}
+
+	/**
+	 * A sheet: the cards tiled left to right, top to bottom into one PNG
+	 * (sheetBegin, sheetCard per card until `full`, sheetFinish). A set with
+	 * more cards than one sheet holds begins again for the next sheet.
+	 */
+	sheetBegin(cols: number, rows: number) {
+		return this.call<{ cards: number }>({ op: "sheetBegin", cols, rows });
+	}
+
+	sheetCard(args: {
+		set: string;
+		card: number;
+		date: string;
+		now: string;
+		/** Pixels per canvas pixel (default 1). */
+		scale?: number;
+	}) {
+		return this.call<{
+			cards: number;
+			/** Every cell is taken: finish this sheet. */
+			full: boolean;
+			diagnostics: Diagnostic[];
+		}>({ op: "sheetCard", args });
+	}
+
+	sheetFinish() {
+		return this.call<{
+			cards: number;
+			width: number;
+			height: number;
+			bin: Uint8Array;
+		}>({ op: "sheetFinish" });
 	}
 
 	/** One card as a vector SVG file. */

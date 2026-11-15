@@ -7,7 +7,7 @@ description = "The HTTP API of yoshida-server."
 
 | Method and path         | Request                                                                    | Response                                                                               |
 | ----------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET /api/capabilities` |                                                                            | `{ "version", "channel", "format", "render", "max_cards", "max_body_mb" }`             |
+| `GET /api/capabilities` |                                                                            | `{ "version", "channel", "format", "render", "max_cards", "max_body_mb", "limits": { "layers", "repeat", "canvas", "image_mp", "set_cards" } }`; a limit is a number or `null` for unlimited, see [Limits](@/docs/limits-and-versioning.md#raising-a-limit) |
 | `POST /api/render`      | `{ "files": { path: base64 }, "set", "date", "now", "utc_offset", "format": "png" \| "png16" \| "pdf" \| "svg", "vector", "scale", "crop_marks", "compression" }` | `application/zip` with `<set>/<card id>.png` (`.svg` for `svg`), or `application/pdf` for `pdf`, or 422 with `{ "error", "diagnostics" }` |
 | `GET /api/render/progress?job=<id>` |                                                               | `{ "found", "stage", "done", "total" }` for a render sent with `x-yoshida-job: <id>` |
 | `POST /api/telemetry/ping` | `{ "level": "basic" \| "advanced" }` | `204`. See [Usage Statistics](@/docs/telemetry.md) |
@@ -25,7 +25,7 @@ The editor shows the **Render on server** switch only when `capabilities.render`
 
 ```json
 {
-	"version": "0.7.1",
+	"version": "0.7.2",
 	"channel": "",
 	"format": 1,
 	"render": true,
@@ -57,18 +57,19 @@ Request body (JSON):
 | `vector` | Optional. `true` with `"format": "pdf"` draws the pages as vectors instead of images (see [Command Line: PDF](@/docs/command-line.md#pdf)). Default `false`. Not a boolean, or `true` with another format, is **400** |
 | `scale`  | Optional, a number from 1 to 4. For `png`, `png16` and the image `pdf`: render at this many times the canvas size (default 1); the PNG dpi grows with it and PDF pages keep their size, and a side over 10000 pixels is a 422 with error 5001. For `svg` and the vector `pdf`: pixels per canvas pixel for the parts that stay pixels (layers with a convolution filter), default 2. Anything else is **400** |
 | `crop_marks` | Optional, `pdf` only (image or vector). `true` puts each page on a white sheet with crop marks at the trim line, like `--crop-marks`; default `false`. Not a boolean is **400** |
+| `sheet` | Optional, `png` only. `{ "cols": 10, "rows": 7 }` (1 to 100 each) tiles the cards into sheets like [`--sheet`](@/docs/command-line.md#sheets): the ZIP then holds `<set>.png`, or `<set>-1.png`, `<set>-2.png` and so on when the set takes several, in place of one file per card. Another shape, another format or `crop_marks` with it is **400**; a sheet over 20000 pixels on a side is **422** |
 | `compression` | Optional, PNG only. `fast`, `default` (default) or `smallest`: the deflate effort. The pixels are the same. Anything else is **400** |
 
 Response:
 
-- **200** `application/zip` (stored, not compressed) with one `<set>/<card id>.png` per card (`<set>/<card id>.svg` with `"format": "svg"`) and `Content-Disposition: attachment; filename="<set>.zip"`. With `"format": "pdf"`: `application/pdf`, `filename="<set>.pdf"`, one page per card (see [Command Line: PDF](@/docs/command-line.md#pdf)).
+- **200** `application/zip` (stored, not compressed) with one `<set>/<card id>.png` per card (`<set>/<card id>.svg` with `"format": "svg"`; the sheets with `"sheet"`) and `Content-Disposition: attachment; filename="<set>.zip"`. With `"format": "pdf"`: `application/pdf`, `filename="<set>.pdf"`, one page per card (see [Command Line: PDF](@/docs/command-line.md#pdf)).
 - **422** `application/json` `{ "error": "the project has errors", "diagnostics": [...] }` when loading or rendering reported errors. No zip is produced. Diagnostics are described in [Diagnostics](@/docs/diagnostics.md#json-shape).
 
 Other statuses (all with `{ "error": "..." }`):
 
 | Status | When                                                                                                      |
 | ------ | --------------------------------------------------------------------------------------------------------- |
-| 400    | Body is not JSON, `files` is missing or not an object, a file is not base64, a path leaves the project, or `now`, `utc_offset`, `vector`, `scale`, `crop_marks` or `compression` is invalid |
+| 400    | Body is not JSON, `files` is missing or not an object, a file is not base64, a path leaves the project, or `now`, `utc_offset`, `vector`, `scale`, `crop_marks`, `sheet` or `compression` is invalid |
 | 403    | Rendering is disabled (`--no-render`)                                                                     |
 | 404    | Unknown set, unknown `/api/...` path                                                                      |
 | 405    | `POST /api/render` with another method; non-GET/HEAD for static files                                     |

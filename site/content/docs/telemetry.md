@@ -41,7 +41,7 @@ The server counts unique visitors per day by hashing `daily random salt + client
 | Option | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
 | `--no-telemetry` | `YOSHIDA_TELEMETRY=0` | on | No endpoints, no storage, no notice in the editor |
-| `--telemetry-dir` | `YOSHIDA_TELEMETRY_DIR` | `telemetry-data` | Folder for the daily files and `public.json`. If it cannot be created or written, counts are kept in memory only (a warning is printed) |
+| `--telemetry-dir` | `YOSHIDA_TELEMETRY_DIR` | `telemetry-data`, `/data` in the Docker image | Folder for the daily files and `public.json`, see [Where the counts are stored](#where-the-counts-are-stored) |
 | `--telemetry-default` | `YOSHIDA_TELEMETRY_DEFAULT` | `basic` | `off`, `basic` or `advanced`: the level the notice preselects, and the level for people who never confirmed one |
 | `--telemetry-force` | `YOSHIDA_TELEMETRY_FORCE` | none | `off` or `basic`: locks the level for everybody |
 | `--telemetry-retention-days` | `YOSHIDA_TELEMETRY_RETENTION_DAYS` | `90` | Days of counts to keep. `infinite` (or `0`) keeps everything |
@@ -52,7 +52,48 @@ The server counts unique visitors per day by hashing `daily random salt + client
 
 **Retention.** Old days are deleted when the server starts and once per UTC day. Everything is a total per day, so there is nothing finer to delete.
 
-**Data layout.** One small JSON file per day (`2026-11-09.json`) with the counters, plus `public.json` with the public flags. Files are written every 15 seconds when something changed, so a crash loses seconds, not days. In Docker, mount a folder that the container's user (`65534`) can write and point `YOSHIDA_TELEMETRY_DIR` at it; otherwise the counts are lost with the container. With Docker Compose the variables go in `.env`, see [Docker Compose](@/docs/server-and-docker.md#docker-compose).
+## Where the counts are stored
+
+The counts are small JSON files in one folder: one file per day (`2026-11-09.json`) and `public.json` with the public flags. Files are written every 15 seconds when something changed, so a crash loses seconds, not days. To back the counts up, copy the folder; to start over, stop the server and delete its files.
+
+**One rule:** the user the server runs as must be able to write in the folder. The server tries a write when it starts and says in its first lines where the data goes:
+
+```
+telemetry: default basic, keeping 90 days, data in /data
+```
+
+`data in memory only` means the folder cannot be used. The line before it names the folder and the reason, and the counts are then lost when the server stops.
+
+| Message | Meaning | Fix |
+| --- | --- | --- |
+| `cannot create the data folder ... (AccessDenied)` | The folder does not exist and the server may not create it there | Create it yourself and make it writable for the server's user, or choose another folder |
+| `cannot write to the data folder ... (AccessDenied)` | The folder exists but belongs to somebody else | Change its owner (Docker: `sudo chown 65534:65534 folder`) |
+| `cannot write to the data folder ... (ReadOnlyFileSystem)` | The folder is mounted read-only | Mount it writable |
+
+**The binary.** The folder is `telemetry-data` in the directory the server is started from; it is created on first start. Choose another one with `--telemetry-dir`:
+
+```sh
+./yoshida-server --web web --telemetry-dir /var/lib/yoshida
+```
+
+**Docker Compose.** Nothing to set up: the image stores the counts in `/data`, and `compose.yaml` keeps that folder in the volume `yoshida-data`. The counts survive `docker compose down`, a restart and a rebuild; `docker compose down -v` deletes them. Leave `YOSHIDA_TELEMETRY_DIR` out of `.env`.
+
+```sh
+docker compose up --build -d
+docker compose logs yoshida | grep telemetry     # ... data in /data
+docker compose cp yoshida:/data ./yoshida-backup # a copy of the counts
+```
+
+**Docker without Compose.** Name a volume, or mount a folder of your own. A named volume gets the right owner by itself; a folder from the host keeps its owner, so hand it to the container's user (uid `65534`) first:
+
+```sh
+docker run -p 8080:8080 -v yoshida-data:/data yoshida
+
+mkdir yoshida-data && sudo chown 65534:65534 yoshida-data
+docker run -p 8080:8080 -v "$PWD/yoshida-data:/data" yoshida
+```
+
+Without either, the counts live in a volume that Docker creates for that one container and are gone when the container is removed.
 
 ## Admin page
 

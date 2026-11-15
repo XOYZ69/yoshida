@@ -1,6 +1,6 @@
 # yoshida reference
 
-> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.7.1 by scripts/llms.mjs; do not edit by hand.
+> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.7.2 by scripts/llms.mjs; do not edit by hand.
 
 Website and full docs: https://yoshida.xoyz.dev/docs/ · Source: https://github.com/XOYZ69/yoshida · Short index: https://yoshida.xoyz.dev/llms.txt
 
@@ -66,6 +66,13 @@ clock   --now is the UTC instant the cards are rendered at (render.now,
         --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
 fmt     rewrites JSON files in the canonical layout; --check only lists
         the files that are not formatted (exit status 1 if any).
+
+Limits can be raised with environment variables: YOSHIDA_MAX_LAYERS
+(visible layers per card, default 500), YOSHIDA_MAX_REPEAT (iterations
+of one repeat, 1000), YOSHIDA_MAX_CANVAS (pixels per side, 10000),
+YOSHIDA_MAX_IMAGE_MP (megapixels per image, 50) and
+YOSHIDA_MAX_SET_CARDS (cards per set, 10000). Each takes a whole number
+or the word unlimited.
 
 Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 ```
@@ -521,7 +528,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 4003 warning: Neither the font nor the bundled fallback fonts have glyphs for some characters (drawn as boxes)
 - 4004 error: Font name not declared in `fonts`
 - 4005 warning: Font file missing or not a TrueType/OpenType font; the default font is used
-- 5001 error: A limit was exceeded: canvas size, layers after repeat (the message names the layers that use most of it), repeat iterations, group nesting, cards per set, image size. See Limits and Versioning
+- 5001 error: A limit was exceeded: canvas size, layers after repeat (the message names the layers that use most of it), repeat iterations, group nesting, cards per set, image size. Most can be raised. See Limits and Versioning
 
 ## A complete small project
 
