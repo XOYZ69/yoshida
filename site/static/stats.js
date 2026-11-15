@@ -6,7 +6,7 @@
   var root = document.getElementById("stats");
   if (!root) return;
   var SVG = "http://www.w3.org/2000/svg";
-  var num = function (v) { return typeof v === "number" && isFinite(v) ? v.toLocaleString("en") : "–"; };
+  var num = function (v) { return typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en") : "–"; };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -21,7 +21,7 @@
   }
   function day(date) {
     var d = new Date(date + "T00:00:00Z");
-    return isNaN(d) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    return Number.isNaN(d.getTime()) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   }
   function sum(points) { return points.reduce(function (s, p) { return s + p.value; }, 0); }
   function series(list, key) {
@@ -149,8 +149,9 @@
     }
     bars(s, list.slice(0, SHOWN));
     var older = list.slice(SHOWN);
+    var details;
     if (older.length) {
-      var details = s.appendChild(el("details", "stats-more"));
+      details = s.appendChild(el("details", "stats-more"));
       details.appendChild(el("summary", null, older.length === 1 ? "Show 1 older release" : "Show " + older.length + " older releases"));
       bars(details, older);
     }
@@ -198,11 +199,11 @@
     var totals = {}, events = {};
     days.forEach(function (d) {
       ["sessions", "uniques", "advanced_sessions"].forEach(function (k) {
-        if (typeof d[k] === "number" && isFinite(d[k])) totals[k] = (totals[k] || 0) + d[k];
+        if (typeof d[k] === "number" && Number.isFinite(d[k])) totals[k] = (totals[k] || 0) + d[k];
       });
       var ev = d.events && typeof d.events === "object" ? d.events : {};
       Object.keys(ev).forEach(function (k) {
-        if (typeof ev[k] === "number" && isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
+        if (typeof ev[k] === "number" && Number.isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
       });
     });
     var items = [];
@@ -221,8 +222,9 @@
       s.appendChild(el("h3", null, group[1]));
       countBars(s, rows.slice(0, EVENTS_SHOWN), rows[0][1] || 1);
       var more = rows.slice(EVENTS_SHOWN);
+      var details;
       if (more.length) {
-        var details = s.appendChild(el("details", "stats-more"));
+        details = s.appendChild(el("details", "stats-more"));
         details.appendChild(el("summary", null, "Show " + more.length + " more"));
         countBars(details, more, rows[0][1] || 1);
       }
@@ -243,13 +245,13 @@
     s.appendChild(el("h2", null, "Editor at " + host));
     s.appendChild(el("p", "meta", lead + "."));
     var shown = false;
+    var rows = [];
     if (days.length) shown = instanceDays(s, days);
     else {
       // Another shape: every number in the answer, named by its place in it.
-      var rows = [];
       (function walk(value, path, depth) {
         if (rows.length >= 24) return;
-        if (typeof value === "number" && isFinite(value)) rows.push([path.join(" · ").replace(/[_-]+/g, " "), value]);
+        if (typeof value === "number" && Number.isFinite(value)) rows.push([path.join(" · ").replace(/[_-]+/g, " "), value]);
         else if (value && typeof value === "object" && !Array.isArray(value) && depth < 3) {
           Object.keys(value).forEach(function (k) { walk(value[k], path.concat(k), depth + 1); });
         }

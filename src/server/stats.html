@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Usage statistics · yoshida</title>
-<script>try{var t=localStorage.getItem("yoshida.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>var t=null;try{t=localStorage.getItem("yoshida.theme")}catch(e){}if(t==="light"||t==="dark")document.documentElement.dataset.theme=t</script>
 <style>
 	/* The Paper palette of the editor and the website, as light-dark() pairs. */
 	:root {
@@ -87,7 +87,7 @@ const BASE = [
 ];
 const GROUPS = [["feature", "Features used"], ["export", "Exports by format"], ["error", "Problems shown, by code"]];
 const SHOWN = 8;
-const num = (v) => (typeof v === "number" && isFinite(v) ? v.toLocaleString("en") : "–");
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en") : "–");
 
 function el(tag, cls, text) {
 	const e = document.createElement(tag);
@@ -102,7 +102,7 @@ function svg(tag, attrs) {
 }
 function day(date) {
 	const d = new Date(date + "T00:00:00Z");
-	return isNaN(d) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+	return Number.isNaN(d.getTime()) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 // A small line over the days. Pointing at it shows that day in the tile's note line.
@@ -159,7 +159,7 @@ function render(data) {
 
 	const tiles = el("div", "tiles");
 	for (const [key, label, note] of BASE) {
-		const points = days.filter((d) => typeof d[key] === "number" && isFinite(d[key])).map((d) => ({ date: d.day, value: d[key] }));
+		const points = days.filter((d) => typeof d[key] === "number" && Number.isFinite(d[key])).map((d) => ({ date: d.day, value: d[key] }));
 		if (!points.length) continue;
 		const tile = tiles.appendChild(el("div", "tile"));
 		tile.appendChild(el("div", "tile-label", label));
@@ -174,7 +174,7 @@ function render(data) {
 	const events = {};
 	for (const d of days) {
 		const ev = d.events && typeof d.events === "object" ? d.events : {};
-		for (const k of Object.keys(ev)) if (typeof ev[k] === "number" && isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
+		for (const k of Object.keys(ev)) if (typeof ev[k] === "number" && Number.isFinite(ev[k])) events[k] = (events[k] || 0) + ev[k];
 	}
 	for (const [group, title] of GROUPS) {
 		const rows = Object.keys(events)

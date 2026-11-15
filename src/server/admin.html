@@ -105,7 +105,7 @@ function el(tag, text, cls) {
 }
 
 async function api(path, init) {
-	const r = await fetch(path, { ...init, headers: { ...(init && init.headers), authorization: "Bearer " + token } });
+	const r = await fetch(path, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token } });
 	if (r.status === 401) throw new Error("Wrong token");
 	if (!r.ok && r.status !== 204) throw new Error("Request failed (" + r.status + ")");
 	return r.status === 204 ? null : r.json();
