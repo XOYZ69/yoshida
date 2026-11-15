@@ -42,7 +42,7 @@ docker run -p 8080:8080 yoshida                       # editor + server render
 docker run -p 8080:8080 -e YOSHIDA_RENDER=0 yoshida   # editor only (render in the browser)
 ```
 
-The image sets `YOSHIDA_WEB=/web` and `YOSHIDA_PORT=8080` and exposes port 8080. All other options are environment variables (table above).
+The image sets `YOSHIDA_WEB=/web`, `YOSHIDA_PORT=8080` and `YOSHIDA_TELEMETRY_DIR=/data`, and exposes port 8080. All other options are environment variables (table above).
 
 ### Docker Compose
 
@@ -60,7 +60,7 @@ YOSHIDA_MAX_BODY_MB=200
 #YOSHIDA_THREADS=4
 ```
 
-Compose reads `.env` by itself: for `YOSHIDA_CHANNEL`, which it passes to the build, for `YOSHIDA_PUBLISH_PORT`, the port on your machine (default 8080), and for the variables it hands to the container. `.env` is not committed and is left out of the image, so an admin token in it stays on your machine. Without a `.env` the server runs with its defaults. A variable set in the shell (`YOSHIDA_CHANNEL=dev docker compose up --build`) wins over the file for the build and the port; the container only gets what is in the file.
+Compose reads `.env` by itself: for `YOSHIDA_CHANNEL`, which it passes to the build, for `YOSHIDA_PUBLISH_PORT`, the port on your machine (default 8080), and for the variables it hands to the container. `.env` is not committed and is left out of the image, so an admin token in it stays on your machine. Without a `.env` the server runs with its defaults. The usage counts are kept in the volume `yoshida-data`, see [Where the counts are stored](@/docs/telemetry.md#where-the-counts-are-stored). A variable set in the shell (`YOSHIDA_CHANNEL=dev docker compose up --build`) wins over the file for the build and the port; the container only gets what is in the file.
 
 The image also contains the `yoshida` CLI at `/yoshida`, which you can run with `docker run --rm -v "$PWD:/p" --entrypoint /yoshida yoshida render /p/my-cards`.
 

@@ -22,6 +22,8 @@ COPY build.zig build.zig.zon ./
 COPY src ./src
 RUN python3 -m ziglang build -Doptimize=ReleaseFast -Dstrip=true \
  && python3 -m ziglang build wasm
+# The folder for the usage counts. The final image has no shell to create it.
+RUN mkdir /data
 
 FROM node:22-alpine AS web
 ARG YOSHIDA_CHANNEL
@@ -55,8 +57,14 @@ FROM scratch
 COPY --from=zig /src/zig-out/bin/yoshida-server /yoshida-server
 COPY --from=zig /src/zig-out/bin/yoshida /yoshida
 COPY --from=site /public /web
+# The usage counts go to /data, owned by the user the server runs as. A named
+# volume mounted there starts with this owner; a bind mount keeps the owner of
+# the host folder, which then has to be writable for uid 65534.
+COPY --from=zig --chown=65534:65534 /data /data
 ENV YOSHIDA_WEB=/web \
-    YOSHIDA_PORT=8080
+    YOSHIDA_PORT=8080 \
+    YOSHIDA_TELEMETRY_DIR=/data
 EXPOSE 8080
+VOLUME /data
 USER 65534:65534
 ENTRYPOINT ["/yoshida-server"]
