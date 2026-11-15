@@ -109,6 +109,17 @@ h1, h2, h3 { font-weight: 600; }
 .more a { color: var(--link); }
 .outro { font-family: var(--font-head); font-style: italic; font-size: 24px; max-width: 760px; }
 
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+.stat-label, .stat-note, .bar-value, .facts dt, .stats-more summary { color: var(--muted); }
+.facts { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.facts div + div { border-left: 1px solid var(--line); }
+.spark-line { stroke: var(--accent); }
+.spark-area { fill: var(--accent-soft); }
+.spark-dot { background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+.bar-track { background: var(--soft); border-radius: 0 4px 4px 0; }
+.bar-fill { background: var(--accent); }
+.stats-table th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); }
+.stats-about { border-top: 1px solid var(--line); }
 .release { background: var(--panel); border-radius: 16px; padding: 4px 28px 20px; margin-bottom: 20px; box-shadow: var(--shadow); }
 .tag { background: var(--bg); border-radius: 99px; }
 @media (max-width: 860px) {

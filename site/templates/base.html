@@ -54,6 +54,7 @@
     {% set releases = get_section(path="releases/_index.md") %}
     yoshida{% if releases.pages %} {{ releases.pages[0].extra.tag }}{% endif %}{% if channel %} · {{ channel }} preview{% endif %} · file format {{ config.extra.format_version }} ·
     <a href="{{ get_url(path='@/docs/third-party-notices.md') }}">Third-party notices</a> ·
+    <a href="{{ get_url(path='@/stats.md') }}">Stats</a> ·
     {% if channel %}<a href="{{ config.base_url }}/../">Release site</a>{% else %}<a href="{{ config.base_url }}/dev/">Dev preview</a>{% endif %}
   </footer>
   {# Search dialog, filled by static/docs.js from the index page (templates/search-data.html). #}

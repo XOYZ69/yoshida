@@ -31,4 +31,6 @@ skip_prefixes = ["http://localhost"]
 
 [extra]
 repo = "https://github.com/XOYZ69/yoshida"
+# The file the Stats page shows, written daily by .github/workflows/stats.yml.
+stats_url = "https://raw.githubusercontent.com/XOYZ69/yoshida/stats/stats.json"
 format_version = 1
