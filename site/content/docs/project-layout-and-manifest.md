@@ -62,6 +62,7 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `design` | yes | Path to the design file |
 | `cards` | no | Path to a `.cards.json` or `.cards.csv` file. Without it the set renders one card with defaults |
 | `name` | no | Set name, used for the output folder and `--set`. Default: `set1`, `set2`, ... by position |
+| `group` | no | Heading of the set in the editor's **Design** picker. Default: the design's name, so the sets of one design sit together. Has no effect on rendering or output |
 
 With `"discover": false` rules 2 and 4 above are off, so a project with a manifest can keep spare designs and card files that are not rendered. A `discover` that is not `true` or `false` is error 1103.
 

@@ -132,6 +132,8 @@ pub const Set = struct {
     ok: bool = false,
     /// The project's `utc_offset` (hours), for `render.date` and `render.time`.
     utc_offset: f64 = 0,
+    /// The set's `group` in the manifest; null means "group by design".
+    group: ?[]const u8 = null,
 };
 
 pub const Project = struct {
@@ -152,6 +154,7 @@ const SetRef = struct {
     cards: ?[]const u8,
     pos: u32,
     src: ?diag.Source,
+    group: ?[]const u8 = null,
 };
 
 /// Loads the whole project: manifest, every card file and every design.
@@ -209,7 +212,14 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
                             }
                             cp = (try checkPath(arena, diags, src, &root, c)) orelse continue;
                         }
+                        var group: ?[]const u8 = null;
+                        if (s.get("group")) |g| {
+                            if (g.data == .string) {
+                                group = g.data.string;
+                            } else try diags.at(.err, 1103, src, g.pos, try pointer(arena, &root, g.pos), "\"group\" must be text", null);
+                        }
                         try refs.append(arena, .{
+                            .group = group,
                             .name = nm orelse try std.fmt.allocPrint(arena, "set{d}", .{i + 1}),
                             .design = dp,
                             .cards = cp,
@@ -282,7 +292,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
             try designs.put(arena, r.design, loaded);
             break :blk loaded;
         };
-        var set: Set = .{ .name = r.name, .design_path = r.design, .cards_path = r.cards, .design = d, .utc_offset = project.utc_offset };
+        var set: Set = .{ .name = r.name, .design_path = r.design, .cards_path = r.cards, .design = d, .utc_offset = project.utc_offset, .group = r.group };
         const before = diags.errorCount();
         if (r.cards) |cp| {
             if (vfs.read(cp)) |text| {
@@ -596,4 +606,23 @@ test "sets are discovered unless the manifest turns it off" {
         _ = try testProject(a, &mem, &diags);
         try std.testing.expect(diags.errorCount() > 0);
     }
+}
+
+test "a set's group is its manifest group or null" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json", test_design);
+    try mem.put("yoshida.json", "{\"format\":1,\"sets\":[{\"name\":\"x\",\"design\":\"designs/a.design.json\",\"group\":\"Monsters\"},{\"name\":\"y\",\"design\":\"designs/a.design.json\"}]}");
+    var diags = diag.List.init(a);
+    const p = try testProject(a, &mem, &diags);
+    try std.testing.expectEqual(@as(usize, 2), p.sets.len);
+    try std.testing.expectEqualStrings("Monsters", p.sets[0].group.?);
+    try std.testing.expect(p.sets[1].group == null);
+    try mem.put("yoshida.json", "{\"format\":1,\"sets\":[{\"design\":\"designs/a.design.json\",\"group\":3}]}");
+    var d2 = diag.List.init(a);
+    _ = try testProject(a, &mem, &d2);
+    try std.testing.expect(d2.errorCount() > 0);
 }

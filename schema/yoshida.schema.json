@@ -29,7 +29,11 @@
         "properties": {
           "name": { "type": "string" },
           "design": { "type": "string" },
-          "cards": { "type": "string" }
+          "cards": { "type": "string" },
+          "group": {
+            "type": "string",
+            "description": "Heading of the set in the editor's set picker. Default: the design name."
+          }
         }
       }
     }

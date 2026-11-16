@@ -147,6 +147,7 @@
 		textOf,
 		UTC_OFFSET_LIMIT,
 		utcOffsetOf,
+		groupSets,
 		newProjectFiles,
 		withSet,
 		withUtcOffset,
@@ -4169,10 +4170,14 @@
 			caption="Design"
 			label="Design file"
 			title="The design (card layout) being edited, with its card set"
+			searchable={sets.length > 4}
 			options={[
-				...sets.map((s) => ({
+				...groupSets(sets).map((s) => ({
 					value: s.name,
 					label: s.design_name,
+					group: sets.some((o) => o.group !== sets[0].group)
+						? s.group
+						: undefined,
 					detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
 				})),
 				{

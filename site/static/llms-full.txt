@@ -87,10 +87,11 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `note` (string)
 - `utc_offset` (number): Hours from UTC for render.date and render.time (default 0).
 - `discover` (boolean): Find sets by file ending (default true). false: only the sets listed in sets are used.
-- `sets` ([{ name, design, cards }, ...])
+- `sets` ([{ name, design, cards, group }, ...])
   - `name` (string)
   - `design` (string, required)
   - `cards` (string)
+  - `group` (string): Heading of the set in the editor's set picker. Default: the design name.
 
 ### `*.cards.json`, card data
 

@@ -24,7 +24,7 @@ Every panel can be resized: drag the lines between the left panel, the canvas, t
 ## Toolbar
 
 - **Add a layer**: rect, ellipse, text, image or polygon. The new layer is centred and placed above the selected layer.
-- **Design** picks the design being edited (with its card count and card file). **New design…** in the project menu creates a blank design with its own card file.
+- **Design** picks the design being edited (with its card count and card file). With several groups (a set's `group` in the manifest, by default its design) the list has a heading per group, and a project with more than four sets gets a filter box. **New design…** in the project menu creates a blank design with its own card file.
 - **Card** picks the card shown in the preview. The arrows step through the cards; the middle opens a searchable list that stays fast with thousands of cards. At its bottom, **Browse** opens the [card browser](@/docs/builder-card-data.md#browse).
 - **Export**: **PNG** exports the card you see; **ZIP** exports all cards of the set as PNG files; **PDF** exports all cards of the set as one PDF, one page per card, with crop marks when the design has a `canvas.bleed`. The pages are drawn as vectors, so shapes and text stay sharp at any zoom and the file is small; the **Export…** dialog can make pages as images instead (see [SVG and vector PDF](@/docs/saving-images-and-privacy.md#svg-and-vector-pdf)).
 - **Export…** opens the [export dialog](#export-dialog) for everything else: other formats, a higher resolution, crop marks, or every design at once.

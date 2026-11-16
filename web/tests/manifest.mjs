@@ -1,7 +1,7 @@
 // Checks the manifest helpers of the editor (src/lib/project.ts).
 //
 //   node --experimental-strip-types tests/manifest.mjs
-import { newProjectFiles, withSet } from "../src/lib/project.ts";
+import { groupSets, newProjectFiles, withSet } from "../src/lib/project.ts";
 
 let failed = 0;
 const ok = (name, cond, extra = "") => {
@@ -37,5 +37,13 @@ const f = newProjectFiles("My cards", "my-cards");
 const m = JSON.parse(dec.decode(f.get("yoshida.json")));
 ok("a new project has a manifest with its set", m.name === "My cards" && m.sets[0].design === "designs/my-cards.design.json");
 ok("a new project has the design and the cards", f.has("designs/my-cards.design.json") && f.has("cards/my-cards.cards.json") && f.size === 3);
+
+const g = groupSets([
+	{ n: 1, group: "A" },
+	{ n: 2, group: "B" },
+	{ n: 3, group: "A" },
+	{ n: 4, group: "B" },
+]);
+ok("sets are grouped, keeping order inside a group", g.map((x) => x.n).join("") === "1324");
 
 if (failed) process.exit(1);

@@ -609,3 +609,10 @@ export function newProjectFiles(name: string, stem: string): Files {
 		[cards, enc.encode(blankCards(design, name))],
 	]);
 }
+
+/** Sets in picker order: by group (in order of first appearance), then as listed. */
+export function groupSets<T extends { group: string }>(list: T[]): T[] {
+	const order: string[] = [];
+	for (const s of list) if (!order.includes(s.group)) order.push(s.group);
+	return [...list].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
