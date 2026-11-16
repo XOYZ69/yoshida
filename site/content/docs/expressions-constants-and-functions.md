@@ -32,11 +32,38 @@ Layers use them like params and built-in functions:
 | a JSON number | a number |
 | `true` / `false` | a bool |
 | a string | an [expression](@/docs/expressions.md); the constant has the expression's type (number, bool, text, color, image) |
+| a JSON array | a [list constant](#list-constants) |
 
-- A constant can use params, `canvas.w`, `canvas.h`, `card.id`, `render.*` and the constants **above** it. Not layers, not loop names.
-- It is evaluated once per card.
+- A constant can use params, `canvas.w`, `canvas.h`, `card.id`, `render.*` and the constants **above** it. Not loop names. It can also read a layer's bounds, see [Constants that read layers](#constants-that-read-layers).
+- It is evaluated once per card (a constant that reads a layer, at each use).
 - A text constant is an expression too, so it needs quotes inside: `"title_prefix": "'No. '"`.
-- A constant cannot be a list (error 3003).
+- An expression cannot give a list or a list item (error 3003); write the list as a JSON array.
+
+### List constants
+
+A constant can be a list, for values every card shares, such as column widths or a table of costs. It is written as a JSON array, and used like a list param: by index, by key, in `repeat` and with `len()`.
+
+```json
+"consts": {
+  "widths": [120, 80, 80],
+  "rows": [{ "name": "Attack", "cost": 2 }, { "name": "Defense", "cost": 3 }]
+}
+```
+
+- An array of numbers, true/false values or texts becomes a list whose items have one field, `value`: `widths[1].value`, or `"repeat": { "each": "widths", "item": "w" }` and `w.value`.
+- An array of objects becomes a list of items. Every item has the same fields as the first, with the same types (number, true/false or text; no colors, images or nested lists). Field names are lowercase letters, digits and `_`.
+- The first field is the key: `rows.Defense` is `3` (see [List lookup by key](@/docs/expressions-list-lookup.md)).
+- An empty array is error 3003, because the fields of its items are not known. Items with other fields or types than the first are error 1103.
+- A list constant has fixed values. It cannot use expressions; to compute a list from params use a list param.
+
+### Constants that read layers
+
+A constant may read a layer, such as `"edge": "@frame.bounds.right + gap"`, so a number is named once and used wherever it is needed:
+
+- The constant is worked out where it is used, in the same frame as the layer that uses it, so it follows `translate` and layouts like a direct `@frame...` would.
+- **Every constant after the first one that reads a layer is handled the same way**, so keep constants that only use numbers above it.
+- These constants can be used by layers, but not by `functions` and not by `canvas` (a function cannot read layers, and the canvas comes before them).
+- A layer that reads the constant must not be one the constant reads, even through other layers: that cycle is error 3004 when the card is drawn.
 
 ## Functions
 

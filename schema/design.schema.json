@@ -81,8 +81,8 @@
       "description": "Named values every layer can use, see https://yoshida.xoyz.dev/docs/expressions-constants-and-functions/#constants",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "additionalProperties": {
-        "description": "Number, true/false or an expression",
-        "type": ["number", "boolean", "string"]
+        "description": "Number, true/false, an expression, or a list: an array of numbers, true/false or texts, or of objects with the same fields",
+        "type": ["number", "boolean", "string", "array"]
       }
     },
     "functions": {

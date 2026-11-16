@@ -1447,8 +1447,9 @@ const Ctx = struct {
 
     fn constValue(ptr: *anyopaque, index: usize) expr.EvalError!Value {
         const ctx: *Ctx = @ptrCast(@alignCast(ptr));
-        if (ctx.consts[index]) |v| return v;
         const k = &ctx.d.consts[index];
+        if (k.value) |v| return v;
+        if (!k.reads_layers) if (ctx.consts[index]) |v| return v;
         const saved = ctx.locals;
         ctx.locals = &.{};
         defer ctx.locals = saved;
@@ -1457,7 +1458,7 @@ const Ctx = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => return error.Eval,
         };
-        ctx.consts[index] = v;
+        if (!k.reads_layers) ctx.consts[index] = v;
         return v;
     }
 
@@ -4739,4 +4740,52 @@ test "blur and shadow have no vector form: a vector scene still renders them" {
     ;
     const items = try testOutline(gpa, a, d);
     try std.testing.expect(items.len >= 1);
+}
+
+test "a constant can read a layer's bounds" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 40, "background": "#FFFFFF" },
+        \\  "consts": { "gap": 5, "edge": "@a.bounds.right + gap", "twice": "edge * 2" },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "box": { "x": 10, "y": 0, "w": 20, "h": 40 }, "fill": "#FF0000" },
+        \\    { "id": "b", "type": "rect", "box": { "x": "edge", "y": 0, "w": 10, "h": 40 }, "fill": "#0000FF" },
+        \\    { "id": "c", "type": "rect", "box": { "x": "twice", "y": 0, "w": 10, "h": 40 }, "fill": "#00FF00" }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    // a ends at 30, b starts at 35, c at 70.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 20, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 32, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 40, 10)[2]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 40, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 75, 10)[1]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 60, 10)[0]);
+}
+
+test "a list constant drives repeat and lookups" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 20, "background": "#FFFFFF" },
+        \\  "consts": { "widths": [10, 30, 20], "cols": [{ "name": "a", "w": 4 }, { "name": "b", "w": 6 }], "first_col": "cols[0].w + cols.b" },
+        \\  "layers": [
+        \\    { "id": "bar", "type": "rect", "repeat": { "each": "widths", "item": "n", "index": "i" },
+        \\      "box": { "x": "i * 30", "y": 0, "w": "n.value", "h": 20 }, "fill": "#000000" },
+        \\    { "id": "mark", "type": "rect", "box": { "x": 0, "y": 15, "w": "first_col", "h": 5 }, "fill": "#FF0000" }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Bars: x 0..10, 30..60, 60..80 (the second reaches the third).
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 20, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 45, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 70, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 90, 5)[0]);
+    // The red mark is first_col = 4 + 6 = 10 wide.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 5, 17)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 9, 17)[1]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 12, 17)[1]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 17)[1]);
 }

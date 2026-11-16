@@ -147,7 +147,7 @@ Layers shared by designs: a group takes them with "include"
 - `icons` (string | { name: string }): Icons for {icon:name} in text with markup: an object of name to path, or a path with '*' for the name
 - `import` ([string, ...]): Definitions files (*.defs.json) whose params and consts this design takes. The design's own params and consts of the same name replace them.
 - `params` ({ name: param })
-- `consts` ({ name: number|boolean|expr }): Named values every layer can use
+- `consts` ({ name: [any, ...] }): Named values every layer can use
 - `functions` ({ name: { args, expr, note } }): Named formulas with arguments
 - `layers` ([layer, ...], required): drawn in array order, the first is at the bottom
 

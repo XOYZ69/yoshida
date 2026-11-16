@@ -317,6 +317,11 @@ pub const Layer = struct {
 pub const Const = struct {
     name: []const u8,
     prop: Prop,
+    /// A list constant: its value (`prop` is not used).
+    value: ?Value = null,
+    /// The expression reads a layer, so its value is worked out at each use
+    /// (the layer's bounds can differ between uses).
+    reads_layers: bool = false,
 };
 
 /// A named formula with arguments (`functions`).
@@ -454,6 +459,8 @@ const Loader = struct {
     /// Set while compiling `repeat.count`: a list there counts its items.
     list_counts: bool = false,
     fields: std.ArrayList(FieldInfo) = .empty,
+    /// Constants compiled once the layers are known (see `loadConsts`).
+    late_consts: []const json.Node.Field = &.{},
 
     /// Remembers the scope of an expression field (see `FieldInfo`). The
     /// first note for a position wins.
@@ -1015,17 +1022,146 @@ fn loadImports(l: *Loader, params: *std.ArrayList(json.Node.Field), consts: *std
 }
 
 /// `"consts": { "tile": 170, "gap": "tile / 10" }`: each sees params, the
-/// canvas size and the constants before it.
+/// canvas size and the constants before it. A constant that reads a layer
+/// (`@panel.bounds.right`), and every constant after it, is compiled once the
+/// layers are known (`loadLateConsts`).
 fn loadConsts(l: *Loader, d: *Design, fields: []const json.Node.Field) Allocator.Error!void {
     if (d.root.get("consts")) |cn| if (!try l.expectObject(cn, "consts")) return;
+    var early: std.ArrayList(json.Node.Field) = .empty;
+    var late: std.ArrayList(json.Node.Field) = .empty;
+    for (fields) |f| {
+        if (late.items.len > 0 or try readsLayer(l, &f.value)) try late.append(l.arena, f) else try early.append(l.arena, f);
+    }
+    l.late_consts = late.items;
     var consts: std.ArrayList(Const) = .empty;
     var syms: std.ArrayList(expr.Symbol) = .empty;
+    try loadConstList(l, d, early.items, null, &consts, &syms);
+    d.consts = consts.items;
+    d.const_symbols = syms.items;
+}
+
+/// Compiles the constants that read layers, now that the layers' ids and
+/// kinds are known.
+fn loadLateConsts(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol) Allocator.Error!void {
+    if (l.late_consts.len == 0) return;
+    var consts: std.ArrayList(Const) = .empty;
+    var syms: std.ArrayList(expr.Symbol) = .empty;
+    try consts.appendSlice(l.arena, d.consts);
+    try syms.appendSlice(l.arena, d.const_symbols);
+    try loadConstList(l, d, l.late_consts, lsyms, &consts, &syms);
+    d.consts = consts.items;
+    d.const_symbols = syms.items;
+}
+
+/// True when a constant's expression has an `@layer` reference.
+fn readsLayer(l: *Loader, n: *const Node) Allocator.Error!bool {
+    const src = switch (n.data) {
+        .string => |s| s,
+        else => return false,
+    };
+    if (std.mem.indexOfScalar(u8, src, '@') == null) return false;
+    var problem: ?expr.Problem = null;
+    const node = expr.parse(l.arena, src, 0, &problem) catch return false;
+    return hasLayerRef(l.arena, node);
+}
+
+fn hasLayerRef(arena: Allocator, n: *const expr.Node) Allocator.Error!bool {
+    if (n.data == .layer_ref) return true;
+    for (try expr.children(arena, n)) |c| if (try hasLayerRef(arena, c)) return true;
+    return false;
+}
+
+/// A JSON array as a list constant: an array of objects with the same fields
+/// (number, true/false or text), or an array of numbers, texts or bools,
+/// whose items have one field, `value`.
+fn listConst(l: *Loader, items: []const Node, pos: u32) Allocator.Error!?struct { def: *const value.ItemDef, v: Value } {
+    const arena = l.arena;
+    if (items.len == 0) {
+        try l.errHint(3003, pos, "an empty list constant has no fields to know", "give it at least one item");
+        return null;
+    }
+    var names: std.ArrayList([]const u8) = .empty;
+    var types: std.ArrayList(value.Scalar) = .empty;
+    const scalar_items = items[0].data != .object;
+    if (scalar_items) {
+        try names.append(arena, "value");
+        try types.append(arena, scalarOf(&items[0]) orelse {
+            try l.err(1103, items[0].pos, "a list constant holds numbers, true/false, text or objects of those", .{});
+            return null;
+        });
+    } else for (items[0].data.object) |f| {
+        if (!expr.isIdent(f.key)) {
+            try l.err(1103, f.key_pos, "item field '{s}' must be lowercase letters, digits and '_'", .{f.key});
+            return null;
+        }
+        try names.append(arena, f.key);
+        try types.append(arena, scalarOf(&f.value) orelse {
+            try l.err(1103, f.value.pos, "an item field is a number, true/false or text", .{});
+            return null;
+        });
+    }
+    const def = try arena.create(value.ItemDef);
+    def.* = .{ .names = names.items, .types = types.items };
+    const rows = try arena.alloc([]const Value, items.len);
+    for (items, rows) |*it, *row| {
+        const vals = try arena.alloc(Value, names.items.len);
+        if (scalar_items) {
+            vals[0] = scalarValue(it, types.items[0]) orelse {
+                try l.err(1103, it.pos, "every item of a list constant has the same type as the first", .{});
+                return null;
+            };
+        } else {
+            if (it.data != .object or it.data.object.len != names.items.len) {
+                try l.err(1103, it.pos, "every item of a list constant has the same fields as the first", .{});
+                return null;
+            }
+            for (names.items, types.items, vals) |nm, ty, *out| {
+                const fv = it.get(nm) orelse {
+                    try l.err(1103, it.pos, "an item has no field '{s}'", .{nm});
+                    return null;
+                };
+                out.* = scalarValue(fv, ty) orelse {
+                    try l.err(1103, fv.pos, "field '{s}' has another type than in the first item", .{nm});
+                    return null;
+                };
+            }
+        }
+        row.* = vals;
+    }
+    return .{ .def = def, .v = .{ .list = rows } };
+}
+
+fn scalarOf(n: *const Node) ?value.Scalar {
+    return switch (n.data) {
+        .number => .number,
+        .bool => .bool,
+        .string => .text,
+        else => null,
+    };
+}
+
+fn scalarValue(n: *const Node, ty: value.Scalar) ?Value {
+    return switch (ty) {
+        .number => if (n.data == .number) Value{ .number = n.data.number } else null,
+        .bool => if (n.data == .bool) Value{ .bool = n.data.bool } else null,
+        .text => if (n.data == .string) Value{ .text = n.data.string } else null,
+        else => null,
+    };
+}
+
+fn loadConstList(l: *Loader, d: *Design, fields: []const json.Node.Field, layers: ?[]const expr.LayerSymbol, consts: *std.ArrayList(Const), syms: *std.ArrayList(expr.Symbol)) Allocator.Error!void {
     for (fields) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, syms.items, &.{}, f.key)) {
             try l.err(1106, f.key_pos, "constant name '{s}' must be lowercase letters, digits and '_', and not a param, reserved word or function name", .{f.key});
             continue;
         }
-        const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = null };
+        const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = layers };
+        if (f.value.data == .array) {
+            const got = (try listConst(l, f.value.data.array, f.value.pos)) orelse continue;
+            try consts.append(l.arena, .{ .name = f.key, .prop = (try constProp(l.arena, .{ .number = 0 }, f.value.pos)).?, .value = got.v });
+            try syms.append(l.arena, .{ .name = f.key, .ty = .{ .list = got.def } });
+            continue;
+        }
         try l.note(f.value.pos, null, false, &scope);
         const want: Type = switch (f.value.data) {
             .number => .number,
@@ -1052,12 +1188,12 @@ fn loadConsts(l: *Loader, d: *Design, fields: []const json.Node.Field) Allocator
                     try l.err(3003, f.value.pos, "a constant cannot be a list or a list item", .{});
                     continue;
                 }
-                try consts.append(l.arena, .{ .name = f.key, .prop = .{ .node = node, .pos = f.value.pos } });
+                try consts.append(l.arena, .{ .name = f.key, .prop = .{ .node = node, .pos = f.value.pos }, .reads_layers = layers != null });
                 try syms.append(l.arena, .{ .name = f.key, .ty = t });
                 continue;
             },
             else => {
-                try l.err(1103, f.value.pos, "a constant is a number, true/false or an expression string", .{});
+                try l.err(1103, f.value.pos, "a constant is a number, true/false, an expression string or a list", .{});
                 continue;
             },
         };
@@ -1065,8 +1201,6 @@ fn loadConsts(l: *Loader, d: *Design, fields: []const json.Node.Field) Allocator
         try consts.append(l.arena, .{ .name = f.key, .prop = p });
         try syms.append(l.arena, .{ .name = f.key, .ty = want });
     }
-    d.consts = consts.items;
-    d.const_symbols = syms.items;
 }
 
 /// `"functions": { "tile_x": { "args": { "i": "number" }, "expr": "65 + i * 170" } }`:
@@ -1542,6 +1676,9 @@ fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const
         const m = r.merged orelse continue;
         try lsyms.append(arena, .{ .id = r.id, .kind = k, .repeated = m.get("repeat") != null, .rgroups = rgroups[i] });
     }
+
+    // Constants that read layers.
+    try loadLateConsts(l, d, lsyms.items);
 
     // Pass 4: compile. Layers inside a repeated group see its loop names.
     var layers: std.ArrayList(Layer) = .empty;
@@ -2316,4 +2453,36 @@ test "a stroke without a fill is warned about (1114), a fill or gradient is not"
     _ = try load(a, &diags, "t.design.json", src);
     try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
     try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 1114));
+}
+
+test "list constants: empty, mixed and ragged lists are errors; layer reading consts are accepted" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "consts": {
+        \\    "empty": [],
+        \\    "mixed": [1, "a"],
+        \\    "ragged": [{ "a": 1 }, { "b": 2 }],
+        \\    "ok": [{ "a": 1 }, { "a": 2 }],
+        \\    "edge": "@r.bounds.right",
+        \\    "after": "edge + 1"
+        \\  },
+        \\  "layers": [
+        \\    { "id": "r", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 3), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 3), d.consts.len);
+    try std.testing.expectEqualStrings("ok", d.consts[0].name);
+    try std.testing.expect(d.consts[0].value != null);
+    try std.testing.expect(d.consts[1].reads_layers);
+    try std.testing.expect(d.consts[2].reads_layers);
 }
