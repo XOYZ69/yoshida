@@ -471,11 +471,19 @@ await p
 await p.click(".dialog .primary");
 await settle();
 ok(
-	"delete from browser",
-	(await p.locator(".tag").count()) === 1 ||
-		((await p.textContent(".saved")) ?? "").includes("Example"),
-	await p.textContent(".saved"),
+	"delete from browser closes the project",
+	(await p.textContent(".pname")) === "No project" &&
+		(await p.locator(".tag").count()) === 0,
+	`${await p.textContent(".pname")} / ${await status()}`,
 );
+await p.click(".project-btn");
+const afterDelete = await p.locator(".menu [role=menuitem]").allTextContents();
+ok(
+	"deleted project is gone from the menu",
+	!afterDelete.some((t) => /^fresh-cards\b/.test(t.trim())),
+	JSON.stringify(afterDelete),
+);
+await p.keyboard.press("Escape");
 await p.screenshot({ path: `${shots}/v02-newproject.png` });
 
 await p.emulateMedia({ colorScheme: "dark" });

@@ -883,12 +883,37 @@
 		await deleteProject(meta.id);
 		myProjects = await listProjects();
 		if (meta.id === projectId) {
-			projectId = null;
-			savedFiles = null;
-			dirty = new Set();
-			saveState = "idle";
-			status = `Deleted '${meta.name}' from this browser; it stays open until you open another project.`;
+			await closeProject();
+			status = `Deleted '${meta.name}' from this browser. Open a project to continue.`;
 		}
+	}
+
+	/** Leaves the open project: the editor goes back to "No project". */
+	async function closeProject() {
+		projectName = "";
+		projectId = null;
+		savedFiles = null;
+		saveState = "idle";
+		files = new Map();
+		dirty = new Set();
+		dirHandle = null;
+		lastRender = null;
+		check = null;
+		setName = "";
+		cardIndex = 0;
+		selected = null;
+		selectedLayers = [];
+		locked = new Set();
+		image = null;
+		layout = [];
+		undoStack = [];
+		redoStack = [];
+		uploadFolder = "";
+		filesSelected = null;
+		filesHighlight = null;
+		browsing = false;
+		await engine.setFiles(files);
+		await refresh();
 	}
 
 	function projectMenu(e: MouseEvent) {
