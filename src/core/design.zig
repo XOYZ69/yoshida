@@ -1944,7 +1944,7 @@ fn checkFontName(l: *Loader, d: *const Design, s: []const u8, pos: u32) Allocato
     try l.errHint(4004, pos, try std.fmt.allocPrint(l.arena, "font '{s}' is not declared in \"fonts\"", .{s}), diag.suggest(l.arena, s, names.items));
 }
 
-fn constProp(arena: Allocator, v: Value, pos: u32) Allocator.Error!?Prop {
+pub fn constProp(arena: Allocator, v: Value, pos: u32) Allocator.Error!?Prop {
     const node = try arena.create(expr.Node);
     node.* = .{ .start = 0, .end = 0, .data = switch (v) {
         .number => |x| .{ .number = x },

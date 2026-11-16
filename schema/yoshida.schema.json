@@ -30,6 +30,23 @@
           "name": { "type": "string" },
           "design": { "type": "string" },
           "cards": { "type": "string" },
+          "canvas": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Replaces canvas fields of the design for this set. Plain numbers and a color, no expressions.",
+            "properties": {
+              "width": { "type": "number", "exclusiveMinimum": 0 },
+              "height": { "type": "number", "exclusiveMinimum": 0 },
+              "background": { "type": "string" },
+              "dpi": { "type": "number", "minimum": 0 },
+              "bleed": { "type": "number", "minimum": 0 }
+            }
+          },
+          "params": {
+            "type": "object",
+            "description": "Replaces the default of a param of the design for this set: param name to value.",
+            "additionalProperties": true
+          },
           "group": {
             "type": "string",
             "description": "Heading of the set in the editor's set picker. Default: the design name."

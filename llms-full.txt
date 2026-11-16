@@ -87,10 +87,17 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `note` (string)
 - `utc_offset` (number): Hours from UTC for render.date and render.time (default 0).
 - `discover` (boolean): Find sets by file ending (default true). false: only the sets listed in sets are used.
-- `sets` ([{ name, design, cards, group }, ...])
+- `sets` ([{ name, design, cards, canvas, params, group }, ...])
   - `name` (string)
   - `design` (string, required)
   - `cards` (string)
+  - `canvas` ({ width, height, background, dpi, bleed }): Replaces canvas fields of the design for this set. Plain numbers and a color, no expressions.
+    - `width` (number)
+    - `height` (number)
+    - `background` (string)
+    - `dpi` (number)
+    - `bleed` (number)
+  - `params` (object): Replaces the default of a param of the design for this set: param name to value.
   - `group` (string): Heading of the set in the editor's set picker. Default: the design name.
 
 ### `*.cards.json`, card data

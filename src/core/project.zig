@@ -155,6 +155,10 @@ const SetRef = struct {
     pos: u32,
     src: ?diag.Source,
     group: ?[]const u8 = null,
+    /// The set's object in the manifest, when it has `canvas` or `params` overrides.
+    over: ?*const Node = null,
+    /// The manifest root, for JSON pointers of `over`.
+    over_root: ?*const Node = null,
 };
 
 /// Loads the whole project: manifest, every card file and every design.
@@ -218,7 +222,12 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
                                 group = g.data.string;
                             } else try diags.at(.err, 1103, src, g.pos, try pointer(arena, &root, g.pos), "\"group\" must be text", null);
                         }
+                        const has_over = s.get("canvas") != null or s.get("params") != null;
+                        const root_copy = try arena.create(Node);
+                        root_copy.* = root;
                         try refs.append(arena, .{
+                            .over_root = root_copy,
+                            .over = if (has_over) s else null,
                             .group = group,
                             .name = nm orelse try std.fmt.allocPrint(arena, "set{d}", .{i + 1}),
                             .design = dp,
@@ -279,7 +288,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
     var designs: std.StringArrayHashMapUnmanaged(*Design) = .empty;
     var sets: std.ArrayList(Set) = .empty;
     for (refs.items) |r| {
-        const d = designs.get(r.design) orelse blk: {
+        const d = (if (r.over == null) designs.get(r.design) else null) orelse blk: {
             const text = vfs.read(r.design) orelse {
                 if (r.src) |src| {
                     try diags.at(.err, 1201, src, r.pos, "", try diags.fmt("design file '{s}' not found", .{r.design}), null);
@@ -289,7 +298,9 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
                 continue;
             };
             const loaded = try design_mod.loadWith(arena, diags, r.design, text, vfs);
-            try designs.put(arena, r.design, loaded);
+            if (r.over) |o| {
+                try applyOverrides(arena, diags, r.src.?, r.over_root.?, o, loaded);
+            } else try designs.put(arena, r.design, loaded);
             break :blk loaded;
         };
         var set: Set = .{ .name = r.name, .design_path = r.design, .cards_path = r.cards, .design = d, .utc_offset = project.utc_offset, .group = r.group };
@@ -317,6 +328,79 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
     }
     project.sets = sets.items;
     return project;
+}
+
+/// A set's `canvas` and `params` in the manifest: they replace the canvas
+/// fields and the param defaults of the set's own copy of the design. Values
+/// are literals [1101, 1103, 2002, 2006].
+fn applyOverrides(arena: Allocator, diags: *diag.List, src: diag.Source, root: *const Node, set: *const Node, d: *Design) Allocator.Error!void {
+    if (set.get("canvas")) |cn| {
+        if (cn.data != .object) {
+            try diags.at(.err, 1103, src, cn.pos, try pointer(arena, root, cn.pos), "\"canvas\" must be an object", null);
+        } else {
+            const known = [_][]const u8{ "width", "height", "background", "dpi", "bleed" };
+            for (cn.data.object) |*f| {
+                const path = try pointer(arena, root, f.key_pos);
+                var ok = false;
+                for (known) |k| if (std.mem.eql(u8, k, f.key)) {
+                    ok = true;
+                };
+                if (!ok) {
+                    try diags.at(.err, 1101, src, f.key_pos, path, try diags.fmt("unknown field '{s}' in a set's canvas", .{f.key}), diag.suggest(arena, f.key, &known));
+                    continue;
+                }
+                if (std.mem.eql(u8, f.key, "background")) {
+                    const c = if (f.value.data == .string) value.Color.parseHex(f.value.data.string) else null;
+                    if (c == null) {
+                        try diags.at(.err, 1103, src, f.value.pos, path, "background must be a color string like \"#RRGGBB\"", null);
+                        continue;
+                    }
+                    d.background = try design_mod.constProp(arena, .{ .color = c.? }, f.value.pos);
+                    continue;
+                }
+                const x = if (f.value.data == .number) f.value.data.number else {
+                    try diags.at(.err, 1103, src, f.value.pos, path, try diags.fmt("{s} must be a number", .{f.key}), "an override is a plain number, not an expression");
+                    continue;
+                };
+                const wh = std.mem.eql(u8, f.key, "width") or std.mem.eql(u8, f.key, "height");
+                if ((wh and x <= 0) or x < 0) {
+                    try diags.at(.err, 1103, src, f.value.pos, path, try diags.fmt("{s} must be {s}", .{ f.key, if (wh) "more than 0" else "0 or more" }), null);
+                    continue;
+                }
+                const prop = try design_mod.constProp(arena, .{ .number = x }, f.value.pos);
+                if (std.mem.eql(u8, f.key, "width")) d.canvas_w = prop else if (std.mem.eql(u8, f.key, "height")) d.canvas_h = prop else if (std.mem.eql(u8, f.key, "dpi")) d.dpi = prop else d.bleed = prop;
+            }
+        }
+    }
+    if (set.get("params")) |pn| {
+        if (pn.data != .object) {
+            try diags.at(.err, 1103, src, pn.pos, try pointer(arena, root, pn.pos), "\"params\" must be an object of param name to default", null);
+            return;
+        }
+        const params = try arena.dupe(design_mod.Param, d.params);
+        var names: std.ArrayList([]const u8) = .empty;
+        for (params) |p| try names.append(arena, p.name);
+        for (pn.data.object) |*f| {
+            const path = try pointer(arena, root, f.key_pos);
+            const pi = d.findParam(f.key) orelse {
+                try diags.at(.err, 1101, src, f.key_pos, path, try diags.fmt("'{s}' is not a param of the design", .{f.key}), diag.suggest(arena, f.key, names.items));
+                continue;
+            };
+            const p = &params[pi];
+            switch (try design_mod.convertJson(arena, p, &f.value)) {
+                .ok => |v| {
+                    if (try design_mod.checkRange(arena, p, v)) |msg| {
+                        try diags.at(.err, 2002, src, f.value.pos, path, try diags.fmt("'{s}': {s}", .{ p.name, msg }), null);
+                        continue;
+                    }
+                    p.default = v;
+                    p.required = false;
+                },
+                .bad => |msg| try diags.at(.err, 2006, src, f.value.pos, path, try diags.fmt("'{s}': {s}", .{ p.name, msg }), null),
+            }
+        }
+        d.params = params;
+    }
 }
 
 fn setName(path: []const u8) []const u8 {
@@ -681,4 +765,52 @@ test "imports: a missing file is 1201, an error in the shared file names that fi
     }
     try std.testing.expect(missing);
     try std.testing.expect(in_shared);
+}
+
+test "a set overrides the canvas and param defaults of its design" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json",
+        \\{ "format": 1, "name": "a", "canvas": { "width": 100, "height": 60 },
+        \\  "params": { "title": { "type": "text", "default": "Plain" }, "n": { "type": "integer", "default": 1, "max": 9 } },
+        \\  "layers": [ { "id": "t", "type": "rect", "box": { "x": 0, "y": 0, "w": 5, "h": 5 }, "fill": "#000000" } ] }
+    );
+    try mem.put("yoshida.json",
+        \\{ "format": 1, "sets": [
+        \\  { "name": "plain", "design": "designs/a.design.json" },
+        \\  { "name": "big", "design": "designs/a.design.json",
+        \\    "canvas": { "width": 200, "background": "#FF0000" }, "params": { "title": "Big", "n": 4 } }
+        \\] }
+    );
+    var diags = diag.List.init(a);
+    const p = try testProject(a, &mem, &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 2), p.sets.len);
+    const plain = p.sets[0].design;
+    const big = p.sets[1].design;
+    try std.testing.expect(plain != big);
+    try std.testing.expectEqualStrings("Plain", plain.params[0].default.?.text);
+    try std.testing.expectEqualStrings("Big", big.params[0].default.?.text);
+    try std.testing.expectEqual(@as(f64, 4), big.params[1].default.?.number);
+    try std.testing.expectEqual(@as(f64, 1), plain.params[1].default.?.number);
+    try std.testing.expectEqual(@as(f64, 200), big.canvas_w.?.node.data.number);
+    try std.testing.expectEqual(@as(f64, 100), plain.canvas_w.?.node.data.number);
+    try std.testing.expectEqual(@as(f64, 60), big.canvas_h.?.node.data.number);
+}
+
+test "set overrides: unknown params, wrong types and out of range values are errors" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json", test_design);
+    try mem.put("yoshida.json", "{\"format\":1,\"sets\":[{\"name\":\"x\",\"design\":\"designs/a.design.json\",\"canvas\":{\"width\":-1,\"hight\":5,\"background\":\"red\",\"dpi\":\"300\"},\"params\":{\"nope\":1}}]}");
+    var diags = diag.List.init(a);
+    _ = try testProject(a, &mem, &diags);
+    // width, hight, background, dpi and the unknown param.
+    try std.testing.expectEqual(@as(usize, 5), diags.errorCount());
 }

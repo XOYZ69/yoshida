@@ -62,11 +62,37 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `design` | yes | Path to the design file |
 | `cards` | no | Path to a `.cards.json` or `.cards.csv` file. Without it the set renders one card with defaults |
 | `name` | no | Set name, used for the output folder and `--set`. Default: `set1`, `set2`, ... by position |
+| `canvas` | no | Replaces canvas fields of the design for this set only: any of `width`, `height`, `dpi`, `bleed` (plain numbers) and `background` (a color string). See [Set overrides](#set-overrides) |
+| `params` | no | Replaces param defaults of the design for this set only: an object of param name to value. See [Set overrides](#set-overrides) |
 | `group` | no | Heading of the set in the editor's **Design** picker. Default: the design's name, so the sets of one design sit together. Has no effect on rendering or output |
 
 With `"discover": false` rules 2 and 4 above are off, so a project with a manifest can keep spare designs and card files that are not rendered. A `discover` that is not `true` or `false` is error 1103.
 
 Unknown manifest fields are error 1101 with a "did you mean" hint. A path that leaves the project is 1203; a missing file is 1201.
+
+## Set overrides
+
+Two sets can use one design with small differences, for example the same card layout in two sizes or with another default title. A set's `canvas` and `params` replace those parts of the design **for that set only**; the design file is not changed and other sets of it keep their own values.
+
+```json
+{
+  "format": 1,
+  "sets": [
+    { "name": "standard", "design": "designs/monster.design.json", "cards": "cards/monsters.cards.json" },
+    {
+      "name": "mini",
+      "design": "designs/monster.design.json",
+      "cards": "cards/monsters.cards.json",
+      "canvas": { "width": 375, "height": 525 },
+      "params": { "frame": "#B08D57" }
+    }
+  ]
+}
+```
+
+- Canvas values are plain numbers (and a color string for `background`), not expressions. `width` and `height` must be more than 0; `dpi` and `bleed` 0 or more. Other canvas fields keep the design's value, which may be an expression of the params.
+- A param value is checked like a value in card data (type, `min`, `max`, `max_length`, enum options): a wrong one is error 2006 or 2002. A name that is not a param of the design is error 1101. A card still replaces the default with its own value.
+- An override makes the set load its own copy of the design, so layer sizes that depend on the canvas follow it.
 
 ## Time zone
 
