@@ -250,7 +250,7 @@
             "additionalProperties": false,
             "properties": {
               "type": {
-                "enum": ["crop", "fade", "sharpen", "detail", "edge_enhance", "find_edges"]
+                "enum": ["crop", "fade", "sharpen", "detail", "edge_enhance", "find_edges", "blur", "shadow"]
               },
               "side": {
                 "enum": ["top", "bottom", "left", "right"]
@@ -262,6 +262,26 @@
               "strength": {
                 "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
+              },
+              "radius": {
+                "description": "blur: how far the picture spreads, in canvas pixels. Number literal or expression",
+                "type": ["number", "string"]
+              },
+              "x": {
+                "description": "shadow: horizontal offset in canvas pixels (default 0)",
+                "type": ["number", "string"]
+              },
+              "y": {
+                "description": "shadow: vertical offset in canvas pixels (default 4)",
+                "type": ["number", "string"]
+              },
+              "blur": {
+                "description": "shadow: how soft the edge is, in canvas pixels (default 6)",
+                "type": ["number", "string"]
+              },
+              "color": {
+                "description": "shadow: color, default black at half opacity (#00000080)",
+                "type": "string"
               }
             }
           }

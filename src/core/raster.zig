@@ -869,6 +869,98 @@ pub fn crop(gpa: Allocator, b: *Bitmap, side: Side, len_f: f32, fx: f32, fy: f32
     b.inkAll();
 }
 
+/// Blurs the pixels with a Gaussian of standard deviation `sigma` (bitmap
+/// pixels), as three box blurs. Nothing outside the bitmap counts as ink, so
+/// the caller leaves room around the picture.
+pub fn blur(gpa: Allocator, b: *Bitmap, sigma: f32) Allocator.Error!void {
+    if (sigma <= 0.05 or b.w == 0 or b.h == 0) return;
+    const n = @as(usize, b.w) * b.h * 4;
+    const a = try gpa.alloc(f32, n);
+    defer gpa.free(a);
+    const t = try gpa.alloc(f32, n);
+    defer gpa.free(t);
+    for (a, b.px) |*o, v| o.* = @floatFromInt(v);
+    // Box sizes whose three passes approximate the Gaussian.
+    const wi = @sqrt(12 * sigma * sigma / 3 + 1);
+    var wl: i32 = @intFromFloat(@floor(wi));
+    if (@mod(wl, 2) == 0) wl -= 1;
+    const wu = wl + 2;
+    const mi = (12 * sigma * sigma - 3 * @as(f32, @floatFromInt(wl * wl)) - 12 * @as(f32, @floatFromInt(wl)) - 9) / (-4 * @as(f32, @floatFromInt(wl)) - 12);
+    const m: i32 = @intFromFloat(@round(mi));
+    var pass: i32 = 0;
+    while (pass < 3) : (pass += 1) {
+        const size = if (pass < m) wl else wu;
+        const r: i32 = @divTrunc(size - 1, 2);
+        boxPass(a, t, b.w, b.h, r, true);
+        boxPass(t, a, b.w, b.h, r, false);
+    }
+    for (b.px, a) |*o, v| o.* = @intFromFloat(std.math.clamp(@round(v), 0, 65535));
+    // The color channels cannot exceed the alpha of premultiplied pixels.
+    var i: usize = 0;
+    while (i < b.px.len) : (i += 4) {
+        const al = b.px[i + 3];
+        inline for (0..3) |c| b.px[i + c] = @min(b.px[i + c], al);
+    }
+    b.inkAll();
+}
+
+/// One box blur of radius `r` along the rows (`horizontal`) or the columns.
+fn boxPass(src: []const f32, dst: []f32, w: u32, h: u32, r: i32, horizontal: bool) void {
+    const len: i32 = @intCast(if (horizontal) w else h);
+    const lines: usize = if (horizontal) h else w;
+    const norm: f32 = 1.0 / @as(f32, @floatFromInt(2 * r + 1));
+    const step: usize = if (horizontal) 4 else @as(usize, w) * 4;
+    for (0..lines) |line| {
+        const base: usize = if (horizontal) line * @as(usize, w) * 4 else line * 4;
+        inline for (0..4) |c| {
+            var acc: f32 = 0;
+            var i: i32 = -r;
+            while (i <= r) : (i += 1) {
+                if (i >= 0 and i < len) acc += src[base + @as(usize, @intCast(i)) * step + c];
+            }
+            var x: i32 = 0;
+            while (x < len) : (x += 1) {
+                dst[base + @as(usize, @intCast(x)) * step + c] = acc * norm;
+                const add = x + r + 1;
+                const del = x - r;
+                if (add < len) acc += src[base + @as(usize, @intCast(add)) * step + c];
+                if (del >= 0) acc -= src[base + @as(usize, @intCast(del)) * step + c];
+            }
+        }
+    }
+}
+
+/// Puts a soft shadow of the picture's shape under it: the alpha shifted by
+/// (dx, dy) bitmap pixels, tinted with `color`, blurred by `sigma`.
+pub fn shadow(gpa: Allocator, b: *Bitmap, dx: i32, dy: i32, sigma: f32, color: Color) Allocator.Error!void {
+    var s = try Bitmap.init(gpa, b.x, b.y, b.w, b.h);
+    defer s.deinit(gpa);
+    const ca: f32 = @as(f32, @floatFromInt(color.a)) / 65535.0;
+    for (0..b.h) |y| for (0..b.w) |x| {
+        const sx = @as(i64, @intCast(x)) - dx;
+        const sy = @as(i64, @intCast(y)) - dy;
+        if (sx < 0 or sy < 0 or sx >= b.w or sy >= b.h) continue;
+        const a: f32 = @floatFromInt(b.px[(@as(usize, @intCast(sy)) * b.w + @as(usize, @intCast(sx))) * 4 + 3]);
+        if (a == 0) continue;
+        const k = a / 65535.0 * ca;
+        const o = (y * b.w + x) * 4;
+        s.px[o] = @intFromFloat(@round(@as(f32, @floatFromInt(color.r)) * k));
+        s.px[o + 1] = @intFromFloat(@round(@as(f32, @floatFromInt(color.g)) * k));
+        s.px[o + 2] = @intFromFloat(@round(@as(f32, @floatFromInt(color.b)) * k));
+        s.px[o + 3] = @intFromFloat(@round(65535.0 * k));
+    };
+    try blur(gpa, &s, sigma);
+    // The picture over its shadow.
+    var i: usize = 0;
+    while (i < b.px.len) : (i += 4) {
+        const inv: u32 = 65535 - b.px[i + 3];
+        inline for (0..4) |c| {
+            b.px[i + c] = @intCast(@min(65535, @as(u32, b.px[i + c]) + (@as(u32, s.px[i + c]) * inv + 32767) / 65535));
+        }
+    }
+    b.inkAll();
+}
+
 pub const Filter = enum { sharpen, detail, edge_enhance, find_edges };
 
 /// 3x3 convolutions with the kernels of Pillow's ImageFilter, blended with the

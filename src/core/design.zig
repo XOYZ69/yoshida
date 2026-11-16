@@ -112,13 +112,19 @@ pub const QrLevel = enum { low, medium, quartile, high };
 pub const QrStyle = enum { square, rounded, dots };
 /// Shape of the three corner squares (finder patterns) of a QR code layer.
 pub const QrEye = enum { square, rounded, circle };
-pub const EffectKind = enum { crop, fade, sharpen, detail, edge_enhance, find_edges };
+pub const EffectKind = enum { crop, fade, sharpen, detail, edge_enhance, find_edges, blur, shadow };
 
 pub const Effect = struct {
     kind: EffectKind,
     side: Side = .bottom,
     length: ?Prop = null,
     strength: ?Prop = null,
+    /// `blur`: the radius; `shadow`: the softness of its edge (canvas pixels).
+    radius: ?Prop = null,
+    /// `shadow`: offset and color.
+    dx: ?Prop = null,
+    dy: ?Prop = null,
+    color: ?Prop = null,
     pos: u32,
 };
 
@@ -1765,6 +1771,15 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     if (e.get("side")) |sn| eff.side = (try l.enumField(Side, sn, "side")) orelse .bottom else try l.err(1102, e.pos, "{s} needs \"side\"", .{@tagName(ek)});
                     const ax: *const expr.Scope = if (eff.side == .left or eff.side == .right) &sx else &sy;
                     if (e.get("length")) |ln| eff.length = try l.prop(ln, .number, ax) else try l.err(1102, e.pos, "{s} needs \"length\"", .{@tagName(ek)});
+                } else if (ek == .blur) {
+                    try l.checkFields(e, &.{ "type", "radius" }, "a blur effect");
+                    if (e.get("radius")) |rn| eff.radius = try l.prop(rn, .number, scope) else try l.err(1102, e.pos, "blur needs \"radius\"", .{});
+                } else if (ek == .shadow) {
+                    try l.checkFields(e, &.{ "type", "x", "y", "blur", "color" }, "a shadow effect");
+                    if (e.get("x")) |xn| eff.dx = try l.prop(xn, .number, &sx);
+                    if (e.get("y")) |yn| eff.dy = try l.prop(yn, .number, &sy);
+                    if (e.get("blur")) |bn| eff.radius = try l.prop(bn, .number, scope);
+                    if (e.get("color")) |cn| eff.color = try l.prop(cn, .color, scope);
                 } else {
                     try l.checkFields(e, &.{ "type", "strength" }, try std.fmt.allocPrint(arena, "a {s} effect", .{@tagName(ek)}));
                     if (e.get("strength")) |sn| eff.strength = try l.prop(sn, .number, scope);

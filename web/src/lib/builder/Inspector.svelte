@@ -379,6 +379,8 @@ const effectTypes = [
 	"detail",
 	"edge_enhance",
 	"find_edges",
+	"blur",
+	"shadow",
 ];
 const effectHelp: Record<string, string> = {
 	fade: "soft edge on one side",
@@ -387,6 +389,8 @@ const effectHelp: Record<string, string> = {
 	detail: "boost fine detail",
 	edge_enhance: "stronger edges",
 	find_edges: "outline only",
+	blur: "soften the layer",
+	shadow: "soft shadow under the layer",
 };
 const effects = $derived(
 	Array.isArray(eff?.effects) ? (eff!.effects as Obj[]) : [],
@@ -404,7 +408,11 @@ function editEffects(fn: (list: Obj[]) => void, key?: string) {
 function newEffect(t: string): Obj {
 	return t === "fade" || t === "crop"
 		? { type: t, side: "bottom", length: 100 }
-		: { type: t };
+		: t === "blur"
+			? { type: t, radius: 6 }
+			: t === "shadow"
+				? { type: t, x: 0, y: 4, blur: 6, color: "#00000080" }
+				: { type: t };
 }
 
 // ------------------------------------------------------------ repeat
@@ -688,6 +696,13 @@ let newFunction = $state("");
         {#if fx.type === 'fade' || fx.type === 'crop'}
           <Field label="side" kind="enum" value={fx.side} options={['top', 'bottom', 'left', 'right']} onchange={(v) => editEffects((l) => (l[i].side = v ?? 'bottom'))} />
           <Field label="length" kind="number" value={fx.length} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'length'])} onchange={(v) => editEffects((l) => (l[i].length = v ?? 0), `fx${i}.length`)} />
+        {:else if fx.type === 'blur'}
+          <Field label="radius" kind="number" value={fx.radius} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'radius'])} onchange={(v) => editEffects((l) => (l[i].radius = v ?? 0), `fx${i}.radius`)} />
+        {:else if fx.type === 'shadow'}
+          <Field label="x" kind="number" optional value={fx.x} fallback={0} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'x'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].x : (l[i].x = v)), `fx${i}.x`)} />
+          <Field label="y" kind="number" optional value={fx.y} fallback={4} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'y'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].y : (l[i].y = v)), `fx${i}.y`)} />
+          <Field label="blur" kind="number" optional value={fx.blur} fallback={6} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'blur'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].blur : (l[i].blur = v)), `fx${i}.blur`)} />
+          <Field label="color" kind="color" optional value={fx.color} fallback={'#00000080'} bindings={colorParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'color'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].color : (l[i].color = v)), `fx${i}.color`)} />
         {:else}
           <Field label="strength" kind="number" optional value={fx.strength} fallback={1} bindings={numberParams} error={errorAt(['effects', String(i)])} path={pathOf(['effects', String(i), 'strength'])} onchange={(v) => editEffects((l) => (v === undefined ? delete l[i].strength : (l[i].strength = v)), `fx${i}.strength`)} />
         {/if}

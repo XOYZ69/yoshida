@@ -187,11 +187,16 @@ Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `group`, `divi
   - `index` (string)
   - `item` (string)
 - `extends` (string)
-- `effects` ([{ type, side, length, strength }, ...])
-  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+- `effects` ([{ type, side, length, strength, radius, x, y, blur, color }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges" | "blur" | "shadow", required)
   - `side` ("top" | "bottom" | "left" | "right")
   - `length` (number|expr)
   - `strength` (number|expr)
+  - `radius` (number|expr): blur: how far the picture spreads, in canvas pixels. Number literal or expression
+  - `x` (number|expr): shadow: horizontal offset in canvas pixels (default 0)
+  - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
+  - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
+  - `color` (string): shadow: color, default black at half opacity (#00000080)
 
 ### `rect`
 
@@ -335,11 +340,16 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `visible` (boolean|expr)
 - `opacity` (number|expr): 0 to 1
 - `rotate` (number|expr): Degrees clockwise around the anchor point (polygons: their centre)
-- `effects` ([{ type, side, length, strength }, ...])
-  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+- `effects` ([{ type, side, length, strength, radius, x, y, blur, color }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges" | "blur" | "shadow", required)
   - `side` ("top" | "bottom" | "left" | "right")
   - `length` (number|expr)
   - `strength` (number|expr)
+  - `radius` (number|expr): blur: how far the picture spreads, in canvas pixels. Number literal or expression
+  - `x` (number|expr): shadow: horizontal offset in canvas pixels (default 0)
+  - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
+  - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
+  - `color` (string): shadow: color, default black at half opacity (#00000080)
 - `layers` ([layer, ...]): Layers inside a group, first is bottom
 - `repeat` ({ count, each, index, item })
   - `count` (number|expr)

@@ -41,7 +41,7 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [divider](https://yoshida.xoyz.dev/docs/layer-divider/): A heading in the layer list that draws nothing.
 - [Repeat](https://yoshida.xoyz.dev/docs/repeat/): Draw a layer once per item, for example a row of stars or one line per list item.
 - [Extends](https://yoshida.xoyz.dev/docs/extends/): Start a layer from another layer and change only what differs.
-- [Effects](https://yoshida.xoyz.dev/docs/effects/): Crop, fade and sharpen filters applied to a layer's own pixels.
+- [Effects](https://yoshida.xoyz.dev/docs/effects/): Crop, fade, sharpen, blur and shadow effects applied to a layer's own pixels.
 - [Expressions](https://yoshida.xoyz.dev/docs/expressions/): Small typed formulas that read params, other layers and the canvas.
 - [Literals and units](https://yoshida.xoyz.dev/docs/expressions-literals-and-units/): Numbers, units, strings, colours and lists.
 - [Names and references](https://yoshida.xoyz.dev/docs/expressions-names-and-references/): Params, layer fields, canvas and card names, and reserved words.
