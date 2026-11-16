@@ -33,7 +33,7 @@ A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canv
 
 ```txt
 Usage:
-  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+  yoshida check  <project>...  [--set NAME] [--card ID] [--format text|json]
                             [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
   yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                             [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
@@ -41,7 +41,7 @@ Usage:
                             [--offline] [--pdf] [--crop-marks] [--svg]
                             [--vector] [--scale N] [--sheet COLSxROWS]
                             [--format text|json]
-  yoshida fmt    <project or file>  [--check]
+  yoshida fmt    <project or file>...  [--check]
   yoshida version
 
 check   loads every design and card file and evaluates every card
@@ -66,6 +66,7 @@ clock   --now is the UTC instant the cards are rendered at (render.now,
         --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
 fmt     rewrites JSON files in the canonical layout; --check only lists
         the files that are not formatted (exit status 1 if any).
+        check and fmt take several projects (or files) in one run.
 
 Limits can be raised with environment variables: YOSHIDA_MAX_LAYERS
 (visible layers per card, default 500), YOSHIDA_MAX_REPEAT (iterations

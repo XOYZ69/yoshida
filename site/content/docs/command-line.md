@@ -6,7 +6,7 @@ description = "Check projects, render cards and format files from a terminal or 
 The `yoshida` tool checks projects, renders cards and formats files. It never uses the network except to download `https://` images while rendering, and it can be run offline.
 
 ```txt
-yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+yoshida check  <project>...  [--set NAME] [--card ID] [--format text|json]
                           [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
 yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                           [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
@@ -14,11 +14,11 @@ yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                           [--offline] [--pdf] [--crop-marks] [--svg]
                           [--vector] [--scale N] [--sheet COLSxROWS]
                           [--format text|json]
-yoshida fmt    <project or file>  [--check]
+yoshida fmt    <project or file>...  [--check]
 yoshida version
 ```
 
-`<project>` is a [project folder](@/docs/project-layout-and-manifest.md). Run `yoshida` with no arguments (or `yoshida help`) to print the usage text.
+`<project>` is a [project folder](@/docs/project-layout-and-manifest.md). `check` and `fmt` take several of them in one run; `render` takes one (more is a usage error). Run `yoshida` with no arguments (or `yoshida help`) to print the usage text.
 
 ## `yoshida check`
 
@@ -27,6 +27,12 @@ Loads the manifest, every design and every card file, and reports every problem.
 ```txt
 set tour: designs/tour.design.json, 2 card(s)
 0 error(s), 0 warning(s), 0 hint(s), 2 card(s) checked
+```
+
+With several projects, `check` goes through them in the order given, and the text output has a `== <project> ==` line before each one. With `--format json` it writes one JSON object per project, one per line, each with a `"project"` field first. Every project is checked even when an earlier one has errors, and the exit status is the highest of them (1 if any project has errors, 2 for a usage error). A folder that cannot be opened counts as an error for that project and the others are still checked.
+
+```sh
+yoshida check examples/forge examples/poker
 ```
 
 ## `yoshida render`
@@ -151,14 +157,15 @@ The shape of each diagnostic is described in [Diagnostics](@/docs/diagnostics.md
 
 ## `yoshida fmt`
 
-Rewrites JSON files into the canonical layout (the same rules the editor uses; see [Formatting and Schemas](@/docs/formatting-and-schemas.md)). Give it a project folder or a single file.
+Rewrites JSON files into the canonical layout (the same rules the editor uses; see [Formatting and Schemas](@/docs/formatting-and-schemas.md)). Give it one or more project folders or single files.
 
 ```sh
 yoshida fmt examples            # rewrite
 yoshida fmt examples --check    # list files that would change, change nothing
+yoshida fmt designs/a.design.json yoshida.json   # several files
 ```
 
-With `--check` the exit status is 1 if any file is not formatted, which is what [CI](@/docs/ci-and-deployment.md) uses.
+The summary counts the files of all the paths together. With `--check` the exit status is 1 if any file is not formatted (or a path cannot be read), which is what [CI](@/docs/ci-and-deployment.md) uses.
 
 ## Limits
 
