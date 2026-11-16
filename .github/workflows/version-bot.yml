@@ -1,0 +1,85 @@
+# Keeps the version on dev right for the next release, so minor and patch
+# bumps need no hand work (major stays manual).
+#
+# After a push to dev it reads the pull requests merged since the last
+# release (.github/scripts/bump.mjs): a feat is a minor bump, a fix or perf a
+# patch bump, docs and chores nothing. The target is one bump above the last
+# release however many PRs there are, and the version only ever goes up, so a
+# version you set by hand (0.8.0, 1.0.0, 0.9.0-rc.1) is left as it is. A
+# breaking change is not turned into a major bump; the run says so and you run
+# `node scripts/version.mjs major` yourself.
+#
+# The bump is one commit on dev, "chore: bump version to X", made by
+# scripts/version.mjs (build.zig.zon and every copy). The dev -> master pull
+# request carries it, and merging that releases the version (deploy.yml).
+#
+# Pushes made with the workflow's own token start no other workflow, so this
+# one starts Deploy for dev itself to refresh the preview. If dev cannot be
+# pushed to by Actions (branch protection), add a secret VERSION_BOT_TOKEN: a
+# fine-grained token with Contents: write that may bypass the rule. Its pushes
+# trigger Deploy by themselves.
+name: Version bot
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write # start Deploy afterwards
+  pull-requests: read
+
+# The newest run reads everything that was merged, so a run waiting behind
+# another one is replaced by a newer one instead of piling up.
+concurrency:
+  group: version-bot
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump the version
+    # Not for the bot's own commit (it would start nothing anyway with the
+    # default token, but a token of your own would).
+    if: "github.ref_name == 'dev' && !startsWith(github.event.head_commit.message, 'chore: bump version to ')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OWN_TOKEN: ${{ secrets.VERSION_BOT_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+          token: ${{ secrets.VERSION_BOT_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Work out the version
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: dev
+        run: node .github/scripts/bump.mjs
+
+      - name: Bump
+        if: steps.plan.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          node scripts/version.mjs "$VERSION"
+          node scripts/version.mjs check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: bump version to $VERSION"
+          # dev may have moved while this ran; the bump only touches the
+          # version files, so replaying it on top is safe.
+          git push origin HEAD:dev || { git pull --rebase origin dev && git push origin HEAD:dev; }
+
+      - name: Refresh the dev preview
+        if: steps.plan.outputs.changed == 'true' && env.OWN_TOKEN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref dev
