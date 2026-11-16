@@ -147,6 +147,8 @@
 		textOf,
 		UTC_OFFSET_LIMIT,
 		utcOffsetOf,
+		newProjectFiles,
+		withSet,
 		withUtcOffset,
 		writeCsv,
 		writeFile,
@@ -957,6 +959,13 @@
 				action: newDesign,
 			},
 			{
+				label: "Add set…",
+				icon: "table",
+				detail: "a card file for a design, in the manifest",
+				disabled: !projectName,
+				action: () => addSet(),
+			},
+			{
 				label: "Fonts…",
 				icon: "text",
 				detail: "preview, upload, Google Fonts",
@@ -1064,7 +1073,7 @@
 			await askText({
 				title: "New project",
 				message:
-					"Starts an empty project with one design and one card file.",
+					"Starts an empty project with a manifest, one design and one card file.",
 				value: "My cards",
 				confirm: "Create",
 				validate: needName,
@@ -1072,11 +1081,7 @@
 		)?.trim();
 		if (!name) return;
 		const stem = slug(name);
-		const design = `designs/${stem}.design.json`;
-		const f: Files = new Map([
-			[design, bytesOf(blankDesign(name))],
-			[`cards/${stem}.cards.json`, bytesOf(blankCards(design, name))],
-		]);
+		const f: Files = newProjectFiles(name, stem);
 		openProject(stem, f, null, newProjectId()).then(() => {
 			dirty = new Set(f.keys());
 			mode = "build";
@@ -1132,6 +1137,7 @@
 	async function newCardFile(
 		design?: string,
 		at?: { x: number; y: number },
+		asSet = false,
 	) {
 		const named = new Map<string, string>();
 		for (const s of sets)
@@ -1149,7 +1155,7 @@
 					label,
 					icon: "design",
 					detail: path,
-					action: () => newCardFile(path),
+					action: () => newCardFile(path, undefined, asSet),
 				});
 			openMenu(pos.x, pos.y, items);
 			return;
@@ -1158,10 +1164,12 @@
 		const label = named.get(design) ?? baseOf(design);
 		const name = (
 			await askText({
-				title: "New card file",
-				message: `Adds a card file for ${label}.`,
+				title: asSet ? "Add set" : "New card file",
+				message: asSet
+					? `Adds a set for ${label}: a card file listed in ${MANIFEST}.`
+					: `Adds a card file for ${label}.`,
 				value: `${label} cards`,
-				confirm: "Add card file",
+				confirm: asSet ? "Add set" : "Add card file",
 				validate: needName,
 			})
 		)?.trim();
@@ -1172,6 +1180,18 @@
 		const cards = `cards/${stem}.cards.json`;
 		const params = sets.find((x) => x.design === design)?.params ?? [];
 		await updateFile(cards, blankCards(design, name, sampleCard(params)));
+		if (asSet) {
+			track("feature", "set.add");
+			try {
+				await updateFile(
+					MANIFEST,
+					withSet(manifestText(), { name: stem, design, cards }),
+					true,
+				);
+			} catch (e) {
+				status = `Could not update ${MANIFEST}: ${(e as Error).message}`;
+			}
+		}
 		await refresh();
 		const s = sets.find((x) => x.cards_file === cards);
 		if (s) {
@@ -1180,6 +1200,10 @@
 			await renderPreview();
 		}
 	}
+
+	/** Adds a set (a card file for a design, listed in the manifest). */
+	const addSet = (at?: { x: number; y: number }) =>
+		newCardFile(undefined, at, true);
 
 	/**
 	 * Stem for a new card file of a design: the design's file name without

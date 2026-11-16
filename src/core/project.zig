@@ -159,13 +159,14 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
     var project: Project = .{};
     var refs: std.ArrayList(SetRef) = .empty;
     const files = try vfs.list(arena);
+    var discover = true;
 
     if (vfs.read("yoshida.json")) |text| {
         const src: diag.Source = .{ .file = "yoshida.json", .text = text };
         if (try design_mod.parseJson(arena, diags, src)) |root| {
             _ = try design_mod.checkFormat(&root, diags, src);
             for (root.data.object) |f| {
-                const known = [_][]const u8{ "$schema", "format", "name", "note", "sets", "utc_offset" };
+                const known = [_][]const u8{ "$schema", "format", "name", "note", "sets", "utc_offset", "discover" };
                 var ok = false;
                 for (known) |k| if (std.mem.eql(u8, k, f.key)) {
                     ok = true;
@@ -179,6 +180,11 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
                 if (o.data == .number and o.data.number >= -14 and o.data.number <= 14) {
                     project.utc_offset = o.data.number;
                 } else try diags.at(.err, 1103, src, o.pos, try pointer(arena, &root, o.pos), "utc_offset must be a number of hours from -14 to 14", "e.g. 2 or -5.5");
+            }
+            if (root.get("discover")) |dv| {
+                if (dv.data == .bool) {
+                    discover = dv.data.bool;
+                } else try diags.at(.err, 1103, src, dv.pos, try pointer(arena, &root, dv.pos), "\"discover\" must be true or false", null);
             }
             if (root.get("sets")) |sets| {
                 if (sets.data == .array) {
@@ -218,6 +224,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
 
     // JSON card files name their own design.
     for (files) |f| {
+        if (!discover) break;
         if (!std.mem.endsWith(u8, f, ".cards.json")) continue;
         var listed = false;
         for (refs.items) |r| if (r.cards != null and std.mem.eql(u8, r.cards.?, f)) {
@@ -249,6 +256,7 @@ pub fn load(arena: Allocator, vfs: Vfs, diags: *diag.List) Allocator.Error!Proje
     }
     // Designs without card data render once with defaults.
     for (files) |f| {
+        if (!discover) break;
         if (!std.mem.endsWith(u8, f, ".design.json")) continue;
         var used = false;
         for (refs.items) |r| if (std.mem.eql(u8, r.design, f)) {
@@ -552,4 +560,40 @@ test "csv" {
     const rows = (try parseCsv(a, &diags, .{ .file = "x.csv", .text = "id,t\r\n1,\"a, \"\"b\"\"\"\n2,c\n" })).?;
     try std.testing.expectEqual(@as(usize, 3), rows.len);
     try std.testing.expectEqualStrings("a, \"b\"", rows[1][1].text);
+}
+
+fn testProject(arena: Allocator, mem: *MemFs, diags: *diag.List) !Project {
+    return load(arena, mem.vfs(), diags);
+}
+
+const test_design = "{\"format\":1,\"name\":\"t\",\"canvas\":{\"width\":10,\"height\":10},\"layers\":[{\"id\":\"r\",\"type\":\"rect\",\"box\":{\"x\":0,\"y\":0,\"w\":5,\"h\":5},\"fill\":\"#000000\"}]}";
+
+test "sets are discovered unless the manifest turns it off" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json", test_design);
+    try mem.put("designs/b.design.json", test_design);
+    try mem.put("cards/b.cards.json", "{\"format\":1,\"design\":\"designs/b.design.json\",\"cards\":[]}");
+    {
+        var diags = diag.List.init(a);
+        const p = try testProject(a, &mem, &diags);
+        try std.testing.expectEqual(@as(usize, 2), p.sets.len);
+    }
+    try mem.put("yoshida.json", "{\"format\":1,\"discover\":false,\"sets\":[{\"name\":\"only\",\"design\":\"designs/a.design.json\"}]}");
+    {
+        var diags = diag.List.init(a);
+        const p = try testProject(a, &mem, &diags);
+        try std.testing.expectEqual(@as(usize, 1), p.sets.len);
+        try std.testing.expectEqualStrings("only", p.sets[0].name);
+        try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    }
+    try mem.put("yoshida.json", "{\"format\":1,\"discover\":3}");
+    {
+        var diags = diag.List.init(a);
+        _ = try testProject(a, &mem, &diags);
+        try std.testing.expect(diags.errorCount() > 0);
+    }
 }

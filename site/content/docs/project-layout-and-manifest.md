@@ -54,6 +54,7 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `name` | no | Display name of the project |
 | `note` | no | Comment |
 | `sets` | no | Array of sets, below |
+| `discover` | no | `true` (default) finds sets by file ending, as listed under [Sets](#sets). `false` uses only the sets listed in `sets`: a card file or design that is not listed is not a set |
 | `utc_offset` | no | Hours from UTC for `render.date` and `render.time`: a number from -14 to 14, fractions allowed. Default `0`. See [Time zone](#time-zone) |
 
 | Set field | Required | Meaning |
@@ -61,6 +62,8 @@ Optional. Needed for CSV card data and for naming sets explicitly.
 | `design` | yes | Path to the design file |
 | `cards` | no | Path to a `.cards.json` or `.cards.csv` file. Without it the set renders one card with defaults |
 | `name` | no | Set name, used for the output folder and `--set`. Default: `set1`, `set2`, ... by position |
+
+With `"discover": false` rules 2 and 4 above are off, so a project with a manifest can keep spare designs and card files that are not rendered. A `discover` that is not `true` or `false` is error 1103.
 
 Unknown manifest fields are error 1101 with a "did you mean" hint. A path that leaves the project is 1203; a missing file is 1201.
 
@@ -89,6 +92,8 @@ Images and fonts can live anywhere. Reference them by project path, for example 
 ## Several designs in one project
 
 Put each design in `designs/`, give each its own card file, and the project has one set per pair. The editor's **New design…** command (in the project menu, or at the end of the **Design** picker in the toolbar) creates a blank design together with its card file. The **Design** picker switches between them.
+
+The project menu's **Add set…** adds a card file for a design and lists it in `yoshida.json` under its own name. **New project…** starts with a manifest that lists its one set.
 
 ## `.yoshida/`
 

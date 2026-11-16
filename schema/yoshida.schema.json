@@ -16,6 +16,10 @@
       "maximum": 14,
       "description": "Hours from UTC for render.date and render.time (default 0)."
     },
+    "discover": {
+      "type": "boolean",
+      "description": "Find sets by file ending (default true). false: only the sets listed in sets are used."
+    },
     "sets": {
       "type": "array",
       "items": {

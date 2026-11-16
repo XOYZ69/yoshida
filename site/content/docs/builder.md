@@ -12,7 +12,7 @@ The editor opens in **Builder** mode: a visual editor for designs and card data.
 
 | Area | What it is | Page |
 | --- | --- | --- |
-| Top bar | The project menu (new, open, **New design**, **Add files**, **Save to folder**, **Export project file**, rename, saved projects, examples), whether it is saved, **Builder / Advanced (JSON)**, undo and redo, **Save** (when a folder is linked), the theme | [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) |
+| Top bar | The project menu (new, open, **New design**, **Add set**, **Add files**, **Save to folder**, **Export project file**, rename, saved projects, examples), whether it is saved, **Builder / Advanced (JSON)**, undo and redo, **Save** (when a folder is linked), the theme | [Saving, Images and Privacy](@/docs/saving-images-and-privacy.md) |
 | Toolbar | **Add** a layer, pick the **Design** and the **Card**, **Export** as **PNG**, **ZIP** or **PDF**, the **Export…** dialog, **Render on server** (when the server offers it) | below |
 | Left panel | **Layers**, **Params**, **Card data**, **Files** tabs | [Layers](@/docs/builder-layers.md), [Params](@/docs/builder-params.md), [Card data](@/docs/builder-card-data.md), [Files](@/docs/builder-files.md) |
 | Canvas | The live card with selection, move, resize, rotate | [Canvas](@/docs/builder-canvas.md) |

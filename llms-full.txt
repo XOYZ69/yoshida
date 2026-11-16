@@ -86,6 +86,7 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `name` (string)
 - `note` (string)
 - `utc_offset` (number): Hours from UTC for render.date and render.time (default 0).
+- `discover` (boolean): Find sets by file ending (default true). false: only the sets listed in sets are used.
 - `sets` ([{ name, design, cards }, ...])
   - `name` (string)
   - `design` (string, required)
