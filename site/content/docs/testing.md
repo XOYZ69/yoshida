@@ -40,7 +40,7 @@ Run one with the command at the top of the file, for example `node tests/expr-co
 
 ## Editor end-to-end tests: `npm run test:ui`
 
-Chromium driven by Playwright against the built editor. `test:ui` runs every `tests/ui*.mjs` file one after another and stops at the first file that fails, so run a single file while you work:
+Chromium driven by Playwright against the built editor. `test:ui` (`tests/run-ui.mjs`) runs every `tests/ui*.mjs` file one after another and lists every file that failed at the end; CI runs three groups in parallel with `--shard 1/3`. Run a single file while you work:
 
 ```sh
 cd web

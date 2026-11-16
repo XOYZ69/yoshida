@@ -50,7 +50,7 @@ jobs:
       site_ref: ${{ steps.refs.outputs.site_ref }}
       dev_ref: ${{ steps.refs.outputs.dev_ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A release tag must name the version in build.zig.zon (v0.5.0 for 0.5.0).
       - name: Release tag matches the version
@@ -59,7 +59,7 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: node scripts/version.mjs check --tag "$TAG"
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         id: pages
 
       # https, without a trailing slash: the site follows the domain set
@@ -130,20 +130,20 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: site
           path: public
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.preview.result == 'success'
         with:
           name: site-dev
           path: public/dev
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

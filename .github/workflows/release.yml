@@ -42,7 +42,7 @@ jobs:
       channel: ${{ steps.version.outputs.channel }}
     steps:
       # The commit that was deployed, not whatever master is by now.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -89,7 +89,7 @@ jobs:
       # "dev" stamps a pre-release built from the dev branch.
       YOSHIDA_CHANNEL: ${{ needs.version.outputs.channel }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.sha }}
 
@@ -97,7 +97,7 @@ jobs:
         run: node scripts/version.mjs check --tag "$TAG"
 
       - uses: ./.github/actions/setup-zig
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

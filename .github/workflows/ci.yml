@@ -1,5 +1,10 @@
 # Checks and tests: the Zig core and CLI, every release target, and the web
 # editor (types, build, end-to-end test in Chromium).
+#
+# A pull request to dev builds only the Linux target; one to master (and every
+# push, manual run and release) builds all five. The browser tests run in
+# three parallel groups. "CI passed" is the one job to require in the branch
+# protection: it fails when anything above it failed.
 name: CI
 
 on:
@@ -27,6 +32,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      full: ${{ steps.diff.outputs.full }}
     steps:
       - name: Does the pull request touch code?
         id: diff
@@ -34,7 +40,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.base_ref }}
         run: |
+          # All five targets for everything except a pull request to dev.
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE" != "master" ]; then
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
           if [ "$EVENT" != "pull_request" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -53,10 +66,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zig
       # The scripts below need Node 22 (llms.mjs reads a TypeScript file).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -120,26 +133,45 @@ jobs:
       matrix:
         target: [x86_64-linux-musl, aarch64-linux-musl, x86_64-macos, aarch64-macos, x86_64-windows-gnu]
     steps:
-      - uses: actions/checkout@v4
+      # The five jobs always exist (a required check cannot go missing), but
+      # on a pull request to dev only the Linux target does any work: the
+      # others are checked on the pull request to master and by the release.
+      - name: Build this target?
+        id: run
+        env:
+          FULL: ${{ needs.changes.outputs.full }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          if [ "$FULL" = true ] || [ "$TARGET" = x86_64-linux-musl ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipped on a pull request to dev; the pull request to master builds all five targets"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.run.outputs.build
       # One cache per target: the five jobs share a job id.
       - uses: ./.github/actions/setup-zig
+        if: steps.run.outputs.build
         with:
           cache-key: ${{ matrix.target }}
-      - run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dstrip=true
+      - if: steps.run.outputs.build
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dstrip=true
 
+  # Types, unit tests and the production build. The browser tests are the
+  # slow part and run in parallel groups in the next job.
   web:
     name: Web editor
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zig
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -161,6 +193,40 @@ jobs:
       - name: Build
         run: npm run build
 
+  # tests/ui*.mjs, split into three groups by file size (tests/run-ui.mjs).
+  # Every group builds the editor itself, which takes well under a minute.
+  e2e:
+    name: End-to-end ${{ matrix.shard }}/3
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-zig
+        with:
+          cache-key: e2e
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Build the WASM core, copy the examples and build the editor
+        run: |
+          npm run wasm
+          npm run examples
+          npm run build
+
       # The browser download is cached by Playwright version; the system
       # libraries it needs are installed either way.
       - name: Playwright version
@@ -169,7 +235,7 @@ jobs:
 
       - name: Cache Chromium
         id: chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
@@ -186,13 +252,13 @@ jobs:
         run: |
           npx vite preview --port 4173 --strictPort &
           for i in $(seq 1 30); do curl -sf http://localhost:4173/ > /dev/null && break; sleep 1; done
-          npm run test:ui -- http://localhost:4173/
+          npm run test:ui -- http://localhost:4173/ --shard ${{ matrix.shard }}/3
 
       - name: Keep screenshots of a failed run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: ui-test-results
+          name: ui-test-results-${{ matrix.shard }}
           path: web/test-results/
           retention-days: 7
 
@@ -201,10 +267,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-zola
 
       # Fails on any broken internal link or anchor in the docs.
       - name: Build
         working-directory: site
         run: zola build --output-dir ../public
+
+  # The one check to require in the branch protection. Jobs that were skipped
+  # on purpose (a docs-only change) count as passed; failed or cancelled ones
+  # do not.
+  ci-passed:
+    name: CI passed
+    if: ${{ always() }}
+    needs: [changes, core, targets, web, e2e, site]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Everything passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "*) echo "::error::a job failed or was cancelled"; exit 1 ;;
+          esac

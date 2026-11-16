@@ -20,7 +20,7 @@ There are two long-lived branches. `master` is what is released: the site at the
 
 ## `ci.yml`
 
-Five jobs. A pull request that only changes docs, the website content or repo metadata skips the target builds and the browser tests (job **Changed files** decides); pushes, manual runs and releases always run everything.
+A pull request that only changes docs, the website content or repo metadata skips the target builds and the browser tests (job **Changed files** decides). A pull request to `dev` builds only the Linux target; one to `master`, a push, a manual run and a release build all five. **CI passed** is the job to require in the branch protection: it fails when any other job failed or was cancelled, and treats jobs skipped on purpose as passed.
 
 **Core and CLI**
 
@@ -33,9 +33,11 @@ Five jobs. A pull request that only changes docs, the website content or repo me
 7. `yoshida check` on every example
 8. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build; a link in a QR code does not count)
 
-**Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`.
+**Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`. The five jobs always exist so a required check never goes missing; on a pull request to `dev` the other four finish in seconds without building.
 
-**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `npm run test:unit`, `vite build`, install Chromium for Playwright (the download is cached by Playwright version), then `npm run test:ui` (every `web/tests/ui*.mjs` file, see [Testing](@/docs/testing.md)) against `vite preview`. Screenshots of a failed run are uploaded as the `ui-test-results` artifact (kept 7 days).
+**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `npm run test:unit` and `vite build`.
+
+**End-to-end 1/3, 2/3, 3/3**: three parallel jobs that each build the editor, install Chromium for Playwright (the download is cached by Playwright version) and run a third of the `web/tests/ui*.mjs` files (see [Testing](@/docs/testing.md)) against `vite preview`. `web/tests/run-ui.mjs` splits the files by size, so the groups take about the same time, and it reports every failing file instead of stopping at the first. Screenshots of a failed run are uploaded as `ui-test-results-1` to `-3` (kept 7 days).
 
 **Website**: builds the site with Zola, which fails on any broken internal link or anchor in the docs.
 
@@ -99,7 +101,7 @@ npx vite preview --port 4173 --strictPort &
 npm run test:ui
 ```
 
-`npm run test:ui` runs every `tests/ui*.mjs` file (listed in [Testing](@/docs/testing.md)) with Playwright in Chromium, one after another, until one fails. If the preview is not on `http://localhost:4173/`, set `BASE_URL` (`BASE_URL=http://localhost:5000/ npm run test:ui`); an argument after `--` only reaches the last file.
+`npm run test:ui` runs every `tests/ui*.mjs` file (listed in [Testing](@/docs/testing.md)) with Playwright in Chromium, one after another, and lists every file that failed at the end. If the preview is not on `http://localhost:4173/`, pass the address (`npm run test:ui -- http://localhost:5000/`) or set `BASE_URL`. `--shard 2/3` runs the second of three groups, as CI does, and `--list` prints the files it would run.
 
 ## Releases
 
