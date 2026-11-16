@@ -53,7 +53,7 @@ jobs:
             exit 0
           fi
           files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
-          other='^(site/|[^/]+\.md$|llms(-full)?\.txt$|LICENSE$|\.github/(ISSUE_TEMPLATE/|release-intro/|scripts/release-notes\.mjs$|CODEOWNERS$|dependabot\.yml$|labeler\.yml$|pull_request_template\.md$|release\.yml$|workflows/(pr-title|labeler|release-notes-preview)\.yml$))'
+          other='^(site/|[^/]+\.md$|llms(-full)?\.txt$|LICENSE$|\.github/(ISSUE_TEMPLATE/|release-intro/|scripts/(release-notes|bump)\.mjs$|scripts/bump\.test\.mjs$|CODEOWNERS$|dependabot\.yml$|labeler\.yml$|pull_request_template\.md$|release\.yml$|workflows/(pr-title|labeler|release-notes-preview|version-bot)\.yml$))'
           if printf '%s\n' "$files" | grep -qvE "$other"; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
@@ -86,6 +86,10 @@ jobs:
       # The collector behind the website's Stats page (stats.yml).
       - name: Stats script tests
         run: node --test scripts/stats.test.mjs
+
+      # The version bot's rules (.github/scripts/bump.mjs).
+      - name: Version bot tests
+        run: node --test .github/scripts/bump.test.mjs
 
       - name: Zig formatting
         run: zig fmt --check build.zig src

@@ -12,6 +12,7 @@ There are two long-lived branches. `master` is what is released: the site at the
 | `ci.yml` | every pull request, manually, and when called by `deploy.yml` | Checks and tests, below |
 | `deploy.yml` | every push to `master` or `dev`, every published, edited or deleted release, and manually | One run per merge: runs `ci.yml` (for `master`), publishes a GitHub release when the version has no tag yet (see [Releases](#releases)), then builds the site from `master` and the preview from `dev` and publishes both to GitHub Pages |
 | `site.yml` | called by `deploy.yml`, once per branch | Builds the editor and the website of one branch |
+| `version-bot.yml` | every push to `dev`, and manually | Raises the version on `dev` to what the merged pull requests ask for, see [Automatic version bumps](#automatic-version-bumps) |
 | `pr-title.yml` | every pull request to `master` or `dev` | Fails unless the PR title is conventional (`type(scope): description`) and sets the matching type label |
 | `release-notes-preview.yml` | every pull request to `master` or `dev` | Comments the release notes the PR will produce |
 | `labeler.yml` | every pull request to `master` or `dev` | Adds `area/*` labels from the files the PR changes (`.github/labeler.yml`) |
@@ -117,9 +118,32 @@ node scripts/version.mjs check        # fail if a copy differs from build.zig.zo
 
 After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag names the version (`v0.6.0`; a bare `0.6.0` is accepted too).
 
+### Automatic version bumps
+
+You do not have to bump minor and patch versions by hand. After every push to `dev`, `version-bot.yml` reads the pull requests merged since the last release and works out the version the next release needs:
+
+| PR title type | Asks for |
+| --- | --- |
+| `feat` | a minor bump (0.7.2 to 0.8.0) |
+| `fix`, `perf` | a patch bump (0.7.2 to 0.7.3) |
+| `docs`, `chore`, `ci`, `build`, `test`, `style`, `refactor`, `revert` | nothing |
+
+The highest one wins, counted once: three features and two fixes since 0.7.2 give 0.8.0, not five bumps. When the version in `build.zig.zon` is lower than that, the bot runs `scripts/version.mjs` and pushes one commit, `chore: bump version to 0.8.0`, to `dev`, then refreshes the dev preview. PRs with the `skip-changelog` label do not count, and neither do commits pushed without a PR.
+
+The version only ever goes up, so you stay in control:
+
+- **A version you set by hand is left alone** when it is already at or above the target: a hand-made 0.8.0 stays 0.8.0 when more fixes land, and a 1.0.0 stays 1.0.0.
+- **Major bumps are manual.** A breaking change (`!` in the title or the `breaking-change` label) counts as a minor bump, and the run says that a major bump is yours to make: `node scripts/version.mjs major`.
+- **A pre-release version** such as `0.9.0-rc.1` is not touched.
+- Nothing is released when only docs and chores were merged: the version stays the one that is already tagged.
+
+Every PR's release notes preview comment also shows the version the bot would pick if the PR were merged. The rules are in `.github/scripts/bump.mjs` and tested by `node --test .github/scripts/bump.test.mjs` (part of `ci.yml`).
+
+If `dev` is protected so that Actions cannot push to it, add a secret `VERSION_BOT_TOKEN` (a fine-grained token with Contents: write that may bypass the rule) under **Settings → Secrets and variables → Actions**. Its pushes also start Deploy by themselves.
+
 ### Publishing a release
 
-To release: bump on a branch, merge the pull request to `master`, and wait. The **Release** job of `deploy.yml` does the rest, after the checks passed:
+To release: merge `dev` to `master` and wait; the version is already right if the version bot did its work, otherwise bump it first (a major bump always is). The **Release** job of `deploy.yml` does the rest, after the checks passed:
 
 1. If the version in `build.zig.zon` already has a tag, either `v<version>` (such as `v0.6.0`) or the bare `<version>` that releases up to 0.4.0 used (such as `0.4.0`), it does nothing.
 2. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.

@@ -13,6 +13,7 @@
 // INTRO, OUT (release). DRY_RUN=1 prints instead of writing to GitHub.
 // No dependencies. PR titles, bodies and labels are only ever treated as data.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const repo = process.env.GITHUB_REPOSITORY;
 const api = `${process.env.GITHUB_API_URL || 'https://api.github.com'}/repos/${repo}`;
@@ -21,7 +22,7 @@ const MARKER = '<!-- release-notes-preview -->';
 // pre-release from dev.
 const BASE = process.env.BASE_REF || 'master';
 
-async function gh(path, { method = 'GET', body } = {}) {
+export async function gh(path, { method = 'GET', body } = {}) {
 	const res = await fetch(path.startsWith('http') ? path : api + path, {
 		method,
 		headers: {
@@ -72,7 +73,7 @@ function releaseNote(body) {
 
 // Conventional commit types and the label each one stands for. The label
 // decides the section through .github/release.yml.
-const TYPES = {
+export const TYPES = {
 	feat: 'enhancement',
 	fix: 'bug',
 	perf: 'performance',
@@ -90,7 +91,7 @@ const TYPE_LABELS = [...new Set(Object.values(TYPES))];
 // "feat(web)!: add a ruler" -> { type, scope, breaking, desc }. Branch-style
 // titles from before the title check ("Feat/font explorer") still sort
 // correctly; they are marked legacy and only fail the title check.
-function parseTitle(title) {
+export function parseTitle(title) {
 	const t = title.trim();
 	let m = /^(\w+)(?:\(([^)]*)\))?(!)?:\s*(\S.*)$/.exec(t);
 	if (m && TYPES[m[1].toLowerCase()])
@@ -142,13 +143,13 @@ function line(pr) {
 
 // --- notes -----------------------------------------------------------------------
 
-async function generated(tag, previous) {
+export async function generated(tag, previous) {
 	const body = { tag_name: tag, target_commitish: BASE };
 	if (previous) body.previous_tag_name = previous;
 	return (await gh('/releases/generate-notes', { method: 'POST', body })).body;
 }
 
-async function lastRelease() {
+export async function lastRelease() {
 	try {
 		return (await gh('/releases/latest')).tag_name;
 	} catch {
@@ -179,11 +180,17 @@ function tailOf(body) {
 
 // The PRs GitHub found in generatedBody, sorted into sections.
 // extra: PRs that are not merged yet (preview).
-async function collect(cfg, generatedBody, extra = []) {
+// Every PR GitHub listed in its generated notes, plus the not yet merged ones in extra.
+export async function mergedPRs(generatedBody, extra = []) {
 	const nums = [...new Set([...generatedBody.matchAll(/\/pull\/(\d+)/g)].map((m) => Number(m[1])))];
 	const prs = [];
 	for (const n of nums) prs.push(await gh(`/pulls/${n}`));
 	for (const pr of extra) if (!prs.some((p) => p.number === pr.number)) prs.push(pr);
+	return prs;
+}
+
+async function collect(cfg, generatedBody, extra = []) {
+	const prs = await mergedPRs(generatedBody, extra);
 	const kept = prs
 		.filter((pr) => !pr.labels.some((l) => cfg.exclude.includes(l.name)))
 		.sort((a, b) => a.number - b.number);
@@ -250,11 +257,22 @@ async function preview() {
 	const { sections, items } = await collect(cfg, base, [pr]);
 	const notes = render({ items, sections, rest: tailOf(base) });
 
+	// The version the bot would pick if this PR were merged (bump.mjs).
+	let version = '';
+	try {
+		const bump = await import('./bump.mjs');
+		const d = await bump.decide([pr]);
+		if (d) version = `**Version:** ${bump.summary(d.plan, d.current)}`;
+	} catch (e) {
+		console.log(`version preview skipped: ${e.message}`);
+	}
+
 	const comment = [
 		MARKER,
 		`### Release notes preview`,
 		`What the notes would contain if everything merged now (last release: \`${previous ?? 'none'}\`). Updates when the PR title, body or labels change.`,
 		...(hints.length ? ['', ...hints.map((h) => `> ${h}`)] : []),
+		...(version ? ['', version] : []),
 		'',
 		notes,
 		'<details><summary>Raw markdown</summary>',
@@ -292,11 +310,14 @@ async function release() {
 	console.log(notes);
 }
 
-const mode = process.argv[2];
-if (mode === 'title') await title();
-else if (mode === 'preview') await preview();
-else if (mode === 'release') await release();
-else {
-	console.error('usage: release-notes.mjs title|preview|release');
-	process.exit(2);
+// bump.mjs imports the helpers above, so only run a mode when started directly.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	const mode = process.argv[2];
+	if (mode === 'title') await title();
+	else if (mode === 'preview') await preview();
+	else if (mode === 'release') await release();
+	else {
+		console.error('usage: release-notes.mjs title|preview|release');
+		process.exit(2);
+	}
 }
