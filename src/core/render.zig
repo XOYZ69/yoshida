@@ -1346,10 +1346,14 @@ const Ctx = struct {
             out[ci - gi - 1] = moves;
             // Where the group's coordinates are on the canvas (no moves yet).
             const base = try ctx.offsetOf(ci);
+            // Measured with the moves of the layouts around this group
+            // already applied (once they are placed); `delta` is relative
+            // to the place without them, as their own delta adds up with it.
+            const outer_move = try ctx.flowShift(ci, null);
             for (list, moves) |*r, *slot| {
                 // Hidden children and empty groups take no room.
                 if (!r.visible or (child.kind == .group and r.w == 0 and r.h == 0)) continue;
-                try items.append(ctx.arena, .{ .slot = slot, .base = base, .left = r.left, .top = r.top, .w = r.w, .h = r.h });
+                try items.append(ctx.arena, .{ .slot = slot, .base = base, .left = r.left - outer_move[0], .top = r.top - outer_move[1], .w = r.w, .h = r.h });
             }
         }
         const row = flow.direction == .row;
@@ -4125,6 +4129,45 @@ test "row and column layout" {
     try std.testing.expectApproxEqAbs(@as(f64, 280), c1.left, 0.001);
     try std.testing.expectApproxEqAbs(@as(f64, 260), c2.left, 0.001);
     try std.testing.expectApproxEqAbs(@as(f64, 25), c2.top, 0.001);
+}
+
+test "layouts nested three deep and a repeated group inside two layouts" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 400, "height": 300 },
+        \\  "layers": [
+        \\    { "id": "outer", "type": "group", "layout": { "direction": "column", "gap": 10, "x": 50, "y": 50 }, "layers": [
+        \\      { "id": "mid", "type": "group", "layout": { "gap": 8, "x": 0, "y": 0 }, "layers": [
+        \\        { "id": "reps", "type": "group", "repeat": { "count": 3 }, "layers": [
+        \\          { "id": "r", "type": "rect", "box": { "x": 0, "y": 0, "w": 20, "h": 20 } }
+        \\        ] }
+        \\      ] },
+        \\      { "id": "n1", "type": "group", "layout": { "gap": 3, "x": 0, "y": 0 }, "layers": [
+        \\        { "id": "n2", "type": "group", "layout": { "gap": 3, "x": 0, "y": 0 }, "layers": [
+        \\          { "id": "n3", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } }
+        \\        ] }
+        \\      ] }
+        \\    ] }
+        \\  ]
+        \\}
+    ;
+    const items = try testOutline(gpa, a, design);
+    // The repeated group's iterations sit in a row at the corner of the outer layout.
+    for (0..3) |i| {
+        const r = findPlaced(items, "r", @intCast(i));
+        try std.testing.expectApproxEqAbs(@as(f64, 50) + 28 * @as(f64, @floatFromInt(i)), r.left, 0.001);
+        try std.testing.expectApproxEqAbs(@as(f64, 50), r.top, 0.001);
+    }
+    // The next child of the column goes below them, and its nested layouts keep the corner.
+    const n3 = findPlaced(items, "n3", null);
+    try std.testing.expectApproxEqAbs(@as(f64, 50), n3.left, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f64, 80), n3.top, 0.001);
 }
 
 test "gradient fills and clipped images" {
