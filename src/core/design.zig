@@ -1683,6 +1683,12 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     if (kind != .polygon) try l.err(1101, an.pos, "arrowheads only apply to polygons", .{}) else arrow = (try l.enumField(Arrow, an, "arrow")) orelse .none;
                 }
                 if (cp != null and wp != null) layer.stroke = .{ .color = cp.?, .width = wp.?, .dash = dash.items, .arrow = arrow };
+                // A shape with a stroke and no fill is filled white: usually not the outline that was meant.
+                const closed_open = if (m.get("closed")) |cv| (cv.data == .bool and !cv.data.bool) else false;
+                const curve_only = if (m.get("arc")) |an| (if (an.get("pie")) |pv| (pv.data == .bool and !pv.data.bool) else false) else false;
+                if (kind != .text and !closed_open and !curve_only and m.get("fill") == null and m.get("gradient") == null) {
+                    try l.report(.warning, 1114, sn.pos, try std.fmt.allocPrint(arena, "{s} layer '{s}' has a stroke but no fill, so it is filled white", .{ @tagName(kind), id }), "add \"fill\": \"#00000000\" for an outline only, or a color to fill it on purpose");
+                }
             };
             if (kind == .ellipse) if (m.get("arc")) |an| if (try l.expectObject(an, "arc")) {
                 try l.checkFields(an, &.{ "start", "end", "pie" }, "arc");
@@ -2112,4 +2118,37 @@ test "enum fields: names, expressions and misspelt names" {
     try std.testing.expect(d.layers[0].anchor_expr == null);
     try std.testing.expect(d.layers[1].anchor_expr != null);
     try std.testing.expect(d.layers[2].fit_expr != null);
+}
+
+fn countCode(diags: *const diag.List, code: u16) usize {
+    var n: usize = 0;
+    for (diags.items.items) |d| {
+        if (d.code == code) n += 1;
+    }
+    return n;
+}
+
+test "a stroke without a fill is warned about (1114), a fill or gradient is not" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "frame", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 } },
+        \\    { "id": "ring", "type": "ellipse", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 } },
+        \\    { "id": "line", "type": "polygon", "closed": false, "points": [[0, 0], [5, 5]], "stroke": { "width": 2 } },
+        \\    { "id": "ok1", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 }, "fill": "#00000000" },
+        \\    { "id": "ok2", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 }, "gradient": { "stops": [{ "color": "#000000", "at": 0 }, { "color": "#FFFFFF", "at": 1 }] } },
+        \\    { "id": "ok3", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } }
+        \\  ]
+        \\}
+    ;
+    _ = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 1114));
 }

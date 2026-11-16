@@ -423,6 +423,7 @@ export function blankDesign(name: string): string {
 				type: "rect",
 				box: { x: 24, y: 24, w: "100% - 48", h: "100% - 48" },
 				radius: 24,
+				fill: "#00000000",
 				stroke: { color: "#2B2B2B", width: 4 },
 			},
 			{

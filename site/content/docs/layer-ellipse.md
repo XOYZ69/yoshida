@@ -21,7 +21,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 | Field | Kind | Default | Meaning |
 | --- | --- | --- | --- |
 | `box` | `{ x, y, w, h }`, all number | required | The ellipse fills this box |
-| `fill` | color | `#FFFFFFFF` | |
+| `fill` | color | `#FFFFFFFF` | With a `stroke` and no `fill` the ellipse is still filled white (warning 1114); use `#00000000` for a ring |
 | `stroke` | `{ color, width, dash }` | none | Drawn centred on the edge. `color` defaults to opaque black, `width` to `1`. `dash` as for [rect](@/docs/layer-rect.md#stroke) |
 | `arc` | `{ start, end, pie }` | none | Draw only part of the ellipse, see below |
 

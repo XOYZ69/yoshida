@@ -97,6 +97,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 1111 | error | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape` |
 | 1112 | error | `extends` across different layer types (including a group), or of a divider |
 | 1113 | warning | A design function has the name of a built-in function; the design's function is used in this design instead of the built-in |
+| 1114 | warning | A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill |
 | 1201 | error | File not found |
 | 1202 | error | CSV syntax error (also a missing header row, or a row with the wrong number of fields) |
 | 1203 | error | Path escapes the project root |
