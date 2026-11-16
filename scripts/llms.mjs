@@ -184,6 +184,7 @@ async function full() {
 	for (const [file, title] of [
 		['schema/yoshida.schema.json', '`yoshida.json`, the optional manifest'],
 		['schema/cards.schema.json', '`*.cards.json`, card data'],
+		['schema/defs.schema.json', '`*.defs.json`, params and consts shared through a design\'s `import`'],
 		['schema/component.schema.json', '`*.component.json`, layers shared through a group\'s `include`'],
 	]) {
 		const s = json(file);
@@ -249,6 +250,7 @@ function index() {
 		`- [design.schema.json](${REPO}/blob/master/schema/design.schema.json): JSON Schema of a design file`,
 		`- [cards.schema.json](${REPO}/blob/master/schema/cards.schema.json): JSON Schema of a card file`,
 		`- [component.schema.json](${REPO}/blob/master/schema/component.schema.json): JSON Schema of a shared component`,
+		`- [defs.schema.json](${REPO}/blob/master/schema/defs.schema.json): JSON Schema of shared params and constants`,
 		`- [yoshida.schema.json](${REPO}/blob/master/schema/yoshida.schema.json): JSON Schema of the project manifest`,
 		'',
 	];

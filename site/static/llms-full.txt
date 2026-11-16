@@ -1,6 +1,6 @@
 # yoshida reference
 
-> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.7.2 by scripts/llms.mjs; do not edit by hand.
+> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.8.0 by scripts/llms.mjs; do not edit by hand.
 
 Website and full docs: https://yoshida.xoyz.dev/docs/ · Source: https://github.com/XOYZ69/yoshida · Short index: https://yoshida.xoyz.dev/llms.txt
 
@@ -33,7 +33,7 @@ A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canv
 
 ```txt
 Usage:
-  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+  yoshida check  <project>...  [--set NAME] [--card ID] [--format text|json]
                             [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
   yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                             [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
@@ -41,7 +41,7 @@ Usage:
                             [--offline] [--pdf] [--crop-marks] [--svg]
                             [--vector] [--scale N] [--sheet COLSxROWS]
                             [--format text|json]
-  yoshida fmt    <project or file>  [--check]
+  yoshida fmt    <project or file>...  [--check]
   yoshida version
 
 check   loads every design and card file and evaluates every card
@@ -66,6 +66,7 @@ clock   --now is the UTC instant the cards are rendered at (render.now,
         --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
 fmt     rewrites JSON files in the canonical layout; --check only lists
         the files that are not formatted (exit status 1 if any).
+        check and fmt take several projects (or files) in one run.
 
 Limits can be raised with environment variables: YOSHIDA_MAX_LAYERS
 (visible layers per card, default 500), YOSHIDA_MAX_REPEAT (iterations
@@ -86,10 +87,19 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `name` (string)
 - `note` (string)
 - `utc_offset` (number): Hours from UTC for render.date and render.time (default 0).
-- `sets` ([{ name, design, cards }, ...])
+- `discover` (boolean): Find sets by file ending (default true). false: only the sets listed in sets are used.
+- `sets` ([{ name, design, cards, canvas, params, group }, ...])
   - `name` (string)
   - `design` (string, required)
   - `cards` (string)
+  - `canvas` ({ width, height, background, dpi, bleed }): Replaces canvas fields of the design for this set. Plain numbers and a color, no expressions.
+    - `width` (number)
+    - `height` (number)
+    - `background` (string)
+    - `dpi` (number)
+    - `bleed` (number)
+  - `params` (object): Replaces the default of a param of the design for this set: param name to value.
+  - `group` (string): Heading of the set in the editor's set picker. Default: the design name.
 
 ### `*.cards.json`, card data
 
@@ -100,6 +110,17 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `design` (string, required)
 - `cards` ([{ id }, ...], required)
   - `id` (string)
+
+### `*.defs.json`, params and consts shared through a design's `import`
+
+Params and constants shared by designs: a design takes them with "import"
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string)
+- `note` (string)
+- `params` (params)
+- `consts` (consts)
 
 ### `*.component.json`, layers shared through a group's `include`
 
@@ -125,8 +146,9 @@ Layers shared by designs: a group takes them with "include"
   - `bleed` (number|expr): Pixels cut off on every side; the trim line is this far inside
 - `fonts` ({ name: string | { path, note } })
 - `icons` (string | { name: string }): Icons for {icon:name} in text with markup: an object of name to path, or a path with '*' for the name
+- `import` ([string, ...]): Definitions files (*.defs.json) whose params and consts this design takes. The design's own params and consts of the same name replace them.
 - `params` ({ name: param })
-- `consts` ({ name: number|boolean|expr }): Named values every layer can use
+- `consts` ({ name: [any, ...] }): Named values every layer can use
 - `functions` ({ name: { args, expr, note } }): Named formulas with arguments
 - `layers` ([layer, ...], required): drawn in array order, the first is at the bottom
 
@@ -166,11 +188,16 @@ Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `group`, `divi
   - `index` (string)
   - `item` (string)
 - `extends` (string)
-- `effects` ([{ type, side, length, strength }, ...])
-  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+- `effects` ([{ type, side, length, strength, radius, x, y, blur, color }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges" | "blur" | "shadow", required)
   - `side` ("top" | "bottom" | "left" | "right")
   - `length` (number|expr)
   - `strength` (number|expr)
+  - `radius` (number|expr): blur: how far the picture spreads, in canvas pixels. Number literal or expression
+  - `x` (number|expr): shadow: horizontal offset in canvas pixels (default 0)
+  - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
+  - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
+  - `color` (string): shadow: color, default black at half opacity (#00000080)
 
 ### `rect`
 
@@ -314,11 +341,16 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `visible` (boolean|expr)
 - `opacity` (number|expr): 0 to 1
 - `rotate` (number|expr): Degrees clockwise around the anchor point (polygons: their centre)
-- `effects` ([{ type, side, length, strength }, ...])
-  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges", required)
+- `effects` ([{ type, side, length, strength, radius, x, y, blur, color }, ...])
+  - `type` ("crop" | "fade" | "sharpen" | "detail" | "edge_enhance" | "find_edges" | "blur" | "shadow", required)
   - `side` ("top" | "bottom" | "left" | "right")
   - `length` (number|expr)
   - `strength` (number|expr)
+  - `radius` (number|expr): blur: how far the picture spreads, in canvas pixels. Number literal or expression
+  - `x` (number|expr): shadow: horizontal offset in canvas pixels (default 0)
+  - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
+  - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
+  - `color` (string): shadow: color, default black at half opacity (#00000080)
 - `layers` ([layer, ...]): Layers inside a group, first is bottom
 - `repeat` ({ count, each, index, item })
   - `count` (number|expr)
@@ -336,6 +368,7 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
   - `align` ("start" | "center" | "end" | string): Which end of the line sits at x (row) or y (column); or an expression that gives one
   - `cross` ("start" | "center" | "end" | string): Which side of every child sits at y (row) or x (column); or an expression that gives one
 - `include` (string): Takes the layers from a component file (a path from the project folder) instead of "layers"
+- `id_prefix` (string): With include: text put in front of the ids of the component's layers
 
 Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`.
 
@@ -491,6 +524,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 1111 error: `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape`
 - 1112 error: `extends` across different layer types (including a group), or of a divider
 - 1113 warning: A design function has the name of a built-in function; the design's function is used in this design instead of the built-in
+- 1114 warning: A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill
 - 1201 error: File not found
 - 1202 error: CSV syntax error (also a missing header row, or a row with the wrong number of fields)
 - 1203 error: Path escapes the project root

@@ -140,6 +140,7 @@ export function eventsBody(events: { kind: string; name: string }[]): string {
 export const KNOWN_EVENTS: { kind: Kind; name: string; about: string }[] = [
 	{ kind: "feature", name: "layer.add.*", about: "A layer of a type was added (rect, ellipse, text, image, polygon, group, divider)" },
 	{ kind: "feature", name: "design.new", about: "A design was created" },
+	{ kind: "feature", name: "set.add", about: "A set was added to the manifest" },
 	{ kind: "feature", name: "example.open", about: "An example project was opened" },
 	{ kind: "feature", name: "project.export", about: "The project file was exported" },
 	{ kind: "feature", name: "functions.open", about: "The function reference was opened" },

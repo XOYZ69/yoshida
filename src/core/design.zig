@@ -112,13 +112,19 @@ pub const QrLevel = enum { low, medium, quartile, high };
 pub const QrStyle = enum { square, rounded, dots };
 /// Shape of the three corner squares (finder patterns) of a QR code layer.
 pub const QrEye = enum { square, rounded, circle };
-pub const EffectKind = enum { crop, fade, sharpen, detail, edge_enhance, find_edges };
+pub const EffectKind = enum { crop, fade, sharpen, detail, edge_enhance, find_edges, blur, shadow };
 
 pub const Effect = struct {
     kind: EffectKind,
     side: Side = .bottom,
     length: ?Prop = null,
     strength: ?Prop = null,
+    /// `blur`: the radius; `shadow`: the softness of its edge (canvas pixels).
+    radius: ?Prop = null,
+    /// `shadow`: offset and color.
+    dx: ?Prop = null,
+    dy: ?Prop = null,
+    color: ?Prop = null,
     pos: u32,
 };
 
@@ -311,6 +317,11 @@ pub const Layer = struct {
 pub const Const = struct {
     name: []const u8,
     prop: Prop,
+    /// A list constant: its value (`prop` is not used).
+    value: ?Value = null,
+    /// The expression reads a layer, so its value is worked out at each use
+    /// (the layer's bounds can differ between uses).
+    reads_layers: bool = false,
 };
 
 /// A named formula with arguments (`functions`).
@@ -448,6 +459,8 @@ const Loader = struct {
     /// Set while compiling `repeat.count`: a list there counts its items.
     list_counts: bool = false,
     fields: std.ArrayList(FieldInfo) = .empty,
+    /// Constants compiled once the layers are known (see `loadConsts`).
+    late_consts: []const json.Node.Field = &.{},
 
     /// Remembers the scope of an expression field (see `FieldInfo`). The
     /// first note for a position wins.
@@ -655,7 +668,7 @@ const Loader = struct {
     }
 };
 
-const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "params", "consts", "functions", "layers" };
+const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "import", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
 const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
 
@@ -864,17 +877,24 @@ pub fn loadWith(arena: Allocator, diags: *diag.List, file: []const u8, text: []c
         if (try l.literalString(n, "name")) |s| d.name = s;
     } else try l.err(1102, root.pos, "the design needs a \"name\"", .{});
 
+    // Definitions shared with other designs (`import`), then the design's own.
+    var shared_params: std.ArrayList(json.Node.Field) = .empty;
+    var shared_consts: std.ArrayList(json.Node.Field) = .empty;
+    try loadImports(&l, &shared_params, &shared_consts);
+
     // Params
     var params: std.ArrayList(Param) = .empty;
     var symbols: std.ArrayList(expr.Symbol) = .empty;
-    if (root.get("params")) |pn| if (try l.expectObject(pn, "params")) {
-        for (pn.data.object) |*f| {
+    const own_params: []const json.Node.Field = if (root.get("params")) |pn| (if (try l.expectObject(pn, "params")) pn.data.object else &.{}) else &.{};
+    const all_params = try mergeFields(l.arena, shared_params.items, own_params);
+    {
+        for (all_params) |*f| {
             if (try loadParam(&l, f)) |p| {
                 try params.append(arena, p);
                 try symbols.append(arena, .{ .name = p.name, .ty = p.ty });
             }
         }
-    };
+    }
     d.params = params.items;
     d.symbols = symbols.items;
 
@@ -891,7 +911,8 @@ pub fn loadWith(arena: Allocator, diags: *diag.List, file: []const u8, text: []c
         }
     } else try l.err(1102, root.pos, "the design needs a \"canvas\" with width and height", .{});
 
-    try loadConsts(&l, d);
+    const own_consts: []const json.Node.Field = if (root.get("consts")) |cn| (if (cn.data == .object) cn.data.object else &.{}) else &.{};
+    try loadConsts(&l, d, try mergeFields(l.arena, shared_consts.items, own_consts));
     try loadFunctions(&l, d);
 
     // Fonts
@@ -951,19 +972,196 @@ fn nameTaken(d: *const Design, consts: []const expr.Symbol, fns: []const expr.Fn
     return false;
 }
 
+/// The fields of the imported files, without those the design defines
+/// itself, then the design's own: a design overrides what it imports.
+fn mergeFields(arena: Allocator, shared: []const json.Node.Field, own: []const json.Node.Field) Allocator.Error![]const json.Node.Field {
+    var out: std.ArrayList(json.Node.Field) = .empty;
+    for (shared) |s| {
+        var overridden = false;
+        for (own) |o| if (std.mem.eql(u8, o.key, s.key)) {
+            overridden = true;
+        };
+        if (!overridden) try out.append(arena, s);
+    }
+    try out.appendSlice(arena, own);
+    return out.items;
+}
+
+/// `"import": ["shared/base.defs.json"]`: the params and constants of
+/// definitions files, in order; a later file overrides an earlier one
+/// [1201, 1203, 1103].
+fn loadImports(l: *Loader, params: *std.ArrayList(json.Node.Field), consts: *std.ArrayList(json.Node.Field)) Allocator.Error!void {
+    const imp = l.root.get("import") orelse return;
+    if (imp.data != .array) {
+        try l.err(1103, imp.pos, "import must be an array of paths, found {s}", .{imp.kindName()});
+        return;
+    }
+    for (imp.data.array) |*pn| {
+        const raw = (try l.literalString(pn, "an import path")) orelse continue;
+        const path = (try project.normalize(l.arena, raw)) orelse {
+            try l.errHint(1203, pn.pos, try std.fmt.allocPrint(l.arena, "import path '{s}' is outside the project", .{raw}), "paths are relative to the project folder");
+            continue;
+        };
+        const part = (try readPart(l, pn.pos, path, &defs_fields, "definitions", "import", "a definitions file")) orelse continue;
+        const r = &part.root;
+        if (r.get("params") == null and r.get("consts") == null) {
+            try l.report(.warning, 1102, r.pos, "the definitions file has neither \"params\" nor \"consts\"", null);
+        }
+        inline for (.{ .{ "params", params }, .{ "consts", consts } }) |kind| {
+            if (r.get(kind[0])) |n| {
+                if (n.data != .object) {
+                    try l.err(1103, n.pos, "{s} must be an object, found {s}", .{ kind[0], n.kindName() });
+                } else {
+                    const merged = try mergeFields(l.arena, kind[1].items, n.data.object);
+                    kind[1].clearRetainingCapacity();
+                    try kind[1].appendSlice(l.arena, merged);
+                }
+            }
+        }
+    }
+}
+
 /// `"consts": { "tile": 170, "gap": "tile / 10" }`: each sees params, the
-/// canvas size and the constants before it.
-fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
-    const cn = d.root.get("consts") orelse return;
-    if (!try l.expectObject(cn, "consts")) return;
+/// canvas size and the constants before it. A constant that reads a layer
+/// (`@panel.bounds.right`), and every constant after it, is compiled once the
+/// layers are known (`loadLateConsts`).
+fn loadConsts(l: *Loader, d: *Design, fields: []const json.Node.Field) Allocator.Error!void {
+    if (d.root.get("consts")) |cn| if (!try l.expectObject(cn, "consts")) return;
+    var early: std.ArrayList(json.Node.Field) = .empty;
+    var late: std.ArrayList(json.Node.Field) = .empty;
+    for (fields) |f| {
+        if (late.items.len > 0 or try readsLayer(l, &f.value)) try late.append(l.arena, f) else try early.append(l.arena, f);
+    }
+    l.late_consts = late.items;
     var consts: std.ArrayList(Const) = .empty;
     var syms: std.ArrayList(expr.Symbol) = .empty;
-    for (cn.data.object) |*f| {
+    try loadConstList(l, d, early.items, null, &consts, &syms);
+    d.consts = consts.items;
+    d.const_symbols = syms.items;
+}
+
+/// Compiles the constants that read layers, now that the layers' ids and
+/// kinds are known.
+fn loadLateConsts(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol) Allocator.Error!void {
+    if (l.late_consts.len == 0) return;
+    var consts: std.ArrayList(Const) = .empty;
+    var syms: std.ArrayList(expr.Symbol) = .empty;
+    try consts.appendSlice(l.arena, d.consts);
+    try syms.appendSlice(l.arena, d.const_symbols);
+    try loadConstList(l, d, l.late_consts, lsyms, &consts, &syms);
+    d.consts = consts.items;
+    d.const_symbols = syms.items;
+}
+
+/// True when a constant's expression has an `@layer` reference.
+fn readsLayer(l: *Loader, n: *const Node) Allocator.Error!bool {
+    const src = switch (n.data) {
+        .string => |s| s,
+        else => return false,
+    };
+    if (std.mem.indexOfScalar(u8, src, '@') == null) return false;
+    var problem: ?expr.Problem = null;
+    const node = expr.parse(l.arena, src, 0, &problem) catch return false;
+    return hasLayerRef(l.arena, node);
+}
+
+fn hasLayerRef(arena: Allocator, n: *const expr.Node) Allocator.Error!bool {
+    if (n.data == .layer_ref) return true;
+    for (try expr.children(arena, n)) |c| if (try hasLayerRef(arena, c)) return true;
+    return false;
+}
+
+/// A JSON array as a list constant: an array of objects with the same fields
+/// (number, true/false or text), or an array of numbers, texts or bools,
+/// whose items have one field, `value`.
+fn listConst(l: *Loader, items: []const Node, pos: u32) Allocator.Error!?struct { def: *const value.ItemDef, v: Value } {
+    const arena = l.arena;
+    if (items.len == 0) {
+        try l.errHint(3003, pos, "an empty list constant has no fields to know", "give it at least one item");
+        return null;
+    }
+    var names: std.ArrayList([]const u8) = .empty;
+    var types: std.ArrayList(value.Scalar) = .empty;
+    const scalar_items = items[0].data != .object;
+    if (scalar_items) {
+        try names.append(arena, "value");
+        try types.append(arena, scalarOf(&items[0]) orelse {
+            try l.err(1103, items[0].pos, "a list constant holds numbers, true/false, text or objects of those", .{});
+            return null;
+        });
+    } else for (items[0].data.object) |f| {
+        if (!expr.isIdent(f.key)) {
+            try l.err(1103, f.key_pos, "item field '{s}' must be lowercase letters, digits and '_'", .{f.key});
+            return null;
+        }
+        try names.append(arena, f.key);
+        try types.append(arena, scalarOf(&f.value) orelse {
+            try l.err(1103, f.value.pos, "an item field is a number, true/false or text", .{});
+            return null;
+        });
+    }
+    const def = try arena.create(value.ItemDef);
+    def.* = .{ .names = names.items, .types = types.items };
+    const rows = try arena.alloc([]const Value, items.len);
+    for (items, rows) |*it, *row| {
+        const vals = try arena.alloc(Value, names.items.len);
+        if (scalar_items) {
+            vals[0] = scalarValue(it, types.items[0]) orelse {
+                try l.err(1103, it.pos, "every item of a list constant has the same type as the first", .{});
+                return null;
+            };
+        } else {
+            if (it.data != .object or it.data.object.len != names.items.len) {
+                try l.err(1103, it.pos, "every item of a list constant has the same fields as the first", .{});
+                return null;
+            }
+            for (names.items, types.items, vals) |nm, ty, *out| {
+                const fv = it.get(nm) orelse {
+                    try l.err(1103, it.pos, "an item has no field '{s}'", .{nm});
+                    return null;
+                };
+                out.* = scalarValue(fv, ty) orelse {
+                    try l.err(1103, fv.pos, "field '{s}' has another type than in the first item", .{nm});
+                    return null;
+                };
+            }
+        }
+        row.* = vals;
+    }
+    return .{ .def = def, .v = .{ .list = rows } };
+}
+
+fn scalarOf(n: *const Node) ?value.Scalar {
+    return switch (n.data) {
+        .number => .number,
+        .bool => .bool,
+        .string => .text,
+        else => null,
+    };
+}
+
+fn scalarValue(n: *const Node, ty: value.Scalar) ?Value {
+    return switch (ty) {
+        .number => if (n.data == .number) Value{ .number = n.data.number } else null,
+        .bool => if (n.data == .bool) Value{ .bool = n.data.bool } else null,
+        .text => if (n.data == .string) Value{ .text = n.data.string } else null,
+        else => null,
+    };
+}
+
+fn loadConstList(l: *Loader, d: *Design, fields: []const json.Node.Field, layers: ?[]const expr.LayerSymbol, consts: *std.ArrayList(Const), syms: *std.ArrayList(expr.Symbol)) Allocator.Error!void {
+    for (fields) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, syms.items, &.{}, f.key)) {
             try l.err(1106, f.key_pos, "constant name '{s}' must be lowercase letters, digits and '_', and not a param, reserved word or function name", .{f.key});
             continue;
         }
-        const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = null };
+        const scope: expr.Scope = .{ .arena = l.arena, .params = d.symbols, .consts = syms.items, .layers = layers };
+        if (f.value.data == .array) {
+            const got = (try listConst(l, f.value.data.array, f.value.pos)) orelse continue;
+            try consts.append(l.arena, .{ .name = f.key, .prop = (try constProp(l.arena, .{ .number = 0 }, f.value.pos)).?, .value = got.v });
+            try syms.append(l.arena, .{ .name = f.key, .ty = .{ .list = got.def } });
+            continue;
+        }
         try l.note(f.value.pos, null, false, &scope);
         const want: Type = switch (f.value.data) {
             .number => .number,
@@ -990,12 +1188,12 @@ fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
                     try l.err(3003, f.value.pos, "a constant cannot be a list or a list item", .{});
                     continue;
                 }
-                try consts.append(l.arena, .{ .name = f.key, .prop = .{ .node = node, .pos = f.value.pos } });
+                try consts.append(l.arena, .{ .name = f.key, .prop = .{ .node = node, .pos = f.value.pos }, .reads_layers = layers != null });
                 try syms.append(l.arena, .{ .name = f.key, .ty = t });
                 continue;
             },
             else => {
-                try l.err(1103, f.value.pos, "a constant is a number, true/false or an expression string", .{});
+                try l.err(1103, f.value.pos, "a constant is a number, true/false, an expression string or a list", .{});
                 continue;
             },
         };
@@ -1003,8 +1201,6 @@ fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
         try consts.append(l.arena, .{ .name = f.key, .prop = p });
         try syms.append(l.arena, .{ .name = f.key, .ty = want });
     }
-    d.consts = consts.items;
-    d.const_symbols = syms.items;
 }
 
 /// `"functions": { "tile_x": { "args": { "i": "number" }, "expr": "65 + i * 170" } }`:
@@ -1211,7 +1407,8 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
+const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
+const defs_fields = [_][]const u8{ "$schema", "format", "name", "note", "params", "consts" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
 
@@ -1227,7 +1424,7 @@ fn isDivider(n: *const Node) bool {
 
 /// Flattens nested groups into one list in document order (a group comes
 /// right before its descendants).
-fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?usize, depth: usize) Allocator.Error!void {
+fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?usize, depth: usize, prefix: []const u8) Allocator.Error!void {
     for (nodes) |*n| {
         const i = out.items.len;
         try out.append(l.arena, .{ .node = n, .parent = parent });
@@ -1242,10 +1439,18 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
                 continue;
             }
             const layers = (try includeComponent(l, inc)) orelse continue;
-            try flatten(l, out, layers, i, depth + 1);
+            var full = prefix;
+            if (n.get("id_prefix")) |pn| if (try l.literalString(pn, "id_prefix")) |own| {
+                if (own.len == 0 or !expr.isIdent(own)) {
+                    try l.errHint(1103, pn.pos, "invalid id_prefix", "lowercase letters, digits and '_', starting with a letter or '_'");
+                } else full = try std.mem.concat(l.arena, u8, &.{ prefix, own });
+            };
+            const used = if (full.len > 0) try prefixLayers(l, layers, full) else layers;
+            try flatten(l, out, used, i, depth + 1, full);
             _ = l.including.pop();
             continue;
         }
+        if (n.get("id_prefix")) |pn| try l.errHint(1101, pn.pos, "id_prefix only applies to a group with \"include\"", "remove it, or include a component");
         const ln = n.get("layers") orelse {
             try l.err(1102, n.pos, "a group needs \"layers\" (or \"include\")", .{});
             continue;
@@ -1258,8 +1463,121 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
             try l.err(5001, ln.pos, "groups are nested more than 16 deep", .{});
             continue;
         }
-        try flatten(l, out, ln.data.array, i, depth + 1);
+        try flatten(l, out, ln.data.array, i, depth + 1, prefix);
     }
+}
+
+/// Reads a project file next to the design (a component or a definitions
+/// file) once, with its positions moved past the design's text and the parts
+/// before it [1201, 1202]. `fields` are the keys it may have at the top.
+fn readPart(l: *Loader, pos: u32, path: []const u8, fields: []const []const u8, noun: []const u8, verb: []const u8, what: []const u8) Allocator.Error!?*const Part {
+    for (l.parts.items) |*p| if (std.mem.eql(u8, p.file, path)) return p;
+    const vfs = l.vfs orelse {
+        try l.err(1201, pos, "{s} '{s}' cannot be read here; {s} works in a project", .{ noun, path, verb });
+        return null;
+    };
+    const text = vfs.read(path) orelse {
+        try l.err(1201, pos, "{s} file '{s}' not found", .{ noun, path });
+        return null;
+    };
+    const src: diag.Source = .{ .file = path, .text = text };
+    var root = (try parseJson(l.arena, l.diags, src)) orelse {
+        l.errors += 1;
+        return null;
+    };
+    if (!try checkFormat(&root, l.diags, src)) l.errors += 1;
+    var base: u32 = @intCast(l.src.text.len + 1);
+    for (l.parts.items) |p| base = p.base + @as(u32, @intCast(p.text.len + 1));
+    shift(&root, base);
+    try l.parts.append(l.arena, .{ .file = path, .text = text, .root = root, .base = base });
+    const p = &l.parts.items[l.parts.items.len - 1];
+    try l.checkFields(&p.root, fields, what);
+    return p;
+}
+
+/// Copies a component's layers with `prefix` in front of every layer id, and
+/// in front of the ids in `@id` references and `extends` that name a layer of
+/// the component, so the component can be included more than once. Layers of
+/// components the component includes get the prefix when they are flattened.
+fn prefixLayers(l: *Loader, layers: []const Node, prefix: []const u8) Allocator.Error![]const Node {
+    var ids: std.ArrayList([]const u8) = .empty;
+    try collectIds(l.arena, &ids, layers);
+    return cloneLayers(l.arena, layers, ids.items, prefix);
+}
+
+fn collectIds(arena: Allocator, ids: *std.ArrayList([]const u8), layers: []const Node) Allocator.Error!void {
+    for (layers) |*n| {
+        if (n.data != .object) continue;
+        if (n.get("id")) |idn| if (idn.data == .string) try ids.append(arena, idn.data.string);
+        if (n.get("layers")) |ln| if (ln.data == .array) try collectIds(arena, ids, ln.data.array);
+    }
+}
+
+fn cloneLayers(arena: Allocator, layers: []const Node, ids: []const []const u8, prefix: []const u8) Allocator.Error![]const Node {
+    const out = try arena.alloc(Node, layers.len);
+    for (layers, out) |n, *o| {
+        if (n.data != .object) {
+            o.* = n;
+            continue;
+        }
+        const fields = try arena.alloc(json.Node.Field, n.data.object.len);
+        for (n.data.object, fields) |f, *nf| {
+            nf.* = f;
+            if (f.value.data == .string and std.mem.eql(u8, f.key, "id")) {
+                nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, f.value.data.string }) };
+            } else if (std.mem.eql(u8, f.key, "layers") and f.value.data == .array) {
+                nf.value.data = .{ .array = try cloneLayers(arena, f.value.data.array, ids, prefix) };
+            } else if (std.mem.eql(u8, f.key, "note") or std.mem.eql(u8, f.key, "tag")) {
+                // Text for people: kept as written.
+            } else if (std.mem.eql(u8, f.key, "extends") and f.value.data == .string) {
+                for (ids) |id| if (std.mem.eql(u8, id, f.value.data.string)) {
+                    nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, id }) };
+                };
+            } else try cloneValue(arena, &nf.value, ids, prefix);
+        }
+        o.* = .{ .pos = n.pos, .data = .{ .object = fields } };
+    }
+    return out;
+}
+
+/// Rewrites `@id` references to component layers in every string of a value.
+fn cloneValue(arena: Allocator, v: *Node, ids: []const []const u8, prefix: []const u8) Allocator.Error!void {
+    switch (v.data) {
+        .string => |s| v.data = .{ .string = try prefixRefs(arena, s, ids, prefix) },
+        .array => |items| {
+            const copy = try arena.dupe(Node, items);
+            for (copy) |*it| try cloneValue(arena, it, ids, prefix);
+            v.data = .{ .array = copy };
+        },
+        .object => |fields| {
+            const copy = try arena.dupe(json.Node.Field, fields);
+            for (copy) |*f| try cloneValue(arena, &f.value, ids, prefix);
+            v.data = .{ .object = copy };
+        },
+        else => {},
+    }
+}
+
+fn prefixRefs(arena: Allocator, s: []const u8, ids: []const []const u8, prefix: []const u8) Allocator.Error![]const u8 {
+    if (std.mem.indexOfScalar(u8, s, '@') == null) return s;
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        const ch = s[i];
+        try out.append(arena, ch);
+        i += 1;
+        if (ch != '@') continue;
+        const before_ident = i >= 2 and (std.ascii.isAlphanumeric(s[i - 2]) or s[i - 2] == '_');
+        var j = i;
+        while (j < s.len and (std.ascii.isLower(s[j]) or std.ascii.isDigit(s[j]) or s[j] == '_')) j += 1;
+        const word = s[i..j];
+        if (before_ident) continue;
+        for (ids) |id| if (std.mem.eql(u8, id, word)) {
+            try out.appendSlice(arena, prefix);
+            break;
+        };
+    }
+    return out.items;
 }
 
 /// The layers of the component file a group includes [1201, 1203, 3004].
@@ -1275,36 +1593,8 @@ fn includeComponent(l: *Loader, inc: *const Node) Allocator.Error!?[]const Node 
         try l.err(3004, inc.pos, "include cycle through '{s}'", .{path});
         return null;
     };
-    // A component used by several groups is read once.
-    var part: ?*const Part = null;
-    for (l.parts.items) |*p| if (std.mem.eql(u8, p.file, path)) {
-        part = p;
-    };
-    if (part == null) {
-        const vfs = l.vfs orelse {
-            try l.err(1201, inc.pos, "component '{s}' cannot be read here; include works in a project", .{path});
-            return null;
-        };
-        const text = vfs.read(path) orelse {
-            try l.err(1201, inc.pos, "component file '{s}' not found", .{path});
-            return null;
-        };
-        const src: diag.Source = .{ .file = path, .text = text };
-        var root = (try parseJson(l.arena, l.diags, src)) orelse {
-            l.errors += 1;
-            return null;
-        };
-        if (!try checkFormat(&root, l.diags, src)) l.errors += 1;
-        // Positions after the design's text and the parts so far.
-        var base: u32 = @intCast(l.src.text.len + 1);
-        for (l.parts.items) |p| base = p.base + @as(u32, @intCast(p.text.len + 1));
-        shift(&root, base);
-        try l.parts.append(l.arena, .{ .file = path, .text = text, .root = root, .base = base });
-        const p = &l.parts.items[l.parts.items.len - 1];
-        try l.checkFields(&p.root, &component_fields, "a component");
-        part = p;
-    }
-    const r = &part.?.root;
+    const part = (try readPart(l, inc.pos, path, &component_fields, "component", "include", "a component")) orelse return null;
+    const r = &part.root;
     const ln = r.get("layers") orelse {
         try l.err(1102, r.pos, "the component needs \"layers\"", .{});
         return null;
@@ -1313,7 +1603,7 @@ fn includeComponent(l: *Loader, inc: *const Node) Allocator.Error!?[]const Node 
         try l.err(1103, ln.pos, "layers must be an array", .{});
         return null;
     }
-    try l.including.append(l.arena, part.?.file);
+    try l.including.append(l.arena, part.file);
     return ln.data.array;
 }
 
@@ -1333,7 +1623,7 @@ fn shift(n: *Node, base: u32) void {
 fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const Layer {
     const arena = l.arena;
     var flat: std.ArrayList(Raw) = .empty;
-    try flatten(l, &flat, top, null, 0);
+    try flatten(l, &flat, top, null, 0, "");
     const raws = flat.items;
     // Pass 1: ids and types.
     for (raws, 0..) |*raw, i| {
@@ -1386,6 +1676,9 @@ fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const
         const m = r.merged orelse continue;
         try lsyms.append(arena, .{ .id = r.id, .kind = k, .repeated = m.get("repeat") != null, .rgroups = rgroups[i] });
     }
+
+    // Constants that read layers.
+    try loadLateConsts(l, d, lsyms.items);
 
     // Pass 4: compile. Layers inside a repeated group see its loop names.
     var layers: std.ArrayList(Layer) = .empty;
@@ -1615,6 +1908,15 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     if (e.get("side")) |sn| eff.side = (try l.enumField(Side, sn, "side")) orelse .bottom else try l.err(1102, e.pos, "{s} needs \"side\"", .{@tagName(ek)});
                     const ax: *const expr.Scope = if (eff.side == .left or eff.side == .right) &sx else &sy;
                     if (e.get("length")) |ln| eff.length = try l.prop(ln, .number, ax) else try l.err(1102, e.pos, "{s} needs \"length\"", .{@tagName(ek)});
+                } else if (ek == .blur) {
+                    try l.checkFields(e, &.{ "type", "radius" }, "a blur effect");
+                    if (e.get("radius")) |rn| eff.radius = try l.prop(rn, .number, scope) else try l.err(1102, e.pos, "blur needs \"radius\"", .{});
+                } else if (ek == .shadow) {
+                    try l.checkFields(e, &.{ "type", "x", "y", "blur", "color" }, "a shadow effect");
+                    if (e.get("x")) |xn| eff.dx = try l.prop(xn, .number, &sx);
+                    if (e.get("y")) |yn| eff.dy = try l.prop(yn, .number, &sy);
+                    if (e.get("blur")) |bn| eff.radius = try l.prop(bn, .number, scope);
+                    if (e.get("color")) |cn| eff.color = try l.prop(cn, .color, scope);
                 } else {
                     try l.checkFields(e, &.{ "type", "strength" }, try std.fmt.allocPrint(arena, "a {s} effect", .{@tagName(ek)}));
                     if (e.get("strength")) |sn| eff.strength = try l.prop(sn, .number, scope);
@@ -1683,6 +1985,12 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     if (kind != .polygon) try l.err(1101, an.pos, "arrowheads only apply to polygons", .{}) else arrow = (try l.enumField(Arrow, an, "arrow")) orelse .none;
                 }
                 if (cp != null and wp != null) layer.stroke = .{ .color = cp.?, .width = wp.?, .dash = dash.items, .arrow = arrow };
+                // A shape with a stroke and no fill is filled white: usually not the outline that was meant.
+                const closed_open = if (m.get("closed")) |cv| (cv.data == .bool and !cv.data.bool) else false;
+                const curve_only = if (m.get("arc")) |an| (if (an.get("pie")) |pv| (pv.data == .bool and !pv.data.bool) else false) else false;
+                if (kind != .text and !closed_open and !curve_only and m.get("fill") == null and m.get("gradient") == null) {
+                    try l.report(.warning, 1114, sn.pos, try std.fmt.allocPrint(arena, "{s} layer '{s}' has a stroke but no fill, so it is filled white", .{ @tagName(kind), id }), "add \"fill\": \"#00000000\" for an outline only, or a color to fill it on purpose");
+                }
             };
             if (kind == .ellipse) if (m.get("arc")) |an| if (try l.expectObject(an, "arc")) {
                 try l.checkFields(an, &.{ "start", "end", "pie" }, "arc");
@@ -1881,7 +2189,7 @@ fn checkFontName(l: *Loader, d: *const Design, s: []const u8, pos: u32) Allocato
     try l.errHint(4004, pos, try std.fmt.allocPrint(l.arena, "font '{s}' is not declared in \"fonts\"", .{s}), diag.suggest(l.arena, s, names.items));
 }
 
-fn constProp(arena: Allocator, v: Value, pos: u32) Allocator.Error!?Prop {
+pub fn constProp(arena: Allocator, v: Value, pos: u32) Allocator.Error!?Prop {
     const node = try arena.create(expr.Node);
     node.* = .{ .start = 0, .end = 0, .data = switch (v) {
         .number => |x| .{ .number = x },
@@ -2112,4 +2420,69 @@ test "enum fields: names, expressions and misspelt names" {
     try std.testing.expect(d.layers[0].anchor_expr == null);
     try std.testing.expect(d.layers[1].anchor_expr != null);
     try std.testing.expect(d.layers[2].fit_expr != null);
+}
+
+fn countCode(diags: *const diag.List, code: u16) usize {
+    var n: usize = 0;
+    for (diags.items.items) |d| {
+        if (d.code == code) n += 1;
+    }
+    return n;
+}
+
+test "a stroke without a fill is warned about (1114), a fill or gradient is not" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "frame", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 } },
+        \\    { "id": "ring", "type": "ellipse", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 } },
+        \\    { "id": "line", "type": "polygon", "closed": false, "points": [[0, 0], [5, 5]], "stroke": { "width": 2 } },
+        \\    { "id": "ok1", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 }, "fill": "#00000000" },
+        \\    { "id": "ok2", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "stroke": { "width": 2 }, "gradient": { "stops": [{ "color": "#000000", "at": 0 }, { "color": "#FFFFFF", "at": 1 }] } },
+        \\    { "id": "ok3", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 } }
+        \\  ]
+        \\}
+    ;
+    _ = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 1114));
+}
+
+test "list constants: empty, mixed and ragged lists are errors; layer reading consts are accepted" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "consts": {
+        \\    "empty": [],
+        \\    "mixed": [1, "a"],
+        \\    "ragged": [{ "a": 1 }, { "b": 2 }],
+        \\    "ok": [{ "a": 1 }, { "a": 2 }],
+        \\    "edge": "@r.bounds.right",
+        \\    "after": "edge + 1"
+        \\  },
+        \\  "layers": [
+        \\    { "id": "r", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "fill": "#FF0000" }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", src);
+    try std.testing.expectEqual(@as(usize, 3), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 3), d.consts.len);
+    try std.testing.expectEqualStrings("ok", d.consts[0].name);
+    try std.testing.expect(d.consts[0].value != null);
+    try std.testing.expect(d.consts[1].reads_layers);
+    try std.testing.expect(d.consts[2].reads_layers);
 }

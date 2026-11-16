@@ -9,7 +9,7 @@ const usage =
     \\yoshida {s} (format {d})
     \\
     \\Usage:
-    \\  yoshida check  <project>  [--set NAME] [--card ID] [--format text|json]
+    \\  yoshida check  <project>...  [--set NAME] [--card ID] [--format text|json]
     \\                            [--now YYYY-MM-DDTHH:MM:SSZ] [--utc-offset HOURS]
     \\  yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
     \\                            [--date YYYY-MM-DD] [--now YYYY-MM-DDTHH:MM:SSZ]
@@ -17,7 +17,7 @@ const usage =
     \\                            [--offline] [--pdf] [--crop-marks] [--svg]
     \\                            [--vector] [--scale N] [--sheet COLSxROWS]
     \\                            [--format text|json]
-    \\  yoshida fmt    <project or file>  [--check]
+    \\  yoshida fmt    <project or file>...  [--check]
     \\  yoshida version
     \\
     \\check   loads every design and card file and evaluates every card
@@ -42,6 +42,7 @@ const usage =
     \\        --utc-offset (-14 to 14 hours) replaces the project's utc_offset.
     \\fmt     rewrites JSON files in the canonical layout; --check only lists
     \\        the files that are not formatted (exit status 1 if any).
+    \\        check and fmt take several projects (or files) in one run.
     \\
     \\Limits can be raised with environment variables: YOSHIDA_MAX_LAYERS
     \\(visible layers per card, default 500), YOSHIDA_MAX_REPEAT (iterations
@@ -57,6 +58,9 @@ const usage =
 const Args = struct {
     command: []const u8 = "",
     project: ?[]const u8 = null,
+    /// Every path after the command (`project` is the first); `check` and
+    /// `fmt` take several.
+    paths: []const []const u8 = &.{},
     set: ?[]const u8 = null,
     card: ?[]const u8 = null,
     out: ?[]const u8 = null,
@@ -78,7 +82,6 @@ const Args = struct {
 
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
-    const gpa = init.gpa;
     const arena = init.arena.allocator();
     var out_buf: [8192]u8 = undefined;
     var stdout_w = Io.File.Writer.init(.stdout(), io, &out_buf);
@@ -90,7 +93,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer err.flush() catch {};
 
     const argv = try init.minimal.args.toSlice(arena);
-    const args = parseArgs(argv[1..]) catch |e| {
+    const args = parseArgs(arena, argv[1..]) catch |e| {
         try err.print("error: {s}\n\n", .{@errorName(e)});
         try err.print(usage, .{ y.version, y.format_version });
         return 2;
@@ -114,6 +117,26 @@ pub fn main(init: std.process.Init) !u8 {
         } orelse continue;
         y.limits.set(setting, v);
     }
+    const multi = args.paths.len > 1;
+    var status: u8 = 0;
+    for (args.paths) |path| {
+        var one = args;
+        one.project = path;
+        if (multi) {
+            if (!args.json) try out.print("== {s} ==\n", .{path});
+        }
+        const code = try checkOrRender(init, one, multi, out, err);
+        if (code > status) status = code;
+    }
+    return status;
+}
+
+/// `yoshida check` or `yoshida render` for the project `args.project`.
+/// `multi`: several projects are checked in one run (JSON output names each).
+fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Writer, err: *Io.Writer) !u8 {
+    const io = init.io;
+    const gpa = init.gpa;
+    const arena = init.arena.allocator();
     const is_render = std.mem.eql(u8, args.command, "render");
     if (!is_render and !std.mem.eql(u8, args.command, "check")) {
         try err.print("error: unknown command '{s}'\n\n", .{args.command});
@@ -350,7 +373,11 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     if (args.json) {
-        try out.writeAll("{\"diagnostics\":");
+        if (multi) {
+            try out.writeAll("{\"project\":");
+            try y.json.writeString(out, args.project.?);
+            try out.writeAll(",\"diagnostics\":");
+        } else try out.writeAll("{\"diagnostics\":");
         try diags.writeJson(out);
         try out.writeAll(",\"sets\":[");
         for (proj.sets, 0..) |s, i| {
@@ -388,8 +415,9 @@ pub fn main(init: std.process.Init) !u8 {
     return if (diags.errorCount() > 0) 1 else 0;
 }
 
-fn parseArgs(argv: []const [:0]const u8) !Args {
+fn parseArgs(arena: Allocator, argv: []const [:0]const u8) !Args {
     var a: Args = .{};
+    var paths: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
     while (i < argv.len) : (i += 1) {
         const s = argv[i];
@@ -445,10 +473,13 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             a.command = "help";
         } else if (a.command.len == 0) {
             a.command = s;
-        } else if (a.project == null) {
-            a.project = s;
-        } else return error.TooManyArguments;
+        } else {
+            if (a.project == null) a.project = s;
+            try paths.append(arena, s);
+        }
     }
+    a.paths = paths.items;
+    if (paths.items.len > 1 and !(std.mem.eql(u8, a.command, "check") or std.mem.eql(u8, a.command, "fmt"))) return error.TooManyArguments;
     return a;
 }
 
@@ -587,23 +618,24 @@ const DiskFs = struct {
     }
 };
 
-/// `yoshida fmt`: canonical layout for every JSON file of a project (or one file).
+/// `yoshida fmt`: canonical layout for every JSON file of one or more
+/// projects or files.
 fn formatCommand(io: Io, arena: Allocator, args: Args, out: *Io.Writer, err: *Io.Writer) !u8 {
-    const target = args.project.?;
     var paths: std.ArrayList([]const u8) = .empty;
-    var base: []const u8 = "";
-    if (std.mem.endsWith(u8, target, ".json")) {
-        try paths.append(arena, target);
-    } else {
+    var failed: usize = 0;
+    for (args.paths) |target| {
+        if (std.mem.endsWith(u8, target, ".json")) {
+            try paths.append(arena, target);
+            continue;
+        }
         const disk = DiskFs.open(io, arena, target) catch |e| {
             try err.print("error: cannot open project folder '{s}': {s}\n", .{ target, @errorName(e) });
-            return 1;
+            failed += 1;
+            continue;
         };
-        base = target;
-        for (disk.files) |f| if (std.mem.endsWith(u8, f, ".json")) try paths.append(arena, try std.fs.path.join(arena, &.{ base, f }));
+        for (disk.files) |f| if (std.mem.endsWith(u8, f, ".json")) try paths.append(arena, try std.fs.path.join(arena, &.{ target, f }));
     }
     var changed: usize = 0;
-    var failed: usize = 0;
     for (paths.items) |p| {
         const src = Io.Dir.cwd().readFileAlloc(io, p, arena, .limited(64 * 1024 * 1024)) catch |e| {
             try err.print("error: cannot read '{s}': {s}\n", .{ p, @errorName(e) });
@@ -631,4 +663,23 @@ fn formatCommand(io: Io, arena: Allocator, args: Args, out: *Io.Writer, err: *Io
     try out.print("{d} file(s) checked, {d} {s}\n", .{ paths.items.len, changed, if (args.check) "not formatted" else "reformatted" });
     if (failed > 0) return 1;
     return if (args.check and changed > 0) 1 else 0;
+}
+
+test "check and fmt take several paths, the other commands one" {
+    // The core's C support (exported memory functions) must be linked in.
+    std.testing.refAllDecls(y);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const many = try parseArgs(a, &.{ "check", "one", "two", "--format", "json", "three" });
+    try std.testing.expectEqual(@as(usize, 3), many.paths.len);
+    try std.testing.expectEqualStrings("one", many.project.?);
+    try std.testing.expectEqualStrings("three", many.paths[2]);
+    try std.testing.expect(many.json);
+    const fmt = try parseArgs(a, &.{ "fmt", "--check", "a.json", "dir" });
+    try std.testing.expectEqual(@as(usize, 2), fmt.paths.len);
+    try std.testing.expect(fmt.check);
+    try std.testing.expectError(error.TooManyArguments, parseArgs(a, &.{ "render", "one", "two" }));
+    const single = try parseArgs(a, &.{ "render", "one" });
+    try std.testing.expectEqual(@as(usize, 1), single.paths.len);
 }

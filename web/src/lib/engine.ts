@@ -55,6 +55,8 @@ export type SetInfo = {
 	name: string;
 	design: string;
 	design_name: string;
+	/** The set's group in pickers: its manifest `group`, else the design name. */
+	group: string;
 	cards_file: string | null;
 	ok: boolean;
 	params: Param[];

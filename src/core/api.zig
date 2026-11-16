@@ -62,7 +62,7 @@ fn writeParamValue(w: *Writer, p: *const design_mod.Param, v: Value) Writer.Erro
     return writeValue(w, v);
 }
 
-/// `{"name", "sets": [{name, design, cards_file, ok, params, cards}]}`.
+/// `{"name", "sets": [{name, design, group, cards_file, ok, params, cards}]}`.
 pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void {
     try w.writeAll("{\"name\":");
     try json.writeString(w, proj.name);
@@ -76,6 +76,8 @@ pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void 
         try json.writeString(w, s.design_path);
         try w.writeAll(",\"design_name\":");
         try json.writeString(w, d.name);
+        try w.writeAll(",\"group\":");
+        try json.writeString(w, s.group orelse d.name);
         try w.writeAll(",\"cards_file\":");
         if (s.cards_path) |cp| try json.writeString(w, cp) else try w.writeAll("null");
         try w.print(",\"ok\":{}", .{s.ok});

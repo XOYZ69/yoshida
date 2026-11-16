@@ -703,6 +703,7 @@
           "type": "ellipse",
           "anchor": "center",
           "box": { "x": 0, "y": 0, "w": 200, "h": 200 },
+          "fill": "#FFFFFFFF",
           "stroke": { "color": "paper", "width": 12 },
           "note": "Round badge: extend it."
         },

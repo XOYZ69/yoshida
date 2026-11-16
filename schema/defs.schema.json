@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yoshida.local/schema/v1/defs.schema.json",
+  "title": "yoshida definitions",
+  "description": "Params and constants shared by designs: a design takes them with \"import\"",
+  "type": "object",
+  "required": ["format"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": 1 },
+    "name": { "type": "string" },
+    "note": { "type": "string" },
+    "params": { "$ref": "design.schema.json#/properties/params" },
+    "consts": { "$ref": "design.schema.json#/properties/consts" }
+  }
+}

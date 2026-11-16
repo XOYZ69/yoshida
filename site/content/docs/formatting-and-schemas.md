@@ -32,6 +32,7 @@ Schemas for editors live in `schema/` of the repository (JSON Schema draft 2020-
 | --- | --- |
 | `schema/design.schema.json` | `*.design.json` |
 | `schema/component.schema.json` | component files for [`include`](@/docs/layer-group.md#shared-components-include) |
+| `schema/defs.schema.json` | definitions files for [`import`](@/docs/params.md#sharing-params-and-constants-between-designs) |
 | `schema/cards.schema.json` | `*.cards.json` |
 | `schema/yoshida.schema.json` | `yoshida.json` |
 

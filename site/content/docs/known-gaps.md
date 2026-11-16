@@ -9,7 +9,7 @@ What does not work yet, so you do not have to find out the hard way.
 
 - **Rich text** is limited to bold, italic and inline icons ([`markup`](@/docs/layer-text.md#bold-italic-and-icons-markup)); there are no mixed sizes or colors inside one text layer, and italic needs an italic font.
 - **SVG images** are drawn by a small renderer: filters, masks, clip paths, `<use>`, embedded images and text on a path inside an SVG are not supported. Text is drawn with a font the design declares or the default font, never a system font; see [Fonts for SVG text](@/docs/layer-image.md#fonts-for-svg-text).
-- **Shared components** ([`include`](@/docs/layer-group.md#shared-components-include)) can be included once per design (ids must be unique), and the builder does not show live values inside component files.
+- **Shared components** ([`include`](@/docs/layer-group.md#shared-components-include)) are included more than once per design with an [`id_prefix`](@/docs/layer-group.md#including-a-component-twice-id-prefix), but they take no arguments: every copy uses the design's params. The builder does not show live values inside component files.
 - **Per-card layer overrides** are not in the format; cards change params only. (Single items of a default list can be changed, see [Params](@/docs/params.md#changing-single-items-of-the-default).)
 - The **layer limit** is 500 visible layers per card unless it is raised with `YOSHIDA_MAX_LAYERS` ([Limits](@/docs/limits-and-versioning.md#raising-a-limit)); a project cannot raise it from its own files. `yoshida check` finds cards over it. See [Repeat](@/docs/repeat.md#the-layer-limit).
 - A layer inside **two nested repeats** cannot be referenced from outside both (error 3005); an index picks one level only. See [Repeat](@/docs/repeat.md#reading-one-iteration).
@@ -28,7 +28,7 @@ What does not work yet, so you do not have to find out the hard way.
 
 - Image PDFs hold the card as an 8-bit image (no 16-bit). For sharper print or zoom, export at a higher resolution (2x to 4x; see [Resolution](@/docs/saving-images-and-privacy.md#resolution)) or as a vector file. [Vector PDFs and SVG files](@/docs/command-line.md#svg) draw the card as vectors, except:
   - A layer with a `gradient`, or an image with `radius` or `clip`, is embedded as pixels at the export resolution.
-  - A layer or group with a `sharpen`, `detail`, `edge_enhance` or `find_edges` [effect](@/docs/effects.md) is embedded as pixels, at the export resolution (the export dialog's **Resolution**, `--scale` or `"scale"`; 2x when not given).
+  - A layer or group with a `sharpen`, `detail`, `edge_enhance`, `find_edges`, `blur` or `shadow` [effect](@/docs/effects.md) is embedded as pixels, at the export resolution (the export dialog's **Resolution**, `--scale` or `"scale"`; 2x when not given).
   - Text becomes the outlines of its letters; it cannot be selected, searched or edited in the file.
   - Images are embedded with the pixels they have, and the viewer scales them, so a small image looks as soft (or as blocky, with `"smoothing": "nearest"`) as in the PNG.
 - The viewer anti-aliases a vector file, so edges, thin lines and small text differ slightly from the PNG, and a `fade` is a smooth ramp where the PNG has one step per pixel.
@@ -48,6 +48,9 @@ Not planned or implemented yet:
 - Emoji and color font support.
 - Miter and bevel line joins.
 - Mixed sizes and colors in text.
+- Arguments for an `include` (a component that takes values from the including group).
+- **Card import and merge:** adding cards from another file (`"import": "cards/extra.cards.json"` in a card file, or `yoshida import`), with a rule for cards that have the same id. The open questions are whether the later file wins or the clash is error 2004, and how the editor writes a change back to the file it came from.
+- **Output templates:** naming the written files and folders (`"output": "{set}/{card.id}-{rarity}.png"`) instead of the fixed `<out>/<set>/<card id>.png`. Card ids are checked to be safe as file names for this reason, so a template would have to keep every part safe and unique, and report a clash as an error before anything is written.
 - Named time zones and month and day names in other languages.
 
 These are candidates for a later 1.x or 2 format. See [Limits and Versioning](@/docs/limits-and-versioning.md).

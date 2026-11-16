@@ -1447,8 +1447,9 @@ const Ctx = struct {
 
     fn constValue(ptr: *anyopaque, index: usize) expr.EvalError!Value {
         const ctx: *Ctx = @ptrCast(@alignCast(ptr));
-        if (ctx.consts[index]) |v| return v;
         const k = &ctx.d.consts[index];
+        if (k.value) |v| return v;
+        if (!k.reads_layers) if (ctx.consts[index]) |v| return v;
         const saved = ctx.locals;
         ctx.locals = &.{};
         defer ctx.locals = saved;
@@ -1457,7 +1458,7 @@ const Ctx = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Failed => return error.Eval,
         };
-        ctx.consts[index] = v;
+        if (!k.reads_layers) ctx.consts[index] = v;
         return v;
     }
 
@@ -2209,7 +2210,7 @@ const Ctx = struct {
         // onto the target without a scratch bitmap.
         if (l.effects.len == 0 and r.opacity >= 1 and r.rotate == 0) return ctx.drawChildren(canvas, l, gi);
         if (ctx.scene) |sc| return if (hasConvolve(l)) ctx.captureGroup(sc, canvas, l, gi, r) else ctx.emitGroup(sc, canvas, l, gi, r);
-        const bb = ctx.groupBounds(l, r) orelse return;
+        const bb = (try ctx.groupBounds(l, r)) orelse return;
         var tmp: ?raster.Bitmap = try ctx.scratch(bb[0], bb[1], bb[2], bb[3]);
         defer if (tmp) |*t| t.deinit(ctx.gpa);
         try ctx.drawChildren(&tmp.?, l, gi);
@@ -2218,7 +2219,7 @@ const Ctx = struct {
 
     /// The canvas rectangle (x0, y0, x1, y1) a group's scratch bitmap
     /// covers; null when it is empty.
-    fn groupBounds(ctx: *Ctx, l: *const Layer, r: *const Resolved) ?[4]f64 {
+    fn groupBounds(ctx: *Ctx, l: *const Layer, r: *const Resolved) Failed!?[4]f64 {
         // Effects work on the group's own bounds (like a single layer's);
         // otherwise the children draw onto a canvas-sized bitmap, grown to
         // the bounds when rotation can bring off-canvas parts into view.
@@ -2227,10 +2228,11 @@ const Ctx = struct {
         var x1: f64 = @ceil(@max(ctx.canvas_w, r.left + r.w + 64));
         var y1: f64 = @ceil(@max(ctx.canvas_h, r.top + r.h + 64));
         if (l.effects.len > 0) {
-            x0 = @floor(r.left - 2);
-            y0 = @floor(r.top - 2);
-            x1 = @ceil(r.left + r.w + 2);
-            y1 = @ceil(r.top + r.h + 2);
+            const g = 2 + try ctx.effectGrow(l);
+            x0 = @floor(r.left - g);
+            y0 = @floor(r.top - g);
+            x1 = @ceil(r.left + r.w + g);
+            y1 = @ceil(r.top + r.h + g);
         }
         if (x1 - x0 < 1 or y1 - y0 < 1) return null;
         if ((r.rotate == 0 and l.effects.len == 0) or (x1 - x0) * (y1 - y0) * ctx.k * ctx.k > limitF(limits.image_pixels)) {
@@ -2306,7 +2308,11 @@ const Ctx = struct {
 
     fn drawLayer(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved) Failed!void {
         if (!ctx.countDrawn(ctx.indexOf(l))) return error.Failed;
-        const bb = layerBounds(l, r);
+        var bb = layerBounds(l, r);
+        if (l.effects.len > 0) {
+            const g = try ctx.effectGrow(l);
+            bb = .{ bb[0] - g, bb[1] - g, bb[2] + g, bb[3] + g };
+        }
         const rotated = r.rotate != 0;
         if (!rotated and (bb[2] <= 0 or bb[3] <= 0 or bb[0] >= ctx.canvas_w or bb[1] >= ctx.canvas_h)) {
             try ctx.report(.hint, 3202, l.pos, null, try ctx.layerMsg(l, "the layer is entirely outside the canvas", .{}), null);
@@ -2315,6 +2321,24 @@ const Ctx = struct {
         if (ctx.opts.dry) return;
         if (ctx.scene) |sc| return if (hasConvolve(l) or paintsAlone(l, r)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
         return ctx.paintLayer(canvas, l, r, bb);
+    }
+
+    /// How far (canvas pixels) the soft effects of a layer reach past its
+    /// bounds: a blur spreads its radius, a shadow its offset and softness.
+    fn effectGrow(ctx: *Ctx, l: *const Layer) Failed!f64 {
+        var e = ctx.newEnv();
+        var grow: f64 = 0;
+        for (l.effects) |eff| switch (eff.kind) {
+            .blur => grow += @max(0, try ctx.num(&e, l, eff.radius.?)) * 1.5,
+            .shadow => {
+                const dx = if (eff.dx) |p| try ctx.num(&e, l, p) else 0;
+                const dy = if (eff.dy) |p| try ctx.num(&e, l, p) else 4;
+                const soft = if (eff.radius) |p| @max(0, try ctx.num(&e, l, p)) else 6;
+                grow += @max(@abs(dx), @abs(dy)) + soft * 1.5;
+            },
+            else => {},
+        };
+        return @min(grow, 1000);
     }
 
     /// The canvas rectangle (x0, y0, x1, y1) a layer can draw in: its
@@ -2570,6 +2594,14 @@ const Ctx = struct {
                         try raster.crop(ctx.gpa, t, side, len, @floatCast(r.anchor.fx()), @floatCast(r.anchor.fy()));
                     } else raster.fade(t, side, len);
                 },
+                .blur => try raster.blur(ctx.gpa, t, @floatCast(@max(0, try ctx.num(&e, l, eff.radius.?)) * ctx.k / 2)),
+                .shadow => {
+                    const dx = if (eff.dx) |p| try ctx.num(&e, l, p) else 0;
+                    const dy = if (eff.dy) |p| try ctx.num(&e, l, p) else 4;
+                    const soft = if (eff.radius) |p| @max(0, try ctx.num(&e, l, p)) else 6;
+                    const color: Color = if (eff.color) |p| (try ctx.eval(&e, l, p)).color else .{ .r = 0, .g = 0, .b = 0, .a = 32768 };
+                    try raster.shadow(ctx.gpa, t, @intFromFloat(@round(dx * ctx.k)), @intFromFloat(@round(dy * ctx.k)), @floatCast(soft * ctx.k / 2), color);
+                },
                 else => {
                     const strength: f32 = if (eff.strength) |p| @floatCast(try ctx.num(&e, l, p)) else 1;
                     try raster.convolve(ctx.gpa, t, switch (eff.kind) {
@@ -2601,7 +2633,7 @@ const Ctx = struct {
 
     /// A group's children as items between begin and end items.
     fn emitGroup(ctx: *Ctx, sc: *vector.Scene, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
-        const bb = ctx.groupBounds(l, r) orelse return;
+        const bb = (try ctx.groupBounds(l, r)) orelse return;
         const mark = sc.items.items.len;
         errdefer sc.items.shrinkRetainingCapacity(mark);
         const n = try ctx.openFrame(sc, l, r, scratchRect(bb)) orelse return;
@@ -2856,7 +2888,7 @@ const Ctx = struct {
 
     /// The same for a group: its children are drawn as pixels.
     fn captureGroup(ctx: *Ctx, sc: *vector.Scene, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
-        const bb = ctx.groupBounds(l, r) orelse return;
+        const bb = (try ctx.groupBounds(l, r)) orelse return;
         var cap: ?raster.Bitmap = null;
         errdefer if (cap) |*b| b.deinit(ctx.gpa);
         var k: f64 = 1;
@@ -4641,4 +4673,119 @@ test "a repeated group in a row: one item per iteration" {
     try std.testing.expectApproxEqAbs(@as(f64, 119 + 34 + 5), lefts[2], 0.001);
     // The dot moves with its iteration.
     try std.testing.expectApproxEqAbs(lefts[1] + 30, dots[1], 0.001);
+}
+
+test "blur softens the edge of a layer and keeps its ink" {
+    const gpa = std.testing.allocator;
+    const plain =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "r", "type": "rect", "box": { "x": 40, "y": 40, "w": 20, "h": 20 }, "fill": "#000000" } ] }
+    ;
+    const blurred =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "r", "type": "rect", "box": { "x": 40, "y": 40, "w": 20, "h": 20 }, "fill": "#000000",
+        \\    "effects": [{ "type": "blur", "radius": 8 }] } ] }
+    ;
+    var a = (try testRenderDesign(gpa, plain, .{}, null)).?;
+    defer a.deinit(gpa);
+    var b = (try testRenderDesign(gpa, blurred, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Outside the rect the plain card is white; the blurred one has grey spilled over.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&a, 35, 50)[0]);
+    try std.testing.expect(pixel(&b, 35, 50)[0] < 60000);
+    // The middle stays dark and the far corner untouched.
+    try std.testing.expect(pixel(&b, 50, 50)[0] < 20000);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 5, 5)[0]);
+    // The edge pixel is between the two.
+    const edge = pixel(&b, 40, 50)[0];
+    try std.testing.expect(edge > 10000 and edge < 55000);
+}
+
+test "shadow draws a soft offset copy under the layer" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "r", "type": "rect", "box": { "x": 30, "y": 30, "w": 20, "h": 20 }, "fill": "#FF0000",
+        \\    "effects": [{ "type": "shadow", "x": 10, "y": 10, "blur": 4, "color": "#000000" }] } ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    // The layer itself is still red on top.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 40, 40)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 40, 40)[1]);
+    // Below and right of it the shadow darkens the white card.
+    try std.testing.expect(pixel(&b, 55, 55)[1] < 30000);
+    // Above and left of it nothing was drawn.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 20, 20)[1]);
+    // A shadow without options still draws (default offset 4 down, softness 6).
+    const d2 =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "g", "type": "group", "effects": [{ "type": "shadow" }], "layers": [
+        \\    { "id": "r", "type": "rect", "box": { "x": 30, "y": 30, "w": 20, "h": 20 }, "fill": "#FF0000" } ] } ] }
+    ;
+    var soft = (try testRenderDesign(gpa, d2, .{}, null)).?;
+    defer soft.deinit(gpa);
+    try std.testing.expect(pixel(&soft, 40, 52)[1] < 60000);
+}
+
+test "blur and shadow have no vector form: a vector scene still renders them" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [ { "id": "r", "type": "rect", "box": { "x": 30, "y": 30, "w": 20, "h": 20 }, "fill": "#FF0000",
+        \\    "effects": [{ "type": "blur", "radius": 3 }, { "type": "shadow" }] } ] }
+    ;
+    const items = try testOutline(gpa, a, d);
+    try std.testing.expect(items.len >= 1);
+}
+
+test "a constant can read a layer's bounds" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 40, "background": "#FFFFFF" },
+        \\  "consts": { "gap": 5, "edge": "@a.bounds.right + gap", "twice": "edge * 2" },
+        \\  "layers": [
+        \\    { "id": "a", "type": "rect", "box": { "x": 10, "y": 0, "w": 20, "h": 40 }, "fill": "#FF0000" },
+        \\    { "id": "b", "type": "rect", "box": { "x": "edge", "y": 0, "w": 10, "h": 40 }, "fill": "#0000FF" },
+        \\    { "id": "c", "type": "rect", "box": { "x": "twice", "y": 0, "w": 10, "h": 40 }, "fill": "#00FF00" }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    // a ends at 30, b starts at 35, c at 70.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 20, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 32, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 40, 10)[2]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 40, 10)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 75, 10)[1]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 60, 10)[0]);
+}
+
+test "a list constant drives repeat and lookups" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 20, "background": "#FFFFFF" },
+        \\  "consts": { "widths": [10, 30, 20], "cols": [{ "name": "a", "w": 4 }, { "name": "b", "w": 6 }], "first_col": "cols[0].w + cols.b" },
+        \\  "layers": [
+        \\    { "id": "bar", "type": "rect", "repeat": { "each": "widths", "item": "n", "index": "i" },
+        \\      "box": { "x": "i * 30", "y": 0, "w": "n.value", "h": 20 }, "fill": "#000000" },
+        \\    { "id": "mark", "type": "rect", "box": { "x": 0, "y": 15, "w": "first_col", "h": 5 }, "fill": "#FF0000" }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Bars: x 0..10, 30..60, 60..80 (the second reaches the third).
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 20, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 45, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 70, 5)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 90, 5)[0]);
+    // The red mark is first_col = 4 + 6 = 10 wide.
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 5, 17)[0]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 9, 17)[1]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 12, 17)[1]);
+    try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 17)[1]);
 }

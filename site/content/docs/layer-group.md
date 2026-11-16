@@ -125,8 +125,25 @@ Layers that several designs share, such as an effect row, can live in one compon
 - The path is from the project folder. Any name works; `*.component.json` keeps them apart from designs, and `schema/component.schema.json` checks them in an editor.
 - The layers are compiled as part of the design that includes them: they use that design's params, constants, functions, fonts and icons, and the design's layers can reference them (`@effect_bg.bounds.bottom`) and `extends` them. Every design that includes the component needs the params it uses.
 - The group works like any group: `translate`, `layout`, `visible`, `repeat` and effects apply to the included layers. Components can include other components (a cycle is error 3004).
-- Ids must be unique in the design, so one component can be included once per design; repeat the group to show it several times.
+- Ids must be unique in the design, so a second include of the same component is error 1108 unless it has an `id_prefix` (below). To show one component several times with different params, repeat the group instead.
 - Problems inside a component name the component file and its line.
+
+### Including a component twice (`id_prefix`)
+
+`id_prefix` puts text in front of the id of every layer the component brings, so the same component can be included more than once:
+
+```json
+{ "id": "left_pill", "type": "group", "include": "components/pill.component.json", "id_prefix": "l_" },
+{ "id": "right_pill", "type": "group", "include": "components/pill.component.json", "id_prefix": "r_",
+  "translate": { "x": 300, "y": 0 } }
+```
+
+With the component of the example above, the layers are `l_effect_bg` and `r_effect_bg`. The design refers to them by the new ids (`@l_effect_bg.bounds.bottom`).
+
+- The prefix is lowercase letters, digits and `_`, starting with a letter or `_`; anything else is error 1103. It applies to groups with `include` only (error 1101 elsewhere).
+- Inside the component, `@id` references to the component's own layers and its `extends` follow the new ids, so the component keeps working. A reference to the design's params, constants and other layers is not changed. References are renamed by matching `@` and the exact id, in every string of the component.
+- Components the component includes get the prefix too; if they have an `id_prefix` of their own, the two are joined (outer first). A reference from the outer component to a layer of an included component is not renamed.
+- Params are not passed per include: both copies use the design's params. To vary them, give the second include a different `translate` and use a [`repeat`](@/docs/repeat.md) with `item`, or make a second component.
 - In the builder, a group becomes a component with **Create component**, and a component's layers are edited in place; see [Builder: Layers](@/docs/builder-layers.md#components). Live values are not shown for fields inside a component yet.
 
 ## Moving a group
