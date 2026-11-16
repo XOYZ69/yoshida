@@ -66,6 +66,11 @@
         }
       ]
     },
+    "import": {
+      "type": "array",
+      "description": "Definitions files (*.defs.json) whose params and consts this design takes. The design's own params and consts of the same name replace them.",
+      "items": { "type": "string" }
+    },
     "params": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },

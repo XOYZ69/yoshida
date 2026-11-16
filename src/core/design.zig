@@ -655,7 +655,7 @@ const Loader = struct {
     }
 };
 
-const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "params", "consts", "functions", "layers" };
+const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "import", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
 const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
 
@@ -864,17 +864,24 @@ pub fn loadWith(arena: Allocator, diags: *diag.List, file: []const u8, text: []c
         if (try l.literalString(n, "name")) |s| d.name = s;
     } else try l.err(1102, root.pos, "the design needs a \"name\"", .{});
 
+    // Definitions shared with other designs (`import`), then the design's own.
+    var shared_params: std.ArrayList(json.Node.Field) = .empty;
+    var shared_consts: std.ArrayList(json.Node.Field) = .empty;
+    try loadImports(&l, &shared_params, &shared_consts);
+
     // Params
     var params: std.ArrayList(Param) = .empty;
     var symbols: std.ArrayList(expr.Symbol) = .empty;
-    if (root.get("params")) |pn| if (try l.expectObject(pn, "params")) {
-        for (pn.data.object) |*f| {
+    const own_params: []const json.Node.Field = if (root.get("params")) |pn| (if (try l.expectObject(pn, "params")) pn.data.object else &.{}) else &.{};
+    const all_params = try mergeFields(l.arena, shared_params.items, own_params);
+    {
+        for (all_params) |*f| {
             if (try loadParam(&l, f)) |p| {
                 try params.append(arena, p);
                 try symbols.append(arena, .{ .name = p.name, .ty = p.ty });
             }
         }
-    };
+    }
     d.params = params.items;
     d.symbols = symbols.items;
 
@@ -891,7 +898,8 @@ pub fn loadWith(arena: Allocator, diags: *diag.List, file: []const u8, text: []c
         }
     } else try l.err(1102, root.pos, "the design needs a \"canvas\" with width and height", .{});
 
-    try loadConsts(&l, d);
+    const own_consts: []const json.Node.Field = if (root.get("consts")) |cn| (if (cn.data == .object) cn.data.object else &.{}) else &.{};
+    try loadConsts(&l, d, try mergeFields(l.arena, shared_consts.items, own_consts));
     try loadFunctions(&l, d);
 
     // Fonts
@@ -951,14 +959,62 @@ fn nameTaken(d: *const Design, consts: []const expr.Symbol, fns: []const expr.Fn
     return false;
 }
 
+/// The fields of the imported files, without those the design defines
+/// itself, then the design's own: a design overrides what it imports.
+fn mergeFields(arena: Allocator, shared: []const json.Node.Field, own: []const json.Node.Field) Allocator.Error![]const json.Node.Field {
+    var out: std.ArrayList(json.Node.Field) = .empty;
+    for (shared) |s| {
+        var overridden = false;
+        for (own) |o| if (std.mem.eql(u8, o.key, s.key)) {
+            overridden = true;
+        };
+        if (!overridden) try out.append(arena, s);
+    }
+    try out.appendSlice(arena, own);
+    return out.items;
+}
+
+/// `"import": ["shared/base.defs.json"]`: the params and constants of
+/// definitions files, in order; a later file overrides an earlier one
+/// [1201, 1203, 1103].
+fn loadImports(l: *Loader, params: *std.ArrayList(json.Node.Field), consts: *std.ArrayList(json.Node.Field)) Allocator.Error!void {
+    const imp = l.root.get("import") orelse return;
+    if (imp.data != .array) {
+        try l.err(1103, imp.pos, "import must be an array of paths, found {s}", .{imp.kindName()});
+        return;
+    }
+    for (imp.data.array) |*pn| {
+        const raw = (try l.literalString(pn, "an import path")) orelse continue;
+        const path = (try project.normalize(l.arena, raw)) orelse {
+            try l.errHint(1203, pn.pos, try std.fmt.allocPrint(l.arena, "import path '{s}' is outside the project", .{raw}), "paths are relative to the project folder");
+            continue;
+        };
+        const part = (try readPart(l, pn.pos, path, &defs_fields, "definitions", "import", "a definitions file")) orelse continue;
+        const r = &part.root;
+        if (r.get("params") == null and r.get("consts") == null) {
+            try l.report(.warning, 1102, r.pos, "the definitions file has neither \"params\" nor \"consts\"", null);
+        }
+        inline for (.{ .{ "params", params }, .{ "consts", consts } }) |kind| {
+            if (r.get(kind[0])) |n| {
+                if (n.data != .object) {
+                    try l.err(1103, n.pos, "{s} must be an object, found {s}", .{ kind[0], n.kindName() });
+                } else {
+                    const merged = try mergeFields(l.arena, kind[1].items, n.data.object);
+                    kind[1].clearRetainingCapacity();
+                    try kind[1].appendSlice(l.arena, merged);
+                }
+            }
+        }
+    }
+}
+
 /// `"consts": { "tile": 170, "gap": "tile / 10" }`: each sees params, the
 /// canvas size and the constants before it.
-fn loadConsts(l: *Loader, d: *Design) Allocator.Error!void {
-    const cn = d.root.get("consts") orelse return;
-    if (!try l.expectObject(cn, "consts")) return;
+fn loadConsts(l: *Loader, d: *Design, fields: []const json.Node.Field) Allocator.Error!void {
+    if (d.root.get("consts")) |cn| if (!try l.expectObject(cn, "consts")) return;
     var consts: std.ArrayList(Const) = .empty;
     var syms: std.ArrayList(expr.Symbol) = .empty;
-    for (cn.data.object) |*f| {
+    for (fields) |*f| {
         if (!expr.isIdent(f.key) or nameTaken(d, syms.items, &.{}, f.key)) {
             try l.err(1106, f.key_pos, "constant name '{s}' must be lowercase letters, digits and '_', and not a param, reserved word or function name", .{f.key});
             continue;
@@ -1212,6 +1268,7 @@ const Raw = struct {
 };
 
 const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
+const defs_fields = [_][]const u8{ "$schema", "format", "name", "note", "params", "consts" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
 
@@ -1262,6 +1319,34 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
     }
 }
 
+/// Reads a project file next to the design (a component or a definitions
+/// file) once, with its positions moved past the design's text and the parts
+/// before it [1201, 1202]. `fields` are the keys it may have at the top.
+fn readPart(l: *Loader, pos: u32, path: []const u8, fields: []const []const u8, noun: []const u8, verb: []const u8, what: []const u8) Allocator.Error!?*const Part {
+    for (l.parts.items) |*p| if (std.mem.eql(u8, p.file, path)) return p;
+    const vfs = l.vfs orelse {
+        try l.err(1201, pos, "{s} '{s}' cannot be read here; {s} works in a project", .{ noun, path, verb });
+        return null;
+    };
+    const text = vfs.read(path) orelse {
+        try l.err(1201, pos, "{s} file '{s}' not found", .{ noun, path });
+        return null;
+    };
+    const src: diag.Source = .{ .file = path, .text = text };
+    var root = (try parseJson(l.arena, l.diags, src)) orelse {
+        l.errors += 1;
+        return null;
+    };
+    if (!try checkFormat(&root, l.diags, src)) l.errors += 1;
+    var base: u32 = @intCast(l.src.text.len + 1);
+    for (l.parts.items) |p| base = p.base + @as(u32, @intCast(p.text.len + 1));
+    shift(&root, base);
+    try l.parts.append(l.arena, .{ .file = path, .text = text, .root = root, .base = base });
+    const p = &l.parts.items[l.parts.items.len - 1];
+    try l.checkFields(&p.root, fields, what);
+    return p;
+}
+
 /// The layers of the component file a group includes [1201, 1203, 3004].
 /// On success the file is pushed on `including` (the caller pops it once
 /// the layers are flattened).
@@ -1275,36 +1360,8 @@ fn includeComponent(l: *Loader, inc: *const Node) Allocator.Error!?[]const Node 
         try l.err(3004, inc.pos, "include cycle through '{s}'", .{path});
         return null;
     };
-    // A component used by several groups is read once.
-    var part: ?*const Part = null;
-    for (l.parts.items) |*p| if (std.mem.eql(u8, p.file, path)) {
-        part = p;
-    };
-    if (part == null) {
-        const vfs = l.vfs orelse {
-            try l.err(1201, inc.pos, "component '{s}' cannot be read here; include works in a project", .{path});
-            return null;
-        };
-        const text = vfs.read(path) orelse {
-            try l.err(1201, inc.pos, "component file '{s}' not found", .{path});
-            return null;
-        };
-        const src: diag.Source = .{ .file = path, .text = text };
-        var root = (try parseJson(l.arena, l.diags, src)) orelse {
-            l.errors += 1;
-            return null;
-        };
-        if (!try checkFormat(&root, l.diags, src)) l.errors += 1;
-        // Positions after the design's text and the parts so far.
-        var base: u32 = @intCast(l.src.text.len + 1);
-        for (l.parts.items) |p| base = p.base + @as(u32, @intCast(p.text.len + 1));
-        shift(&root, base);
-        try l.parts.append(l.arena, .{ .file = path, .text = text, .root = root, .base = base });
-        const p = &l.parts.items[l.parts.items.len - 1];
-        try l.checkFields(&p.root, &component_fields, "a component");
-        part = p;
-    }
-    const r = &part.?.root;
+    const part = (try readPart(l, inc.pos, path, &component_fields, "component", "include", "a component")) orelse return null;
+    const r = &part.root;
     const ln = r.get("layers") orelse {
         try l.err(1102, r.pos, "the component needs \"layers\"", .{});
         return null;
@@ -1313,7 +1370,7 @@ fn includeComponent(l: *Loader, inc: *const Node) Allocator.Error!?[]const Node 
         try l.err(1103, ln.pos, "layers must be an array", .{});
         return null;
     }
-    try l.including.append(l.arena, part.?.file);
+    try l.including.append(l.arena, part.file);
     return ln.data.array;
 }
 

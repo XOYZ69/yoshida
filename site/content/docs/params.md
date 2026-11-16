@@ -119,6 +119,30 @@ You can use a list three ways:
 
 In CSV files a list cell holds a JSON array, see [Card Data](@/docs/card-data.md).
 
+## Sharing params and constants between designs
+
+Designs of one game often have the same params (a title, a cost) and the same constants (a margin). Put them in a **definitions file**, any `*.defs.json` file in the project, and name it in `import`:
+
+```json
+{
+  "format": 1,
+  "name": "Common",
+  "params": { "title": { "type": "text", "default": "Untitled", "max_length": 40 } },
+  "consts": { "pad": 24 }
+}
+```
+
+```json
+{ "format": 1, "name": "Monster", "import": ["shared/common.defs.json"], "...": "..." }
+```
+
+- `params` and `consts` of a definitions file work as if they were written at the top of the design, before its own. Their order is the order in the card form.
+- A design's own param or constant with the same name **replaces** the imported one (for example to change a default). With several imports, a later file replaces an earlier one.
+- A definitions file holds only `format`, `name`, `note`, `params` and `consts`. Its paths are relative to the project folder. A missing file is error 1201 and a path outside the project is 1203; a problem inside the file is reported against that file.
+- Constants in a definitions file can use params and the canvas size of the design that imports them.
+- Imported params are in card data like any other. The editor's params panel shows only the params written in the design file itself; edit the definitions file in the file browser or the JSON view.
+- A definitions file is not a set and is never rendered.
+
 ## Image params
 
 An `image` value is a path inside the project (`assets/images/shiro.jpg`) or an `https://` URL. Use it in an image layer's `src`:

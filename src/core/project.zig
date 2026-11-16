@@ -626,3 +626,59 @@ test "a set's group is its manifest group or null" {
     _ = try testProject(a, &mem, &d2);
     try std.testing.expect(d2.errorCount() > 0);
 }
+
+test "a design imports params and consts from a definitions file and may override them" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("shared/common.defs.json",
+        \\{ "format": 1,
+        \\  "params": { "title": { "type": "text", "default": "Shared" }, "cost": { "type": "integer", "default": 1 } },
+        \\  "consts": { "pad": 12 } }
+    );
+    try mem.put("designs/a.design.json",
+        \\{ "format": 1, "name": "a", "import": ["shared/common.defs.json"],
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "params": { "cost": { "type": "integer", "default": 5 }, "own": { "type": "text", "default": "x" } },
+        \\  "consts": { "wide": "pad * 2" },
+        \\  "layers": [ { "id": "t", "type": "rect", "box": { "x": "pad", "y": 0, "w": "wide", "h": "cost" } } ] }
+    );
+    try mem.put("cards/a.cards.json", "{\"format\":1,\"design\":\"designs/a.design.json\",\"cards\":[{\"id\":\"1\",\"title\":\"Hi\"}]}");
+    var diags = diag.List.init(a);
+    const p = try testProject(a, &mem, &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), p.sets.len);
+    const d = p.sets[0].design;
+    try std.testing.expectEqual(@as(usize, 3), d.params.len);
+    try std.testing.expectEqualStrings("title", d.params[0].name);
+    try std.testing.expectEqualStrings("cost", d.params[1].name);
+    try std.testing.expectEqualStrings("own", d.params[2].name);
+    // The design's own `cost` replaced the imported one.
+    try std.testing.expectEqual(@as(f64, 5), d.params[1].default.?.number);
+    try std.testing.expect(p.sets[0].cards[0].values[0] != null);
+}
+
+test "imports: a missing file is 1201, an error in the shared file names that file" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json",
+        \\{ "format": 1, "name": "a", "import": ["shared/none.defs.json", "shared/bad.defs.json"],
+        \\  "canvas": { "width": 100, "height": 100 }, "layers": [] }
+    );
+    try mem.put("shared/bad.defs.json", "{ \"format\": 1, \"params\": { \"x\": { \"type\": \"nope\" } } }");
+    var diags = diag.List.init(a);
+    _ = try testProject(a, &mem, &diags);
+    var missing = false;
+    var in_shared = false;
+    for (diags.items.items) |dg| {
+        if (dg.code == 1201) missing = true;
+        if (std.mem.eql(u8, dg.file, "shared/bad.defs.json") and dg.severity == .err) in_shared = true;
+    }
+    try std.testing.expect(missing);
+    try std.testing.expect(in_shared);
+}

@@ -103,6 +103,17 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `cards` ([{ id }, ...], required)
   - `id` (string)
 
+### `*.defs.json`, params and consts shared through a design's `import`
+
+Params and constants shared by designs: a design takes them with "import"
+
+- `$schema` (string)
+- `format` (1, required)
+- `name` (string)
+- `note` (string)
+- `params` (params)
+- `consts` (consts)
+
 ### `*.component.json`, layers shared through a group's `include`
 
 Layers shared by designs: a group takes them with "include"
@@ -127,6 +138,7 @@ Layers shared by designs: a group takes them with "include"
   - `bleed` (number|expr): Pixels cut off on every side; the trim line is this far inside
 - `fonts` ({ name: string | { path, note } })
 - `icons` (string | { name: string }): Icons for {icon:name} in text with markup: an object of name to path, or a path with '*' for the name
+- `import` ([string, ...]): Definitions files (*.defs.json) whose params and consts this design takes. The design's own params and consts of the same name replace them.
 - `params` ({ name: param })
 - `consts` ({ name: number|boolean|expr }): Named values every layer can use
 - `functions` ({ name: { args, expr, note } }): Named formulas with arguments

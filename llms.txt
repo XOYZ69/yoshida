@@ -10,6 +10,7 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [design.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/design.schema.json): JSON Schema of a design file
 - [cards.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/cards.schema.json): JSON Schema of a card file
 - [component.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/component.schema.json): JSON Schema of a shared component
+- [defs.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/defs.schema.json): JSON Schema of shared params and constants
 - [yoshida.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/yoshida.schema.json): JSON Schema of the project manifest
 
 ## Docs: Start
