@@ -57,7 +57,7 @@ The server's `--max-cards` and `--max-body-mb` are limits of one request, separa
 
 ## Versioning
 
-`format` is an integer in every JSON file. These docs describe **format 1**, implemented by yoshida **0.7.2**.
+`format` is an integer in every JSON file. These docs describe **format 1**, implemented by yoshida **0.8.0**.
 
 - Adding optional fields with defaults does not bump the version. Fields added within format 1 so far: `canvas.dpi`, `canvas.bleed`, `consts`, `functions`, group `repeat` and `translate`, text `stroke` and `shrink_group`, stroke `dash` and `arrow`, ellipse `arc`, polygon `shape`, enum list item fields and item field defaults, list changes by position in card data, `@layer[n]` references. Older yoshida versions report the new fields as unknown (error 1101).
 - A new major format version comes with a migration in the core. A file with a `format` the tool does not know is error 1105.
