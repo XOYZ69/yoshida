@@ -478,6 +478,30 @@ ok(
 );
 await p.screenshot({ path: `${shots}/v02-newproject.png` });
 
+// Opening a project shows a loading indicator until the first card is drawn.
+await p.evaluate(() => {
+	window.__loading = { seen: false, label: "" };
+	new MutationObserver(() => {
+		const el = document.querySelector(".loading");
+		if (el) {
+			window.__loading.seen = true;
+			window.__loading.label = el.textContent;
+		}
+	}).observe(document.body, { childList: true, subtree: true, characterData: true });
+});
+await p.click(".project-btn");
+await p.locator('.menu [role=menuitem]:has-text("board-game")').click();
+await p.waitForFunction(() => window.__loading.seen, null, { timeout: 5000 }).catch(() => {});
+const loadingSeen = await p.evaluate(() => window.__loading);
+ok(
+	"opening a project shows a loading indicator",
+	loadingSeen.seen && /Opening board-game/.test(loadingSeen.label),
+	JSON.stringify(loadingSeen),
+);
+await rendered();
+await settle();
+ok("loading indicator goes away", (await p.locator(".loading").count()) === 0);
+
 await p.emulateMedia({ colorScheme: "dark" });
 await p.screenshot({ path: `${shots}/v03-dark.png` });
 ok("no page errors", !logs.length, logs.join("\n"));
