@@ -1267,7 +1267,7 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include" };
+const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
 const defs_fields = [_][]const u8{ "$schema", "format", "name", "note", "params", "consts" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
@@ -1284,7 +1284,7 @@ fn isDivider(n: *const Node) bool {
 
 /// Flattens nested groups into one list in document order (a group comes
 /// right before its descendants).
-fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?usize, depth: usize) Allocator.Error!void {
+fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?usize, depth: usize, prefix: []const u8) Allocator.Error!void {
     for (nodes) |*n| {
         const i = out.items.len;
         try out.append(l.arena, .{ .node = n, .parent = parent });
@@ -1299,10 +1299,18 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
                 continue;
             }
             const layers = (try includeComponent(l, inc)) orelse continue;
-            try flatten(l, out, layers, i, depth + 1);
+            var full = prefix;
+            if (n.get("id_prefix")) |pn| if (try l.literalString(pn, "id_prefix")) |own| {
+                if (own.len == 0 or !expr.isIdent(own)) {
+                    try l.errHint(1103, pn.pos, "invalid id_prefix", "lowercase letters, digits and '_', starting with a letter or '_'");
+                } else full = try std.mem.concat(l.arena, u8, &.{ prefix, own });
+            };
+            const used = if (full.len > 0) try prefixLayers(l, layers, full) else layers;
+            try flatten(l, out, used, i, depth + 1, full);
             _ = l.including.pop();
             continue;
         }
+        if (n.get("id_prefix")) |pn| try l.errHint(1101, pn.pos, "id_prefix only applies to a group with \"include\"", "remove it, or include a component");
         const ln = n.get("layers") orelse {
             try l.err(1102, n.pos, "a group needs \"layers\" (or \"include\")", .{});
             continue;
@@ -1315,7 +1323,7 @@ fn flatten(l: *Loader, out: *std.ArrayList(Raw), nodes: []const Node, parent: ?u
             try l.err(5001, ln.pos, "groups are nested more than 16 deep", .{});
             continue;
         }
-        try flatten(l, out, ln.data.array, i, depth + 1);
+        try flatten(l, out, ln.data.array, i, depth + 1, prefix);
     }
 }
 
@@ -1345,6 +1353,91 @@ fn readPart(l: *Loader, pos: u32, path: []const u8, fields: []const []const u8, 
     const p = &l.parts.items[l.parts.items.len - 1];
     try l.checkFields(&p.root, fields, what);
     return p;
+}
+
+/// Copies a component's layers with `prefix` in front of every layer id, and
+/// in front of the ids in `@id` references and `extends` that name a layer of
+/// the component, so the component can be included more than once. Layers of
+/// components the component includes get the prefix when they are flattened.
+fn prefixLayers(l: *Loader, layers: []const Node, prefix: []const u8) Allocator.Error![]const Node {
+    var ids: std.ArrayList([]const u8) = .empty;
+    try collectIds(l.arena, &ids, layers);
+    return cloneLayers(l.arena, layers, ids.items, prefix);
+}
+
+fn collectIds(arena: Allocator, ids: *std.ArrayList([]const u8), layers: []const Node) Allocator.Error!void {
+    for (layers) |*n| {
+        if (n.data != .object) continue;
+        if (n.get("id")) |idn| if (idn.data == .string) try ids.append(arena, idn.data.string);
+        if (n.get("layers")) |ln| if (ln.data == .array) try collectIds(arena, ids, ln.data.array);
+    }
+}
+
+fn cloneLayers(arena: Allocator, layers: []const Node, ids: []const []const u8, prefix: []const u8) Allocator.Error![]const Node {
+    const out = try arena.alloc(Node, layers.len);
+    for (layers, out) |n, *o| {
+        if (n.data != .object) {
+            o.* = n;
+            continue;
+        }
+        const fields = try arena.alloc(json.Node.Field, n.data.object.len);
+        for (n.data.object, fields) |f, *nf| {
+            nf.* = f;
+            if (f.value.data == .string and std.mem.eql(u8, f.key, "id")) {
+                nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, f.value.data.string }) };
+            } else if (std.mem.eql(u8, f.key, "layers") and f.value.data == .array) {
+                nf.value.data = .{ .array = try cloneLayers(arena, f.value.data.array, ids, prefix) };
+            } else if (std.mem.eql(u8, f.key, "note") or std.mem.eql(u8, f.key, "tag")) {
+                // Text for people: kept as written.
+            } else if (std.mem.eql(u8, f.key, "extends") and f.value.data == .string) {
+                for (ids) |id| if (std.mem.eql(u8, id, f.value.data.string)) {
+                    nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, id }) };
+                };
+            } else try cloneValue(arena, &nf.value, ids, prefix);
+        }
+        o.* = .{ .pos = n.pos, .data = .{ .object = fields } };
+    }
+    return out;
+}
+
+/// Rewrites `@id` references to component layers in every string of a value.
+fn cloneValue(arena: Allocator, v: *Node, ids: []const []const u8, prefix: []const u8) Allocator.Error!void {
+    switch (v.data) {
+        .string => |s| v.data = .{ .string = try prefixRefs(arena, s, ids, prefix) },
+        .array => |items| {
+            const copy = try arena.dupe(Node, items);
+            for (copy) |*it| try cloneValue(arena, it, ids, prefix);
+            v.data = .{ .array = copy };
+        },
+        .object => |fields| {
+            const copy = try arena.dupe(json.Node.Field, fields);
+            for (copy) |*f| try cloneValue(arena, &f.value, ids, prefix);
+            v.data = .{ .object = copy };
+        },
+        else => {},
+    }
+}
+
+fn prefixRefs(arena: Allocator, s: []const u8, ids: []const []const u8, prefix: []const u8) Allocator.Error![]const u8 {
+    if (std.mem.indexOfScalar(u8, s, '@') == null) return s;
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        const ch = s[i];
+        try out.append(arena, ch);
+        i += 1;
+        if (ch != '@') continue;
+        const before_ident = i >= 2 and (std.ascii.isAlphanumeric(s[i - 2]) or s[i - 2] == '_');
+        var j = i;
+        while (j < s.len and (std.ascii.isLower(s[j]) or std.ascii.isDigit(s[j]) or s[j] == '_')) j += 1;
+        const word = s[i..j];
+        if (before_ident) continue;
+        for (ids) |id| if (std.mem.eql(u8, id, word)) {
+            try out.appendSlice(arena, prefix);
+            break;
+        };
+    }
+    return out.items;
 }
 
 /// The layers of the component file a group includes [1201, 1203, 3004].
@@ -1390,7 +1483,7 @@ fn shift(n: *Node, base: u32) void {
 fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const Layer {
     const arena = l.arena;
     var flat: std.ArrayList(Raw) = .empty;
-    try flatten(l, &flat, top, null, 0);
+    try flatten(l, &flat, top, null, 0, "");
     const raws = flat.items;
     // Pass 1: ids and types.
     for (raws, 0..) |*raw, i| {

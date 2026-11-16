@@ -357,6 +357,7 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
   - `align` ("start" | "center" | "end" | string): Which end of the line sits at x (row) or y (column); or an expression that gives one
   - `cross` ("start" | "center" | "end" | string): Which side of every child sits at y (row) or x (column); or an expression that gives one
 - `include` (string): Takes the layers from a component file (a path from the project folder) instead of "layers"
+- `id_prefix` (string): With include: text put in front of the ids of the component's layers
 
 Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`.
 

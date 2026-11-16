@@ -814,3 +814,57 @@ test "set overrides: unknown params, wrong types and out of range values are err
     // width, hight, background, dpi and the unknown param.
     try std.testing.expectEqual(@as(usize, 5), diags.errorCount());
 }
+
+test "a component can be included twice with an id_prefix" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("components/pill.component.json",
+        \\{ "format": 1, "layers": [
+        \\  { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 20, "h": 10 }, "fill": "#000000" },
+        \\  { "id": "cap", "type": "rect", "extends": "bg", "box": { "x": "@bg.bounds.right + 2", "y": 0, "w": 4, "h": 10 } }
+        \\] }
+    );
+    const two =
+        \\{ "format": 1, "name": "a", "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "one", "type": "group", "include": "components/pill.component.json", "id_prefix": "a_" },
+        \\    { "id": "two", "type": "group", "include": "components/pill.component.json", "id_prefix": "b_", "translate": { "x": 0, "y": 20 } }
+        \\  ] }
+    ;
+    try mem.put("designs/a.design.json", two);
+    var diags = diag.List.init(a);
+    const p = try testProject(a, &mem, &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    const d = p.sets[0].design;
+    var ids: std.ArrayList([]const u8) = .empty;
+    for (d.layers) |ly| try ids.append(a, ly.id);
+    try std.testing.expectEqual(@as(usize, 6), ids.items.len);
+    try std.testing.expectEqualStrings("a_bg", ids.items[1]);
+    try std.testing.expectEqualStrings("a_cap", ids.items[2]);
+    try std.testing.expectEqualStrings("b_cap", ids.items[5]);
+
+    // Without a prefix the second include repeats the ids.
+    const once = try std.mem.replaceOwned(u8, a, two, ", \"id_prefix\": \"b_\"", "");
+    try mem.put("designs/a.design.json", try std.mem.replaceOwned(u8, a, once, ", \"id_prefix\": \"a_\"", ""));
+    var d2 = diag.List.init(a);
+    _ = try testProject(a, &mem, &d2);
+    try std.testing.expect(countCodeIn(&d2, 1108) > 0);
+
+    // A prefix that is not an id is 1103; a prefix on a group without include is 1101.
+    try mem.put("designs/a.design.json", "{ \"format\": 1, \"name\": \"a\", \"canvas\": { \"width\": 10, \"height\": 10 }, \"layers\": [ { \"id\": \"g\", \"type\": \"group\", \"include\": \"components/pill.component.json\", \"id_prefix\": \"A-\" }, { \"id\": \"h\", \"type\": \"group\", \"id_prefix\": \"x\", \"layers\": [] } ] }");
+    var d3 = diag.List.init(a);
+    _ = try testProject(a, &mem, &d3);
+    try std.testing.expectEqual(@as(usize, 1), countCodeIn(&d3, 1103));
+    try std.testing.expectEqual(@as(usize, 1), countCodeIn(&d3, 1101));
+}
+
+fn countCodeIn(diags: *const diag.List, code: u16) usize {
+    var n: usize = 0;
+    for (diags.items.items) |dg| {
+        if (dg.code == code) n += 1;
+    }
+    return n;
+}

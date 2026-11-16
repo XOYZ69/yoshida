@@ -577,6 +577,11 @@
         "include": {
           "description": "Group: takes the layers from a component file instead of \"layers\"",
           "type": "string"
+        },
+        "id_prefix": {
+          "description": "Group with include: put this text in front of the id of every layer of the component (and of its @id references), so the component can be included more than once",
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*$"
         }
       },
       "allOf": [
@@ -1336,6 +1341,11 @@
               "include": {
                 "description": "Takes the layers from a component file (a path from the project folder) instead of \"layers\"",
                 "type": "string"
+              },
+              "id_prefix": {
+                "description": "With include: text put in front of the ids of the component's layers",
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]*$"
               }
             },
             "additionalProperties": false,
