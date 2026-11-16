@@ -26,6 +26,9 @@ await ctx.addInitScript(() => {
 		return post.call(this, msg, ...rest);
 	};
 });
+// The tests assume no server: a server on the preview proxy would add its
+// telemetry notice on top of the editor.
+await ctx.route("**/api/capabilities", (r) => r.fulfill({ status: 404, body: "" }));
 const p = await ctx.newPage();
 // The Fast drag preview: the moved layer alone, the card kept still.
 await p.addInitScript(() =>
