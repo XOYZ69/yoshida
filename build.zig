@@ -90,6 +90,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(tests).step);
     const server_tests = b.addTest(.{ .root_module = server.root_module });
     test_step.dependOn(&b.addRunArtifact(server_tests).step);
+    const cli_tests = b.addTest(.{ .root_module = cli.root_module });
+    test_step.dependOn(&b.addRunArtifact(cli_tests).step);
 }
 
 fn createCore(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, channel: []const u8) *std.Build.Module {

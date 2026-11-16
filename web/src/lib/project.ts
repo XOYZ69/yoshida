@@ -423,6 +423,7 @@ export function blankDesign(name: string): string {
 				type: "rect",
 				box: { x: 24, y: 24, w: "100% - 48", h: "100% - 48" },
 				radius: 24,
+				fill: "#00000000",
 				stroke: { color: "#2B2B2B", width: 4 },
 			},
 			{
@@ -564,4 +565,55 @@ export function withUtcOffset(text: string | undefined, hours: number): string {
 	if (hours === 0) delete doc.utc_offset;
 	else doc.utc_offset = hours;
 	return formatJson(doc);
+}
+
+/** A set entry of the manifest. */
+export type ManifestSet = {
+	name: string;
+	design: string;
+	cards?: string;
+	group?: string;
+};
+
+/**
+ * The manifest text with `set` added to `sets`. A set of the same name is
+ * replaced in place. A missing manifest starts as `{ "format": 1 }`. Throws
+ * when the existing text is not a JSON object.
+ */
+export function withSet(text: string | undefined, set: ManifestSet): string {
+	const doc: Record<string, unknown> = text?.trim()
+		? JSON.parse(text)
+		: { format: 1 };
+	if (!doc || typeof doc !== "object" || Array.isArray(doc))
+		throw new Error("yoshida.json is not an object");
+	const sets = Array.isArray(doc.sets) ? [...(doc.sets as object[])] : [];
+	const at = sets.findIndex((s) => (s as ManifestSet)?.name === set.name);
+	if (at >= 0) sets[at] = set;
+	else sets.push(set);
+	doc.sets = sets;
+	return formatJson(doc);
+}
+
+/**
+ * The files of a new project: a manifest that lists its one set, the design
+ * and its card file. `stem` is the file name stem (see `slug`).
+ */
+export function newProjectFiles(name: string, stem: string): Files {
+	const design = `designs/${stem}.design.json`;
+	const cards = `cards/${stem}.cards.json`;
+	return new Map([
+		[
+			MANIFEST,
+			enc.encode(withSet(formatJson({ format: 1, name }), { name: stem, design, cards })),
+		],
+		[design, enc.encode(blankDesign(name))],
+		[cards, enc.encode(blankCards(design, name))],
+	]);
+}
+
+/** Sets in picker order: by group (in order of first appearance), then as listed. */
+export function groupSets<T extends { group: string }>(list: T[]): T[] {
+	const order: string[] = [];
+	for (const s of list) if (!order.includes(s.group)) order.push(s.group);
+	return [...list].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
 }

@@ -147,6 +147,9 @@
 		textOf,
 		UTC_OFFSET_LIMIT,
 		utcOffsetOf,
+		groupSets,
+		newProjectFiles,
+		withSet,
 		withUtcOffset,
 		writeCsv,
 		writeFile,
@@ -245,6 +248,17 @@
 	let channel = $state("");
 
 	let status = $state("Starting…");
+	/**
+	 * A project being opened: its name and the step it is in. Shown over the
+	 * preview until the first card is drawn (see refresh).
+	 */
+	let loading = $state<{ name: string; step: number; label: string } | null>(
+		null,
+	);
+	const loadSteps = ["Reading files", "Checking designs", "Drawing the first card"];
+	function loadStep(step: number) {
+		if (loading) loading = { ...loading, step, label: loadSteps[step] };
+	}
 	let fatal = $state("");
 	let examples: Example[] = $state([]);
 	let projectName = $state("");
@@ -694,6 +708,7 @@
 		id: string | null = null,
 		saved = false,
 	) {
+		loading = { name, step: 0, label: loadSteps[0] };
 		projectName = name;
 		projectId = id;
 		savedFiles = saved ? f : null;
@@ -716,7 +731,12 @@
 		filesSelected = null;
 		filesHighlight = null;
 		browsing = false;
-		await engine.setFiles(f);
+		try {
+			await engine.setFiles(f);
+		} catch (e) {
+			loading = null;
+			throw e;
+		}
 		selected =
 			fileList.find((p) => p.endsWith(".design.json")) ??
 			fileList[0] ??
@@ -883,12 +903,37 @@
 		await deleteProject(meta.id);
 		myProjects = await listProjects();
 		if (meta.id === projectId) {
-			projectId = null;
-			savedFiles = null;
-			dirty = new Set();
-			saveState = "idle";
-			status = `Deleted '${meta.name}' from this browser; it stays open until you open another project.`;
+			await closeProject();
+			status = `Deleted '${meta.name}' from this browser. Open a project to continue.`;
 		}
+	}
+
+	/** Leaves the open project: the editor goes back to "No project". */
+	async function closeProject() {
+		projectName = "";
+		projectId = null;
+		savedFiles = null;
+		saveState = "idle";
+		files = new Map();
+		dirty = new Set();
+		dirHandle = null;
+		lastRender = null;
+		check = null;
+		setName = "";
+		cardIndex = 0;
+		selected = null;
+		selectedLayers = [];
+		locked = new Set();
+		image = null;
+		layout = [];
+		undoStack = [];
+		redoStack = [];
+		uploadFolder = "";
+		filesSelected = null;
+		filesHighlight = null;
+		browsing = false;
+		await engine.setFiles(files);
+		await refresh();
 	}
 
 	function projectMenu(e: MouseEvent) {
@@ -913,6 +958,13 @@
 				detail: "with its own card file",
 				disabled: !projectName,
 				action: newDesign,
+			},
+			{
+				label: "Add set…",
+				icon: "table",
+				detail: "a card file for a design, in the manifest",
+				disabled: !projectName,
+				action: () => addSet(),
 			},
 			{
 				label: "Fonts…",
@@ -1022,7 +1074,7 @@
 			await askText({
 				title: "New project",
 				message:
-					"Starts an empty project with one design and one card file.",
+					"Starts an empty project with a manifest, one design and one card file.",
 				value: "My cards",
 				confirm: "Create",
 				validate: needName,
@@ -1030,11 +1082,7 @@
 		)?.trim();
 		if (!name) return;
 		const stem = slug(name);
-		const design = `designs/${stem}.design.json`;
-		const f: Files = new Map([
-			[design, bytesOf(blankDesign(name))],
-			[`cards/${stem}.cards.json`, bytesOf(blankCards(design, name))],
-		]);
+		const f: Files = newProjectFiles(name, stem);
 		openProject(stem, f, null, newProjectId()).then(() => {
 			dirty = new Set(f.keys());
 			mode = "build";
@@ -1090,6 +1138,7 @@
 	async function newCardFile(
 		design?: string,
 		at?: { x: number; y: number },
+		asSet = false,
 	) {
 		const named = new Map<string, string>();
 		for (const s of sets)
@@ -1107,7 +1156,7 @@
 					label,
 					icon: "design",
 					detail: path,
-					action: () => newCardFile(path),
+					action: () => newCardFile(path, undefined, asSet),
 				});
 			openMenu(pos.x, pos.y, items);
 			return;
@@ -1116,10 +1165,12 @@
 		const label = named.get(design) ?? baseOf(design);
 		const name = (
 			await askText({
-				title: "New card file",
-				message: `Adds a card file for ${label}.`,
+				title: asSet ? "Add set" : "New card file",
+				message: asSet
+					? `Adds a set for ${label}: a card file listed in ${MANIFEST}.`
+					: `Adds a card file for ${label}.`,
 				value: `${label} cards`,
-				confirm: "Add card file",
+				confirm: asSet ? "Add set" : "Add card file",
 				validate: needName,
 			})
 		)?.trim();
@@ -1130,6 +1181,18 @@
 		const cards = `cards/${stem}.cards.json`;
 		const params = sets.find((x) => x.design === design)?.params ?? [];
 		await updateFile(cards, blankCards(design, name, sampleCard(params)));
+		if (asSet) {
+			track("feature", "set.add");
+			try {
+				await updateFile(
+					MANIFEST,
+					withSet(manifestText(), { name: stem, design, cards }),
+					true,
+				);
+			} catch (e) {
+				status = `Could not update ${MANIFEST}: ${(e as Error).message}`;
+			}
+		}
 		await refresh();
 		const s = sets.find((x) => x.cards_file === cards);
 		if (s) {
@@ -1138,6 +1201,10 @@
 			await renderPreview();
 		}
 	}
+
+	/** Adds a set (a card file for a design, listed in the manifest). */
+	const addSet = (at?: { x: number; y: number }) =>
+		newCardFile(undefined, at, true);
 
 	/**
 	 * Stem for a new card file of a design: the design's file name without
@@ -1607,7 +1674,9 @@
 		}
 		running = true;
 		try {
+			loadStep(1);
 			check = await engine.check();
+			loadStep(2);
 			const s = check.project.sets;
 			if (!s.find((x) => x.name === setName)) {
 				setName = s[0]?.name ?? "";
@@ -1624,7 +1693,7 @@
 			if (again) {
 				again = false;
 				refresh();
-			}
+			} else loading = null;
 		}
 	}
 
@@ -4101,10 +4170,14 @@
 			caption="Design"
 			label="Design file"
 			title="The design (card layout) being edited, with its card set"
+			searchable={sets.length > 4}
 			options={[
-				...sets.map((s) => ({
+				...groupSets(sets).map((s) => ({
 					value: s.name,
 					label: s.design_name,
+					group: sets.some((o) => o.group !== sets[0].group)
+						? s.group
+						: undefined,
 					detail: `${s.cards.length} card${s.cards.length === 1 ? "" : "s"} · ${s.cards_file ?? s.name}`,
 				})),
 				{
@@ -4666,6 +4739,25 @@
 					pick={pickOnCanvas}
 					oncontext={layerMenu}
 				/>
+				{#if loading}
+					<div class="loading" role="status" aria-live="polite">
+						<span class="spinner" aria-hidden="true"></span>
+						<strong>Opening {loading.name}…</strong>
+						<span class="muted"
+							>Step {loading.step + 1} of {loadSteps.length}: {loading.label}</span
+						>
+						<span
+							class="loadbar"
+							role="progressbar"
+							aria-valuemin="0"
+							aria-valuemax={loadSteps.length}
+							aria-valuenow={loading.step}
+							><span
+								style:width="{((loading.step + 0.5) / loadSteps.length) * 100}%"
+							></span></span
+						>
+					</div>
+				{/if}
 				<div class="status">
 					<span class="status-text">{busy || status}</span>
 					<Select
@@ -5302,6 +5394,60 @@
 	.left {
 		grid-area: left;
 	}
+	/* Over the preview while a project opens. It fades in after a moment, so
+	   a project that opens at once never flashes it. */
+	.loading {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		background: color-mix(in srgb, var(--bg) 82%, transparent);
+		opacity: 0;
+		animation: load-in 0.2s ease 0.35s forwards;
+	}
+	.loading .spinner {
+		width: 28px;
+		height: 28px;
+		border: 3px solid var(--line);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: load-spin 0.8s linear infinite;
+	}
+	.loadbar {
+		width: 220px;
+		height: 4px;
+		border-radius: 2px;
+		background: var(--line);
+		overflow: hidden;
+	}
+	.loadbar > span {
+		display: block;
+		height: 100%;
+		background: var(--accent);
+		transition: width 0.25s ease;
+	}
+	@keyframes load-in {
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes load-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.loading .spinner {
+			animation: none;
+		}
+		.loading {
+			animation-duration: 0.01s;
+		}
+	}
 	.right {
 		grid-area: right;
 		overflow: auto;
@@ -5309,6 +5455,7 @@
 	}
 	.center {
 		grid-area: center;
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		min-height: 0;

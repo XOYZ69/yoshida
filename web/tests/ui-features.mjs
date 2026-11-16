@@ -17,6 +17,9 @@ const ctx = await b.newContext({
 	viewport: { width: 1500, height: 950 },
 	acceptDownloads: true,
 });
+// The tests assume no server: a server on the preview proxy would add its
+// telemetry notice on top of the editor.
+await ctx.route("**/api/capabilities", (r) => r.fulfill({ status: 404, body: "" }));
 const p = await ctx.newPage();
 const logs = [];
 let failed = 0;

@@ -27,6 +27,7 @@ A design file (`*.design.json`) describes one card layout: the canvas, the fonts
 | `canvas.bleed` | number | no | `0` | Pixels on every side that are cut off after printing. Crop marks and the PDF trim box sit this far inside the edge |
 | `fonts` | object of name to path or `{ path, note }` | no | `{}` | Font families for text layers |
 | `params` | object of name to param | no | `{}` | See [Params](@/docs/params.md) |
+| `import` | array of paths | no | `[]` | Definitions files whose params and consts this design takes. See [Sharing params and constants](@/docs/params.md#sharing-params-and-constants-between-designs) |
 | `consts` | object of name to value | no | `{}` | Named values. See [Constants and functions](@/docs/expressions-constants-and-functions.md) |
 | `functions` | object of name to function | no | `{}` | Named formulas with arguments. See [Constants and functions](@/docs/expressions-constants-and-functions.md) |
 | `layers` | array of layers | yes | | Drawn in array order, **first is bottom**. See [Layers](@/docs/layers.md) |

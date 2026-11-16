@@ -9,7 +9,11 @@ const base =
 	process.argv[2] ?? process.env.BASE_URL ?? "http://localhost:4173/";
 let failed = 0;
 const b = await chromium.launch();
-const p = await (await b.newContext({ viewport: { width: 1700, height: 1000 }, colorScheme: "dark", deviceScaleFactor: 1.5 })).newPage();
+const ctx = await b.newContext({ viewport: { width: 1700, height: 1000 }, colorScheme: "dark", deviceScaleFactor: 1.5 });
+// The tests assume no server: one on the preview proxy would add its
+// telemetry notice on top of the editor.
+await ctx.route("**/api/capabilities", (r) => r.fulfill({ status: 404, body: "" }));
+const p = await ctx.newPage();
 p.on("pageerror", (e) => console.log("pageerror", e.message));
 const ok = (n, c, x = "") => {
 	if (!c) failed++;

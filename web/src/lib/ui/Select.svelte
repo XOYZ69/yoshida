@@ -10,6 +10,8 @@ export type Option = {
 	divider?: boolean;
 	/** A command, not a value: accent label, never checked, the trigger keeps its value. */
 	action?: boolean;
+	/** A heading drawn above the first option of each run of options with this group. */
+	group?: string;
 };
 
 /** A CSS font-family list for a sample, with a system font as the fallback. */
@@ -70,7 +72,7 @@ function sampleFont(family: string): string {
   const shown = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (!q) return opts;
-    return opts.filter((o) => `${o.label ?? o.value} ${o.value} ${o.detail ?? ''}`.toLowerCase().includes(q));
+    return opts.filter((o) => `${o.label ?? o.value} ${o.value} ${o.detail ?? ''} ${o.group ?? ''}`.toLowerCase().includes(q));
   });
 
   function show() {
@@ -168,6 +170,9 @@ function sampleFont(family: string): string {
     {/if}
     <ul bind:this={list} role="listbox" tabindex="-1" aria-label={label || undefined} {onkeydown}>
       {#each shown as o, i (o.value)}
+        {#if o.group && o.group !== shown[i - 1]?.group}
+          <li class="group" role="presentation">{o.group}</li>
+        {/if}
         <li
           role="option"
           aria-selected={!o.action && o.value === value}
@@ -194,6 +199,15 @@ function sampleFont(family: string): string {
 {/if}
 
 <style>
+  li.group {
+    padding: 6px 10px 2px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    cursor: default;
+  }
   .select {
     display: inline-flex;
     align-items: center;

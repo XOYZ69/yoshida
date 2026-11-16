@@ -12,7 +12,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: '3.13'
 
@@ -27,7 +27,7 @@ runs:
     # would fill the repository's 10 GB and evict the ones that are shared.
     - name: Cache Zig builds
       if: github.event_name != 'pull_request'
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.cache/zig
@@ -38,7 +38,7 @@ runs:
 
     - name: Restore the Zig build cache
       if: github.event_name == 'pull_request'
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: |
           ~/.cache/zig

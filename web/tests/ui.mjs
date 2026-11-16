@@ -471,12 +471,44 @@ await p
 await p.click(".dialog .primary");
 await settle();
 ok(
-	"delete from browser",
-	(await p.locator(".tag").count()) === 1 ||
-		((await p.textContent(".saved")) ?? "").includes("Example"),
-	await p.textContent(".saved"),
+	"delete from browser closes the project",
+	(await p.textContent(".pname")) === "No project" &&
+		(await p.locator(".tag").count()) === 0,
+	`${await p.textContent(".pname")} / ${await status()}`,
 );
+await p.click(".project-btn");
+const afterDelete = await p.locator(".menu [role=menuitem]").allTextContents();
+ok(
+	"deleted project is gone from the menu",
+	!afterDelete.some((t) => /^fresh-cards\b/.test(t.trim())),
+	JSON.stringify(afterDelete),
+);
+await p.keyboard.press("Escape");
 await p.screenshot({ path: `${shots}/v02-newproject.png` });
+
+// Opening a project shows a loading indicator until the first card is drawn.
+await p.evaluate(() => {
+	window.__loading = { seen: false, label: "" };
+	new MutationObserver(() => {
+		const el = document.querySelector(".loading");
+		if (el) {
+			window.__loading.seen = true;
+			window.__loading.label = el.textContent;
+		}
+	}).observe(document.body, { childList: true, subtree: true, characterData: true });
+});
+await p.click(".project-btn");
+await p.locator('.menu [role=menuitem]:has-text("board-game")').click();
+await p.waitForFunction(() => window.__loading.seen, null, { timeout: 5000 }).catch(() => {});
+const loadingSeen = await p.evaluate(() => window.__loading);
+ok(
+	"opening a project shows a loading indicator",
+	loadingSeen.seen && /Opening board-game/.test(loadingSeen.label),
+	JSON.stringify(loadingSeen),
+);
+await rendered();
+await settle();
+ok("loading indicator goes away", (await p.locator(".loading").count()) === 0);
 
 await p.emulateMedia({ colorScheme: "dark" });
 await p.screenshot({ path: `${shots}/v03-dark.png` });

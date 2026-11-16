@@ -10,9 +10,9 @@ There are two long-lived branches. `master` is what is released: the site at the
 | Workflow | Runs on | What it does |
 | --- | --- | --- |
 | `ci.yml` | every pull request, manually, and when called by `deploy.yml` | Checks and tests, below |
-| `deploy.yml` | every push to `master` or `dev`, every published, edited or deleted release, and manually | Runs all of `ci.yml` for the pushed branch, then builds the site from `master` and the preview from `dev` and publishes both to GitHub Pages |
+| `deploy.yml` | every push to `master` or `dev`, every published, edited or deleted release, and manually | One run per merge: runs `ci.yml` (for `master`), publishes a GitHub release when the version has no tag yet (see [Releases](#releases)), then builds the site from `master` and the preview from `dev` and publishes both to GitHub Pages |
 | `site.yml` | called by `deploy.yml`, once per branch | Builds the editor and the website of one branch |
-| `release.yml` | every successful `deploy.yml` run on `master` or `dev`, and manually | Publishes a GitHub release when the version has no tag yet, see [Releases](#releases) |
+| `version-bot.yml` | every push to `dev`, and manually | Raises the version on `dev` to what the merged pull requests ask for, see [Automatic version bumps](#automatic-version-bumps) |
 | `pr-title.yml` | every pull request to `master` or `dev` | Fails unless the PR title is conventional (`type(scope): description`) and sets the matching type label |
 | `release-notes-preview.yml` | every pull request to `master` or `dev` | Comments the release notes the PR will produce |
 | `labeler.yml` | every pull request to `master` or `dev` | Adds `area/*` labels from the files the PR changes (`.github/labeler.yml`) |
@@ -20,7 +20,7 @@ There are two long-lived branches. `master` is what is released: the site at the
 
 ## `ci.yml`
 
-Five jobs. A pull request that only changes docs, the website content or repo metadata skips the target builds and the browser tests (job **Changed files** decides); pushes, manual runs and releases always run everything.
+A pull request that only changes docs, the website content or repo metadata skips the target builds and the browser tests (job **Changed files** decides). A pull request to `dev` builds only the Linux target; one to `master`, a push, a manual run and a release build all five. **CI passed** is the job to require in the branch protection: it fails when any other job failed or was cancelled, and treats jobs skipped on purpose as passed.
 
 **Core and CLI**
 
@@ -33,9 +33,11 @@ Five jobs. A pull request that only changes docs, the website content or repo me
 7. `yoshida check` on every example
 8. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build; a link in a QR code does not count)
 
-**Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`.
+**Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`. The five jobs always exist so a required check never goes missing; on a pull request to `dev` the other four finish in seconds without building.
 
-**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `npm run test:unit`, `vite build`, install Chromium for Playwright (the download is cached by Playwright version), then `npm run test:ui` (every `web/tests/ui*.mjs` file, see [Testing](@/docs/testing.md)) against `vite preview`. Screenshots of a failed run are uploaded as the `ui-test-results` artifact (kept 7 days).
+**Web editor**: `npm ci`, build the WASM module, copy the examples, `svelte-check`, `npm run test:unit` and `vite build`.
+
+**End-to-end 1/3, 2/3, 3/3**: three parallel jobs that each build the editor, install Chromium for Playwright (the download is cached by Playwright version) and run a third of the `web/tests/ui*.mjs` files (see [Testing](@/docs/testing.md)) against `vite preview`. `web/tests/run-ui.mjs` splits the files by size, so the groups take about the same time, and it reports every failing file instead of stopping at the first. Screenshots of a failed run are uploaded as `ui-test-results-1` to `-3` (kept 7 days).
 
 **Website**: builds the site with Zola, which fails on any broken internal link or anchor in the docs.
 
@@ -47,10 +49,11 @@ Pull-request runs cancel older runs of the same PR.
 
 GitHub Pages holds one site, so every run publishes both branches together: `master` at the root and `dev` under `/dev/`.
 
-1. **Checks**: on a push, run `ci.yml` as a reusable workflow for the pushed branch. A release event, and the run that `release.yml` starts for a new release page, skip them: those commits were checked when they were pushed.
-2. **Plan**: read the Pages address and decide what to build. The pushed branch is built at the pushed commit and the other one at its head; any other event builds both heads, so editing the notes of an old release never publishes an old site.
-3. **Site** and **Dev preview** (`site.yml`, in parallel): build the editor (Zig, Node 22, `npm ci`, `npm run wasm`, `npm run examples -- --public`, `npm run build`), write one page per GitHub release with `scripts/releases-to-zola.py`, build the website with Zola for its address and copy the editor into `editor/`. The preview is built with `YOSHIDA_CHANNEL=dev`.
-4. **Deploy**: put the preview into `dev/` of the site and publish it to GitHub Pages.
+1. **Checks**: on a push to `master`, run `ci.yml` as a reusable workflow. This is the release gate. A push to `dev` skips it, because the pull request that was merged ran the same checks, and so does a release event (those commits were checked when they were pushed). A manual run asks first.
+2. **Plan**: read the Pages address, decide what to build and whether there is a release to make (see [Publishing a release](#publishing-a-release)). The pushed branch is built at the pushed commit and the other one at its head; any other event builds both heads, so editing the notes of an old release never publishes an old site.
+3. **Release**: only when the version has no tag yet. It runs before the site build on purpose: the site lists the GitHub releases, so the new release is already on the site of the same run.
+4. **Site** and **Dev preview** (`site.yml`, in parallel): build the editor (Zig, Node 22, `npm ci`, `npm run wasm`, `npm run examples -- --public`, `npm run build`), write one page per GitHub release with `scripts/releases-to-zola.py`, build the website with Zola for its address and copy the editor into `editor/`. The preview is built with `YOSHIDA_CHANNEL=dev`.
+5. **Deploy**: put the preview into `dev/` of the site and publish it to GitHub Pages.
 
 Only one deployment runs at a time; a newer push waits instead of cancelling a deployment that is already running.
 
@@ -66,7 +69,7 @@ In the repository: **Settings → Pages → Build and deployment → Source: Git
 
 For the preview, the `dev` branch must be allowed to deploy: **Settings → Environments → github-pages → Deployment branches and tags**, add `dev` next to `master`. Without it the Deploy job of a push to `dev` is rejected by the environment's protection rule.
 
-The project's site is published at <https://yoshida.xoyz.dev/>, a custom domain set under **Settings → Pages → Custom domain** (with a CNAME record at the DNS provider). The build takes its base URL from the Pages settings, so it works the same on a custom domain and on the default `https://<user>.github.io/<repo>/` of a fork. The default branch is assumed to be `master`; if yours is `main`, change `branches: [master, dev]` in `deploy.yml` and `release.yml`.
+The project's site is published at <https://yoshida.xoyz.dev/>, a custom domain set under **Settings → Pages → Custom domain** (with a CNAME record at the DNS provider). The build takes its base URL from the Pages settings, so it works the same on a custom domain and on the default `https://<user>.github.io/<repo>/` of a fork. The default branch is assumed to be `master`; if yours is `main`, change `branches: [master, dev]` in `deploy.yml`.
 
 ### What the public site contains
 
@@ -99,7 +102,7 @@ npx vite preview --port 4173 --strictPort &
 npm run test:ui
 ```
 
-`npm run test:ui` runs every `tests/ui*.mjs` file (listed in [Testing](@/docs/testing.md)) with Playwright in Chromium, one after another, until one fails. If the preview is not on `http://localhost:4173/`, set `BASE_URL` (`BASE_URL=http://localhost:5000/ npm run test:ui`); an argument after `--` only reaches the last file.
+`npm run test:ui` runs every `tests/ui*.mjs` file (listed in [Testing](@/docs/testing.md)) with Playwright in Chromium, one after another, and lists every file that failed at the end. If the preview is not on `http://localhost:4173/`, pass the address (`npm run test:ui -- http://localhost:5000/`) or set `BASE_URL`. `--shard 2/3` runs the second of three groups, as CI does, and `--list` prints the files it would run.
 
 ## Releases
 
@@ -115,15 +118,37 @@ node scripts/version.mjs check        # fail if a copy differs from build.zig.zo
 
 After a bump the script lists any other line that still names the old version, for a manual look. CI runs `check` on every pull request, and when a GitHub release is published, `deploy.yml` checks that its tag names the version (`v0.6.0`; a bare `0.6.0` is accepted too).
 
+### Automatic version bumps
+
+You do not have to bump minor and patch versions by hand. After every push to `dev`, `version-bot.yml` reads the pull requests merged since the last release and works out the version the next release needs:
+
+| PR title type | Asks for |
+| --- | --- |
+| `feat` | a minor bump (0.7.2 to 0.8.0) |
+| `fix`, `perf` | a patch bump (0.7.2 to 0.7.3) |
+| `docs`, `chore`, `ci`, `build`, `test`, `style`, `refactor`, `revert` | nothing |
+
+The highest one wins, counted once: three features and two fixes since 0.7.2 give 0.8.0, not five bumps. When the version in `build.zig.zon` is lower than that, the bot runs `scripts/version.mjs` and pushes one commit, `chore: bump version to 0.8.0`, to `dev`, then refreshes the dev preview. PRs with the `skip-changelog` label do not count, and neither do commits pushed without a PR.
+
+The version only ever goes up, so you stay in control:
+
+- **A version you set by hand is left alone** when it is already at or above the target: a hand-made 0.8.0 stays 0.8.0 when more fixes land, and a 1.0.0 stays 1.0.0.
+- **Major bumps are manual.** A breaking change (`!` in the title or the `breaking-change` label) counts as a minor bump, and the run says that a major bump is yours to make: `node scripts/version.mjs major`.
+- **A pre-release version** such as `0.9.0-rc.1` is not touched.
+- Nothing is released when only docs and chores were merged: the version stays the one that is already tagged.
+
+Every PR's release notes preview comment also shows the version the bot would pick if the PR were merged. The rules are in `.github/scripts/bump.mjs` and tested by `node --test .github/scripts/bump.test.mjs` (part of `ci.yml`).
+
+If `dev` is protected so that Actions cannot push to it, add a secret `VERSION_BOT_TOKEN` (a fine-grained token with Contents: write that may bypass the rule) under **Settings → Secrets and variables → Actions**. Its pushes also start Deploy by themselves.
+
 ### Publishing a release
 
-To release: bump on a branch, merge the pull request to `master`, and wait. `release.yml` does the rest:
+To release: merge `dev` to `master` and wait; the version is already right if the version bot did its work, otherwise bump it first (a major bump always is). The **Release** job of `deploy.yml` does the rest, after the checks passed:
 
-1. It runs after every successful `deploy.yml` run on `master` or `dev`, on the commit that was deployed.
-2. If the version in `build.zig.zon` already has a tag, either `v<version>` (such as `v0.6.0`) or the bare `<version>` that releases up to 0.4.0 used (such as `0.4.0`), it stops.
-3. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
-4. It writes the notes with `.github/scripts/release-notes.mjs release`, then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
-5. It starts `deploy.yml` without the checks, so the site gets the new release page. A release created by a workflow does not trigger `deploy.yml` by itself.
+1. If the version in `build.zig.zon` already has a tag, either `v<version>` (such as `v0.6.0`) or the bare `<version>` that releases up to 0.4.0 used (such as `0.4.0`), it does nothing.
+2. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
+3. It writes the notes with `.github/scripts/release-notes.mjs release`, then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
+4. The site is built after that, in the same run, so it already has the new release page. If the release job fails, the site is not published; fix the cause and run **Deploy** again from the Actions tab.
 
 ### Pre-releases from `dev`
 
@@ -133,7 +158,7 @@ To hand out a build before it is released, give `dev` a version with a pre-relea
 node scripts/version.mjs 0.7.0-rc.1
 ```
 
-Once that is pushed to `dev` and deployed, `release.yml` tags `v0.7.0-rc.1` on that commit and publishes a GitHub **pre-release** with the bundle, built as a dev build (stamped DEV). It does not replace the latest release, and its notes list what was merged since the last full release. A plain version such as `0.7.0` on `dev` publishes nothing: it is released when it reaches `master`. Before merging to `master`, set the final version (`node scripts/version.mjs 0.7.0`).
+Once that is pushed to `dev`, `deploy.yml` tags `v0.7.0-rc.1` on that commit and publishes a GitHub **pre-release** with the bundle, built as a dev build (stamped DEV). It does not replace the latest release, and its notes list what was merged since the last full release. A plain version such as `0.7.0` on `dev` publishes nothing: it is released when it reaches `master`. Before merging to `master`, set the final version (`node scripts/version.mjs 0.7.0`).
 
 ### Release notes
 
@@ -146,10 +171,10 @@ Two optional extras make a release read well:
 
 The release workflow does not need labels: the title decides. The preview comment on each PR shows exactly what its line will look like.
 
-To retry a failed release, run `release.yml` manually from the Actions tab. It releases the version on the head of `master` if that version has no tag yet.
+To retry a failed release, run **Deploy** manually from the Actions tab on `master`. It releases the version on the head of `master` if that version has no tag yet.
 
 ### Release bundle
 
 `scripts/release.sh [OUT_DIR]` builds the release bundle: the CLI and server for the five platforms, the WASM module, and the website with the web editor in `editor/` (the same layout as Docker and GitHub Pages), plus the start scripts, the examples, the schemas, `README.md`, `LICENSE`, `llms.txt` and `llms-full.txt` (the reference for AI agents), and `THIRD_PARTY.md` (a copy of [Third-Party Notices](@/docs/third-party-notices.md)). It needs Zig 0.16.0, Zola 0.23 and Node 22 with `web/node_modules` installed. See [Building from Source](@/docs/building-from-source.md).
 
-The bundle contains the full examples, including their fonts. `release.yml` refuses to publish while `examples/.public-exclude` lists any file, because those files are not meant to be shared; a bundle built from such examples is **for private use only**.
+The bundle contains the full examples, including their fonts. The Release job refuses to publish while `examples/.public-exclude` lists any file, because those files are not meant to be shared; a bundle built from such examples is **for private use only**.

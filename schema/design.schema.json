@@ -66,6 +66,11 @@
         }
       ]
     },
+    "import": {
+      "type": "array",
+      "description": "Definitions files (*.defs.json) whose params and consts this design takes. The design's own params and consts of the same name replace them.",
+      "items": { "type": "string" }
+    },
     "params": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
@@ -76,8 +81,8 @@
       "description": "Named values every layer can use, see https://yoshida.xoyz.dev/docs/expressions-constants-and-functions/#constants",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
       "additionalProperties": {
-        "description": "Number, true/false or an expression",
-        "type": ["number", "boolean", "string"]
+        "description": "Number, true/false, an expression, or a list: an array of numbers, true/false or texts, or of objects with the same fields",
+        "type": ["number", "boolean", "string", "array"]
       }
     },
     "functions": {
@@ -245,7 +250,7 @@
             "additionalProperties": false,
             "properties": {
               "type": {
-                "enum": ["crop", "fade", "sharpen", "detail", "edge_enhance", "find_edges"]
+                "enum": ["crop", "fade", "sharpen", "detail", "edge_enhance", "find_edges", "blur", "shadow"]
               },
               "side": {
                 "enum": ["top", "bottom", "left", "right"]
@@ -257,6 +262,26 @@
               "strength": {
                 "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
                 "type": ["number", "string"]
+              },
+              "radius": {
+                "description": "blur: how far the picture spreads, in canvas pixels. Number literal or expression",
+                "type": ["number", "string"]
+              },
+              "x": {
+                "description": "shadow: horizontal offset in canvas pixels (default 0)",
+                "type": ["number", "string"]
+              },
+              "y": {
+                "description": "shadow: vertical offset in canvas pixels (default 4)",
+                "type": ["number", "string"]
+              },
+              "blur": {
+                "description": "shadow: how soft the edge is, in canvas pixels (default 6)",
+                "type": ["number", "string"]
+              },
+              "color": {
+                "description": "shadow: color, default black at half opacity (#00000080)",
+                "type": "string"
               }
             }
           }
@@ -572,6 +597,11 @@
         "include": {
           "description": "Group: takes the layers from a component file instead of \"layers\"",
           "type": "string"
+        },
+        "id_prefix": {
+          "description": "Group with include: put this text in front of the id of every layer of the component (and of its @id references), so the component can be included more than once",
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*$"
         }
       },
       "allOf": [
@@ -1331,6 +1361,11 @@
               "include": {
                 "description": "Takes the layers from a component file (a path from the project folder) instead of \"layers\"",
                 "type": "string"
+              },
+              "id_prefix": {
+                "description": "With include: text put in front of the ids of the component's layers",
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]*$"
               }
             },
             "additionalProperties": false,

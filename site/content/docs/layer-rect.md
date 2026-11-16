@@ -55,7 +55,7 @@ A radial gradient runs from the centre of the bounds to their corners. Colors an
 
 The stroke is drawn **centred on the edge**, so half of the width lies outside the box. `color` defaults to opaque black and `width` to `1` when left out.
 
-A rect with only a stroke (an outline frame) needs `"fill": "#00000000"`.
+A rect with only a stroke (an outline frame) needs `"fill": "#00000000"`. Without a `fill` the default white fills the rect, hiding what is behind it; `yoshida check` reports a stroke without a fill as warning 1114. The same holds for ellipses and closed polygons.
 
 `dash` makes the stroke dashed: lengths in pixels, on, off, on, off... (`[12, 6]`; a list with an odd number of values repeats twice). Dash ends are round, and dashes follow rounded corners. Every value can be an expression.
 
