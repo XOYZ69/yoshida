@@ -1,14 +1,14 @@
 {
 	"version": 1,
 	"repo": "XOYZ69/yoshida",
-	"generated_at": "2026-11-20T11:03:01.686Z",
+	"generated_at": "2026-11-21T10:46:29.546Z",
 	"now": {
 		"stars": 1,
 		"forks": 0,
 		"watchers": 1,
 		"contributors": 2,
 		"releases": 10,
-		"downloads": 41,
+		"downloads": 43,
 		"latest_release": {
 			"tag": "v0.8.0",
 			"published_at": "2026-11-16T16:40:53Z",
@@ -21,11 +21,11 @@
 			"published_at": "2026-11-16T16:40:53Z",
 			"prerelease": false,
 			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.8.0",
-			"downloads": 13,
+			"downloads": 14,
 			"assets": [
 				{
 					"name": "yoshida-0.8.0.zip",
-					"downloads": 13
+					"downloads": 14
 				}
 			]
 		},
@@ -34,11 +34,11 @@
 			"published_at": "2026-11-15T23:30:31Z",
 			"prerelease": false,
 			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.7.2",
-			"downloads": 16,
+			"downloads": 17,
 			"assets": [
 				{
 					"name": "yoshida-0.7.2.zip",
-					"downloads": 16
+					"downloads": 17
 				}
 			]
 		},
@@ -178,6 +178,12 @@
 			"stars": 1,
 			"forks": 0,
 			"downloads": 41
+		},
+		{
+			"date": "2026-11-21",
+			"stars": 1,
+			"forks": 0,
+			"downloads": 43
 		}
 	],
 	"traffic": [
@@ -313,6 +319,13 @@
 			"visitors": 0,
 			"clones": 12,
 			"cloners": 5
+		},
+		{
+			"date": "2026-11-20",
+			"views": 0,
+			"visitors": 0,
+			"clones": 3,
+			"cloners": 3
 		}
 	]
 }
