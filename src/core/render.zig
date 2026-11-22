@@ -3516,11 +3516,14 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
 
     // Canvas
     var e = ctx.newEnv();
-    const cw = ctx.num(&e, null, d.canvas_w.?) catch |err| switch (err) {
+    // A card's own `_width` and `_height` replace the design's; the rest of
+    // the render, `canvas.w` and `canvas.h` included, sees the card's size.
+    const own = ctx.card.canvas;
+    const cw = own.width orelse ctx.num(&e, null, d.canvas_w.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => return null,
     };
-    const ch = ctx.num(&e, null, d.canvas_h.?) catch |err| switch (err) {
+    const ch = own.height orelse ctx.num(&e, null, d.canvas_h.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => return null,
     };
@@ -3538,11 +3541,11 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     ctx.canvas_h = h;
     var dpi: f64 = 0;
     var bleed: f64 = 0;
-    if (d.dpi) |p| dpi = ctx.num(&e, null, p) catch |err| switch (err) {
+    if (own.dpi) |v| dpi = v else if (d.dpi) |p| dpi = ctx.num(&e, null, p) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => 0,
     };
-    if (d.bleed) |p| bleed = ctx.num(&e, null, p) catch |err| switch (err) {
+    if (own.bleed) |v| bleed = v else if (d.bleed) |p| bleed = ctx.num(&e, null, p) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => 0,
     };
@@ -5318,4 +5321,56 @@ test "a list constant drives repeat and lookups" {
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 9, 17)[1]);
     try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 12, 17)[1]);
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 17)[1]);
+}
+
+test "a card's _width and _height replace the design's canvas size" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var fs = project.MemFs.init(gpa);
+    defer fs.deinit();
+    try fs.put("t.design.json",
+        \\{ "format": 1, "name": "t", "canvas": { "width": 200, "height": 100, "dpi": 300, "bleed": 4, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "bar", "type": "rect", "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "50%" }, "fill": "#FF0000" } ] }
+    );
+    try fs.put("t.cards.json",
+        \\{ "format": 1, "design": "t.design.json", "cards": [
+        \\  { "id": "plain" },
+        \\  { "id": "wide", "_width": 300 },
+        \\  { "id": "tall", "_width": 120, "_height": 240, "_dpi": 600, "_bleed": 0 }
+        \\] }
+    );
+    var diags = diag.List.init(arena);
+    const proj = try project.load(arena, fs.vfs(), &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    var assets = Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    const set = &proj.sets[0];
+    var plain = (try renderCard(gpa, &assets, set, 0, .{}, &diags)).?;
+    defer plain.deinit(gpa);
+    var wide = (try renderCard(gpa, &assets, set, 1, .{}, &diags)).?;
+    defer wide.deinit(gpa);
+    var tall = (try renderCard(gpa, &assets, set, 2, .{}, &diags)).?;
+    defer tall.deinit(gpa);
+    // No override: the design's size, dpi and bleed.
+    try std.testing.expectEqual(@as(u32, 200), plain.w);
+    try std.testing.expectEqual(@as(u32, 100), plain.h);
+    try std.testing.expectEqual(@as(f64, 300), plain.dpi);
+    try std.testing.expectEqual(@as(f64, 4), plain.bleed);
+    // One side overridden, the other inherited.
+    try std.testing.expectEqual(@as(u32, 300), wide.w);
+    try std.testing.expectEqual(@as(u32, 100), wide.h);
+    try std.testing.expectEqual(@as(u32, 300), wide.canvas_w);
+    try std.testing.expectEqual(@as(f64, 300), wide.dpi);
+    // Both, and dpi and bleed.
+    try std.testing.expectEqual(@as(u32, 120), tall.w);
+    try std.testing.expectEqual(@as(u32, 240), tall.h);
+    try std.testing.expectEqual(@as(f64, 600), tall.dpi);
+    try std.testing.expectEqual(@as(f64, 0), tall.bleed);
+    // Layers sized from the canvas follow the card: `canvas.w` and `50%`.
+    try std.testing.expect(pixel(&wide, 299, 10)[1] == 0);
+    try std.testing.expect(pixel(&wide, 299, 60)[1] != 0);
+    try std.testing.expect(pixel(&tall, 119, 100)[1] == 0);
+    try std.testing.expect(pixel(&tall, 119, 130)[1] != 0);
 }
