@@ -199,6 +199,7 @@
 		hasBleed,
 		imagePath,
 		pdfPath,
+		printRequest,
 		type PlanSet,
 		planExport,
 		setJpegDpi,
@@ -4190,8 +4191,11 @@
 		// JPEG and WebP are encoded by the browser, so they render here.
 		const viaServer = onServer && st.scope !== "card";
 		const remote: ExportFormat[] = viaServer
-			? (["png", "svg", "pdf", "sheet"] as const).filter((f) =>
-					st.formats.includes(f),
+			? (["png", "svg", "pdf", "sheet"] as const).filter(
+					// The print layout is made in this browser only.
+					(f) =>
+						st.formats.includes(f) &&
+						!(f === "pdf" && st.pdfLayout === "print"),
 				)
 			: [];
 		const localPng =
@@ -4406,9 +4410,24 @@
 							tick();
 						}
 					}
-					if (localPdf) {
+					if (localPdf && !plan.noPdf.includes(t.set)) {
 						const marks = cropMarksFor(info, st.cropMarks);
-						await engine.pdfBegin();
+						const print = st.pdfLayout === "print";
+						await engine.pdfBegin(print ? printRequest(st, marks) : undefined);
+						const back = print
+							? sets.find((x) => x.name === st.printBack && x.ok && x.cards.length)
+							: undefined;
+						if (back) {
+							const r = await engine.pdfBack({
+								set: back.name,
+								card: 0,
+								...clock,
+								scale,
+								...(st.pdfVector ? { vector: true } : {}),
+							});
+							diagnostics.push(...r.diagnostics);
+						}
+						let misfits = 0;
 						for (const i of t.cards) {
 							const r = await engine.pdfPage({
 								set: t.set,
@@ -4423,10 +4442,19 @@
 								return cancelled();
 							}
 							diagnostics.push(...r.diagnostics);
+							if (r.fits === false) misfits++;
 							tick();
 						}
 						const r = await engine.pdfFinish();
 						if (r.bin.length) out[pdfPath(t.set)] = r.bin;
+						if (print && r.cols)
+							run.log(
+								`Print layout of '${info.design_name}': ${r.cols} × ${r.rows} cards a page, ${r.pages} page(s)${back ? `, backs from '${back.design_name}' for flip on ${st.duplex} edge` : ""}`,
+							);
+						if (misfits)
+							run.log(
+								`${misfits} card(s) of '${info.design_name}' are not the size of the first one: centred on their place and cut to it`,
+							);
 					}
 					if (localSheet) {
 						const many =
