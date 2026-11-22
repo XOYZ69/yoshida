@@ -36,6 +36,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 | `max_width` | number (x axis) | none | Auto-shrink: the text block may be at most this wide |
 | `max_height` | number (y axis) | none | Auto-shrink: the text block may be at most this tall |
 | `min_size` | number | `8` (or `size` if smaller) | Auto-shrink never goes below this size |
+| `min_squeeze` | number | `1` (off) | Squeeze sideways: the narrowest horizontal scale (0.05 to 1) the glyphs may get to fit `max_width`, see [squeeze](#squeeze-sideways) |
 | `stroke` | `{ color, width }` | none | An outline around the letters, `width` pixels wide, drawn outside them |
 | `shrink_group` | text literal | none | Texts with the same name use one size, see [auto-shrink](#auto-shrink) |
 
@@ -70,6 +71,19 @@ To make them match, give the layers the same `shrink_group`. Every text layer wi
 ```
 
 `@layer.size` gives the shared size. Hidden iterations do not count.
+
+## Squeeze sideways
+
+`min_squeeze` lets a line that is too wide for `max_width` get narrower letters instead of a smaller size. The glyphs are scaled in x only (their height, the line height and the size stay), by `max_width` over the block width, but never below `min_squeeze`. `0.8` allows at most a 20 % squeeze; `1` (the default) is off.
+
+```json
+{ "id": "name", "type": "text", "text": "{name}", "at": { "x": 40, "y": 60 }, "size": 40, "max_width": 300, "min_squeeze": 0.75, "min_size": 24 }
+```
+
+- Squeezing comes first: when the squeezed block fits, the size is not touched, and a text that already fits is not changed.
+- If even `min_squeeze` is not enough, the glyphs are squeezed by `min_squeeze` and [auto-shrink](#auto-shrink) lowers the size until the squeezed block fits (down to `min_size`, then warning 3203).
+- It needs `max_width` and does nothing without it. With `wrap` the block is `wrap` wide, so the whole block is squeezed when `max_width` is smaller than `wrap`.
+- The block's width (`@layer.w`, the anchor and the alignment) is the squeezed width. It works the same in PNG, SVG and vector PDF output. The outline (`stroke`) of squeezed text is a little thinner on the left and right of the glyphs.
 
 ## Outline
 

@@ -137,7 +137,7 @@ const Svg = struct {
             const g = it.glyph;
             const id = try s.glyphDef(g.font, g.gid);
             try w.print("<use xlink:href=\"#{s}\" transform=\"matrix(", .{id});
-            try numP(w, g.scale, 8);
+            try numP(w, g.scale * g.xscale, 8);
             try w.writeAll(" 0 0 ");
             try numP(w, g.scale, 8);
             try w.writeByte(' ');

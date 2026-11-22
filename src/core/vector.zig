@@ -43,6 +43,8 @@ pub const Glyph = struct {
     scale: f32,
     color: Color,
     stroke: f32 = 0,
+    /// Horizontal scale on top of `scale` (squeezed text).
+    xscale: f32 = 1,
 };
 
 /// An image stretched to `rect` (x, y, w, h) and clipped to `clip` (x0, y0,

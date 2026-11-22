@@ -314,6 +314,9 @@ pub const Layer = struct {
     max_width: ?Prop = null,
     max_height: ?Prop = null,
     min_size: ?Prop = null,
+    /// Squeeze sideways: the narrowest horizontal scale (0 to 1) the glyphs
+    /// may get so a line fits `max_width`, tried before the size shrinks.
+    min_squeeze: ?Prop = null,
     // qr and barcode (also use text, color, fill and box)
     margin: ?Prop = null,
     // barcode only; `font`, `size` and `align` shape its label
@@ -809,7 +812,7 @@ fn kindFields(kind: LayerKind) []const []const u8 {
         .rect => &.{ "box", "fill", "radius", "stroke", "gradient" },
         .ellipse => &.{ "box", "fill", "stroke", "arc", "gradient" },
         .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box", "gradient" },
-        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
+        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "min_squeeze", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
         .image => &.{ "src", "box", "fit", "smoothing", "optional", "radius", "clip" },
         .qr => &.{ "text", "box", "color", "fill", "margin", "level", "mode", "style", "eye", "eye_color", "logo", "logo_src" },
         .barcode => &.{ "format", "text", "box", "color", "fill", "margin", "check", "label", "label_text", "label_color", "label_gap", "font", "size", "align", "level", "mode", "ecc", "style", "eye", "eye_color", "logo", "logo_src" },
@@ -2260,6 +2263,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("max_width")) |v| layer.max_width = try l.prop(v, .number, &sx);
             if (m.get("max_height")) |v| layer.max_height = try l.prop(v, .number, &sy);
             if (m.get("min_size")) |v| layer.min_size = try l.prop(v, .number, scope);
+            if (m.get("min_squeeze")) |v| layer.min_squeeze = try l.prop(v, .number, scope);
             if (m.get("shrink_group")) |v| layer.shrink_group = try l.literalString(v, "shrink_group");
             if (m.get("markup")) |v| {
                 if (v.data == .bool) layer.markup = v.data.bool else try l.err(1103, v.pos, "markup must be true or false", .{});

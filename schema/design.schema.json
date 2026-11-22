@@ -447,6 +447,10 @@
           "description": "Smallest size auto-shrink may use (default 8)",
           "type": ["number", "string"]
         },
+        "min_squeeze": {
+          "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
+          "type": ["number", "string"]
+        },
         "src": { "description": "Text with {expression} placeholders", "type": "string" },
         "fit": {
           "description": "One of the fit names, or an expression that gives one",
@@ -1097,6 +1101,10 @@
               },
               "min_size": {
                 "description": "Smallest size auto-shrink may use (default 8)",
+                "type": ["number", "string"]
+              },
+              "min_squeeze": {
+                "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
                 "type": ["number", "string"]
               },
               "stroke": {

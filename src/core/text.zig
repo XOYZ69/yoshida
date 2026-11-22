@@ -320,6 +320,10 @@ pub const Layout = struct {
     block_h: f32,
     truncated: bool,
     missing_glyphs: bool,
+    /// Horizontal scale of everything drawn (1 unless the text is squeezed
+    /// sideways). `block_w` and the line widths stay at full size; a drawn
+    /// block is `block_w * xscale` wide.
+    xscale: f32 = 1,
 };
 
 pub const Options = struct {
@@ -451,12 +455,13 @@ const Pass = struct {
     fn glyph(s: *Pass, g: Placed) Allocator.Error!void {
         if (g.icon != null) return;
         const sc = g.scale * s.k;
+        const sx = sc * g.xscale;
         const thick: f32 = if (g.faux_bold) fauxBoldWidth(s.size) else 0;
         if (s.outline) |w| {
-            drawOutline(s.b, g.font, g.cp, sc, g.x * s.k, g.baseline * s.k, (w + thick) * s.k, s.p);
+            drawOutline(s.b, g.font, g.cp, sc, g.xscale, g.x * s.k, g.baseline * s.k, (w + thick) * s.k, s.p);
         } else {
-            try drawGlyph(s.gpa, &s.mask, s.b, g.font, g.cp, sc, g.x * s.k, g.baseline * s.k, s.p);
-            if (thick > 0) drawOutline(s.b, g.font, g.cp, sc, g.x * s.k, g.baseline * s.k, thick * s.k, s.p);
+            try drawGlyph(s.gpa, &s.mask, s.b, g.font, g.cp, sx, sc, g.x * s.k, g.baseline * s.k, s.p);
+            if (thick > 0) drawOutline(s.b, g.font, g.cp, sc, g.xscale, g.x * s.k, g.baseline * s.k, thick * s.k, s.p);
         }
     }
 };
@@ -470,6 +475,8 @@ pub const Placed = struct {
     scale: f32,
     x: f32,
     baseline: f32,
+    /// Horizontal scale on top of `scale` (squeezed text).
+    xscale: f32 = 1,
     /// Rich text: draw thicker (bold without a bold font).
     faux_bold: bool = false,
     /// Rich text: an inline icon (index into `Rich.icon_ratio`), `w` x `h`
@@ -496,7 +503,9 @@ pub fn walkRich(f: *const Font, rich: ?*const Rich, l: *const Layout, left: f32,
     const face: Face = .{ .font = f, .rich = rich };
     for (l.lines, 0..) |ln, i| {
         const baseline = top + l.ascent + @as(f32, @floatFromInt(i)) * (l.line_h + l.spacing);
-        var x = left + switch (alignment) {
+        const xs = l.xscale;
+        // `x` counts unsqueezed pixels from `left`; glyphs are placed at left + x * xs.
+        var x: f32 = switch (alignment) {
             .left, .justify => 0,
             .center => (l.block_w - ln.width) / 2,
             .right => l.block_w - ln.width,
@@ -518,7 +527,7 @@ pub fn walkRich(f: *const Font, rich: ?*const Rich, l: *const Layout, left: f32,
                 const item = face.item(seg.ptr + at, cp, override);
                 if (item.icon) |idx| {
                     const w = rich.?.iconWidth(idx, l.size);
-                    try visit(ctx, .{ .font = item.font, .cp = cp, .scale = 0, .x = x, .baseline = baseline, .icon = idx, .w = w, .h = l.size * rich.?.icon_scale });
+                    try visit(ctx, .{ .font = item.font, .cp = cp, .scale = 0, .x = left + x * xs, .baseline = baseline, .icon = idx, .w = w * xs, .h = l.size * rich.?.icon_scale });
                     x += w;
                     prev = null;
                     prev_font = null;
@@ -532,7 +541,7 @@ pub fn walkRich(f: *const Font, rich: ?*const Rich, l: *const Layout, left: f32,
                 prev = cp;
                 prev_font = g;
                 const faux = if (rich) |r| r.faux[item.style] else false;
-                if (cp != ' ') try visit(ctx, .{ .font = g, .cp = cp, .scale = sc, .x = x, .baseline = baseline, .faux_bold = faux });
+                if (cp != ' ') try visit(ctx, .{ .font = g, .cp = cp, .scale = sc, .x = left + x * xs, .baseline = baseline, .xscale = xs, .faux_bold = faux });
                 x += @as(f32, @floatFromInt(g.advance(cp))) * sc;
                 if (cp == ' ') x += gap_extra;
             }
@@ -545,7 +554,7 @@ pub fn fauxBoldWidth(size: f32) f32 {
     return size * 0.022;
 }
 
-fn drawGlyph(gpa: Allocator, mask: *std.ArrayList(u8), b: *raster.Bitmap, g: *const Font, cp: u21, sc: f32, x: f32, baseline: f32, p: raster.Paint) Allocator.Error!void {
+fn drawGlyph(gpa: Allocator, mask: *std.ArrayList(u8), b: *raster.Bitmap, g: *const Font, cp: u21, sx: f32, sc: f32, x: f32, baseline: f32, p: raster.Paint) Allocator.Error!void {
     const xf = @floor(x);
     const shift_x = x - xf;
     const yf = @floor(baseline);
@@ -554,19 +563,19 @@ fn drawGlyph(gpa: Allocator, mask: *std.ArrayList(u8), b: *raster.Bitmap, g: *co
     var iy0: c_int = 0;
     var ix1: c_int = 0;
     var iy1: c_int = 0;
-    c.stbtt_GetCodepointBitmapBoxSubpixel(g.info.ptr, @intCast(cp), sc, sc, shift_x, shift_y, &ix0, &iy0, &ix1, &iy1);
+    c.stbtt_GetCodepointBitmapBoxSubpixel(g.info.ptr, @intCast(cp), sx, sc, shift_x, shift_y, &ix0, &iy0, &ix1, &iy1);
     const gw: usize = @intCast(@max(0, ix1 - ix0));
     const gh: usize = @intCast(@max(0, iy1 - iy0));
     if (gw == 0 or gh == 0) return;
     try mask.resize(gpa, gw * gh);
     @memset(mask.items, 0);
-    c.stbtt_MakeCodepointBitmapSubpixel(g.info.ptr, mask.items.ptr, @intCast(gw), @intCast(gh), @intCast(gw), sc, sc, shift_x, shift_y, @intCast(cp));
+    c.stbtt_MakeCodepointBitmapSubpixel(g.info.ptr, mask.items.ptr, @intCast(gw), @intCast(gh), @intCast(gw), sx, sc, shift_x, shift_y, @intCast(cp));
     raster.blitMask(b, @as(i32, @intFromFloat(xf)) + ix0, @as(i32, @intFromFloat(yf)) + iy0, mask.items, gw, gh, p);
 }
 
 /// An outline `width` pixels wide around the glyph, from its signed
 /// distance field (sampled bilinearly so it lines up with the glyph).
-fn drawOutline(b: *raster.Bitmap, g: *const Font, cp: u21, sc: f32, x: f32, baseline: f32, width: f32, p: raster.Paint) void {
+fn drawOutline(b: *raster.Bitmap, g: *const Font, cp: u21, sc: f32, xs: f32, x: f32, baseline: f32, width: f32, p: raster.Paint) void {
     const pad: c_int = @intFromFloat(@ceil(width) + 2);
     const dist_scale: f32 = 120.0 / @as(f32, @floatFromInt(pad));
     var w: c_int = 0;
@@ -578,7 +587,9 @@ fn drawOutline(b: *raster.Bitmap, g: *const Font, cp: u21, sc: f32, x: f32, base
     const uw: usize = @intCast(w);
     const uh: usize = @intCast(h);
     // SDF pixel (i, j) covers canvas x + xoff + i (its centre at + 0.5).
-    const ox = x + @as(f32, @floatFromInt(xoff));
+    // A squeezed glyph squeezes its distance field sideways too (the outline
+    // is then a little thinner left and right).
+    const ox = x + @as(f32, @floatFromInt(xoff)) * xs;
     const oy = baseline + @as(f32, @floatFromInt(yoff));
     const x0: i32 = @intFromFloat(@floor(ox));
     const y0: i32 = @intFromFloat(@floor(oy));
@@ -591,9 +602,9 @@ fn drawOutline(b: *raster.Bitmap, g: *const Font, cp: u21, sc: f32, x: f32, base
     var py: i32 = y0 - 1;
     while (py <= y0 + h) : (py += 1) {
         var px: i32 = x0 - 1;
-        while (px <= x0 + w) : (px += 1) {
+        while (px <= x0 + @as(i32, @intFromFloat(@ceil(@as(f32, @floatFromInt(w)) * xs))) + 1) : (px += 1) {
             // Position of this canvas pixel's centre in SDF pixel units.
-            const u = @as(f32, @floatFromInt(px)) + 0.5 - ox - 0.5;
+            const u = (@as(f32, @floatFromInt(px)) + 0.5 - ox) / xs - 0.5;
             const v = @as(f32, @floatFromInt(py)) + 0.5 - oy - 0.5;
             const iu = @floor(u);
             const iv = @floor(v);
