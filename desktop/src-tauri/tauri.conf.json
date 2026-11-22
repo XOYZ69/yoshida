@@ -1,0 +1,32 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "yoshida",
+	"version": "../../web/package.json",
+	"identifier": "dev.xoyz.yoshida",
+	"build": {
+		"devUrl": "http://localhost:5173",
+		"frontendDist": "../../web/dist"
+	},
+	"app": {
+		"windows": [
+			{
+				"label": "main",
+				"title": "yoshida",
+				"width": 1400,
+				"height": 900,
+				"minWidth": 800,
+				"minHeight": 500
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"icon": ["icons/icon.png"],
+		"externalBin": ["binaries/yoshida-server"],
+		"resources": { "../../web/dist/": "web/" }
+	}
+}
