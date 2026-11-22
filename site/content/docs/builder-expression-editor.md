@@ -64,7 +64,7 @@ At the top, a **path** shows where you are, such as *whole › result 2*. Click 
 - an `in [...]` test as chips you can add and remove,
 - anything else as one text box.
 
-Colors show a swatch. A see-through color shows a checkerboard behind it, the same in light and dark mode. The whole expression stays editable as text under the parts, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits in the window rewrite the expression in its canonical layout.
+Colors show a swatch. A see-through color shows a checkerboard behind it, the same in light and dark mode. The whole expression stays editable as text under the parts, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits in the window rewrite the expression in its canonical layout, which breaks a long one over several lines in the window.
 
 **Live values.** For the card shown on the stage, a part shows its value when the card has one, and the row of a `match` or `?:` chain that was taken is marked. A value that is not there is left out, not shown as a dash. Values come from a real render of the card, so repeat names, function arguments and `@layer` positions are the actual ones. A field that the card never evaluates (a hidden layer, an unused constant) says so.
 
@@ -91,7 +91,7 @@ A repeat over a list gives a name for each item, such as `t`. An item is not a n
 
 Each extraction is one undo step. <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings back the expression and removes the new name in one go.
 
-**Apply** (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the text) writes the expression to the field. Closing the window applies pending changes too. <kbd>Esc</kbd> closes it while it has the focus.
+**Apply** (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in the text) writes the expression to the field, on one line: a line break would be saved in the design as `\n`, so only the window shows the multi-line layout. Closing the window applies pending changes too. <kbd>Esc</kbd> closes it while it has the focus.
 
 ## Committing
 

@@ -14,6 +14,40 @@ export type Format = (src: string, width: number) => string | null;
 /** The width the edits format to: the same as a field of the panel. */
 const WIDTH = 72;
 
+/** Wide enough that the formatter never breaks a line. */
+const FLAT_WIDTH = 1 << 16;
+
+/**
+ * The expression on one line, for saving it in a design: a JSON string can
+ * only hold a line break as an escape (`\n`), which reads badly in the source.
+ * The window shows the multi-line layout; this is what it writes.
+ *
+ * Text without a line break is returned as it is. Otherwise the formatter
+ * prints it flat (the same tree, canonical spacing). When the text has
+ * problems and cannot be formatted, only the whitespace between tokens is
+ * collapsed; `tokens` are the spans of the same parser, so a quoted string
+ * is never touched.
+ */
+export function compactText(
+	src: string,
+	format: Format,
+	tokens: (src: string) => Span[],
+): string {
+	if (!/[\r\n]/.test(src)) return src;
+	const flat = format(src, FLAT_WIDTH);
+	if (flat !== null) return flat;
+	let out = "";
+	let at = 0;
+	for (const [start, end] of tokens(src)) {
+		const gap = src.slice(at, start);
+		out += /[\r\n]/.test(gap) ? " " : gap;
+		out += src.slice(start, end);
+		at = end;
+	}
+	out += src.slice(at);
+	return out.trim();
+}
+
 /** A piece of the expression: a node with its source text. */
 export type Slot = {
 	/** The node id, for the live values of its trace. */

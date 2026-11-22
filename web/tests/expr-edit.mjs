@@ -1,6 +1,6 @@
 // Checks the formula panel's edits (src/lib/expr/edit.ts) against expr.wasm:
 // a match result, match rows, a ?: chain row, a cell that does not parse,
-// and `in` chips. Run without a browser:
+// `in` chips, and the one-line text a field gets. Run without a browser:
 //
 //   node --experimental-strip-types tests/expr-edit.mjs [path/to/expr.wasm]
 import { readFileSync } from "node:fs";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
 	addChip,
 	addMatchRow,
+	compactText,
 	condChain,
 	listView,
 	matchView,
@@ -40,6 +41,8 @@ function call(req) {
 
 const format = (src, width) => call({ op: "format", src, width }).text;
 const rootOf = (src) => call({ op: "parse", src, template: false }).root;
+const tokens = (src) =>
+	call({ op: "parse", src, template: false }).tokens.map((t) => [t[0], t[1]]);
 
 let failed = 0;
 const ok = (name, cond, extra = "") => {
@@ -164,6 +167,56 @@ ok(
 	ok(
 		"removing the last chip is refused (an empty list does not parse)",
 		removeChip("x in [1]", rootOf("x in [1]"), 0, format) === null,
+	);
+}
+
+// compactText: what the field gets is one line, whatever layout the window had.
+{
+	const compact = (src) => compactText(src, format, tokens);
+	const wide =
+		"match(kind, 'active', #2F7FD1, 'done', #3CB371, 'late', #D1442F, 'skip', #888888, #000000)";
+	const laid = format(wide, 40);
+	ok("the sample is laid out on several lines", laid?.includes("\n"), laid);
+	ok(
+		"a multi-line match is saved on one line",
+		compact(laid) === wide,
+		compact(laid),
+	);
+	const chain = "kind == 'active' ? #2F7FD1 : kind == 'done' ? #3CB371 : #000000";
+	const laidChain = format(chain, 30);
+	ok("the chain is laid out on several lines", laidChain?.includes("\n"));
+	ok(
+		"a multi-line ?: chain is saved on one line, without a break after the colon",
+		compact(laidChain) === chain,
+		compact(laidChain),
+	);
+	const text = "text == 'a b' ? 'x  y' : 'p'";
+	ok("one-line text is returned as it is", compact(text) === text);
+	const odd = "a  +   b";
+	ok("a line-break-free text is not re-spaced", compact(odd) === odd);
+	const quoted = "match(k,\n  'two  spaces',\n  1,\n  0\n)";
+	ok(
+		"spaces inside a string are kept",
+		compact(quoted) === "match(k, 'two  spaces', 1, 0)",
+		compact(quoted),
+	);
+	ok(
+		"CRLF line breaks are collapsed too",
+		compact("a +\r\n  b") === "a + b",
+		compact("a +\r\n  b"),
+	);
+	// Text that does not parse cannot be formatted: only the breaks between
+	// tokens go, the rest (and every string) stays as typed.
+	const broken = "max(\n  'a\tb  c',\n  1,\n";
+	ok(
+		"a text with problems loses only its line breaks",
+		compact(broken) === "max( 'a\tb  c', 1,",
+		JSON.stringify(compact(broken)),
+	);
+	ok(
+		"the one-line text means the same expression",
+		call({ op: "parse", src: compact(laid), template: false }).problems
+			.length === 0,
 	);
 }
 

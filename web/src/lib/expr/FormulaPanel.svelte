@@ -23,6 +23,7 @@ import {
 	addChip,
 	addMatchRow,
 	children,
+	compactText,
 	condChain,
 	listView,
 	matchView,
@@ -317,12 +318,19 @@ function extract(kind: "const" | "function", name: string) {
 		note = `Cannot extract as '${name}': the name is taken or not valid.`;
 		return;
 	}
-	live.extract(r.design, path, r.text);
+	live.extract(r.design, path, oneLine(r.text));
 	base = r.text;
 	draft = r.text;
 	bad = {};
 	selPath = [];
 	note = "";
+}
+
+/** The text as the field gets it: on one line (see compactText). */
+function oneLine(src: string): string {
+	return compactText(src, formatExpr, (s) =>
+		parseExpr(s, false).tokens.map((t): [number, number] => [t[0], t[1]]),
+	);
 }
 
 function keyOf(s: Slot): string {
@@ -389,7 +397,9 @@ function openTo(s: Slot): number[] | null {
 
 function apply() {
 	if (!dirty) return;
-	onapply(draft);
+	// The window shows the multi-line layout; the field gets one line, since
+	// a line break would be saved in the design as `\n`.
+	onapply(oneLine(draft));
 	base = draft;
 }
 

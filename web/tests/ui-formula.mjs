@@ -135,6 +135,34 @@ ok(
 	await p.locator(".status").innerText(),
 );
 
+// A long expression is laid out on several lines in the window, but the field
+// (and so the design) gets it on one line: a break would be saved as `\n`.
+{
+	const long =
+		"match('x', 'a-long-key-one', #ff0000, 'a-long-key-two', #0000ff, 'a-long-key-three', #00ff00, #000000)";
+	await text.fill(long);
+	await cell.fill("#112233");
+	await cell.press("Enter");
+	await p.waitForTimeout(100);
+	ok(
+		"an edit lays the long expression out on several lines in the window",
+		(await text.inputValue()).includes("\n") &&
+			(await text.inputValue()).includes("#112233"),
+		await text.inputValue(),
+	);
+	await drawer.getByRole("button", { name: "Apply" }).click();
+	await p.waitForTimeout(300);
+	ok(
+		"Apply writes the long expression to the field on one line",
+		(await fill.locator(".cm-line").count()) === 1 &&
+			(await fill.innerText()).includes("#112233") &&
+			!(await fill.innerText()).includes("\n"),
+		JSON.stringify(await fill.innerText()),
+	);
+	// Back to the short match for the checks below.
+	await text.fill("match('x', 'a', #00ff00, 'b', #0000ff, #000000)");
+}
+
 // Live values for the card on the stage: the default row is the one taken.
 await p.waitForTimeout(500);
 ok(
