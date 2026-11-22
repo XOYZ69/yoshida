@@ -117,7 +117,6 @@
 		blankDesign,
 		bytesOf,
 		type CardListOp,
-		canOpenWritable,
 		cardIdRe,
 		download,
 		type Example,
@@ -134,14 +133,11 @@
 		listExamples,
 		loadExample,
 		MANIFEST,
-		openWritable,
 		PROJECT_EXT,
 		PROJECT_MIME,
 		parseCsv,
-		pickDirectory,
 		projectFileRe,
 		projectZip,
-		removeFile,
 		setCardValue,
 		slug,
 		textOf,
@@ -152,18 +148,34 @@
 		withSet,
 		withUtcOffset,
 		writeCsv,
-		writeFile,
 	} from "./lib/project";
 	import {
+		activeBackend,
+		backendById,
+		type FolderLink,
+	} from "./lib/folder/backend";
+	import "./lib/folder/browser";
+	import {
+		diffCount,
+		diffFiles,
+		type FileDiff,
+		findExternalChanges,
+		planReconnect,
+		type Sigs,
+	} from "./lib/folder/sync";
+	import {
+		deleteFolder,
 		deleteProject,
 		formatAge,
 		formatSize,
 		lastProject,
 		listProjects,
+		loadFolder,
 		loadProject,
 		newProjectId,
 		type ProjectMeta,
 		persistStorage,
+		saveFolder,
 		saveProject,
 		setLastProject,
 	} from "./lib/store";
@@ -207,6 +219,7 @@
 	import MenuHost from "./lib/ui/MenuHost.svelte";
 	import {
 		askText,
+		chooseAction,
 		confirmAction,
 		type MenuItem,
 		openMenu,
@@ -267,7 +280,18 @@
 	let myProjects = $state.raw<ProjectMeta[]>([]);
 	let files = $state.raw<Files>(new Map());
 	let dirty = $state.raw(new Set<string>());
-	let dirHandle: FileSystemDirectoryHandle | null = $state(null);
+	/** The folder on disk this project is linked to, or null. */
+	let folder = $state.raw<FolderLink | null>(null);
+	/** Fingerprints of the folder's files after the last sync. */
+	let folderSigs: Sigs = new Map();
+	type FolderNotice =
+		| { kind: "permission" }
+		| { kind: "changed"; paths: string[]; sigs: Sigs }
+		| { kind: "conflict"; diff: FileDiff }
+		| { kind: "error"; message: string };
+	/** Something about the linked folder that needs an answer from the user. */
+	let folderNotice = $state.raw<FolderNotice | null>(null);
+	let folderWriting = $state(false);
 	let selected: string | null = $state(null);
 	let check = $state.raw<CheckResult | null>(null);
 	let setName = $state("");
@@ -704,9 +728,10 @@
 	async function openProject(
 		name: string,
 		f: Files,
-		handle: FileSystemDirectoryHandle | null = null,
+		link: FolderLink | null = null,
 		id: string | null = null,
 		saved = false,
+		sigs: Sigs = new Map(),
 	) {
 		loading = { name, step: 0, label: loadSteps[0] };
 		projectName = name;
@@ -716,7 +741,9 @@
 		if (id) setLastProject(id);
 		files = f;
 		dirty = new Set();
-		dirHandle = handle;
+		folder = link;
+		folderSigs = sigs;
+		folderNotice = null;
 		lastRender = null;
 		check = null;
 		setName = "";
@@ -741,6 +768,7 @@
 			fileList.find((p) => p.endsWith(".design.json")) ??
 			fileList[0] ??
 			null;
+		if (link && id) persistFolder();
 		await refresh();
 	}
 
@@ -757,6 +785,7 @@
 			const p = await loadProject(id);
 			if (!p) return false;
 			await openProject(p.meta.name, p.files, null, id, true);
+			await reopenFolder(id);
 			return true;
 		} catch (e) {
 			status = `Could not open the saved project: ${(e as Error).message}`;
@@ -782,16 +811,26 @@
 	}
 
 	async function openFolder() {
-		if (canOpenWritable()) {
+		const backend = activeBackend();
+		if (backend) {
 			try {
-				const { name, files: f, handle } = await openWritable();
-				await openProject(name, f, handle, newProjectId());
+				const link = await backend.pick();
+				const { files: f, sigs } = await link.read();
+				await openProject(link.name, f, link, newProjectId(), false, sigs);
 			} catch (e) {
 				if ((e as Error).name !== "AbortError")
 					status = `Could not open the folder: ${(e as Error).message}`;
 			}
 			return;
 		}
+		await openFolderCopy();
+	}
+
+	/**
+	 * Copies a folder into the project in this browser (the browser's upload
+	 * dialog): the folder on disk is not linked and never written to.
+	 */
+	async function openFolderCopy() {
 		const list = await pickFiles("", { directory: true });
 		if (!list.length) return;
 		const { name, files: f } = await filesFromInput(list);
@@ -873,6 +912,7 @@
 	function onHide() {
 		if (document.visibilityState === "hidden" && saveState === "unsaved")
 			saveInBrowser();
+		if (document.visibilityState === "visible") checkFolder();
 	}
 
 	async function renameProject() {
@@ -892,10 +932,25 @@
 	}
 
 	async function forgetProject(meta: ProjectMeta) {
+		// A linked project: the folder on disk is not touched, only the copy in
+		// this browser and the link to the folder go.
+		let linked: string | null = null;
+		if (meta.id === projectId && folder) linked = folder.name;
+		else {
+			const rec = await loadFolder(meta.id).catch(() => null);
+			if (rec) {
+				try {
+					linked = backendById(rec.backend)?.open(rec.ref).name ?? "a folder";
+				} catch {
+					linked = "a folder";
+				}
+			}
+		}
 		const ok = await confirmAction({
 			title: `Delete '${meta.name}' from this browser?`,
-			message:
-				"Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
+			message: linked
+				? `Its copy (images included) and the link to the folder '${linked}' are removed from this browser. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
+				: "Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
 			confirm: "Delete",
 			danger: true,
 		});
@@ -916,7 +971,9 @@
 		saveState = "idle";
 		files = new Map();
 		dirty = new Set();
-		dirHandle = null;
+		folder = null;
+		folderSigs = new Map();
+		folderNotice = null;
 		lastRender = null;
 		check = null;
 		setName = "";
@@ -943,7 +1000,24 @@
 		const items: MenuItem[] = [
 			{ heading: "Start" },
 			{ label: "New project…", icon: "plus", action: newProject },
-			{ label: "Open folder…", icon: "folder", action: openFolder },
+			{
+				label: "Open folder…",
+				icon: "folder",
+				detail: activeBackend()
+					? "edit the files on disk in place"
+					: "copies it into this browser",
+				action: openFolder,
+			},
+			...(activeBackend()
+				? [
+						{
+							label: "Open folder as a copy…",
+							icon: "upload",
+							detail: "upload it, the folder is left alone",
+							action: openFolderCopy,
+						} satisfies MenuItem,
+					]
+				: []),
 			{
 				label: "Open project file…",
 				icon: "file",
@@ -982,22 +1056,32 @@
 				disabled: !projectName,
 				action: addFiles,
 			},
-			{
-				label: dirHandle
-					? `Save to ${dirHandle.name}`
-					: "Save to folder…",
-				icon: "save",
-				detail: dirHandle
-					? dirty.size
-						? `${dirty.size} changed`
-						: "up to date"
-					: "keeps saving there",
-				disabled:
-					!open ||
-					(!!dirHandle && !dirty.size) ||
-					(!dirHandle && !canOpenWritable()),
-				action: dirHandle ? save : saveToFolder,
-			},
+			folder
+				? {
+						label: `Unlink from ${folder.name}`,
+						icon: "folder",
+						detail: "keeps the files, stops writing to them",
+						action: unlinkFolder,
+					}
+				: {
+						label: "Link to folder…",
+						icon: "folder",
+						detail: activeBackend()
+							? "edit the files on disk, saved as you work"
+							: "not available in this browser, click to see why",
+						disabled: !open,
+						action: linkFolder,
+					},
+			...(folder
+				? [
+						{
+							label: "Reload from folder",
+							icon: "folder",
+							detail: "after changes outside the editor",
+							action: reloadFromFolder,
+						} satisfies MenuItem,
+					]
+				: []),
 			{
 				label: "Export project file",
 				icon: "download",
@@ -1641,19 +1725,313 @@
 		else importFiles(list);
 	}
 
-	/** Writes the whole project to a folder the user picks, then saves there. */
-	async function saveToFolder() {
+	// ---------------------------------------------------------------- linked folder
+	//
+	// A project can be linked to a folder on disk (lib/folder): every change
+	// is written there as it happens, and changes made outside the editor (a
+	// git pull, another editor) are noticed and offered for reload. The link
+	// is kept in this browser, so a reload only asks for access again.
+
+	/** Remembers the link and the last sync for the next visit. */
+	async function persistFolder() {
+		const link = folder;
+		const id = projectId;
+		if (!link || !id) return;
 		try {
-			const handle = await pickDirectory();
-			for (const [p, d] of files) await writeFile(handle, p, d);
-			dirHandle = handle;
-			dirty = new Set();
-			status = `Saved ${files.size} file(s) to ${handle.name}.`;
-		} catch (e) {
-			if ((e as Error).name !== "AbortError")
-				status = `Could not save: ${(e as Error).message}`;
+			await saveFolder(id, {
+				backend: link.backend,
+				ref: link.ref,
+				sigs: [...folderSigs],
+			});
+		} catch {
+			// Not stored: the link works until the page is closed.
 		}
 	}
+
+	/** Reconnects the folder a saved project was linked to, if it had one. */
+	async function reopenFolder(id: string) {
+		const rec = await loadFolder(id);
+		const backend = rec && backendById(rec.backend);
+		if (!rec || !backend || id !== projectId) return;
+		const link = backend.open(rec.ref);
+		folder = link;
+		folderSigs = new Map(rec.sigs);
+		try {
+			if ((await link.permission()) !== "granted")
+				folderNotice = { kind: "permission" };
+			else await reconcileFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/**
+	 * Compares the project with the folder after a reconnect: it is left alone
+	 * when equal, written out when only the project changed, and the user
+	 * chooses when both did.
+	 */
+	async function reconcileFolder() {
+		const link = folder;
+		if (!link) return;
+		const { files: onDisk, sigs } = await link.read();
+		const plan = planReconnect(files, onDisk, sigs, folderSigs);
+		if (link !== folder) return;
+		if (plan.kind === "ask") {
+			folderNotice = { kind: "conflict", diff: plan.diff };
+			return;
+		}
+		folderSigs = plan.sigs;
+		if (plan.kind === "push") markForWrite(plan.diff);
+		persistFolder();
+	}
+
+	function markForWrite(d: { onlyMine: string[]; onlyTheirs: string[]; differ: string[] }) {
+		dirty = new Set([...dirty, ...d.onlyMine, ...d.onlyTheirs, ...d.differ]);
+	}
+
+	/** Asks for access to the folder again (needs a click). */
+	async function allowFolder() {
+		const link = folder;
+		if (!link) return;
+		try {
+			if ((await link.permission(true)) !== "granted") {
+				status = `No access to ${link.name}. Allow it, or unlink the folder.`;
+				return;
+			}
+			folderNotice = null;
+			await reconcileFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/** Links the open project to a folder the user picks. */
+	async function linkFolder() {
+		const backend = activeBackend();
+		if (!files.size) return;
+		if (!backend) {
+			await confirmAction({
+				title: "This browser cannot link a folder",
+				message:
+					"Linking needs the File System Access API: Chrome, Edge and other Chromium browsers have it. Brave has it switched off: open brave://flags/#file-system-access-api, set it to Enabled and restart Brave. Firefox and Safari do not have it; use Export project file there.",
+				confirm: "OK",
+			});
+			return;
+		}
+		try {
+			const link = await backend.pick();
+			const { files: onDisk, sigs } = await link.read();
+			const diff = diffFiles(files, onDisk);
+			if (diff.differ.length) {
+				const ok = await confirmAction({
+					title: `Link to '${link.name}'?`,
+					message: `${diff.differ.length} file(s) in the folder are replaced by this project's version. ${
+						diff.onlyTheirs.length
+							? `${diff.onlyTheirs.length} file(s) that exist only in the folder are added to the project. `
+							: ""
+					}Nothing else in the folder is deleted.`,
+					confirm: "Link and overwrite",
+					danger: true,
+				});
+				if (!ok) return;
+			}
+			if (folder) await unlinkFolder();
+			projectId ??= newProjectId();
+			if (diff.onlyTheirs.length) {
+				const next = new Map(files);
+				for (const p of diff.onlyTheirs) {
+					const d = onDisk.get(p) as Uint8Array;
+					next.set(p, d);
+					await engine.put(p, d);
+				}
+				files = next;
+			}
+			folder = link;
+			folderSigs = sigs;
+			folderNotice = null;
+			markForWrite({ onlyMine: diff.onlyMine, onlyTheirs: [], differ: diff.differ });
+			await saveInBrowser();
+			await persistFolder();
+			status = `Linked to ${link.name}: changes are saved there as you work.`;
+			if (diff.onlyTheirs.length) await refresh();
+		} catch (e) {
+			if ((e as Error).name !== "AbortError")
+				status = `Could not link the folder: ${(e as Error).message}`;
+		}
+	}
+
+	/** Stops writing to the folder. Its files and the project's both stay as they are. */
+	async function unlinkFolder() {
+		const link = folder;
+		if (!link) return;
+		await flushFolder();
+		folder = null;
+		folderSigs = new Map();
+		folderNotice = null;
+		if (projectId) await deleteFolder(projectId).catch(() => {});
+		status = `Unlinked from ${link.name}. The project stays in this browser.`;
+	}
+
+	/** Replaces the project's files with what is in the folder now. */
+	async function reloadFromFolder() {
+		const link = folder;
+		if (!link) return;
+		try {
+			if ((await link.permission(true)) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			const { files: f, sigs } = await link.read();
+			if (link !== folder) return;
+			files = f;
+			dirty = new Set();
+			folderSigs = sigs;
+			folderNotice = null;
+			undoStack = [];
+			redoStack = [];
+			if (filesSelected && !f.has(filesSelected)) filesSelected = null;
+			await engine.setFiles(f);
+			if (!selected || !f.has(selected))
+				selected =
+					fileList.find((p) => p.endsWith(".design.json")) ??
+					fileList[0] ??
+					null;
+			await refresh();
+			persistFolder();
+			status = `Reloaded ${f.size} file(s) from ${link.name}.`;
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/** Keeps the project's version of the files the folder changed. */
+	function keepProjectVersion() {
+		const n = folderNotice;
+		if (n?.kind === "changed") {
+			folderSigs = n.sigs;
+			// Files that were added outside the editor are left alone.
+			dirty = new Set([...dirty, ...n.paths.filter((p) => files.has(p))]);
+			folderNotice = null;
+			persistFolder();
+		} else if (n?.kind === "conflict") {
+			// Files that exist only in the folder are not deleted.
+			markForWrite({ ...n.diff, onlyTheirs: [] });
+			folderNotice = null;
+			// The folder's fingerprints are taken again so that the write
+			// below is not mistaken for an outside change.
+			folder?.scan().then((s) => {
+				folderSigs = s;
+				persistFolder();
+			});
+		}
+	}
+
+	let folderTimer: ReturnType<typeof setTimeout> | undefined;
+	let folderFlush: Promise<void> = Promise.resolve();
+
+	/** Writes the changed files to the folder, one flush at a time. */
+	function flushFolder(): Promise<void> {
+		clearTimeout(folderTimer);
+		folderFlush = folderFlush.then(writeToFolder, writeToFolder);
+		return folderFlush;
+	}
+
+	async function writeToFolder() {
+		const link = folder;
+		// Writing over a folder that has changed under us would lose those
+		// changes, so it waits for the user's answer to a notice.
+		if (!link || !dirty.size || (folderNotice && folderNotice.kind !== "error"))
+			return;
+		const todo = [...dirty].map((p) => [p, files.get(p)] as const);
+		try {
+			if ((await link.permission()) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			folderWriting = true;
+			const sigs = new Map(folderSigs);
+			for (const [p, d] of todo) {
+				if (d) sigs.set(p, await link.write(p, d));
+				else {
+					await link.remove(p);
+					sigs.delete(p);
+				}
+			}
+			if (link !== folder) return;
+			folderSigs = sigs;
+			// A file edited again while it was being written stays pending.
+			const rest = new Set(dirty);
+			for (const [p, d] of todo) if (files.get(p) === d) rest.delete(p);
+			dirty = rest;
+			if (folderNotice?.kind === "error") folderNotice = null;
+			persistFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		} finally {
+			folderWriting = false;
+		}
+	}
+
+	// Writes shortly after a change, so typing is not one write per key.
+	$effect(() => {
+		if (!folder || !dirty.size || (folderNotice && folderNotice.kind !== "error"))
+			return;
+		clearTimeout(folderTimer);
+		folderTimer = setTimeout(flushFolder, 500);
+		return () => clearTimeout(folderTimer);
+	});
+
+	/** Looks for changes made outside the editor. */
+	async function checkFolder() {
+		const link = folder;
+		if (
+			!link ||
+			folderNotice ||
+			folderWriting ||
+			dirty.size ||
+			document.visibilityState !== "visible"
+		)
+			return;
+		const known = folderSigs;
+		try {
+			if ((await link.permission()) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			const found = await findExternalChanges(link, files, known);
+			// Edited, written or switched while scanning: the next check sees it.
+			if (!found || link !== folder || known !== folderSigs || dirty.size) return;
+			if (found.changed.length)
+				folderNotice = { kind: "changed", paths: found.changed, sigs: found.sigs };
+			else {
+				folderSigs = found.sigs;
+				persistFolder();
+			}
+		} catch {
+			// A file may be half written (a git checkout): the next check tries again.
+		}
+	}
+
+	$effect(() => {
+		if (!folder) return;
+		const t = setInterval(checkFolder, 3000);
+		return () => clearInterval(t);
+	});
+
+	const folderNoticeText = $derived.by(() => {
+		const n = folderNotice;
+		const name = folder?.name ?? "";
+		if (!n) return "";
+		if (n.kind === "permission")
+			return `The browser needs your permission to use the folder '${name}' again.`;
+		if (n.kind === "changed") {
+			const shown = n.paths.slice(0, 3).join(", ");
+			return `${n.paths.length} file(s) in '${name}' changed outside the editor (${shown}${n.paths.length > 3 ? ", …" : ""}).`;
+		}
+		if (n.kind === "conflict")
+			return `'${name}' differs from this project: ${diffCount(n.diff)} file(s). They changed while the project was closed.`;
+		return `Could not write to '${name}': ${n.message}`;
+	});
 
 	// ---------------------------------------------------------------- refresh
 
@@ -3190,18 +3568,6 @@
 		sidePanel = "files";
 	}
 
-	/** Writes the changed files back into the folder opened with write access. */
-	async function save() {
-		if (!dirty.size || !dirHandle) return;
-		for (const p of dirty) {
-			const d = files.get(p);
-			if (d) await writeFile(dirHandle, p, d);
-			else await removeFile(dirHandle, p);
-		}
-		status = `Saved ${dirty.size} file(s) to ${dirHandle.name}.`;
-		dirty = new Set();
-	}
-
 	// ---------------------------------------------------------------- export
 
 	/** Time per card of the last export in this browser, for the next estimate. */
@@ -4155,6 +4521,7 @@
 
 <svelte:document onvisibilitychange={onHide} />
 <svelte:window
+	onfocus={checkFolder}
 	bind:innerWidth={winW}
 	bind:innerHeight={winH}
 	onkeydown={onKey}
@@ -4251,7 +4618,7 @@
 	<FileBrowser
 		{files}
 		{dirty}
-		saveTarget={dirHandle?.name ?? null}
+		saveTarget={folder?.name ?? null}
 		uses={fileUses}
 		usedBy={fileUsedBy}
 		problems={fileProblems}
@@ -4462,6 +4829,26 @@
 		ondrop={onDrop}
 		role="application"
 	>
+		{#if folderNotice}
+			<div class="folder-toast" role="alert" data-testid="folder-notice">
+				<Icon name="alert" />
+				<span class="msg">{folderNoticeText}</span>
+				<span class="actions">
+					{#if folderNotice.kind === "permission"}
+						<button onclick={allowFolder}>Allow access</button>
+					{:else if folderNotice.kind === "changed"}
+						<button onclick={reloadFromFolder}>Reload from folder</button>
+						<button onclick={keepProjectVersion}>Keep project version</button>
+					{:else if folderNotice.kind === "conflict"}
+						<button onclick={reloadFromFolder}>Use folder version</button>
+						<button onclick={keepProjectVersion}>Use project version</button>
+					{:else}
+						<button onclick={flushFolder}>Try again</button>
+					{/if}
+					<button onclick={unlinkFolder}>Unlink</button>
+				</span>
+			</div>
+		{/if}
 		<header class="top">
 			<span class="brand"><Logo size={26} /></span>
 			<span class="ver">{engine.version}</span>
@@ -4492,14 +4879,18 @@
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
+				title={folder
+					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in this browser. Nothing is sent to a server.`
+					: "Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."}
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
 					>{saveState === "saving"
 						? "Saving…"
 						: saveState === "saved"
-							? "Saved in this browser"
+							? folder
+								? `Saved to folder ${folder.name}`
+								: "Saved in this browser"
 							: saveState === "unsaved"
 								? "Unsaved"
 								: saveState === "error"
@@ -4555,16 +4946,22 @@
 					</label>
 				{/if}
 			</span>
-			{#if dirHandle}
-				<button
-					class="save-btn"
-					onclick={save}
-					disabled={!dirty.size}
-					title="Write changes to the folder {dirHandle.name}"
-					><Icon name="save" /> Save{dirty.size
-						? ` (${dirty.size})`
-						: ""}</button
+			{#if folder}
+				<span
+					class="folder-chip"
+					class:warn={!!folderNotice}
+					data-testid="folder-chip"
+					title="Linked to the folder {folder.name}: changes are written there as you make them, and changes made outside the editor are offered for reload"
 				>
+					<Icon name={folderNotice ? "alert" : "folder"} />
+					<span class="text"
+						>{folder.name} · {folderNotice
+							? "needs attention"
+							: folderWriting || dirty.size
+								? "writing…"
+								: "in sync"}</span
+					>
+				</span>
 			{/if}
 			<button
 				class="fn-btn"
@@ -5334,6 +5731,51 @@
 	.fn-mark {
 		font: italic 600 14px var(--mono);
 		color: var(--accent);
+	}
+	.folder-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 12px;
+		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		max-width: 16em;
+	}
+	.folder-chip .text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.folder-chip.warn {
+		color: var(--warn);
+	}
+	.folder-toast {
+		position: fixed;
+		left: 50%;
+		bottom: 40px;
+		transform: translateX(-50%);
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		max-width: min(92vw, 720px);
+		padding: 8px 12px;
+		border: 1px solid var(--warn);
+		border-radius: 8px;
+		background: var(--bg);
+		color: var(--fg);
+		font-size: 12px;
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+	}
+	.folder-toast .msg {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.folder-toast .actions {
+		display: flex;
+		gap: 6px;
+		flex: none;
 	}
 	.saved {
 		display: inline-flex;
