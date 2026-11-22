@@ -132,6 +132,14 @@ Layers shared by designs: a group takes them with "include"
 - `note` (string)
 - `layers` ([layer, ...], required): Layers of the component, first is bottom
 
+### `qa.json`, the card review state written by the editor
+
+Written by the editor. The command line does not read it. An approval stays valid while the card and the design inputs hash to the same value.
+
+- `$schema` (string)
+- `format` (1, required)
+- `cards` ({ name: { name: { status, hash, note } } }): Reviews by card file path, then by card id. A card without an entry is unreviewed.
+
 ### `*.design.json`, a design
 
 - `$schema` (string)

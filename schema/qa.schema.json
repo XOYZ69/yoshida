@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yoshida.local/schema/v1/qa.schema.json",
+  "title": "yoshida card review (format 1)",
+  "description": "Written by the editor. The command line does not read it. An approval stays valid while the card and the design inputs hash to the same value.",
+  "type": "object",
+  "required": ["format"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": 1 },
+    "cards": {
+      "type": "object",
+      "description": "Reviews by card file path, then by card id. A card without an entry is unreviewed.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["status", "hash"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "enum": ["approved", "needs-changes"] },
+            "hash": {
+              "type": "string",
+              "description": "Hash of the card (id and values) and the design inputs (the design file and every *.component.json) when it was reviewed. A different hash turns an approval into 'changed since review'."
+            },
+            "note": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
