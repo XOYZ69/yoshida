@@ -12,6 +12,7 @@ yoshida render examples/poker --out out --date 2026-10-11
 # ...
 # wrote out/back/back.png (750 x 1050)
 yoshida render examples/poker --out out --pdf   # one PDF per set
+yoshida render examples/poker --out out --pdf --vector --page a4 --back back --crop-marks   # A4 sheets, a page of backs after each for duplex printing
 yoshida render examples/poker --out out --sheet 10x7   # one deck image per set
 ```
 
