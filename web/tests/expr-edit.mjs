@@ -10,6 +10,7 @@ import {
 	addMatchRow,
 	compactText,
 	condChain,
+	layoutBreaks,
 	listView,
 	matchView,
 	removeChip,
@@ -217,6 +218,50 @@ ok(
 		"the one-line text means the same expression",
 		call({ op: "parse", src: compact(laid), template: false }).problems
 			.length === 0,
+	);
+}
+
+// layoutBreaks: where the layout view breaks a one-line text, without changing it.
+{
+	const src =
+		"match(kind, 'active', #2F7FD1, 'done', #3CB371, 'late', #D1442F, #000000)";
+	const breaks = layoutBreaks(src, 40, format, tokens);
+	ok("a long one-line match has breaks", breaks.length > 3, String(breaks.length));
+	// Applying the breaks to the text gives the formatter's own layout.
+	let laid = src;
+	for (const k of [...breaks].reverse())
+		laid = laid.slice(0, k.from) + k.text + laid.slice(k.to);
+	ok(
+		"the breaks add up to the canonical layout",
+		laid === format(src, 40),
+		laid,
+	);
+	ok(
+		"every break has a line break and sits between tokens",
+		breaks.every((k) => k.text.includes("\n") && k.from <= k.to),
+	);
+	ok(
+		"a text that fits has no breaks",
+		layoutBreaks("a + b", 40, format, tokens).length === 0,
+	);
+	ok(
+		"a text with a line break has none",
+		layoutBreaks("a +\n b", 40, format, tokens).length === 0,
+	);
+	ok(
+		"a text with problems has none",
+		layoutBreaks("max(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,", 20, format, tokens)
+			.length === 0,
+	);
+	// Redundant parentheses make the tokens differ: no layout rather than a wrong one.
+	ok(
+		"a text the formatter changes beyond layout has none",
+		layoutBreaks(
+			"((match(kind, 'active', #2F7FD1, 'done', #3CB371, 'late', #D1442F, #000000)))",
+			40,
+			format,
+			tokens,
+		).length === 0,
 	);
 }
 

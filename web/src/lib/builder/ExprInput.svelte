@@ -50,6 +50,7 @@ import { crumbPath } from "../expr/crumbs";
 import FormulaPanel from "../expr/FormulaPanel.svelte";
 import { exprHighlight, refreshNames } from "../expr/highlight";
 import { exprHover } from "../expr/hover";
+import { exprLayout, layoutTheme } from "../expr/layout";
 import Reference from "../expr/Reference.svelte";
 import type { Names } from "../expr/scan";
 import { exprAt } from "../expr/scan";
@@ -271,6 +272,8 @@ function extensions(): Extension[] {
 	);
 	if (placeholder) ext.push(cmPlaceholder(placeholder));
 	if (highlighted) ext.push(exprHighlight(template, names));
+	// A long expression shows in its multi-line layout; the text stays one line.
+	if (!template) ext.push(exprLayout, layoutTheme);
 	if (suggest && ctxFn) {
 		ext.push(
 			autocompletion({

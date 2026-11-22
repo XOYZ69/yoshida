@@ -75,10 +75,15 @@ let {
 
 const live = getContext<LiveContext | undefined>(LIVE_CONTEXT);
 
-/** The text the field has now: what Apply compares with. */
-let base = $state(untrack(() => text));
+/** The text as the window shows it: the canonical layout, when the text parses. */
+const opened = untrack(() => {
+	const laid = exprCoreReady() ? formatExpr(text, 72) : null;
+	return laid ?? text;
+});
+/** The text the window opened with or last applied: what Apply compares with. */
+let base = $state(opened);
 /** The full expression, as edited in the text area and the cells. */
-let draft = $state(untrack(() => text));
+let draft = $state(opened);
 /** Child indexes from the root to the selected node (see edit.ts `children`). */
 let selPath = $state<number[]>([]);
 /** Cells whose typed text does not parse, by span: they keep the typed text. */

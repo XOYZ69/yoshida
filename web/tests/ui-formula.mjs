@@ -155,9 +155,16 @@ ok(
 	ok(
 		"Apply writes the long expression to the field on one line",
 		(await fill.locator(".cm-line").count()) === 1 &&
-			(await fill.innerText()).includes("#112233") &&
-			!(await fill.innerText()).includes("\n"),
+			(await fill.innerText()).includes("#112233"),
 		JSON.stringify(await fill.innerText()),
+	);
+	// The field still shows the layout: breaks drawn between the tokens of the
+	// one line of text, not characters of it.
+	ok(
+		"the field shows the multi-line layout without a line break in its text",
+		(await fill.locator(".yx-break").count()) > 1 &&
+			(await fill.evaluate((el) => el.closest(".expr")?.getBoundingClientRect().height ?? 0)) > 50,
+		String(await fill.locator(".yx-break").count()),
 	);
 	// Back to the short match for the checks below.
 	await text.fill("match('x', 'a', #00ff00, 'b', #0000ff, #000000)");
