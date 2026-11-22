@@ -174,6 +174,8 @@
 		backendById,
 		type FolderLink,
 	} from "./lib/folder/backend";
+	// The desktop app's backend first: it wins wherever both are supported.
+	import "./lib/folder/native";
 	import "./lib/folder/browser";
 	import {
 		diffCount,
