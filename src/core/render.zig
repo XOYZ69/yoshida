@@ -2568,8 +2568,17 @@ const Ctx = struct {
             .ellipse => if (r.arc) |arc| {
                 const cx = lf + wf / 2;
                 const cy = tf + hf / 2;
+                const pie = l.arc.?.pie;
+                if (fullSweep(arc)) {
+                    // A whole turn is a closed ring (no spoke at the seam), still starting at the arc's start angle.
+                    const turn = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(turnEnd(arc)));
+                    const ring = turn[0 .. turn.len - 1];
+                    if (pie) try raster.fillPolygon(ctx.gpa, target, ring, raster.paint(r.fill, 1));
+                    if (stroke) |s| raster.strokePolyline(target, ring, true, s);
+                    return;
+                }
                 const curve = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(arc[1]));
-                if (l.arc.?.pie) {
+                if (pie) {
                     const slice = try ctx.arena.alloc([2]f32, curve.len + 1);
                     slice[0] = .{ cx, cy };
                     @memcpy(slice[1..], curve);
@@ -2771,9 +2780,15 @@ const Ctx = struct {
             const pie = l.arc.?.pie;
             const cx = x + w / 2;
             const cy = y + h / 2;
-            if (pie) try b.moveTo(.{ cx, cy });
-            try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), !pie);
-            if (pie) try b.close();
+            if (fullSweep(a)) {
+                // A whole turn is a closed ring: no spoke at the seam.
+                try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(turnEnd(a)), true);
+                try b.close();
+            } else {
+                if (pie) try b.moveTo(.{ cx, cy });
+                try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), !pie);
+                if (pie) try b.close();
+            }
             fill = pie;
         } else {
             try b.arc(x + w / 2, y + h / 2, w / 2, h / 2, 0, 360, true);
@@ -3038,6 +3053,16 @@ fn closeFrame(sc: *vector.Scene, n: usize) Allocator.Error!void {
 fn addFill(sc: *vector.Scene, path: vector.Path, color: Color) Allocator.Error!void {
     if (color.a == 0) return;
     try sc.add(.{ .fill = .{ .path = path, .color = color } });
+}
+
+/// An arc of a whole turn or more is a ring, not a slice with a seam.
+fn fullSweep(arc: [2]f64) bool {
+    return @abs(arc[1] - arc[0]) >= 360;
+}
+
+/// Where a whole turn from the arc's start ends (clockwise or not, as the arc runs).
+fn turnEnd(arc: [2]f64) f64 {
+    return if (arc[1] < arc[0]) arc[0] - 360 else arc[0] + 360;
 }
 
 /// The layer's stroke along `path`. Dash patterns are even in length (an
@@ -3781,6 +3806,64 @@ test "vector scene of arcs, dashes, arrows and effects" {
     try std.testing.expectEqual(@as(usize, 3), strokes);
     try std.testing.expectEqual(@as(usize, 3), fills);
     try std.testing.expect(fonts[1] != null);
+}
+
+fn ringDesign(comptime arc: []const u8) []const u8 {
+    return
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 120, "height": 120 },
+    \\  "layers": [
+    \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 120, "h": 120 }, "fill": "#FFFFFF" },
+    \\    { "id": "ring", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 100, "h": 100 }, "fill": "#00000000", "arc":
+    ++ arc ++
+        \\, "stroke": { "color": "#000000", "width": 6 } }
+        \\  ]
+        \\}
+    ;
+}
+
+test "an arc of a whole turn is a ring without a spoke" {
+    const gpa = std.testing.allocator;
+    const arcs = [_][]const u8{
+        "{ \"start\": 0, \"end\": 360 }",
+        "{ \"start\": 0, \"end\": 360, \"pie\": false }",
+        "{ \"start\": 90, \"end\": 540 }",
+        "{ \"start\": 0, \"end\": -360 }",
+    };
+    inline for (arcs) |arc| {
+        var b = (try testRenderDesign(gpa, comptime ringDesign(arc), .{}, null)).?;
+        defer b.deinit(gpa);
+        // The seam is at 12 o'clock for the first, second and fourth: the old
+        // slice drew a line from the centre to it.
+        try std.testing.expect(pixel(&b, 60, 60)[0] > 60000);
+        try std.testing.expect(pixel(&b, 60, 35)[0] > 60000);
+        try std.testing.expect(pixel(&b, 85, 60)[0] > 60000);
+        // The ring itself is there: the top and the right.
+        try std.testing.expect(pixel(&b, 60, 10)[0] < 5000);
+        try std.testing.expect(pixel(&b, 109, 60)[0] < 5000);
+        var rig: VectorRig = undefined;
+        try rig.init(gpa, comptime ringDesign(arc));
+        defer rig.deinit();
+        const strokes = rig.scene.items.items;
+        try std.testing.expect(strokes[1] == .stroke);
+        const cmds = strokes[1].stroke.path.cmds;
+        // One move, curves only, closed: no line to the centre.
+        try std.testing.expect(cmds[0] == .move and cmds[cmds.len - 1] == .close);
+        for (cmds[1 .. cmds.len - 1]) |cmd| try std.testing.expect(cmd == .cubic);
+    }
+}
+
+test "a slice that is less than a turn keeps its spokes, an open arc has none" {
+    const gpa = std.testing.allocator;
+    var slice = (try testRenderDesign(gpa, comptime ringDesign("{ \"start\": 0, \"end\": 90 }"), .{}, null)).?;
+    defer slice.deinit(gpa);
+    try std.testing.expect(pixel(&slice, 60, 35)[0] < 5000);
+    var open = (try testRenderDesign(gpa, comptime ringDesign("{ \"start\": 0, \"end\": 90, \"pie\": false }"), .{}, null)).?;
+    defer open.deinit(gpa);
+    try std.testing.expect(pixel(&open, 60, 35)[0] > 60000);
+    try std.testing.expect(pixel(&open, 60, 10)[0] < 5000);
 }
 
 test "svg of a vector scene is well formed and repeatable" {

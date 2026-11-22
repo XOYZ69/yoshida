@@ -42,6 +42,8 @@ Use `@badge.bounds.cx` and `@badge.bounds.cy` to place something at the centre, 
 
 - `"pie": true` (the default) fills a slice through the centre, and the stroke goes around the slice.
 - `"pie": false` draws only the curve with the stroke; the fill is not used.
+- A sweep of a whole turn or more (`end - start` of 360 or beyond, in either direction) is a ring: closed, with no line to the centre at the seam, so a progress ring such as `"end": "360 * progress"` looks right at 100 %. It still starts at `start`, which keeps dashes lined up, and `pie: false` still leaves the fill unused.
+- For a gauge or progress ring that is only stroked, use `"pie": false` (and `"fill": "#00000000"` if you also want no fill under a slice); the default `pie: true` draws the two radii of the slice.
 - The layer's bounds stay the whole box.
 
 ## Gradient
