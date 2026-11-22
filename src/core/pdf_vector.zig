@@ -39,20 +39,8 @@ pub fn addPage(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
     const k: f64 = 72.0 / (if (scene.dpi > 0) scene.dpi else 72.0);
     const sheet = Sheet.of(scene, crop_marks);
     const root = try b.newStream();
-    const o = &root.out.writer;
     // Canvas pixels, y down, inside the margin.
-    try o.writeAll("q ");
-    try num(o, k);
-    try o.writeAll(" 0 0 ");
-    try num(o, -k);
-    try o.writeByte(' ');
-    try num(o, sheet.margin * k);
-    try o.writeByte(' ');
-    try num(o, (@as(f64, @floatFromInt(scene.height)) + sheet.margin) * k);
-    try o.writeAll(" cm\n");
-    if (scene.background) |bg| try b.fillRect(.{ 0, 0, @floatFromInt(scene.width), @floatFromInt(scene.height) }, bg);
-    try b.items();
-    try o.writeAll("Q\n");
+    try b.card(k, sheet.margin);
     if (crop_marks) try b.marks(sheet, k);
 
     const content = try raster.deflate(w.gpa, root.out.written());
@@ -72,6 +60,23 @@ pub fn addPage(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
         .{ pw, ph, m, m, pw - m, ph - m, m + bl, m + bl, pw - m - bl, ph - m - bl, resources, content_id },
     ) catch return error.OutOfMemory;
     try w.pages.append(w.gpa, page);
+}
+
+/// The scene as a form XObject for print layout pages (print.zig): in
+/// points, from the card's bottom-left corner, the size of its page without
+/// crop marks.
+pub fn cardForm(w: *Writer, scene: *const vector.Scene) !pdf.Card {
+    var arena_state = std.heap.ArenaAllocator.init(w.gpa);
+    defer arena_state.deinit();
+    var b: Builder = .{ .w = w, .arena = arena_state.allocator(), .scene = scene };
+    const k: f64 = 72.0 / (if (scene.dpi > 0) scene.dpi else 72.0);
+    const root = try b.newStream();
+    try b.card(k, 0);
+    const cw = @as(f64, @floatFromInt(scene.width)) * k;
+    const ch = @as(f64, @floatFromInt(scene.height)) * k;
+    const bbox = try std.fmt.allocPrint(b.arena, "[0 0 {d:.4} {d:.4}]", .{ cw, ch });
+    const id = try b.writeForm(bbox, try b.resources(root), root.out.written(), false);
+    return .{ .id = id, .image = false, .w = cw, .h = ch, .bleed = scene.bleed * k };
 }
 
 /// The page in canvas pixels: the card and the margin for crop marks.
@@ -137,6 +142,25 @@ const Builder = struct {
 
     fn out(b: *Builder) *std.Io.Writer {
         return &b.cur().out.writer;
+    }
+
+    /// The card in canvas pixels, y down, `margin` pixels in from the
+    /// bottom-left of the page or form, at `k` points per pixel.
+    fn card(b: *Builder, k: f64, margin: f64) !void {
+        const o = b.out();
+        const scene = b.scene;
+        try o.writeAll("q ");
+        try num(o, k);
+        try o.writeAll(" 0 0 ");
+        try num(o, -k);
+        try o.writeByte(' ');
+        try num(o, margin * k);
+        try o.writeByte(' ');
+        try num(o, (@as(f64, @floatFromInt(scene.height)) + margin) * k);
+        try o.writeAll(" cm\n");
+        if (scene.background) |bg| try b.fillRect(.{ 0, 0, @floatFromInt(scene.width), @floatFromInt(scene.height) }, bg);
+        try b.items();
+        try b.out().writeAll("Q\n");
     }
 
     fn items(b: *Builder) !void {
