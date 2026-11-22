@@ -24,7 +24,7 @@ A group holds other layers and draws them as one picture, so they can be organis
 | `layers` | array of layers | required (error 1102) | Drawn in array order inside the group, first is bottom. Groups may contain groups |
 | `translate` | `{ x, y }`, number | `{ 0, 0 }` | The group's origin: everything inside moves by it, and coordinates inside are relative to it. See [translate](#translate) |
 | `repeat` | object | none | Draw the layers inside once per iteration, as one unit. See [repeat](#repeat) |
-| `id`, `note`, `visible`, `opacity`, `rotate`, `effects` | | | As in [Layers](@/docs/layers.md), applied to the group's picture (per iteration in a repeated group) |
+| `id`, `note`, `visible`, `opacity`, `rotate`, `effects`, `clip_to` | | | As in [Layers](@/docs/layers.md), applied to the group's picture (per iteration in a repeated group) |
 
 ## How it works
 

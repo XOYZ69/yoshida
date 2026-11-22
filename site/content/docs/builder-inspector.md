@@ -9,7 +9,7 @@ The right panel shows every field of the selected layer.
 
 Fields are grouped as:
 
-1. **Layer**: id, type, note, visible, opacity, anchor and so on.
+1. **Layer**: id, type, note, visible, opacity, `clip_to`, anchor and so on.
 2. **Position and size**, with align-to-canvas buttons and `rotate`.
 3. **Appearance**: fill, stroke, radius, font (with an **Aa** button that opens the [Fonts](@/docs/builder-fonts.md) window), size, color... For text this includes auto-shrink (`max_width`, `max_height`, `min_size`, `shrink_group`) and the **outline** (`stroke`). Strokes of rects, ellipses and polygons take a **dash** pattern (type `12, 6`); open polygons an **arrow** (start, end, both). Ellipses have an **arc** switch with start, end and pie.
 4. **Repeat** and **Effects**.
@@ -30,7 +30,7 @@ Instead of listing problems inside the inspector, each section shows a small chi
 
 ## A group selected
 
-A group shows rotate, visible, opacity, effects and **Ungroup**, its **Origin** (`translate.x`, `translate.y`) and **Repeat**. A group has no size of its own; with a translate, the layers inside use coordinates relative to it, and moving the group on the canvas changes only the translate. See [Layer: group](@/docs/layer-group.md).
+A group shows rotate, visible, opacity, `clip_to`, effects and **Ungroup**, its **Origin** (`translate.x`, `translate.y`) and **Repeat**. A group has no size of its own; with a translate, the layers inside use coordinates relative to it, and moving the group on the canvas changes only the translate. See [Layer: group](@/docs/layer-group.md).
 
 **Create component** moves the group's layers into a shared component file. A group that includes a component says so, with how many other files use it, and has **Detach** and **Open component file**; a layer inside a component shows a note that its changes reach every design that includes it. See [Components](@/docs/builder-layers.md#components).
 

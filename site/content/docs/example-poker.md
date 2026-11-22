@@ -89,7 +89,7 @@ The portrait on a jack, queen or king is one group, `figure`, repeated twice. Th
 ## The joker and the back
 
 - **Joker**: the vertical index is one text with `\n` between the letters and a negative `line_spacing`; a 24-point star `shape` behind a dashed ring; the jester cap is a group with `translate`, so its polygon points are relative to the cap's centre. `tone` (red or black) swaps the two main colors.
-- **Back**: a nested repeat, one group per row and one diamond per column, sized from the `cols` and `rows` constants so the lattice fills the field exactly. `(r + c) % 2` alternates the two diamond colors. The field behind it is a radial gradient that darkens towards the corners. `color` and `deck_name` change the whole back.
+- **Back**: a nested repeat, one group per row and one diamond per column, sized from the `cols` and `rows` constants so the lattice fills the field exactly, and `"clip_to": "field"` keeps it inside the field's rounded outline (see [Clipping to a shape](@/docs/layers.md#clip-to)). `(r + c) % 2` alternates the two diamond colors. The field behind it is a radial gradient that darkens towards the corners. `color` and `deck_name` change the whole back.
 
 ## Ideas to try
 
