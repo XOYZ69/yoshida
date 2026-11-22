@@ -22,6 +22,7 @@ import {
 	scaleFits,
 	scaleFor,
 	setJpegDpi,
+	withCardSizes,
 } from "../src/lib/exportPlan.ts";
 
 let failed = 0;
@@ -363,6 +364,16 @@ ok(
 	mod.setMaxSide(null);
 	ok("side limit: unlimited is the core's ceiling", mod.MAX_SIDE === 65535);
 	mod.setMaxSide(10000);
+}
+
+{
+	const base = { w: 750, h: 1050, dpi: 300, bleed: 36 };
+	const same = withCardSizes(base, [{}, { canvas: { dpi: 600 } }]);
+	ok("card sizes: none set keeps the canvas", same.w === 750 && same.h === 1050 && same.dpi === 300 && same.bleed === 36);
+	const grown = withCardSizes(base, [{ canvas: { width: 1000 } }, { canvas: { height: 400 } }, { canvas: { width: 100, height: 1200 } }]);
+	ok("card sizes: the largest card in each direction", grown.w === 1000 && grown.h === 1200 && grown.dpi === 300);
+	const small = withCardSizes(base, [{ canvas: { width: 100, height: 100 } }]);
+	ok("card sizes: smaller cards do not shrink it", small.w === 750 && small.h === 1050);
 }
 
 console.log(failed ? `${failed} failed` : "all passed");

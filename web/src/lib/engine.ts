@@ -49,7 +49,20 @@ export type Param = {
 
 export type ItemField = { type: string; options?: string[]; default?: unknown };
 
-export type CardInfo = { id: string; values: Record<string, unknown> };
+/** A card's own canvas values (`_width`, `_height`, `_dpi`, `_bleed` in card data). */
+export type CardCanvas = {
+	width?: number;
+	height?: number;
+	dpi?: number;
+	bleed?: number;
+};
+
+export type CardInfo = {
+	id: string;
+	values: Record<string, unknown>;
+	/** Only a card that sets its own canvas has this; the rest inherit the design's. */
+	canvas?: CardCanvas;
+};
 
 export type SetInfo = {
 	name: string;
