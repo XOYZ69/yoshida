@@ -4864,14 +4864,18 @@
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
+				title={folder
+					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in this browser. Nothing is sent to a server.`
+					: "Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."}
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
 					>{saveState === "saving"
 						? "Saving…"
 						: saveState === "saved"
-							? "Saved in this browser"
+							? folder
+								? `Saved to folder ${folder.name}`
+								: "Saved in this browser"
 							: saveState === "unsaved"
 								? "Unsaved"
 								: saveState === "error"
