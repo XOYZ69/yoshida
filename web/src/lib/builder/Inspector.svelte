@@ -462,6 +462,16 @@ const sameTypeIds = $derived(
 		.filter((l) => l.type === type && l.id !== id)
 		.map((l) => String(l.id)),
 );
+/** Layers whose shape `clip_to` can use (docs: layers.md#clip-to). */
+const clipIds = $derived(
+	layersOf(doc)
+		.filter(
+			(l) =>
+				(l.type === "rect" || l.type === "ellipse" || l.type === "polygon") &&
+				l.id !== id,
+		)
+		.map((l) => String(l.id)),
+);
 
 // ------------------------------------------------------------ effects
 
@@ -972,6 +982,7 @@ let newFunction = $state("");
       <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
       {#if typeof eff.include !== 'string'}
         <div class="row">
           <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
@@ -1204,6 +1215,7 @@ let newFunction = $state("");
       {/if}
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} fallback={effVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
     </section>
 
     {@render repeatSection()}
