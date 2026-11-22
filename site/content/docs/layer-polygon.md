@@ -19,19 +19,57 @@ Plus the [fields every layer has](@/docs/layers.md).
 
 | Field | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `points` | array of `[x, y]` | required unless `shape` is given | Absolute canvas coordinates (inside a [translated group](@/docs/layer-group.md#translate), relative to its origin) |
+| `points` | array of `[x, y]` and [point runs](#points-from-a-list-or-a-count) | required unless `shape` is given | Absolute canvas coordinates (inside a [translated group](@/docs/layer-group.md#translate), relative to its origin) |
 | `closed` | bool literal | `true` | `false` draws an open line through the points |
 | `fill` | color | `#FFFFFFFF` | Ignored when the polygon is not closed |
 | `stroke` | `{ color, width, dash, arrow }` | none | `color` defaults to opaque black, `width` to `1`. `dash` as for [rect](@/docs/layer-rect.md#stroke). `arrow`: see below |
 | `shape` | `{ type, count, inner }` | none | A preset shape that fills `box`, instead of `points` |
 | `box` | `{ x, y, w, h }` | | Only with `shape` |
 
-- A closed polygon needs at least 3 points, an open one at least 2 (error 1109). A point that is not a two-item array is error 1103.
+- A closed polygon needs at least 3 points, an open one at least 2 (error 1109 when the points are all written out, 3110 when point runs give too few at render time). An entry that is neither a two-item array nor a point run is error 1103.
 - Points are **absolute canvas coordinates**; `anchor` does not apply to them.
 - Every coordinate is an [expression](@/docs/expressions.md), so polygons scale with params: `[["10%", 0], ["canvas.w - 40", "height * 0.5"]]`. The first value of a point is a horizontal coordinate (`%` is a percentage of the canvas width), the second a vertical one.
 - `closed` must be the literal `true` or `false`, not an expression.
 - `rotate` turns a polygon with points around the centre of its bounds.
 - Stroke joins and line ends are round.
+
+## Points from a list or a count
+
+An entry of `points` may also be an object, a *point run*. It makes one point per iteration, the way [`repeat`](@/docs/repeat.md) makes one layer per iteration, so a polygon can follow a list in the card data or a count, and fixed points and runs can be mixed (the points keep the order of the entries).
+
+| Field | Kind | Meaning |
+| --- | --- | --- |
+| `count` | number or expression | Number of points. A list gives its length |
+| `each` | expression giving a [list](@/docs/params.md) | One point per item |
+| `index` | name | Name of the iteration number, from 0. Default `i` |
+| `item` | name | With `each`: name of the current item, read as `name.field`. Without it, use `list[i].field` |
+| `x`, `y` | number or expression | The point. They see `index` and `item`; `%` and the other [units](@/docs/expressions-literals-and-units.md) work as in a fixed point |
+
+A run needs exactly one of `count` and `each` (error 1111), and `x` and `y` (error 1102). When `points` is a single run, the brackets can be left out.
+
+```json
+{
+  "params": { "scores": { "type": "list", "item": { "label": "text", "value": "number" }, "default": [] } },
+  "layers": [
+    { "id": "chart", "type": "polygon", "closed": false,
+      "points": [{ "each": "scores", "item": "s", "x": "40 + i * 50", "y": "300 - s.value * 2" }],
+      "stroke": { "color": "#D1495B", "width": 3 } }
+  ]
+}
+```
+
+A star of `n` points from a count (angles are in radians):
+
+```json
+{ "id": "star", "type": "polygon", "fill": "#FFD166",
+  "points": [{ "count": "n * 2", "index": "k",
+    "x": "100 + (k % 2 == 0 ? 80 : 35) * sin(k * pi / n)",
+    "y": "100 - (k % 2 == 0 ? 80 : 35) * cos(k * pi / n)" }] }
+```
+
+- A run gives at most as many points as a `repeat` gives iterations (error 5001 above the limit, `YOSHIDA_MAX_REPEAT`).
+- A run's `index` hides a name from the layer's own `repeat` that is the same (both default to `i`); give one of them another name.
+- In the editor the points of a run are drawn but cannot be dragged; edit the fields in the inspector.
 
 ## Arrowheads
 

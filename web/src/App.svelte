@@ -34,6 +34,7 @@
 		getPath,
 		groupLayers,
 		type HandleMode,
+		hasPointRun,
 		identRe,
 		insertLayer,
 		isDivider,
@@ -3122,7 +3123,7 @@
 			case "text":
 				return "text";
 			case "polygon":
-				return isObj(l.shape) ? "box" : "polygon";
+				return isObj(l.shape) ? "box" : hasPointRun(l) ? "outline" : "polygon";
 			case "qr":
 				return "aspect";
 			case "image": {

@@ -124,6 +124,51 @@
     }
   },
   "$defs": {
+    "points": {
+      "description": "Polygon points: [x, y] pairs, and runs of points made from a count or a list. An object stands for a one-entry array",
+      "anyOf": [
+        { "$ref": "#/$defs/pointRun" },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": ["number", "string"]
+                }
+              },
+              { "$ref": "#/$defs/pointRun" }
+            ]
+          }
+        }
+      ]
+    },
+    "pointRun": {
+      "description": "One point per iteration of count or of each (a list), from x and y, which see the loop names",
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        },
+        "each": { "type": "string" },
+        "index": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "item": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "x": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        },
+        "y": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        }
+      }
+    },
     "param": {
       "type": "object",
       "required": ["type"],
@@ -341,15 +386,8 @@
           }
         },
         "points": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 2,
-            "items": {
-              "type": ["number", "string"]
-            }
-          }
+          "description": "[x, y] pairs in canvas coordinates, mixed with point runs: { count or each, index, item, x, y } makes one point per iteration. An object alone is one run",
+          "$ref": "#/$defs/points"
         },
         "closed": { "type": "boolean" },
         "text": { "description": "Text with {expression} placeholders", "type": "string" },
@@ -869,15 +907,8 @@
               "extends": true,
               "effects": true,
               "points": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": ["number", "string"]
-                  }
-                }
+                "description": "[x, y] pairs in canvas coordinates, mixed with point runs: { count or each, index, item, x, y } makes one point per iteration. An object alone is one run",
+                "$ref": "#/$defs/points"
               },
               "closed": { "type": "boolean" },
               "fill": {

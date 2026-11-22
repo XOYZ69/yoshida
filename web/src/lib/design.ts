@@ -43,13 +43,15 @@ export type Bounds = { x: number; y: number; w: number; h: number };
 
 /**
  * Which canvas handles a layer gets. `aspect`: box handles that keep the
- * ratio; `group`: move and rotate only (its size comes from its layers).
+ * ratio; `group`: move and rotate only (its size comes from its layers);
+ * `outline`: move and rotate only (a polygon whose points are made by a run).
  */
 export type HandleMode =
 	| "box"
 	| "aspect"
 	| "text"
 	| "polygon"
+	| "outline"
 	| "group"
 	| "none";
 
@@ -397,11 +399,18 @@ export function moveLayer(
 				setPath(own, ["box", "y"], shiftValue(box.y, dy, canvas.h));
 				return;
 			}
-			if (!Array.isArray(eff.points)) return;
-			own.points = eff.points.map((p) =>
+			const entries = pointEntries(eff.points);
+			if (!entries.length) return;
+			own.points = entries.map((p) =>
 				Array.isArray(p)
 					? [shiftValue(p[0], dx, canvas.w)!, shiftValue(p[1], dy, canvas.h)!]
-					: p,
+					: isObj(p)
+						? {
+								...p,
+								x: shiftValue(p.x, dx, canvas.w)!,
+								y: shiftValue(p.y, dy, canvas.h)!,
+							}
+						: p,
 			);
 			return;
 		}
@@ -412,6 +421,20 @@ export function moveLayer(
 			setPath(own, ["box", "y"], shiftValue(box.y, dy, canvas.h));
 		}
 	}
+}
+
+/**
+ * The entries of a polygon's `points`: `[x, y]` pairs and runs (objects with
+ * `count` or `each`, and `x`, `y`). A run on its own stands for a list of one.
+ */
+export function pointEntries(points: Json | undefined): Json[] {
+	if (Array.isArray(points)) return points;
+	return isObj(points) ? [points] : [];
+}
+
+/** True when a polygon's points include a run, whose points the canvas cannot drag. */
+export function hasPointRun(layer: Obj): boolean {
+	return pointEntries(layer.points).some((p) => isObj(p));
 }
 
 /** Moves one polygon point. */

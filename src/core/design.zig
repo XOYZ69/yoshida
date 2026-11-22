@@ -145,6 +145,23 @@ pub const Box = struct {
 
 pub const Point = struct { x: Prop, y: Prop };
 
+/// A run of polygon points made from a count or from a list, one point per
+/// iteration (`points` entries given as an object).
+pub const PointRun = struct {
+    count: ?Prop = null,
+    each: ?Prop = null,
+    index_name: []const u8 = "i",
+    item_name: ?[]const u8 = null,
+    x: Prop,
+    y: Prop,
+};
+
+/// One entry of a polygon's `points`: a fixed `[x, y]` or a run.
+pub const PointSpec = union(enum) {
+    fixed: Point,
+    run: PointRun,
+};
+
 pub const Arrow = enum { none, start, end, both };
 
 pub const GradientKind = enum { linear, radial };
@@ -272,7 +289,7 @@ pub const Layer = struct {
     // ellipse
     arc: ?Arc = null,
     // polygon
-    points: []const Point = &.{},
+    points: []const PointSpec = &.{},
     closed: bool = true,
     shape: ?Shape = null,
     // text
@@ -659,6 +676,100 @@ const Loader = struct {
             },
         };
         return .{ .t = t, .pos = n.pos };
+    }
+
+    /// An expression that must give a list (`repeat.each`, a point run's
+    /// `each`): its compiled form and the item layout. Problems are reported.
+    fn listSource(l: *Loader, v: *const Node, what: []const u8, scope: *const expr.Scope) Allocator.Error!?struct { prop: Prop, def: *const value.ItemDef } {
+        const arena = l.arena;
+        try l.note(v.pos, null, false, scope);
+        var problem: ?expr.Problem = null;
+        if (v.data != .string) {
+            try l.err(1103, v.pos, "{s} must be an expression giving a list", .{what});
+            return null;
+        }
+        const node = expr.parse(arena, v.data.string, 0, &problem) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(v.pos, problem.?);
+                return null;
+            },
+        };
+        var c: expr.Checker = .{ .scope = scope, .problem = &problem };
+        const t = c.check(node) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(v.pos, problem.?);
+                return null;
+            },
+        };
+        if (t != .list) {
+            try l.exprProblem(v.pos, .{ .code = 3003, .start = node.start, .end = node.end, .message = try std.fmt.allocPrint(arena, "{s} needs a list, got a {s}", .{ what, t.name() }) });
+            return null;
+        }
+        return .{ .prop = .{ .node = node, .pos = v.pos }, .def = t.list };
+    }
+
+    /// A `points` entry given as an object: `count` or `each` makes one
+    /// point per iteration from `x` and `y`, which see `index` (default `i`)
+    /// and, with `each`, `item`.
+    fn pointRun(l: *Loader, rn: *const Node, scope: *const expr.Scope) Allocator.Error!?PointRun {
+        const arena = l.arena;
+        try l.checkFields(rn, &.{ "count", "each", "index", "item", "x", "y" }, "points");
+        const has_count = rn.get("count") != null;
+        const has_each = rn.get("each") != null;
+        if (has_count == has_each) {
+            try l.err(1111, rn.pos, "a point run needs exactly one of \"count\" and \"each\"", .{});
+            return null;
+        }
+        var run: PointRun = .{ .x = undefined, .y = undefined };
+        var failed = false;
+        var extra: std.ArrayList(expr.Symbol) = .empty;
+        if (rn.get("index")) |v| {
+            if (try l.literalString(v, "points.index")) |s| {
+                if (expr.isIdent(s) and !expr.isReserved(s)) run.index_name = s else {
+                    try l.err(1103, v.pos, "'{s}' is not a valid loop name", .{s});
+                    failed = true;
+                }
+            } else failed = true;
+        }
+        try extra.append(arena, .{ .name = run.index_name, .ty = .number });
+        if (rn.get("count")) |v| {
+            l.list_counts = true;
+            defer l.list_counts = false;
+            if (try l.prop(v, .number, scope)) |p| run.count = p else failed = true;
+        }
+        if (rn.get("each")) |v| {
+            if (try l.listSource(v, "points.each", scope)) |src| {
+                run.each = src.prop;
+                if (rn.get("item")) |itn| {
+                    if (try l.literalString(itn, "points.item")) |s| {
+                        if (expr.isIdent(s) and !expr.isReserved(s)) {
+                            run.item_name = s;
+                            try extra.append(arena, .{ .name = s, .ty = .{ .item = src.def } });
+                        } else {
+                            try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
+                            failed = true;
+                        }
+                    } else failed = true;
+                }
+            } else failed = true;
+        } else if (rn.get("item")) |itn| try l.err(1101, itn.pos, "points.item only applies with \"each\"", .{});
+        const xn = rn.get("x");
+        const yn = rn.get("y");
+        if (xn == null) try l.err(1102, rn.pos, "a point run needs \"x\"", .{});
+        if (yn == null) try l.err(1102, rn.pos, "a point run needs \"y\"", .{});
+        if (xn == null or yn == null or failed) return null;
+        var inner = scope.*;
+        inner.locals = try std.mem.concat(arena, expr.Symbol, &.{ scope.locals, extra.items });
+        const sx = Loader.withAxis(&inner, .x);
+        const sy = Loader.withAxis(&inner, .y);
+        const px = try l.prop(xn.?, .number, &sx);
+        const py = try l.prop(yn.?, .number, &sy);
+        if (px == null or py == null) return null;
+        run.x = px.?;
+        run.y = py.?;
+        return run;
     }
 
     fn withAxis(scope: *const expr.Scope, axis: expr.Axis) expr.Scope {
@@ -1818,31 +1929,16 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             rep.count = try l.prop(v, .number, &base_scope);
         }
         if (rn.get("each")) |v| {
-            try l.note(v.pos, null, false, &base_scope);
-            var problem: ?expr.Problem = null;
-            if (v.data != .string) {
-                try l.err(1103, v.pos, "repeat.each must be an expression giving a list", .{});
-            } else if (expr.parse(arena, v.data.string, 0, &problem)) |node| {
-                var c: expr.Checker = .{ .scope = &base_scope, .problem = &problem };
-                if (c.check(node)) |t| {
-                    if (t == .list) {
-                        rep.each = .{ .node = node, .pos = v.pos };
-                        if (rn.get("item")) |itn| {
-                            if (try l.literalString(itn, "repeat.item")) |s| {
-                                if (expr.isIdent(s) and !expr.isReserved(s)) {
-                                    rep.item_name = s;
-                                    try locals.append(arena, .{ .name = s, .ty = .{ .item = t.list } });
-                                } else try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
-                            }
-                        }
-                    } else try l.exprProblem(v.pos, .{ .code = 3003, .start = node.start, .end = node.end, .message = try std.fmt.allocPrint(arena, "repeat.each needs a list, got a {s}", .{t.name()}) });
-                } else |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Invalid => try l.exprProblem(v.pos, problem.?),
+            if (try l.listSource(v, "repeat.each", &base_scope)) |src| {
+                rep.each = src.prop;
+                if (rn.get("item")) |itn| {
+                    if (try l.literalString(itn, "repeat.item")) |s| {
+                        if (expr.isIdent(s) and !expr.isReserved(s)) {
+                            rep.item_name = s;
+                            try locals.append(arena, .{ .name = s, .ty = .{ .item = src.def } });
+                        } else try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
+                    }
                 }
-            } else |e| switch (e) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.Invalid => try l.exprProblem(v.pos, problem.?),
             }
         } else if (rn.get("item")) |itn| try l.err(1101, itn.pos, "repeat.item only applies with \"each\"", .{});
         layer.repeat = rep;
@@ -2055,21 +2151,30 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     } else try l.err(1102, sn.pos, "shape needs a \"type\"", .{});
                 }
             } else if (m.get("points")) |pn| {
-                if (pn.data == .array) {
-                    const min_points: usize = if (layer.closed) 3 else 2;
-                    if (pn.data.array.len < min_points) try l.err(1109, pn.pos, "a {s} polygon needs at least {d} points, found {d}", .{ if (layer.closed) "closed" else "open", min_points, pn.data.array.len });
-                    var pts: std.ArrayList(Point) = .empty;
+                var pts: std.ArrayList(PointSpec) = .empty;
+                var all_fixed = true;
+                if (pn.data == .object) {
+                    all_fixed = false;
+                    if (try l.pointRun(pn, scope)) |run| try pts.append(arena, .{ .run = run });
+                } else if (pn.data == .array) {
                     for (pn.data.array) |*pt| {
+                        if (pt.data == .object) {
+                            all_fixed = false;
+                            if (try l.pointRun(pt, scope)) |run| try pts.append(arena, .{ .run = run });
+                            continue;
+                        }
                         if (pt.data != .array or pt.data.array.len != 2) {
-                            try l.err(1103, pt.pos, "a point must be an array [x, y]", .{});
+                            try l.err(1103, pt.pos, "a point must be an array [x, y] or an object with \"count\" or \"each\"", .{});
                             continue;
                         }
                         const px = try l.prop(&pt.data.array[0], .number, &sx);
                         const py = try l.prop(&pt.data.array[1], .number, &sy);
-                        if (px != null and py != null) try pts.append(arena, .{ .x = px.?, .y = py.? });
+                        if (px != null and py != null) try pts.append(arena, .{ .fixed = .{ .x = px.?, .y = py.? } });
                     }
-                    layer.points = pts.items;
-                } else try l.err(1103, pn.pos, "points must be an array of [x, y] pairs", .{});
+                    const min_points: usize = if (layer.closed) 3 else 2;
+                    if (all_fixed and pn.data.array.len < min_points) try l.err(1109, pn.pos, "a {s} polygon needs at least {d} points, found {d}", .{ if (layer.closed) "closed" else "open", min_points, pn.data.array.len });
+                } else try l.err(1103, pn.pos, "points must be an array of [x, y] pairs or point runs", .{});
+                layer.points = pts.items;
             } else try l.err(1102, m.pos, "polygon layer '{s}' needs \"points\" or \"shape\"", .{id});
         },
         .text => {
@@ -2485,4 +2590,38 @@ test "list constants: empty, mixed and ragged lists are errors; layer reading co
     try std.testing.expect(d.consts[0].value != null);
     try std.testing.expect(d.consts[1].reads_layers);
     try std.testing.expect(d.consts[2].reads_layers);
+}
+
+test "polygon point runs: shapes of the entries are checked when the design loads" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [] } },
+        \\  "layers": [
+        \\    { "id": "ok1", "type": "polygon", "points": { "each": "pts", "item": "q", "x": "q.px", "y": "q.py" } },
+        \\    { "id": "ok2", "type": "polygon", "points": [[0, 0], { "count": 3, "x": "i * 10", "y": "10" }] },
+        \\    { "id": "both", "type": "polygon", "points": [{ "count": 3, "each": "pts", "x": "0", "y": "0" }] },
+        \\    { "id": "nox", "type": "polygon", "points": [{ "count": 3, "y": "0" }] },
+        \\    { "id": "badeach", "type": "polygon", "points": [{ "each": "1 + 1", "x": "0", "y": "0" }] },
+        \\    { "id": "item", "type": "polygon", "points": [{ "count": 3, "item": "q", "x": "0", "y": "0" }] },
+        \\    { "id": "unknown", "type": "polygon", "points": [{ "count": 3, "x": "j", "y": "0" }] },
+        \\    { "id": "few", "type": "polygon", "points": [[0, 0], [1, 1]] }
+        \\  ]
+        \\}
+    ;
+    _ = try load(a, &diags, "t.design.json", src);
+    // both: 1111; nox: 1102; badeach: 3003; item: 1101; unknown: 3002; few: 1109.
+    try std.testing.expectEqual(@as(usize, 6), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1111));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1102));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3003));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1101));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3002));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1109));
 }

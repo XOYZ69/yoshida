@@ -92,9 +92,9 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 1106 | error | Param, constant or function name is invalid, is a reserved word, or collides with another param, constant or function name |
 | 1107 | error | Param has neither `default` nor `required` |
 | 1108 | error | Duplicate or invalid layer id |
-| 1109 | error | Polygon has fewer than 3 points (2 for an open polygon) |
+| 1109 | error | Polygon has fewer than 3 points (2 for an open polygon); only checked when every point is written out |
 | 1110 | error | Image `w` and `h` both `auto` |
-| 1111 | error | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape` |
+| 1111 | error | `repeat` needs exactly one of `count` / `each`; a polygon needs exactly one of `points` / `shape`; a point run needs exactly one of `count` / `each` |
 | 1112 | error | `extends` across different layer types (including a group), or of a divider |
 | 1113 | warning | A design function has the name of a built-in function; the design's function is used in this design instead of the built-in |
 | 1114 | warning | A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill |
@@ -132,6 +132,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3107 | error | Argument out of range: `roman` outside 1 to 3999, an empty `part` separator, `rand_int` with `lo` greater than `hi` (at render time) |
 | 3108 | error | QR code text too long for its error correction level (at render time) |
 | 3109 | error | An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time) |
+| 3110 | error | A polygon whose points come from point runs has fewer than 3 points (2 for an open polygon) (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |

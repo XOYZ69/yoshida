@@ -1618,20 +1618,9 @@ const Ctx = struct {
                 r.points = try ctx.shapePoints(&e, l, shape, r);
                 if (l.fill) |p| r.fill = (try ctx.eval(&e, l, p)).color;
             } else {
-                const pts = try ctx.arena.alloc([2]f32, l.points.len);
-                var minx: f64 = std.math.inf(f64);
-                var miny: f64 = std.math.inf(f64);
-                var maxx: f64 = -std.math.inf(f64);
-                var maxy: f64 = -std.math.inf(f64);
-                for (l.points, 0..) |p, i| {
-                    const x = try ctx.num(&e, l, p.x);
-                    const y = try ctx.num(&e, l, p.y);
-                    pts[i] = .{ @floatCast(x), @floatCast(y) };
-                    minx = @min(minx, x);
-                    miny = @min(miny, y);
-                    maxx = @max(maxx, x);
-                    maxy = @max(maxy, y);
-                }
+                var bounds: [4]f64 = .{ std.math.inf(f64), std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+                const pts = try ctx.polygonPoints(&e, l, &bounds);
+                const minx, const miny, const maxx, const maxy = bounds;
                 r.points = pts;
                 if (pts.len > 0) {
                     r.left = minx;
@@ -2039,6 +2028,67 @@ const Ctx = struct {
 
     fn indexOf(ctx: *Ctx, l: *const Layer) usize {
         return (@intFromPtr(l) - @intFromPtr(ctx.d.layers.ptr)) / @sizeOf(Layer);
+    }
+
+    fn extendBounds(bounds: *[4]f64, x: f64, y: f64) void {
+        bounds[0] = @min(bounds[0], x);
+        bounds[1] = @min(bounds[1], y);
+        bounds[2] = @max(bounds[2], x);
+        bounds[3] = @max(bounds[3], y);
+    }
+
+    /// The points of a polygon layer: its fixed points and the runs made
+    /// from a count or a list, in order.
+    fn polygonPoints(ctx: *Ctx, env: *expr.Env, l: *const Layer, bounds: *[4]f64) Failed![]const [2]f32 {
+        var out: std.ArrayList([2]f32) = .empty;
+        for (l.points) |spec| switch (spec) {
+            .fixed => |p| {
+                const x = try ctx.num(env, l, p.x);
+                const y = try ctx.num(env, l, p.y);
+                try out.append(ctx.arena, .{ @floatCast(x), @floatCast(y) });
+                extendBounds(bounds, x, y);
+            },
+            .run => |run| {
+                var count: usize = 0;
+                var list: []const []const Value = &.{};
+                var pos: u32 = 0;
+                if (run.count) |p| {
+                    pos = p.pos;
+                    const n = @floor(try ctx.num(env, l, p));
+                    if (n > limitF(limits.iterations)) {
+                        try ctx.report(.err, 5001, p.pos, null, try ctx.layerMsg(l, "point count {d} is above the limit of {d}", .{ n, limits.iterations }), null);
+                        return error.Failed;
+                    }
+                    count = if (n > 0) @intFromFloat(n) else 0;
+                } else if (run.each) |p| {
+                    pos = p.pos;
+                    list = (try ctx.eval(env, l, p)).list;
+                    if (list.len > limits.iterations) {
+                        try ctx.report(.err, 5001, p.pos, null, try ctx.layerMsg(l, "points over {d} items is above the limit of {d}", .{ list.len, limits.iterations }), null);
+                        return error.Failed;
+                    }
+                    count = list.len;
+                }
+                const saved = ctx.locals;
+                defer ctx.locals = saved;
+                for (0..count) |i| {
+                    const own = try ctx.arena.alloc(Local, if (run.item_name != null) 2 else 1);
+                    own[0] = .{ .name = run.index_name, .value = .{ .number = @floatFromInt(i) } };
+                    if (run.item_name) |name| own[1] = .{ .name = name, .value = .{ .item = list[i] } };
+                    ctx.locals = try std.mem.concat(ctx.arena, Local, &.{ saved, own });
+                    const x = try ctx.num(env, l, run.x);
+                    const y = try ctx.num(env, l, run.y);
+                    try out.append(ctx.arena, .{ @floatCast(x), @floatCast(y) });
+                    extendBounds(bounds, x, y);
+                }
+            },
+        };
+        const min_points: usize = if (l.closed) 3 else 2;
+        if (out.items.len < min_points) {
+            try ctx.report(.err, 3110, l.pos, null, try ctx.layerMsg(l, "a {s} polygon needs at least {d} points, got {d}", .{ if (l.closed) "closed" else "open", min_points, out.items.len }), null);
+            return error.Failed;
+        }
+        return out.items;
     }
 
     /// Evaluates every iteration of a repeated layer (once per card).
@@ -3749,6 +3799,100 @@ test "svg of a vector scene is well formed and repeatable" {
     // Glyphs are defined once and used per placement.
     try std.testing.expectEqual(@as(usize, 6), std.mem.count(u8, a, "<use xlink:href=\"#g"));
     try std.testing.expect(std.mem.count(u8, a, "<path id=\"g") <= 3);
+}
+
+const point_run_fixed =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "p", "type": "polygon", "points": [[10, 90], [60, 20], [110, 80], [170, 15]], "fill": "#2266CC", "stroke": { "color": "#000000", "width": 3 } }
+    \\  ]
+    \\}
+;
+
+const point_run_list =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [
+    \\    { "px": 60, "py": 20 }, { "px": 110, "py": 80 }, { "px": 170, "py": 15 }
+    \\  ] } },
+    \\  "layers": [
+    \\    { "id": "p", "type": "polygon", "points": [[10, 90], { "each": "pts", "item": "q", "x": "q.px", "y": "q.py" }], "fill": "#2266CC", "stroke": { "color": "#000000", "width": 3 } }
+    \\  ]
+    \\}
+;
+
+test "polygon points from a list draw like the same fixed points" {
+    const gpa = std.testing.allocator;
+    var a = (try testRenderDesign(gpa, point_run_fixed, .{}, null)).?;
+    defer a.deinit(gpa);
+    var b = (try testRenderDesign(gpa, point_run_list, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(a.px), std.mem.sliceAsBytes(b.px));
+    // Vector output: the same scene, so the same SVG (and PDF, which reads the scene).
+    var ra: VectorRig = undefined;
+    try ra.init(gpa, point_run_fixed);
+    defer ra.deinit();
+    var rb: VectorRig = undefined;
+    try rb.init(gpa, point_run_list);
+    defer rb.deinit();
+    const sa = try @import("svg.zig").write(gpa, &ra.scene);
+    defer gpa.free(sa);
+    const sb = try @import("svg.zig").write(gpa, &rb.scene);
+    defer gpa.free(sb);
+    try std.testing.expectEqualStrings(sa, sb);
+    try std.testing.expect(std.mem.indexOf(u8, sb, "<path") != null);
+}
+
+test "polygon points from a count make a star, and runs follow fixed points in order" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 200, "background": "#FFFFFF" },
+        \\  "params": { "n": { "type": "integer", "default": 5 } },
+        \\  "layers": [
+        \\    { "id": "star", "type": "polygon", "points": [
+        \\      { "count": "n * 2", "index": "k", "x": "100 + (k % 2 == 0 ? 80 : 35) * sin(k * pi / n)", "y": "100 - (k % 2 == 0 ? 80 : 35) * cos(k * pi / n)" }
+        \\    ], "fill": "#FFD166" }
+        \\  ]
+        \\}
+    ;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, design);
+    defer rig.deinit();
+    const fill = rig.scene.items.items[0].fill;
+    // A move, nine lines and a close for ten points.
+    try std.testing.expectEqual(@as(usize, 11), fill.path.cmds.len);
+    try std.testing.expectApproxEqAbs(@as(f32, 100), fill.path.cmds[0].move[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 20), fill.path.cmds[0].move[1], 0.001);
+}
+
+test "polygon with too few generated points is an error at render time" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [{ "px": 5, "py": 5 }] } },
+        \\  "layers": [
+        \\    { "id": "p", "type": "polygon", "points": [{ "each": "pts", "x": "pts[i].px", "y": "pts[i].py" }] }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    // The card is still drawn, without the layer.
+    if (try testRenderDesign(gpa, design, .{}, &code)) |bmp| {
+        var b = bmp;
+        b.deinit(gpa);
+    }
+    try std.testing.expectEqual(@as(u16, 3110), code);
 }
 
 const media_design =

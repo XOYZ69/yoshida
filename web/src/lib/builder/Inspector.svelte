@@ -25,6 +25,7 @@ import {
 	layersOf,
 	newParam,
 	type Obj,
+	pointEntries,
 	renameFunction,
 	setPath,
 	textAnchors,
@@ -452,16 +453,58 @@ function setRepeatMode(mode: string) {
 
 // ------------------------------------------------------------ polygon points
 
-const points = $derived(
-	Array.isArray(eff?.points) ? (eff!.points as Json[][]) : [],
-);
+/** Entries of `points`: [x, y] pairs and runs (objects with count or each). */
+const points = $derived(pointEntries(eff?.points));
+const fixedOnly = $derived(points.every((p) => Array.isArray(p)));
 
-function editPoints(fn: (pts: Json[][]) => void, key?: string) {
+function editPoints(fn: (pts: Json[]) => void, key?: string) {
 	editLayer((l) => {
 		const pts = structuredClone(points);
 		fn(pts);
 		l.points = pts;
 	}, key);
+}
+
+/** Sets one coordinate of the fixed point at `i`. */
+function setCoord(i: number, axis: 0 | 1, raw: string) {
+	editPoints((pts) => ((pts[i] as Json[])[axis] = parseCoord(raw)));
+}
+
+/** Sets a field of the run at `i`; empty text removes an optional name. */
+function setRun(i: number, key: string, raw: string) {
+	editPoints((pts) => {
+		const r = pts[i] as Obj;
+		const v = raw.trim();
+		if (key === 'x' || key === 'y' || key === 'count') r[key] = parseCoord(raw);
+		else if (v === '' && key !== 'each') delete r[key];
+		else r[key] = v;
+	});
+}
+
+/** Switches a run between making points from a count and from a list. */
+function setRunMode(i: number, mode: string) {
+	editPoints((pts) => {
+		const r = pts[i] as Obj;
+		if (mode === 'each') {
+			delete r.count;
+			r.each = listParams[0] ?? 'items';
+			r.item = 'item';
+		} else {
+			delete r.each;
+			delete r.item;
+			r.count = 3;
+		}
+	});
+}
+
+function addPoint() {
+	editPoints((pts) => {
+		const fixed = pts.filter((p) => Array.isArray(p)) as Json[][];
+		const a = fixed[fixed.length - 1] ?? [0, 0];
+		const b = fixed[0] ?? [0, 0];
+		const n = (v: Json) => (typeof v === 'number' ? v : 0);
+		pts.push([Math.round((n(a[0]) + n(b[0])) / 2), Math.round((n(a[1]) + n(b[1])) / 2)]);
+	});
 }
 
 const isShape = $derived(type === "polygon" && isObj(eff?.shape));
@@ -508,6 +551,7 @@ function shapeBox(): Obj {
 	const xs: number[] = [];
 	const ys: number[] = [];
 	for (const p of points) {
+		if (!Array.isArray(p)) continue;
 		if (typeof p[0] === "number") xs.push(p[0]);
 		if (typeof p[1] === "number") ys.push(p[1]);
 	}
@@ -872,22 +916,49 @@ let newFunction = $state("");
       {#if type === 'polygon' && !isShape}
         <div class="points">
           {#each points as p, i}
-            <div class="pt">
-              <span class="lbl">{i + 1}</span>
-              <input class="mono" value={String(p[0])} onchange={(e) => editPoints((pts) => (pts[i][0] = parseCoord(e.currentTarget.value)))} />
-              <input class="mono" value={String(p[1])} onchange={(e) => editPoints((pts) => (pts[i][1] = parseCoord(e.currentTarget.value)))} />
-              <button class="mini" title="Remove point" disabled={points.length <= (effVal(['closed']) === false ? 2 : 3)} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
-            </div>
+            {#if Array.isArray(p)}
+              <div class="pt">
+                <span class="lbl">{i + 1}</span>
+                <input class="mono" value={String(p[0])} onchange={(e) => setCoord(i, 0, e.currentTarget.value)} />
+                <input class="mono" value={String(p[1])} onchange={(e) => setCoord(i, 1, e.currentTarget.value)} />
+                <button class="mini" title="Remove point" disabled={fixedOnly && points.length <= (effVal(['closed']) === false ? 2 : 3)} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
+              </div>
+            {:else if isObj(p)}
+              <div class="run">
+                <div class="run-head">
+                  <span class="lbl">{i + 1}</span>
+                  <Select
+                    value={p.each !== undefined ? 'each' : 'count'}
+                    label="Points made from"
+                    options={[
+                      { value: 'count', label: 'count', detail: 'a number of points' },
+                      { value: 'each', label: 'each', detail: listParams.length ? 'one per list item' : 'a list param' },
+                    ]}
+                    onchange={(m) => setRunMode(i, m)} />
+                  <input class="mono" title={p.each !== undefined ? 'List expression' : 'Number of points'} value={String(p.each ?? p.count ?? '')} onchange={(e) => setRun(i, p.each !== undefined ? 'each' : 'count', e.currentTarget.value)} />
+                  <button class="mini" title="Remove run" onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
+                </div>
+                <div class="pt">
+                  <span class="lbl">x, y</span>
+                  <input class="mono" value={String(p.x ?? '')} onchange={(e) => setRun(i, 'x', e.currentTarget.value)} />
+                  <input class="mono" value={String(p.y ?? '')} onchange={(e) => setRun(i, 'y', e.currentTarget.value)} />
+                </div>
+                <div class="pt">
+                  <span class="lbl">names</span>
+                  <input class="mono" placeholder="i" title="Name of the iteration number" value={String(p.index ?? '')} onchange={(e) => setRun(i, 'index', e.currentTarget.value)} />
+                  {#if p.each !== undefined}
+                    <input class="mono" placeholder="item" title="Name of the current list item" value={String(p.item ?? '')} onchange={(e) => setRun(i, 'item', e.currentTarget.value)} />
+                  {:else}
+                    <span></span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
           {/each}
-          <button
-            class="add"
-            onclick={() =>
-              editPoints((pts) => {
-                const a = pts[pts.length - 1];
-                const b = pts[0];
-                const n = (v: Json) => (typeof v === 'number' ? v : 0);
-                pts.push([Math.round((n(a[0]) + n(b[0])) / 2), Math.round((n(a[1]) + n(b[1])) / 2)]);
-              })}>+ point</button>
+          <div class="add-row">
+            <button class="add" onclick={addPoint}>+ point</button>
+            <button class="add" title="Points made from a count or a list" onclick={() => editPoints((pts) => pts.push({ count: 3, x: 'i * 50', y: 'i * 20' }))}>+ run</button>
+          </div>
         </div>
         {#if errorAt(['points'])}<div class="err">{errorAt(['points'])}</div>{/if}
         <Field label="closed" kind="enum" optional value={ownVal(['closed']) === undefined ? undefined : String(ownVal(['closed']))} fallback="true" options={['true', 'false']} onchange={(v) => set(['closed'], v === undefined ? undefined : v === 'true')} />
@@ -1334,6 +1405,27 @@ let newFunction = $state("");
   }
   .pt input {
     min-width: 0;
+  }
+  .run {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .run-head {
+    display: grid;
+    grid-template-columns: 20px auto 1fr auto;
+    gap: 4px;
+    align-items: center;
+  }
+  .run-head input {
+    min-width: 0;
+  }
+  .add-row {
+    display: flex;
+    gap: 4px;
   }
   .add {
     align-self: flex-start;
