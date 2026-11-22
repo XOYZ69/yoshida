@@ -49,7 +49,7 @@ The **ƒ** button in a field opens a reference of everything available there: re
 ## Long expressions
 
 - A field stays on one line and scrolls sideways, like any text box. <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line; once the text has one, the field grows and wraps. Templates always wrap. A long expression on one line is shown in its canonical layout, with line breaks where the formatter would put them; they are only drawn, the text (and so the design file) stays on one line.
-- <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) **reformats** the expression: one `?:` branch or `match` pair per line, redundant parentheses removed, numbers and colors kept as written. It is a normal edit, so undo brings the old text back.
+- <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) **reformats** the expression now, as leaving the field does: canonical spacing on one line, redundant parentheses removed, numbers and colors kept as written. The field shows a long one with a line break per `?:` branch or `match` pair. It is a normal edit, so undo brings the old text back.
 - Under the text, a **breadcrumb** shows where the caret is, such as `match › arg 4 › with_alpha › arg 1`.
 
 ## The formula window
@@ -64,7 +64,7 @@ At the top, a **path** shows where you are, such as *whole › result 2*. Click 
 - an `in [...]` test as chips you can add and remove,
 - anything else as one text box.
 
-Colors show a swatch. A see-through color shows a checkerboard behind it, the same in light and dark mode. The window opens with the expression in its canonical layout. The whole expression stays editable as text under the parts, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits in the window rewrite the expression in its canonical layout, which breaks a long one over several lines in the window.
+Colors show a swatch. A see-through color shows a checkerboard behind it, the same in light and dark mode. The window opens with the expression in its canonical layout, and its cells and text use the same highlighting and suggestions as a field. The whole expression stays editable as text under the parts, and both views follow each other. A cell that does not parse keeps what you typed and turns red; the expression changes only once it parses. Edits in the window rewrite the expression in its canonical layout, which breaks a long one over several lines in the window.
 
 **Live values.** For the card shown on the stage, a part shows its value when the card has one, and the row of a `match` or `?:` chain that was taken is marked. A value that is not there is left out, not shown as a dash. Values come from a real render of the card, so repeat names, function arguments and `@layer` positions are the actual ones. A field that the card never evaluates (a hidden layer, an unused constant) says so.
 
@@ -95,7 +95,7 @@ Each extraction is one undo step. <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings back the e
 
 ## Committing
 
-A field is committed on <kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> in multi-line fields) or when it loses focus. <kbd>Esc</kbd> reverts.
+A field is committed on <kbd>Enter</kbd> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd> in multi-line fields) or when it loses focus. <kbd>Esc</kbd> reverts. An expression you edited is saved in its canonical form (spacing fixed, redundant parentheses removed) on one line; one you did not touch is never rewritten.
 
 ## Related
 

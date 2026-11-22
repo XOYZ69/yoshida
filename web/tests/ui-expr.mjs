@@ -2,7 +2,7 @@
 // the breadcrumb shows the path to the caret in a call argument, a long
 // one-line expression does not wrap, the formula button shows for an
 // expression and not for a literal, and Shift+Alt+F reformats a long
-// expression over several lines.
+// expression (shown over several lines, saved on one).
 //
 //   node tests/ui-expr.mjs [http://localhost:4173/]
 import { mkdir } from "node:fs/promises";
@@ -125,10 +125,11 @@ await p.waitForTimeout(200);
 await p.keyboard.press("Shift+Alt+F");
 await p.waitForTimeout(300);
 const lines = await fill.locator(".cm-line").count();
+const breaks = await fill.locator(".yx-break").count();
 ok(
-	"Shift+Alt+F lays the expression out over several lines",
-	lines > 1,
-	`${lines} lines`,
+	"Shift+Alt+F shows the expression over several lines, as one line of text",
+	lines === 1 && breaks > 1,
+	`${lines} lines, ${breaks} breaks`,
 );
 ok(
 	"the formatted expression has no syntax errors",

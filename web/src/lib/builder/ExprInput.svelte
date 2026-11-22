@@ -69,6 +69,9 @@ let {
 	expect = "any",
 	label = "",
 	path,
+	bare = false,
+	oninput,
+	onsubmit,
 	oncommit,
 }: {
 	value: string;
@@ -84,6 +87,12 @@ let {
 	label?: string;
 	/** JSON pointer of the field in the design (e.g. `/layers/3/fill`): live values in the formula panel. */
 	path?: string;
+	/** Inside the formula window: highlighting and suggestions only, no buttons, crumbs, layout or formatting. */
+	bare?: boolean;
+	/** Called with the text at every change (the window follows it live). */
+	oninput?: (v: string) => void;
+	/** Called on Ctrl+Enter, after the commit. */
+	onsubmit?: () => void;
 	oncommit: (v: string) => void;
 } = $props();
 
@@ -101,6 +110,8 @@ let view: EditorView | null = null;
 let ready = $state(false);
 /** The user changed the text since the last commit or outside update. */
 let editing = false;
+/** Bumped when a window editor commits, so it catches up with changes made while it had the focus. */
+let caughtUp = $state(0);
 /** True while we replace the text ourselves (outside value). */
 let syncing = false;
 let refOpen = $state(false);
@@ -156,14 +167,24 @@ function text() {
 }
 
 function commit() {
+	const edited = editing;
 	editing = false;
-	const d = text();
+	let d = text();
+	// Leaving an edited expression saves it in the canonical form, on one line.
+	if (edited && !bare && !template && exprCoreReady()) {
+		const flat = formatExpr(d, FLAT_WIDTH);
+		if (flat !== null && flat !== d) {
+			d = flat;
+			setText(d);
+		}
+	}
 	if (d !== value) oncommit(d);
+	if (bare) caughtUp++;
 }
 
 /** Opens the formula panel on the field's current text (not for templates). */
 function openFormula(): boolean {
-	if (template || !suggest) return false;
+	if (template || !suggest || bare) return false;
 	formulaText = text();
 	formulaOpen = true;
 	return true;
@@ -218,6 +239,7 @@ function extensions(): Extension[] {
 			key: "Mod-Enter",
 			run: () => {
 				commit();
+				onsubmit?.();
 				return true;
 			},
 		},
@@ -245,6 +267,7 @@ function extensions(): Extension[] {
 		EditorView.updateListener.of((u) => {
 			if (u.docChanged && !syncing) editing = true;
 			if (u.docChanged) draft = u.state.doc.toString();
+			if (u.docChanged && !syncing) oninput?.(draft);
 			if (u.docChanged || u.selectionSet || u.focusChanged)
 				refreshCrumbs(u.view);
 		}),
@@ -273,7 +296,7 @@ function extensions(): Extension[] {
 	if (placeholder) ext.push(cmPlaceholder(placeholder));
 	if (highlighted) ext.push(exprHighlight(template, names));
 	// A long expression shows in its multi-line layout; the text stays one line.
-	if (!template) ext.push(exprLayout, layoutTheme);
+	if (!template && !bare) ext.push(exprLayout, layoutTheme);
 	if (suggest && ctxFn) {
 		ext.push(
 			autocompletion({
@@ -317,6 +340,7 @@ onMount(() => {
 // Outside changes (other field, undo, card switch) while not editing.
 $effect(() => {
 	const v = value;
+	void caughtUp;
 	if (!ready || editing) return;
 	setText(v);
 });
@@ -331,23 +355,20 @@ $effect(() => {
 /** The breadcrumb for the caret, while this field has focus. */
 function refreshCrumbs(v: EditorView) {
 	const path =
-		suggest && v.hasFocus
+		suggest && !bare && v.hasFocus
 			? crumbPath(v.state.doc.toString(), v.state.selection.main.head, template)
 			: [];
 	crumbs = path.length >= 2 ? path : [];
 }
 
-/** The field's width in characters, for formatting: 24 to 100. */
-function fieldWidth(v: EditorView): number {
-	const cw = v.defaultCharacterWidth || 8;
-	return Math.min(100, Math.max(24, Math.floor(v.contentDOM.clientWidth / cw)));
-}
+/** Wide enough that the formatter never breaks a line: a field saves one line. */
+const FLAT_WIDTH = 1 << 16;
 
-/** Replaces the expression with its canonical layout, and commits it. Templates are left alone. */
+/** Replaces the expression with its canonical form on one line, and commits it. Templates are left alone. */
 function reformat(v: EditorView): boolean {
 	if (template || !exprCoreReady()) return true;
 	const doc = v.state.doc.toString();
-	const out = formatExpr(doc, fieldWidth(v));
+	const out = formatExpr(doc, FLAT_WIDTH);
 	if (out === null || out === doc) return true;
 	v.dispatch({
 		changes: { from: 0, to: v.state.doc.length, insert: out },
@@ -399,7 +420,7 @@ function insertRef(t: string, reopen: boolean) {
 <!-- A long one-line value is cut at the edge: the tooltip shows all of it. -->
 <div class="expr" class:mono class:multiline class:hasfx={suggest && !!ctxFn} style:--rows={rows} title={!multiline && value.length > 18 ? value : undefined}>
   <div class="host" bind:this={host}></div>
-  {#if suggest && (ctxFn || !template)}
+  {#if !bare && suggest && (ctxFn || !template)}
     <div class="fxs">
       {#if suggest && ctxFn}
         <button

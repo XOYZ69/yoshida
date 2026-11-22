@@ -14,6 +14,7 @@
 
 import { getContext, onMount, untrack } from "svelte";
 import type { ScopeResult } from "../engine";
+import ExprInput from "../builder/ExprInput.svelte";
 import Icon from "../ui/Icon.svelte";
 import { askText, overlay } from "../ui/overlay.svelte";
 import Window from "../ui/Window.svelte";
@@ -461,12 +462,15 @@ function onKey(e: KeyboardEvent) {
 	// first, and the window stays.
 	if (e.defaultPrevented || overlay.dialog !== null || !inWindow(e)) return;
 	if (e.key === "Escape") {
+		// A suggestion list closes first, and the window stays.
+		if (document.querySelector(".cm-tooltip-autocomplete")) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// Blurring a cell commits what was typed in it.
-		if (document.activeElement instanceof HTMLInputElement)
+		// Blurring a cell commits what was typed in it (an editor does it on
+		// the next tick), so the window closes after that.
+		if (document.activeElement instanceof HTMLElement)
 			document.activeElement.blur();
-		close();
+		setTimeout(close, 0);
 	}
 }
 
@@ -503,20 +507,14 @@ onMount(() => {
 
 {#snippet cell(s: Slot, name: string)}
 	<span class="cell">
-		{#if s.kind === "color"}<span class="sw" style:background={s.text}></span>{/if}
-		<input
-			class="in"
-			class:invalid={cellBad(s)}
-			aria-label={name}
-			value={cellValue(s)}
-			spellcheck="false"
-			onchange={(e) => setCell(s, e.currentTarget.value)}
-			onkeydown={(e) => {
-				if (e.key === "Enter") {
-					e.preventDefault();
-					setCell(s, e.currentTarget.value);
-				}
-			}} />
+		<span class="cellin" class:invalid={cellBad(s)}>
+			<ExprInput
+				bare
+				mono
+				label={name}
+				value={cellValue(s)}
+				oncommit={(v) => setCell(s, v)} />
+		</span>
 		{@render val(s.id)}
 		{@render opener(s)}
 	</span>
@@ -648,19 +646,18 @@ onMount(() => {
 			</div>
 		{/if}
 
-		<textarea
-			class="text"
-			aria-label="Expression text"
-			rows={textRows}
-			spellcheck="false"
-			value={draft}
-			oninput={(e) => setText(e.currentTarget.value)}
-			onkeydown={(e) => {
-				if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-					e.preventDefault();
-					apply();
-				}
-			}}></textarea>
+		<div class="text">
+			<ExprInput
+				bare
+				mono
+				multiline
+				rows={textRows}
+				label="Expression text"
+				value={draft}
+				oninput={setText}
+				onsubmit={apply}
+				oncommit={() => {}} />
+		</div>
 
 		<footer>
 			<div class="status-line">
@@ -866,9 +863,6 @@ onMount(() => {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
-  .formula .in.invalid {
-    border-color: var(--err);
-  }
   /* Delete buttons of the rows and chips. */
   .x {
     flex: none;
@@ -986,23 +980,18 @@ onMount(() => {
     max-width: 100%;
   }
   /* The whole expression: as many rows as its lines, at least 2, then it scrolls. */
-  textarea {
-    display: block;
+  .text {
     flex: none;
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    padding: 6px 8px;
-    background: var(--bg-code);
-    color: var(--fg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    font: 12px/1.5 var(--mono);
+    display: flex;
   }
-  textarea:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  /* A cell: the editor of an Inspector field, as wide as the cell. */
+  .cellin {
+    flex: 1;
+    min-width: 56px;
+    display: flex;
+  }
+  .cellin.invalid :global(.expr) {
+    border-color: var(--err);
   }
   footer {
     display: flex;

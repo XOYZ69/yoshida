@@ -31,10 +31,16 @@ class BreakWidget extends WidgetType {
 	}
 }
 
-/** The field's width in characters, for formatting: 24 to 100. */
+/** The widest layout: the width the formula window formats to, so both show the same. */
+const MAX_WIDTH = 72;
+
+/** The field's width in characters, for formatting: 24 to 72. */
 function widthOf(v: EditorView): number {
 	const cw = v.defaultCharacterWidth || 8;
-	return Math.min(100, Math.max(24, Math.floor(v.contentDOM.clientWidth / cw)));
+	return Math.min(
+		MAX_WIDTH,
+		Math.max(24, Math.floor(v.contentDOM.clientWidth / cw)),
+	);
 }
 
 function build(v: EditorView): DecorationSet {
