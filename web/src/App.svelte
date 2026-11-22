@@ -932,10 +932,25 @@
 	}
 
 	async function forgetProject(meta: ProjectMeta) {
+		// A linked project: the folder on disk is not touched, only the copy in
+		// this browser and the link to the folder go.
+		let linked: string | null = null;
+		if (meta.id === projectId && folder) linked = folder.name;
+		else {
+			const rec = await loadFolder(meta.id).catch(() => null);
+			if (rec) {
+				try {
+					linked = backendById(rec.backend)?.open(rec.ref).name ?? "a folder";
+				} catch {
+					linked = "a folder";
+				}
+			}
+		}
 		const ok = await confirmAction({
 			title: `Delete '${meta.name}' from this browser?`,
-			message:
-				"Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
+			message: linked
+				? `Its copy (images included) and the link to the folder '${linked}' are removed from this browser. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
+				: "Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
 			confirm: "Delete",
 			danger: true,
 		});
