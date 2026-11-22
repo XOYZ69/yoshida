@@ -823,6 +823,14 @@
 			}
 			return;
 		}
+		await openFolderCopy();
+	}
+
+	/**
+	 * Copies a folder into the project in this browser (the browser's upload
+	 * dialog): the folder on disk is not linked and never written to.
+	 */
+	async function openFolderCopy() {
 		const list = await pickFiles("", { directory: true });
 		if (!list.length) return;
 		const { name, files: f } = await filesFromInput(list);
@@ -977,7 +985,24 @@
 		const items: MenuItem[] = [
 			{ heading: "Start" },
 			{ label: "New project…", icon: "plus", action: newProject },
-			{ label: "Open folder…", icon: "folder", action: openFolder },
+			{
+				label: "Open folder…",
+				icon: "folder",
+				detail: activeBackend()
+					? "edit the files on disk in place"
+					: "copies it into this browser",
+				action: openFolder,
+			},
+			...(activeBackend()
+				? [
+						{
+							label: "Open folder as a copy…",
+							icon: "upload",
+							detail: "upload it, the folder is left alone",
+							action: openFolderCopy,
+						} satisfies MenuItem,
+					]
+				: []),
 			{
 				label: "Open project file…",
 				icon: "file",
@@ -1028,8 +1053,8 @@
 						icon: "folder",
 						detail: activeBackend()
 							? "edit the files on disk, saved as you work"
-							: "needs Chrome or Edge",
-						disabled: !open || !activeBackend(),
+							: "not available in this browser, click to see why",
+						disabled: !open,
 						action: linkFolder,
 					},
 			...(folder
@@ -1768,7 +1793,16 @@
 	/** Links the open project to a folder the user picks. */
 	async function linkFolder() {
 		const backend = activeBackend();
-		if (!backend || !files.size) return;
+		if (!files.size) return;
+		if (!backend) {
+			await confirmAction({
+				title: "This browser cannot link a folder",
+				message:
+					"Linking needs the File System Access API: Chrome, Edge and other Chromium browsers have it. Brave has it switched off: open brave://flags/#file-system-access-api, set it to Enabled and restart Brave. Firefox and Safari do not have it; use Export project file there.",
+				confirm: "OK",
+			});
+			return;
+		}
 		try {
 			const link = await backend.pick();
 			const { files: onDisk, sigs } = await link.read();
