@@ -8,6 +8,7 @@ const linear = @import("linear.zig");
 const qr = @import("qr.zig");
 const datamatrix = @import("datamatrix.zig");
 const aztec = @import("aztec.zig");
+const pdf417 = @import("pdf417.zig");
 
 pub const Symbol = sym.Symbol;
 pub const Format = sym.Format;
@@ -39,10 +40,7 @@ pub fn encode(a: Allocator, prob: *Problem, format: Format, text: []const u8, o:
         .code93 => linear.code93(a, prob, text),
         .datamatrix => datamatrix.encode(a, prob, text),
         .aztec => aztec.encode(a, prob, text, .{ .ecc = o.ecc }),
-        .pdf417 => {
-            prob.* = .{ .msg = "this format is not available yet" };
-            return error.Invalid;
-        },
+        .pdf417 => pdf417.encode(a, prob, text, o.ecc),
     };
 }
 
@@ -85,4 +83,5 @@ test {
     _ = linear;
     _ = datamatrix;
     _ = aztec;
+    _ = pdf417;
 }

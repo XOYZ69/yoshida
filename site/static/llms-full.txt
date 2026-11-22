@@ -326,6 +326,7 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `fill` (string): Color behind the code, quiet zone included. Default white; #00000000 for none
 - `margin` (number|expr): Quiet zone around the code in modules, 0 to 16. Default 4
 - `level` ("low" | "medium" | "quartile" | "high" | string): Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one
+- `mode` ("auto" | "byte" | "numeric" | "alphanumeric" | string): QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default byte; or an expression that gives one
 - `style` ("square" | "rounded" | "dots" | string): Shape of the data modules: square (default), rounded or dots; or an expression that gives one
 - `eye` ("square" | "rounded" | "circle" | string): Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one
 - `eye_color` (string): Color of the corner squares. Default: the color of the code
@@ -355,6 +356,8 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `fill` (string): Color behind the code, quiet zone included. Default white; #00000000 for none
 - `margin` (number|expr): Quiet zone around the code in modules, 0 to 16. Default: what the format asks for (QR 4, 1D codes 7 to 11, Data Matrix and PDF417 2, Aztec 1). 1D codes get it left and right only
 - `level` ("low" | "medium" | "quartile" | "high" | string): QR only. Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one
+- `mode` ("auto" | "byte" | "numeric" | "alphanumeric" | string): QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default auto; or an expression that gives one
+- `ecc` (number|expr): Aztec: the least share of error correction in percent of the data, 0 to 90 (default 23). PDF417: error correction level 0 to 8 (default: by size)
 - `style` ("square" | "rounded" | "dots" | string): Shape of the data modules: square (default), rounded or dots; or an expression that gives one
 - `eye` ("square" | "rounded" | "circle" | string): Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one
 - `eye_color` (string): Color of the corner squares. Default: the color of the code
@@ -582,7 +585,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 3108 error: QR code text too long for its error correction level (at render time)
 - 3109 error: An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time)
 - 3110 error: A polygon whose points come from point runs has fewer than 3 points (2 for an open polygon) (at render time)
-- 3111 error: A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol, or a format that is not available yet (at render time)
+- 3111 error: A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol (at render time)
 - 3112 error: An EAN, UPC or ITF-14 text has the wrong number of digits, or a wrong check digit (at render time)
 - 3201 warning: Text truncated by `max_lines`
 - 3202 hint: Layer entirely outside the canvas

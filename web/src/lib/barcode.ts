@@ -106,8 +106,7 @@ export const BARCODE_FORMATS: BarcodeFormat[] = [
 		name: "PDF417",
 		kind: "matrix",
 		sample: "Yoshida",
-		hint: "Stacked rows; not available yet",
-		soon: true,
+		hint: "Stacked rows, wide; for tickets and IDs",
 	},
 ];
 

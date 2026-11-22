@@ -25,7 +25,9 @@ assert.equal(ignores("code39", "check"), false);
 assert.equal(ignores("somethingelse", "level"), false);
 
 assert.equal(BARCODE_FORMATS.length, 13);
-assert.equal(formatInfo("pdf417")?.soon, true);
+assert.equal(formatInfo("pdf417")?.soon, undefined);
+assert.equal(ignores("pdf417", "ecc"), false);
+assert.equal(ignores("pdf417", "style"), true);
 assert.equal(quietZone("ean13"), 11);
 assert.equal(quietZone("code128"), 10);
 

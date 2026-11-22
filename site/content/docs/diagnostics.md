@@ -134,7 +134,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3108 | error | QR code text too long for its error correction level (at render time) |
 | 3109 | error | An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time) |
 | 3110 | error | A polygon whose points come from point runs has fewer than 3 points (2 for an open polygon) (at render time) |
-| 3111 | error | A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol, or a format that is not available yet (at render time) |
+| 3111 | error | A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol (at render time) |
 | 3112 | error | An EAN, UPC or ITF-14 text has the wrong number of digits, or a wrong check digit (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |

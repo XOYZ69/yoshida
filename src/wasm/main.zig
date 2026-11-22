@@ -212,6 +212,7 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             return 1;
         };
         var br: y.api.BarcodeRequest = .{ .format = format, .text = str(&req, "text") orelse "" };
+        if (format == .pdf417) br.ecc = y.pdf417.auto_level;
         if (str(&req, "check")) |c| br.check = std.meta.stringToEnum(y.symbol.Check, c) orelse .auto;
         if (str(&req, "level")) |c| br.level = std.meta.stringToEnum(y.qr.Level, c) orelse .medium;
         if (str(&req, "mode")) |c| br.qr_mode = std.meta.stringToEnum(y.qr.Mode, c) orelse .auto;

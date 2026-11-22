@@ -26,6 +26,7 @@ pub const pdf = @import("pdf.zig");
 pub const qr = @import("qr.zig");
 pub const symbol = @import("symbol.zig");
 pub const barcode = @import("barcode.zig");
+pub const pdf417 = @import("pdf417.zig");
 
 pub const version = @import("build_options").version;
 /// "dev" for a preview build from the dev branch, empty for a release build.

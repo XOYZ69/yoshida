@@ -60,7 +60,7 @@ await p.waitForSelector("aside.right .picker .tile svg");
 await p.waitForFunction(() => document.querySelectorAll("aside.right .picker .tile svg").length >= 12);
 const tiles = await p.locator("aside.right .picker .tile").allTextContents();
 ok("the picker has 13 formats", tiles.length === 13, tiles.join("|"));
-ok("PDF417 is shown as not available yet", await p.locator('aside.right .picker .tile:has-text("PDF417")').isDisabled());
+ok("PDF417 can be picked", !(await p.locator('aside.right .picker .tile:has-text("PDF417")').isDisabled()));
 await p.screenshot({ path: `${shots}/barcode-2-picker.png` });
 
 // Pick EAN-13 and give it digits: the info line says what was done to them.

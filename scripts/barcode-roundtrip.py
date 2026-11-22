@@ -50,7 +50,9 @@ CASES = [
     ("datamatrix", "1234567890123456", None, "DataMatrix", {}),
     ("aztec", "Yoshida Aztec 12345", None, "Aztec", {}),
     ("aztec", "Yoshida Aztec 12345 with more error correction", None, "Aztec", {"ecc": 60}),
-    # ("pdf417", ...): not available yet
+    ("pdf417", "Yoshida PDF417 12345 and more text to fill a row", None, "PDF417", {}),
+    ("pdf417", "12345678901234567890123456789012345678901234567890", None, "PDF417", {}),
+    ("pdf417", "Mixed: lower, UPPER, 123, punct;<>@[]_ and ümlauts ✓", None, "PDF417", {"ecc": 4}),
 ]
 
 # ZXing reports these names; ITF-14 reads as ITF.
@@ -81,6 +83,14 @@ SWEEPS["aztec"] = (
 )
 
 
+SWEEPS["pdf417"] = (
+    [("pdf417", mixed(n, n), None, "PDF417", {}) for n in (1, 10, 40, 100, 250, 500, 800, 1000)]
+    + [("pdf417", mixed(120, 7), None, "PDF417", {"ecc": e}) for e in range(0, 9)]
+    + [("pdf417", "".join(str(i % 10) for i in range(n)), None, "PDF417", {}) for n in (13, 44, 45, 300, 1200)]
+    + [("pdf417", "Zeilen\r\nund\tTabs, ÄÖÜß € ✓" * 6, None, "PDF417", {})]
+)
+
+
 def design(cases, size=(640, 320)):
     return {
         "format": 1,
@@ -94,7 +104,7 @@ def design(cases, size=(640, 320)):
             "chk": {"type": "text", "default": "auto"},
             "lvl": {"type": "text", "default": "medium"},
             "md": {"type": "text", "default": "auto"},
-            "ec": {"type": "number", "default": 23},
+            "ec": {"type": "number", "default": -1},
         },
         "layers": [
             {

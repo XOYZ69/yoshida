@@ -1,6 +1,6 @@
 +++
 title = "Layer: barcode"
-description = "Barcodes and 2D codes made on the fly from text: Code 128, EAN, UPC, Code 39, ITF, Codabar, Code 93, QR, Data Matrix and Aztec."
+description = "Barcodes and 2D codes made on the fly from text: Code 128, EAN, UPC, Code 39, ITF, Codabar, Code 93, QR, Data Matrix, Aztec and PDF417."
 +++
 
 One layer for every kind of code. The text is a [template](@/docs/expressions-templates.md), so every card can carry its own number, link or id, and `format` says what kind of code it becomes. The [`qr` layer](@/docs/layer-qr.md) is the same thing with `format` fixed to `qr`.
@@ -20,7 +20,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 
 | Field | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `format` | enum | required | `qr`, `code128`, `ean13`, `ean8`, `upca`, `code39`, `itf`, `itf14`, `codabar`, `code93`, `datamatrix` or `aztec`; or an expression that gives one. See [Formats](#formats) |
+| `format` | enum | required | `qr`, `code128`, `ean13`, `ean8`, `upca`, `code39`, `itf`, `itf14`, `codabar`, `code93`, `datamatrix`, `aztec` or `pdf417`; or an expression that gives one. See [Formats](#formats) |
 | `text` | text ([template](@/docs/expressions-templates.md)) | required | What the code holds |
 | `box` | `{ x, y, w, h }`, all number | required | Position and size. `x`, `y` refer to the point chosen by `anchor`. See [Size](#size) |
 | `color` | color | `#000000FF` | The dark bars or modules |
@@ -37,7 +37,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 | `level` | enum | `medium` | QR only: error correction `low`, `medium`, `quartile` or `high` |
 | `mode` | enum | `auto` | QR only: how the text is cut into segments. See [QR segments](#qr-segments) |
 | `style`, `eye`, `eye_color`, `logo`, `logo_src` | | | QR only: the [look of the code and its logo](@/docs/layer-qr.md#style). `style` also works for Data Matrix and Aztec |
-| `ecc` | number | `23` for Aztec | Aztec: the least share of error correction in percent of the data, 0 to 90 |
+| `ecc` | number | Aztec 23, PDF417 by size | Aztec: the least share of error correction in percent of the data, 0 to 90. PDF417: error correction level 0 to 8 (2 to 5 by default, lower if the text only just fits) |
 
 A field that the chosen format does not read is warning 1115, so `"logo"` on a Code 128 does not go unnoticed. (With `format` an expression the layer cannot know and says nothing.)
 
@@ -57,10 +57,9 @@ A field that the chosen format does not read is warning 1115, so `"logo"` on a C
 | `qr` | any text | built in | 4 | See [QR](@/docs/layer-qr.md) |
 | `datamatrix` | any text | built in | 2 | Square symbols from 10 x 10 to 144 x 144 modules, at most 1558 codewords (about 3116 digits, or 1556 letters). Very small, good for tiny labels |
 | `aztec` | any text | built in | 1 | Compact and full range, 15 to 151 modules. No large quiet zone needed |
+| `pdf417` | any text | built in | 2 | Stacked rows, 3 to 90 rows of 1 to 30 columns, at most 929 codewords (about 1800 letters or 2700 digits). Wide: it is fitted into the box by width and height, so give it a wide box. Text, byte and numeric compaction are chosen per stretch of text |
 
-PDF417 is not available yet; `format` `pdf417` is error 3111.
-
-Text beyond ASCII (umlauts, symbols) is read as UTF-8 by Data Matrix and Aztec readers as well as by QR. The 1D formats hold the characters listed above; anything else is error 3111 with a hint to a format that holds it.
+Text beyond ASCII (umlauts, symbols) is read as UTF-8 by Data Matrix, Aztec and PDF417 readers as well as by QR. The 1D formats hold the characters listed above; anything else is error 3111 with a hint to a format that holds it.
 
 ## Size
 
@@ -68,6 +67,7 @@ The symbol is fitted into `box` with a **whole number of pixels per module**, so
 
 - **1D codes** use the box width for the bars (quiet zones included) and the whole box height for bars and label together. The `@code.bounds` of the layer are that width and the height of the box.
 - **Square codes** (QR, Aztec, Data Matrix) fit the smaller of `w` and `h`.
+- **PDF417** is fitted by width and height separately, so it fills a wide box.
 
 The module count depends on the text, so a longer text makes smaller modules. A module narrower than one pixel is warning 3204. With a canvas `dpi`, a module narrower than 0.25 mm in print (QR: 0.5 mm) is warning 3208, and low contrast or a lighter code than its background is warning 3205.
 
@@ -108,7 +108,6 @@ QR codes cut the text into segments: numeric (3.3 bits per digit), alphanumeric 
 
 - Text that does not fit the symbol is error 3108 for QR (with its capacity) and 3111 for the other formats.
 - Text with characters the format cannot hold, or the wrong number of digits, is error 3111; a wrong check digit or digit count for EAN, UPC and ITF-14 is error 3112.
-- A format that is not available yet is error 3111.
 
 ## Exports
 

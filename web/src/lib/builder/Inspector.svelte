@@ -1140,8 +1140,8 @@ let newFunction = $state("");
             <p class="sub">Check digit</p>
             <Field label="check" kind="enum" optional value={ownVal(['check'])} fallback={String(effVal(['check']) ?? 'auto')} options={['auto', 'add', 'none']} title="auto: add a missing check digit, reject a wrong one. add: also the optional check of Code 39 and ITF. none: digits as given" onchange={(v) => set(['check'], v)} />
           {/if}
-          {#if barcodeFormat === 'aztec'}
-            <Field label="ecc" kind="number" optional value={ownVal(['ecc'])} fallback={effVal(['ecc']) ?? 23} bindings={numberParams} error={errorAt(['ecc'])} path={pathOf(['ecc'])} title="Aztec: the least share of error correction, in percent of the data" onchange={(v) => set(['ecc'], v)} />
+          {#if barcodeFormat === 'aztec' || barcodeFormat === 'pdf417'}
+            <Field label="ecc" kind="number" optional value={ownVal(['ecc'])} fallback={effVal(['ecc']) ?? (barcodeFormat === 'aztec' ? 23 : undefined)} placeholder="auto" bindings={numberParams} error={errorAt(['ecc'])} path={pathOf(['ecc'])} title={barcodeFormat === 'aztec' ? 'Aztec: the least share of error correction, in percent of the data' : 'PDF417: error correction level 0 to 8; automatic when empty'} onchange={(v) => set(['ecc'], v)} />
           {/if}
           <p class="sub">Label{linearLike ? '' : ' (bars only)'}</p>
           <div class:ignored={!linearLike} inert={!linearLike} title={linearLike ? '' : 'Only bar codes have a human-readable text'}>

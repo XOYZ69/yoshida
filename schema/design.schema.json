@@ -1282,6 +1282,15 @@
                   { "type": "string" }
                 ]
               },
+              "mode": {
+                "description": "QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default byte; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["auto", "byte", "numeric", "alphanumeric"]
+                  },
+                  { "type": "string" }
+                ]
+              },
               "style": {
                 "description": "Shape of the data modules: square (default), rounded or dots; or an expression that gives one",
                 "anyOf": [
@@ -1432,6 +1441,19 @@
                   },
                   { "type": "string" }
                 ]
+              },
+              "mode": {
+                "description": "QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default auto; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["auto", "byte", "numeric", "alphanumeric"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "ecc": {
+                "description": "Aztec: the least share of error correction in percent of the data, 0 to 90 (default 23). PDF417: error correction level 0 to 8 (default: by size)",
+                "type": ["number", "string"]
               },
               "style": {
                 "description": "Shape of the data modules: square (default), rounded or dots; or an expression that gives one",

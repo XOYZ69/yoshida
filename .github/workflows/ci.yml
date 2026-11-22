@@ -111,7 +111,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/zx"
           "$RUNNER_TEMP/zx/bin/pip" install --quiet zxing-cpp==3.1.1 pillow
           "$RUNNER_TEMP/zx/bin/python" scripts/barcode-roundtrip.py
-          "$RUNNER_TEMP/zx/bin/python" scripts/barcode-roundtrip.py --sweep datamatrix,aztec
+          "$RUNNER_TEMP/zx/bin/python" scripts/barcode-roundtrip.py --sweep datamatrix,aztec,pdf417
 
       - name: Example files are canonically formatted
         run: ./zig-out/bin/yoshida fmt --check examples

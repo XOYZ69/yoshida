@@ -1980,7 +1980,10 @@ const Ctx = struct {
             @enumFromInt(@intFromEnum(try ctx.enumValue(design_mod.QrMode, e, l, l.qr_mode_expr, l.qr_mode orelse .auto, "mode")))
         else if (l.kind == .qr) .byte else .auto;
         const ecc_max: f64 = if (format == .aztec) 90 else 8;
-        const ecc: u8 = if (l.ecc) |p| @intFromFloat(std.math.clamp(@floor(try ctx.num(e, l, p)), 0, ecc_max)) else if (format == .aztec) 23 else 0;
+        const ecc_default: u8 = if (format == .aztec) 23 else if (format == .pdf417) 255 else 0;
+        const ecc_given: f64 = if (l.ecc) |p| @floor(try ctx.num(e, l, p)) else -1;
+        // A negative value (an unset param, say) means the default.
+        const ecc: u8 = if (ecc_given < 0) ecc_default else @intFromFloat(@min(ecc_given, ecc_max));
         code.* = barcode_mod.encode(ctx.arena, &prob, format, r.text, .{ .check = check, .level = level, .qr_mode = qr_mode, .ecc = ecc }) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Invalid => {
