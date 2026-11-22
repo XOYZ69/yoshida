@@ -26,7 +26,7 @@ Next to it the editor shows whether the project is saved in this browser.
 
 ## Work on a folder on your computer
 
-A project can live in a normal folder, so you can edit its files with other tools, keep them in git and render them with the [command line](@/docs/command-line.md). This needs a browser with the File System Access API: **Chrome, Edge and other Chromium browsers**. Firefox and Safari have no folder picker for web pages; there, *Open folder…* reads the folder once (it cannot write back) and *Link to folder…* is greyed out. Use *Export project file* to take your work out.
+A project can live in a normal folder, so you can edit its files with other tools, keep them in git and render them with the [command line](@/docs/command-line.md). This needs a browser with the File System Access API: **Chrome, Edge and other Chromium browsers**. Firefox and Safari have no folder picker for web pages; there, *Open folder…* reads the folder once (it cannot write back) and *Link to folder…* is greyed out. Use *Export project file* to take your work out. The [desktop app](@/docs/building-from-source.md#desktop-app) (built from source for now) links folders on any system, with the system's folder dialog and without asking for access again.
 
 - **Open folder…** opens a folder as a project and links it.
 - **Link to folder…** (project menu) links the open project, from this browser or an example, to a folder you pick. Files in the folder that the project also has are replaced by the project's version (the editor asks first); files only the folder has are added to the project; nothing is deleted.
