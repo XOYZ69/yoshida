@@ -37,7 +37,7 @@ Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 J
 
 ### `info`
 
-Returns `{ "version": "0.8.0", "format": 1, "channel": "" }`. `channel` is `"dev"` in a preview build (see [dev builds](@/docs/building-from-source.md#dev-builds)) and empty in a release build; the editor shows it as a red stamp beside the version.
+Returns `{ "version": "0.9.0", "format": 1, "channel": "" }`. `channel` is `"dev"` in a preview build (see [dev builds](@/docs/building-from-source.md#dev-builds)) and empty in a release build; the editor shows it as a red stamp beside the version.
 
 ### `check`
 

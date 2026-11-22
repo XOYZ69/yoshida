@@ -1,6 +1,6 @@
 # yoshida reference
 
-> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.8.0 by scripts/llms.mjs; do not edit by hand.
+> The whole yoshida file format on one page, for AI agents and other tools: project files, params, layer types and their fields, the expression language with every function, the command line and the diagnostic codes. Generated from the JSON Schemas and the sources of yoshida 0.9.0 by scripts/llms.mjs; do not edit by hand.
 
 Website and full docs: https://yoshida.xoyz.dev/docs/ · Source: https://github.com/XOYZ69/yoshida · Short index: https://yoshida.xoyz.dev/llms.txt
 
