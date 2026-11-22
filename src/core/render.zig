@@ -2427,6 +2427,15 @@ const Ctx = struct {
     fn drawGroup(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
         // Over the limit (or checking): keep counting the children.
         if (!ctx.countDrawn(gi) or ctx.opts.dry) return ctx.drawChildren(canvas, l, gi);
+        const path = (try ctx.clipPath(l)) orelse return ctx.drawGroupIn(canvas, l, gi, r);
+        var clip = (try ctx.beginClip(canvas, path)) orelse return;
+        defer clip.deinit(ctx.gpa);
+        errdefer if (ctx.scene) |sc| sc.items.shrinkRetainingCapacity(clip.mark);
+        try ctx.drawGroupIn(if (clip.tmp) |*t| t else canvas, l, gi, r);
+        try ctx.endClip(canvas, &clip);
+    }
+
+    fn drawGroupIn(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
         // A plain group (no effects, fully opaque, not rotated) composites
         // exactly like its children drawn one by one, so they draw straight
         // onto the target without a scratch bitmap.
@@ -2541,8 +2550,105 @@ const Ctx = struct {
             return;
         }
         if (ctx.opts.dry) return;
+        const path = (try ctx.clipPath(l)) orelse return ctx.drawLayerIn(canvas, l, r, bb);
+        var clip = (try ctx.beginClip(canvas, path)) orelse return;
+        defer clip.deinit(ctx.gpa);
+        errdefer if (ctx.scene) |sc| sc.items.shrinkRetainingCapacity(clip.mark);
+        try ctx.drawLayerIn(if (clip.tmp) |*t| t else canvas, l, r, bb);
+        try ctx.endClip(canvas, &clip);
+    }
+
+    fn drawLayerIn(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved, bb: [4]f64) Failed!void {
         if (ctx.scene) |sc| return if (hasConvolve(l) or paintsAlone(l, r)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
         return ctx.paintLayer(canvas, l, r, bb);
+    }
+
+    // ---------------------------------------------------------- clip_to
+
+    /// The shape of the layer `l.clip_to` names, as a closed path in canvas
+    /// pixels with that layer's own rotation; null when `l` has no clip.
+    /// The shape layer is evaluated like any other, visible or not.
+    fn clipPath(ctx: *Ctx, l: *const Layer) Failed!?vector.Path {
+        const ti = l.clip_layer orelse return null;
+        const t = &ctx.d.layers[ti];
+        const r = try ctx.resolve(ti);
+        // A vector scene outlives the card's arena: its paths live in it.
+        const arena = if (ctx.scene) |sc| sc.allocator() else ctx.arena;
+        var b = vector.PathBuilder.init(arena);
+        const x: f32 = @floatCast(r.left);
+        const y: f32 = @floatCast(r.top);
+        const w: f32 = @floatCast(r.w);
+        const h: f32 = @floatCast(r.h);
+        switch (t.kind) {
+            .rect => try b.roundRect(x, y, w, h, @floatCast(r.radius)),
+            .ellipse => {
+                const cx = x + w / 2;
+                const cy = y + h / 2;
+                if (r.arc) |a| if (!fullSweep(a)) {
+                    // A part of the ellipse clips to its slice, open arc or not.
+                    try b.moveTo(.{ cx, cy });
+                    try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), false);
+                    try b.close();
+                };
+                if (b.cmds.items.len == 0) {
+                    try b.arc(cx, cy, w / 2, h / 2, 0, 360, true);
+                    try b.close();
+                }
+            },
+            // Open or closed: the area the points enclose.
+            .polygon => if (r.points.len >= 3) try b.polyline(r.points, true),
+            else => unreachable,
+        }
+        const path = b.finish();
+        if (r.rotate == 0 or path.cmds.len == 0) return path;
+        return try vector.rotatePath(arena, path, @floatCast(r.rotate), .{ @floatCast(r.pivot[0]), @floatCast(r.pivot[1]) });
+    }
+
+    /// A clip being drawn: a group in the vector scene (opened at item
+    /// `mark`), or a bitmap the clipped layer draws into, which is masked
+    /// by the shape and composited when the clip ends.
+    const Clip = struct {
+        mark: usize = 0,
+        tmp: ?raster.Bitmap = null,
+        /// The shape in bitmap pixels.
+        pts: []const [2]f32 = &.{},
+
+        fn deinit(cl: *Clip, gpa: Allocator) void {
+            if (cl.tmp) |*t| t.deinit(gpa);
+            cl.tmp = null;
+        }
+    };
+
+    /// Starts drawing inside `path`; null when the shape covers nothing
+    /// of `canvas`, so nothing is drawn.
+    fn beginClip(ctx: *Ctx, canvas: *raster.Bitmap, path: vector.Path) Failed!?Clip {
+        if (path.cmds.len == 0) return null;
+        if (ctx.scene) |sc| {
+            const mark = sc.items.items.len;
+            try sc.add(.{ .begin = .{ .clip = path } });
+            return .{ .mark = mark };
+        }
+        const pts = try vector.flatten(ctx.arena, path, @floatCast(ctx.k));
+        if (pts.len < 3) return null;
+        var bx = [4]f32{ pts[0][0], pts[0][1], pts[0][0], pts[0][1] };
+        for (pts) |p| bx = .{ @min(bx[0], p[0]), @min(bx[1], p[1]), @max(bx[2], p[0]), @max(bx[3], p[1]) };
+        if (!(std.math.isFinite(bx[0]) and std.math.isFinite(bx[1]) and std.math.isFinite(bx[2]) and std.math.isFinite(bx[3]))) return null;
+        const lim: f32 = 1e8;
+        const r = canvas.clip(@intFromFloat(@floor(std.math.clamp(bx[0], -lim, lim))), @intFromFloat(@floor(std.math.clamp(bx[1], -lim, lim))), @intFromFloat(@ceil(std.math.clamp(bx[2], -lim, lim))), @intFromFloat(@ceil(std.math.clamp(bx[3], -lim, lim)))) orelse return null;
+        if (r[2] <= r[0] or r[3] <= r[1]) return null;
+        return .{ .tmp = try raster.Bitmap.init(ctx.gpa, r[0], r[1], @intCast(r[2] - r[0]), @intCast(r[3] - r[1])), .pts = pts };
+    }
+
+    /// Ends a clip: closes the vector group, or keeps the part of the
+    /// bitmap inside the shape and composites it onto `canvas`.
+    fn endClip(ctx: *Ctx, canvas: *raster.Bitmap, cl: *Clip) Failed!void {
+        if (ctx.scene) |sc| return sc.add(.end);
+        const t = &cl.tmp.?;
+        var mask = try raster.Bitmap.init(ctx.gpa, t.x, t.y, t.w, t.h);
+        defer mask.deinit(ctx.gpa);
+        try raster.fillPolygon(ctx.gpa, &mask, cl.pts, raster.paint(Color.white, 1));
+        raster.maskBy(t, &mask);
+        raster.composite(canvas, t);
     }
 
     /// How far (canvas pixels) the soft effects of a layer reach past its
@@ -5318,4 +5424,111 @@ test "a list constant drives repeat and lookups" {
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 9, 17)[1]);
     try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 12, 17)[1]);
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 17)[1]);
+}
+
+const clip_design =
+    \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "disc", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 80, "h": 80 }, "visible": false },
+    \\    { "id": "band", "type": "rect", "anchor": "center", "box": { "x": 50, "y": 50, "w": 100, "h": 20 }, "rotate": 90, "visible": false },
+    \\    { "id": "red", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#FF0000", "clip_to": "disc" },
+    \\    { "id": "g", "type": "group", "clip_to": "band", "layers": [
+    \\      { "id": "green", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#00FF00" }
+    \\    ] }
+    \\  ] }
+;
+
+test "clip_to: a layer and a group draw only inside their shape" {
+    const gpa = std.testing.allocator;
+    inline for (.{ 1, 2 }) |scale| {
+        var b = (try testRenderDesign(gpa, clip_design, .{ .scale = scale }, null)).?;
+        defer b.deinit(gpa);
+        const s: usize = scale;
+        const white = [4]u16{ 65535, 65535, 65535, 65535 };
+        const red = [4]u16{ 65535, 0, 0, 65535 };
+        const green = [4]u16{ 0, 65535, 0, 65535 };
+        // Inside the disc, outside the band: red.
+        try std.testing.expectEqual(red, pixel(&b, 25 * s, 50 * s));
+        // The box corner is outside the disc: the rect is cut away there.
+        try std.testing.expectEqual(white, pixel(&b, 12 * s, 12 * s));
+        try std.testing.expectEqual(white, pixel(&b, 95 * s, 50 * s));
+        // The band turned upright: the group shows from top to bottom in it,
+        // also where the disc does not reach, and nowhere else.
+        try std.testing.expectEqual(green, pixel(&b, 50 * s, 50 * s));
+        try std.testing.expectEqual(green, pixel(&b, 50 * s, 3 * s));
+        try std.testing.expectEqual(green, pixel(&b, 45 * s, 97 * s));
+        try std.testing.expectEqual(white, pixel(&b, 35 * s, 3 * s));
+        try std.testing.expectEqual(red, pixel(&b, 35 * s, 50 * s));
+    }
+}
+
+test "clip_to inside a repeated group takes the shape of the same iteration" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 30, "background": "#FFFFFF" },
+        \\  "layers": [
+        \\    { "id": "cells", "type": "group", "repeat": { "count": 2, "index": "i" }, "translate": { "x": "i * 50", "y": 0 }, "layers": [
+        \\      { "id": "hole", "type": "polygon", "points": [[5, 5], [25, 5], [25, 25], [5, 25]], "visible": false },
+        \\      { "id": "fill", "type": "rect", "box": { "x": 0, "y": 0, "w": 50, "h": 30 }, "fill": "#0000FF", "clip_to": "hole" }
+        \\    ] }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 15, 15));
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 65, 15));
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 40, 15)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 90, 15)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 15, 2)[0]);
+}
+
+test "clip_to in a vector scene, SVG and PDF is a real clip path" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, clip_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // The hidden shapes draw nothing; each clipped layer sits in a clip group.
+    try std.testing.expectEqual(@as(usize, 6), items.len);
+    const disc = items[0].begin.clip;
+    try std.testing.expect(disc.cmds[0] == .move and disc.cmds[disc.cmds.len - 1] == .close);
+    try std.testing.expect(items[1] == .fill and items[2] == .end);
+    // The band's rotation is in its path: its corners now span x 40..60.
+    const band = items[3].begin.clip;
+    for (band.cmds) |cmd| if (cmd == .move or cmd == .line) {
+        const p = if (cmd == .move) cmd.move else cmd.line;
+        try std.testing.expect(@abs(p[0] - 40) < 0.01 or @abs(p[0] - 60) < 0.01);
+    };
+    try std.testing.expect(items[4] == .fill and items[5] == .end);
+
+    const out = try @import("svg.zig").write(gpa, &rig.scene);
+    defer gpa.free(out);
+    try @import("svg.zig").expectBalanced(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<clipPath id=\"c0\"><path d=\"M") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<clipPath id=\"c1\"><path d=\"M") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, out, "<g clip-path=\"url(#c"));
+
+    const content = try @import("pdf_vector.zig").contentOf(gpa, &rig.scene);
+    defer gpa.free(content);
+    // Two clips: a path, `W n` inside a saved state, closed with `Q`.
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, content, " W n\n"));
+    try std.testing.expect(std.mem.indexOf(u8, content, " c ") != null);
+}
+
+test "clip_to around a layer drawn as pixels in a vector scene" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "disc", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 80, "h": 80 }, "visible": false },
+        \\    { "id": "soft", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#FF0000", "clip_to": "disc", "effects": [{ "type": "blur", "radius": 4 }] }
+        \\  ] }
+    ;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, d);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    try std.testing.expect(items[0] == .begin and items[0].begin == .clip);
+    try std.testing.expect(items[1] == .raster);
+    try std.testing.expect(items[2] == .end);
 }

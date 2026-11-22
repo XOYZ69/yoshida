@@ -74,6 +74,19 @@ pub fn addPage(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
     try w.pages.append(w.gpa, page);
 }
 
+/// The page's content operators before compression, without the page
+/// transform (for tests). The caller owns the result.
+pub fn contentOf(gpa: Allocator, scene: *const vector.Scene) ![]u8 {
+    var w = try Writer.init(gpa);
+    defer w.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    var b: Builder = .{ .w = &w, .arena = arena_state.allocator(), .scene = scene };
+    const root = try b.newStream();
+    try b.items();
+    return gpa.dupe(u8, root.out.written());
+}
+
 /// The page in canvas pixels: the card and the margin for crop marks.
 const Sheet = struct {
     width: f64,
@@ -370,6 +383,13 @@ const Builder = struct {
                 try o.writeAll(" W n\n");
                 try b.frames.append(b.arena, .save);
             },
+            .clip => |path| {
+                const o = b.out();
+                try o.writeAll("q ");
+                try pathOps(o, path);
+                try o.writeAll(" W n\n");
+                try b.frames.append(b.arena, .save);
+            },
             .fade => |f| {
                 const mask = try b.fadeMask(f);
                 const s = try b.newStream();
@@ -657,6 +677,36 @@ pub fn expectWellFormed(gpa: Allocator, pdf_bytes: []const u8) !usize {
         }
     }
     return count - 1;
+}
+
+test "a clip group is a path with W n in a saved state" {
+    const gpa = std.testing.allocator;
+    var sc = vector.Scene.init(gpa);
+    defer sc.deinit();
+    sc.width = 100;
+    sc.height = 100;
+    var pb = vector.PathBuilder.init(sc.allocator());
+    try pb.arc(50, 50, 40, 40, 0, 360, true);
+    try pb.close();
+    const disc = pb.finish();
+    var rb = vector.PathBuilder.init(sc.allocator());
+    try rb.roundRect(0, 0, 100, 100, 0);
+    try sc.add(.{ .begin = .{ .clip = disc } });
+    try sc.add(.{ .fill = .{ .path = rb.finish(), .color = .{ .r = 65535, .g = 0, .b = 0, .a = 65535 } } });
+    try sc.add(.end);
+    const content = try contentOf(gpa, &sc);
+    defer gpa.free(content);
+    // q, the disc (a move and four curves), W n; the fill; Q.
+    try std.testing.expect(std.mem.startsWith(u8, content, "q 50 10 m "));
+    try std.testing.expectEqual(@as(usize, 4), std.mem.count(u8, content[0..std.mem.indexOf(u8, content, "W n").?], " c"));
+    try std.testing.expect(std.mem.indexOf(u8, content, " h W n\n") != null);
+    try std.testing.expect(std.mem.endsWith(u8, content, "Q\n"));
+    var w = try Writer.init(gpa);
+    defer w.deinit();
+    try w.addVector(&sc, false);
+    const bytes = try w.finish();
+    defer gpa.free(bytes);
+    _ = try expectWellFormed(gpa, bytes);
 }
 
 test "vector page structure" {
