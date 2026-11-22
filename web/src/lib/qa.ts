@@ -4,7 +4,7 @@
 // project's normal file path (docs: site/content/docs/qa-review.md).
 //
 // An approval stores a hash of what the card's render depends on: the card's
-// id and values plus the design inputs (see `designInputs`). When the hash no
+// id and values plus the design inputs (see `designFingerprint`). When the hash no
 // longer matches, the approval counts as stale ("changed since review").
 
 import { formatJson } from "./project.ts";
@@ -53,11 +53,11 @@ export function hashText(s: string): string {
 }
 
 /**
- * The design inputs of a set's cards: the design file and every component
- * file, as text. Any change there can change every card's render, so it
+ * A fingerprint of the design inputs of a set's cards: the design file and
+ * every component file. Any change there can change every card's render, so it
  * makes all approvals of the set stale. Images and fonts are not included.
  */
-export function designInputs(
+export function designFingerprint(
 	files: ReadonlyMap<string, Uint8Array>,
 	designPath: string,
 ): string {
@@ -65,15 +65,15 @@ export function designInputs(
 	const parts = [designPath, dec.decode(files.get(designPath) ?? new Uint8Array())];
 	for (const p of [...files.keys()].sort())
 		if (/\.component\.json$/i.test(p)) parts.push(p, dec.decode(files.get(p)));
-	return parts.join("\0");
+	return hashText(parts.join("\0"));
 }
 
-/** The hash an approval of this card records: its id and values plus the design inputs. */
+/** The hash an approval of this card records: its id and values plus the design fingerprint. */
 export function cardHash(
 	card: { id: string; values: Record<string, unknown> },
-	inputs: string,
+	fingerprint: string,
 ): string {
-	return hashText(`${hashText(inputs)}\0${stableJson([card.id, card.values])}`);
+	return hashText(`${fingerprint}\0${stableJson([card.id, card.values])}`);
 }
 
 /** The status of a card, given its entry (if any) and its current hash. */

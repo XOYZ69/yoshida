@@ -3,7 +3,7 @@
 //   node --experimental-strip-types tests/qa.mjs
 import {
 	cardHash,
-	designInputs,
+	designFingerprint,
 	hashText,
 	needsReview,
 	parseQa,
@@ -31,18 +31,18 @@ const files = new Map([
 	["components/r.component.json", bytes('{"r":1}')],
 	["assets/x.png", bytes("png")],
 ]);
-const inputs = designInputs(files, "designs/a.design.json");
+const inputs = designFingerprint(files, "designs/a.design.json");
 const card = { id: "1", values: { title: "Hi", n: 2 } };
 const h = cardHash(card, inputs);
 ok("same card, same hash", h === cardHash({ id: "1", values: { n: 2, title: "Hi" } }, inputs));
 ok("a changed value changes the hash", h !== cardHash({ id: "1", values: { title: "Ho", n: 2 } }, inputs));
 ok("a renamed id changes the hash", h !== cardHash({ ...card, id: "2" }, inputs));
 const edited = new Map(files).set("designs/a.design.json", bytes('{"name":"B"}'));
-ok("a design edit changes the hash", h !== cardHash(card, designInputs(edited, "designs/a.design.json")));
+ok("a design edit changes the hash", h !== cardHash(card, designFingerprint(edited, "designs/a.design.json")));
 const comp = new Map(files).set("components/r.component.json", bytes('{"r":2}'));
-ok("a component edit changes the hash", h !== cardHash(card, designInputs(comp, "designs/a.design.json")));
+ok("a component edit changes the hash", h !== cardHash(card, designFingerprint(comp, "designs/a.design.json")));
 const img = new Map(files).set("assets/x.png", bytes("other"));
-ok("an image edit does not", h === cardHash(card, designInputs(img, "designs/a.design.json")));
+ok("an image edit does not", h === cardHash(card, designFingerprint(img, "designs/a.design.json")));
 
 ok("no entry is unreviewed", statusOf(undefined, h) === "unreviewed");
 ok("a matching approval holds", statusOf({ status: "approved", hash: h }, h) === "approved");

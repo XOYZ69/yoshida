@@ -150,6 +150,18 @@
 		writeCsv,
 	} from "./lib/project";
 	import {
+		type QaDoc,
+		type QaMark,
+		QA_FILE,
+		cardHash,
+		designFingerprint,
+		parseQa,
+		statusOf,
+		withNote,
+		withReview,
+		writeQa,
+	} from "./lib/qa";
+	import {
 		activeBackend,
 		backendById,
 		type FolderLink,
@@ -181,6 +193,7 @@
 	} from "./lib/store";
 	import CardBrowser from "./lib/ui/CardBrowser.svelte";
 	import CardList from "./lib/ui/CardList.svelte";
+	import QaControl from "./lib/ui/QaControl.svelte";
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import ExportDialog from "./lib/ui/ExportDialog.svelte";
@@ -520,6 +533,24 @@
 	const sets = $derived(check?.project.sets ?? []);
 	const currentSet = $derived(sets.find((s) => s.name === setName));
 	const currentCard = $derived(currentSet?.cards[cardIndex]);
+
+	// Card review (qa.json): the status of each card of the current set. An
+	// approval is stale once the card or the design inputs hash differently.
+	const qaDoc = $derived(
+		parseQa(files.has(QA_FILE) ? textOf(files.get(QA_FILE)!) : undefined),
+	);
+	const qaKey = $derived(currentSet?.cards_file ?? currentSet?.name ?? "");
+	const qaPrint = $derived(
+		currentSet ? designFingerprint(files, currentSet.design) : "",
+	);
+	const qaHashes = $derived(
+		(currentSet?.cards ?? []).map((c) => cardHash(c, qaPrint)),
+	);
+	const qaStatuses = $derived(
+		(currentSet?.cards ?? []).map((c, i) =>
+			statusOf(qaDoc.cards[qaKey]?.[c.id], qaHashes[i]),
+		),
+	);
 	// Keys of each list param (for `list.Key` suggestions): the current card's
 	// first, then the other cards', then the default's.
 	const listKeys = $derived.by(() => {
@@ -2267,6 +2298,25 @@
 		} catch (e) {
 			status = `Could not update ${cf}: ${(e as Error).message}`;
 		}
+	}
+
+	function writeQaDoc(next: QaDoc) {
+		const before = currentText(QA_FILE);
+		const text = writeQa(next);
+		if (text === before) return;
+		record(QA_FILE, before);
+		updateFile(QA_FILE, text, true);
+	}
+
+	function reviewCard(mark: QaMark | null) {
+		const c = currentCard;
+		if (!c) return;
+		const note = qaDoc.cards[qaKey]?.[c.id]?.note ?? "";
+		writeQaDoc(withReview(qaDoc, qaKey, c.id, mark, qaHashes[cardIndex], note));
+	}
+
+	function noteCard(note: string) {
+		if (currentCard) writeQaDoc(withNote(qaDoc, qaKey, currentCard.id, note));
 	}
 
 	function editCards(op: CardListOp) {
@@ -4569,6 +4619,7 @@
 		<CardPicker
 			cards={currentSet?.cards ?? []}
 			params={currentSet?.params ?? []}
+			qa={qaStatuses}
 			onbrowse={() => (browsing = true)}
 			index={cardIndex}
 			disabled={!currentSet?.cards.length}
@@ -4710,6 +4761,7 @@
 			<CardList
 				cards={currentSet.cards}
 				params={currentSet.params}
+				qa={qaStatuses}
 				index={cardIndex}
 				height={Math.max(
 					60,
@@ -4804,6 +4856,14 @@
 					</label>
 					{#if cardIdError}<p class="err">{cardIdError}</p>{/if}
 				{/if}
+			{/if}
+			{#if currentCard}
+				<QaControl
+					status={qaStatuses[cardIndex] ?? "unreviewed"}
+					entry={qaDoc.cards[qaKey]?.[currentCard.id]}
+					onmark={reviewCard}
+					onnote={noteCard}
+				/>
 			{/if}
 		</div>
 	{/if}
