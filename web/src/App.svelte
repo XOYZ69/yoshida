@@ -3126,6 +3126,11 @@
 				return isObj(l.shape) ? "box" : hasPointRun(l) ? "outline" : "polygon";
 			case "qr":
 				return "aspect";
+			case "barcode": {
+				// Square symbols keep their shape; bars take any box.
+				const f = typeof l.format === "string" ? l.format : "";
+				return ["qr", "aztec", "datamatrix"].includes(f) ? "aspect" : "box";
+			}
 			case "image": {
 				const box = isObj(l.box) ? l.box : {};
 				return box.w === "auto" || box.h === "auto" ? "aspect" : "box";
@@ -4516,6 +4521,7 @@
 		text: "Text",
 		image: "Image",
 		qr: "QR code",
+		barcode: "Barcode / QR",
 		polygon: "Polygon",
 	};
 </script>
@@ -5228,6 +5234,7 @@
 						onback={() => (selectedLayers = [])}
 						{listKeys}
 						cardValues={currentCard?.values}
+						barcodeInfo={(r) => engine.barcode(r)}
 						focus={inspectorFocus}
 					/>
 					<p class="advanced">

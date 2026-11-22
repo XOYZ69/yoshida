@@ -17,7 +17,8 @@ export type LayerType =
 	| "polygon"
 	| "text"
 	| "image"
-	| "qr";
+	| "qr"
+	| "barcode";
 
 /** Resolved bounds of one layer (or one repeat iteration) from the core. */
 export type Placed = {
@@ -67,7 +68,7 @@ export const layerTypes: LayerType[] = [
 	"ellipse",
 	"text",
 	"image",
-	"qr",
+	"barcode",
 	"polygon",
 ];
 
@@ -677,9 +678,11 @@ export function newLayer(doc: Obj, type: LayerType, ctx: NewLayerContext): Obj {
 			};
 		}
 		case "qr":
+		case "barcode":
 			return {
 				id,
-				type,
+				type: "barcode",
+				format: "qr",
 				anchor: "center",
 				box: { x: cx, y: cy, w: side, h: side },
 				text: "https://example.com/",

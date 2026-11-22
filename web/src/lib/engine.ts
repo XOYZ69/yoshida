@@ -171,6 +171,32 @@ export type ScopeResult = {
 };
 
 /** The core's size limits; null is unlimited. Images are in megapixels. */
+export type BarcodeRequest = {
+	format: string;
+	text: string;
+	check?: string;
+	level?: string;
+	mode?: string;
+	ecc?: number;
+	modules?: boolean;
+};
+
+export type BarcodeInfo =
+	| {
+			ok: true;
+			format: string;
+			/** Modules across and down (1 down for bars). */
+			w: number;
+			h: number;
+			normalized: string;
+			check_digit: string | null;
+			note: string;
+			version: number;
+			capacity: number;
+			modules?: string;
+	  }
+	| { ok: false; code: number; message: string; hint: string | null };
+
 export type CoreLimits = {
 	layers?: number | null;
 	repeat?: number | null;
@@ -290,6 +316,15 @@ export class Engine {
 			set,
 			...clock,
 		});
+	}
+
+	/**
+	 * What a barcode of `format` makes of `text`: its size, the text as
+	 * encoded (check digit added) or the problem with it. `modules` adds the
+	 * grid as a string of 0 and 1, row by row, for previews.
+	 */
+	barcode(req: BarcodeRequest): Promise<BarcodeInfo> {
+		return this.call<BarcodeInfo>({ op: "barcode", ...req });
 	}
 
 	/**

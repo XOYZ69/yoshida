@@ -20,7 +20,7 @@ A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canv
 - **No text concatenation.** `+` only adds numbers. Build text in a template, or with `join`, `replace`, `fmt`.
 - **Logic is words:** `and`, `or`, `not`, `==`, `!=`, `c ? a : b`. There is no `&&`, `||`, `!`, `^` or `1e3`. Put spaces around `%`.
 - **Colors** are `#RRGGBB` or `#RRGGBBAA`, bare in an expression: `"fill": "mix(accent, #FFFFFF, 0.5)"`.
-- **Position.** `rect`, `ellipse`, `image` and `qr` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
+- **Position.** `rect`, `ellipse`, `image`, `qr` and `barcode` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
 - **Units.** Plain numbers are pixels. `50%` is half the canvas along the field's axis, `10vw` and `10vh` are percent of the canvas width and height.
 - **References.** `@id.bounds.bottom` reads another layer's final box (`left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy`), `@id.<field>` an evaluated field. They may point forward or backward; a cycle is error 3004. A repeated layer needs an index from outside: `@id[2].bounds.left`.
 - **Text size.** `max_width`, `max_height` and `min_size` shrink text to fit; `wrap` breaks lines at a width. Long card texts need one of them.
@@ -170,12 +170,12 @@ Each entry of a design's `params` declares one value a card can set. Card data i
 
 ## Layers
 
-Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `group`, `divider`. A field marked `|expr` takes a JSON value or an expression in a string.
+Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `barcode`, `group`, `divider`. A field marked `|expr` takes a JSON value or an expression in a string.
 
 ### Fields of every layer type except `group` and `divider`
 
 - `id` (string, required): Unique layer id
-- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "barcode" | "group" | "divider", required)
 - `note` (string)
 - `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
 - `visible` (boolean|expr)
@@ -332,10 +332,41 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `logo` (number|expr): Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high
 - `logo_src` (string): Picture drawn in the cleared middle: a path with {expression} placeholders, like an image's src. Clears a fifth of the side unless logo is set
 
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `box.x`, `box.y`, `box.w`, `box.h`, `text`, `color`, `fill`.
+
+### `barcode`
+
+- `format` ("qr" | "code128" | "ean13" | "ean8" | "upca" | "code39" | "itf" | "itf14" | "codabar" | "code93" | "datamatrix" | "aztec" | "pdf417" | string, required): The kind of code: qr, code128, ean13, ean8, upca, code39, itf, itf14, codabar, code93, datamatrix, aztec or pdf417; or an expression that gives one
+- `check` ("auto" | "add" | "none" | string): Check digit: auto (add a missing one, reject a wrong one; default), add (also append the optional check of code39 and itf) or none; or an expression that gives one
+- `label` (boolean|expr): Linear codes: draw the human-readable text under the bars (true or false, or an expression). Default: on for ean13, ean8, upca and itf14, off for the others
+- `label_text` (string): Linear codes: text shown instead of the encoded text, with {expression} placeholders
+- `label_color` (string): Linear codes: color of the text. Default: the color of the bars
+- `label_gap` (number|expr): Linear codes: space between bars and text in pixels. Default a quarter of the text size
+- `font` (string): Linear codes: the font of the text, a name from "fonts". Default: the default font
+- `size` (number|expr): Linear codes: text size in pixels. Default eight modules, at most 30% of the box height, shrunk to fit the bars
+- `align` ("left" | "center" | "right" | "justify" | string): Linear codes: where the text sits under the bars: left, center (default), right or justify (spread over the bars); or an expression that gives one
+- `text` (string, required): What the code holds: text with {expression} placeholders, for example a link or the digits of an EAN
+- `box` ({ x, y, w, h }, required): The code is drawn with whole pixels per module, centred in this box. A 1D code is as wide as the box allows and as high as the box (label included); a QR code is a square
+  - `x` (number|expr)
+  - `y` (number|expr)
+  - `w` (number|expr)
+  - `h` (number|expr)
+- `color` (string): Color of the dark modules. Default black
+- `fill` (string): Color behind the code, quiet zone included. Default white; #00000000 for none
+- `margin` (number|expr): Quiet zone around the code in modules, 0 to 16. Default: what the format asks for (QR 4, 1D codes 7 to 11, Data Matrix and PDF417 2, Aztec 1). 1D codes get it left and right only
+- `level` ("low" | "medium" | "quartile" | "high" | string): QR only. Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one
+- `style` ("square" | "rounded" | "dots" | string): Shape of the data modules: square (default), rounded or dots; or an expression that gives one
+- `eye` ("square" | "rounded" | "circle" | string): Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one
+- `eye_color` (string): Color of the corner squares. Default: the color of the code
+- `logo` (number|expr): Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high
+- `logo_src` (string): Picture drawn in the cleared middle: a path with {expression} placeholders, like an image's src. Clears a fifth of the side unless logo is set
+
+Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.bottom`, `bounds.w`, `bounds.h`, `bounds.cx`, `bounds.cy`, `opacity`, `visible`, `rotate`, `box.x`, `box.y`, `box.w`, `box.h`, `text`, `color`, `fill`.
+
 ### `group`
 
 - `id` (string, required): Unique layer id
-- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "barcode" | "group" | "divider", required)
 - `note` (string)
 - `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
 - `visible` (boolean|expr)
@@ -375,10 +406,10 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 ### `divider`
 
 - `id` (string, required): Unique layer id
-- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "group" | "divider", required)
+- `type` ("rect" | "ellipse" | "polygon" | "text" | "image" | "qr" | "barcode" | "group" | "divider", required)
 - `note` (string)
 - `tag` ("red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "pink" | "gray"): Colour of the layer's row in the editor's layer list; never drawn
-- `label` (string): Divider title shown in the editor's layer list
+- `label` (boolean|expr): Divider: the title shown in the editor's layer list. Barcode: whether the human-readable text is drawn (true or false, or an expression)
 
 ## Expressions
 
@@ -525,6 +556,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 1112 error: `extends` across different layer types (including a group), or of a divider
 - 1113 warning: A design function has the name of a built-in function; the design's function is used in this design instead of the built-in
 - 1114 warning: A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill
+- 1115 warning: A `barcode` layer sets a field its `format` does not read (for example `logo` on a Code 128, or `label` on a QR code)
 - 1201 error: File not found
 - 1202 error: CSV syntax error (also a missing header row, or a row with the wrong number of fields)
 - 1203 error: Path escapes the project root
@@ -550,14 +582,18 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 3108 error: QR code text too long for its error correction level (at render time)
 - 3109 error: An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time)
 - 3110 error: A polygon whose points come from point runs has fewer than 3 points (2 for an open polygon) (at render time)
+- 3111 error: A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol, or a format that is not available yet (at render time)
+- 3112 error: An EAN, UPC or ITF-14 text has the wrong number of digits, or a wrong check digit (at render time)
 - 3201 warning: Text truncated by `max_lines`
 - 3202 hint: Layer entirely outside the canvas
 - 3203 warning: Text does not fit `max_width` / `max_height` even at `min_size`
-- 3204 warning: A module of a QR code is smaller than one pixel
-- 3205 warning: A QR code has little contrast against its fill, or is lighter than it
+- 3204 warning: A module of a QR code or barcode is smaller than one pixel
+- 3205 warning: A QR code or barcode has little contrast against its fill, or is lighter than it
 - 3207 warning: A QR code with `logo` is not at level `high`, or the cleared middle covers more than 20 %
-- 3208 warning: A module of a QR code prints narrower than 0.5 mm at the canvas `dpi`
+- 3208 warning: A module of a QR code prints narrower than 0.5 mm, of another code narrower than 0.25 mm, at the canvas `dpi`
 - 3209 warning: Text with `markup` uses an icon the design does not know (left out), or `<i>` without `font_italic` (drawn upright)
+- 3213 hint: A `barcode` text was changed to fit its format: a leading 0 added to ITF digits, start and stop added to Codabar
+- 3214 warning: A 1D code's label is wider than its bars, or the box is too short for bars and label (the label is left out)
 - 4001 error: Image not found or unreachable (placeholder in preview)
 - 4002 error: Image could not be decoded
 - 4003 warning: Neither the font nor the bundled fallback fonts have glyphs for some characters (drawn as boxes)

@@ -29,9 +29,10 @@ A pull request that only changes docs, the website content or repo metadata skip
 3. `zig fmt --check build.zig src`
 4. `zig build test` (the core's unit tests)
 5. `zig build -Doptimize=ReleaseSafe` (safety checks stay on, and the examples render about ten times faster than with a debug build)
-6. `yoshida fmt --check examples` (the examples are in canonical format)
-7. `yoshida check` on every example
-8. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build; a link in a QR code does not count)
+6. `scripts/barcode-roundtrip.py` renders every barcode format to PNG, SVG and a vector PDF and reads the result back with [ZXing](https://github.com/zxing-cpp/zxing-cpp) (`pip install zxing-cpp`); with `--sweep datamatrix,aztec` it also runs every symbol size. A code that looks right but does not scan fails the build
+7. `yoshida fmt --check examples` (the examples are in canonical format)
+8. `yoshida check` on every example
+9. `yoshida render --offline` on every example that does not load images from the web (those are skipped so a remote site cannot break the build; a link in a QR code does not count)
 
 **Build for each release target**: `x86_64-linux-musl`, `aarch64-linux-musl`, `x86_64-macos`, `aarch64-macos`, `x86_64-windows-gnu`, each with `-Doptimize=ReleaseFast -Dstrip=true`. The five jobs always exist so a required check never goes missing; on a pull request to `dev` the other four finish in seconds without building.
 

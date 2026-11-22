@@ -108,6 +108,12 @@ pub const Fit = enum { fill, contain, cover };
 pub const Smoothing = enum { nearest, bilinear };
 /// Error correction level of a QR code layer.
 pub const QrLevel = enum { low, medium, quartile, high };
+/// What a barcode layer draws; see `symbol.Format`.
+pub const BarcodeFormat = @import("symbol.zig").Format;
+/// How a barcode layer treats check digits; see `symbol.Check`.
+pub const BarcodeCheck = @import("symbol.zig").Check;
+/// How the text of a QR code is cut into segments; see `qr.Mode`.
+pub const QrMode = enum { byte, auto, numeric, alphanumeric };
 /// Shape of the data modules of a QR code layer.
 pub const QrStyle = enum { square, rounded, dots };
 /// Shape of the three corner squares (finder patterns) of a QR code layer.
@@ -308,8 +314,23 @@ pub const Layer = struct {
     max_width: ?Prop = null,
     max_height: ?Prop = null,
     min_size: ?Prop = null,
-    // qr (also uses text, color, fill and box)
+    // qr and barcode (also use text, color, fill and box)
     margin: ?Prop = null,
+    // barcode only; `font`, `size` and `align` shape its label
+    format: BarcodeFormat = .qr,
+    format_expr: ?Prop = null,
+    check: BarcodeCheck = .auto,
+    check_expr: ?Prop = null,
+    /// QR text segments; null means the default (`byte` for a qr layer,
+    /// `auto` for a barcode layer).
+    qr_mode: ?QrMode = null,
+    qr_mode_expr: ?Prop = null,
+    /// Aztec: the least share of check words in percent.
+    ecc: ?Prop = null,
+    label: ?Prop = null,
+    label_text: ?Tmpl = null,
+    label_color: ?Prop = null,
+    label_gap: ?Prop = null,
     qr_level: QrLevel = .medium,
     qr_style: QrStyle = .square,
     qr_eye: QrEye = .square,
@@ -790,9 +811,39 @@ fn kindFields(kind: LayerKind) []const []const u8 {
         .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box", "gradient" },
         .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
         .image => &.{ "src", "box", "fit", "smoothing", "optional", "radius", "clip" },
-        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo", "logo_src" },
+        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "mode", "style", "eye", "eye_color", "logo", "logo_src" },
+        .barcode => &.{ "format", "text", "box", "color", "fill", "margin", "check", "label", "label_text", "label_color", "label_gap", "font", "size", "align", "level", "mode", "ecc", "style", "eye", "eye_color", "logo", "logo_src" },
         .group => &.{"layers"},
     };
+}
+
+/// Fields a barcode format does not read, for the warning [1115].
+fn barcodeIgnores(format: BarcodeFormat, key: []const u8) bool {
+    const eq = std.mem.eql;
+    const qr_only = [_][]const u8{ "level", "mode", "eye", "eye_color", "logo", "logo_src" };
+    const linear_only = [_][]const u8{ "label", "label_text", "label_color", "label_gap", "font", "size", "align" };
+    const checked = [_][]const u8{"check"};
+    if (eq(u8, key, "ecc") and format != .aztec and format != .pdf417) return true;
+    if (format != .qr) for (qr_only) |k| if (eq(u8, k, key)) return true;
+    if (!format.isLinear()) {
+        for (linear_only) |k| if (eq(u8, k, key)) return true;
+        for (checked) |k| if (eq(u8, k, key)) return true;
+        if (eq(u8, key, "style") and format == .pdf417) return true;
+    } else {
+        if (eq(u8, key, "style")) return true;
+        switch (format) {
+            .code128, .codabar, .code93 => if (eq(u8, key, "check")) return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn warnIgnoredBarcodeFields(l: *Loader, m: *const Node, format: BarcodeFormat, id: []const u8) Allocator.Error!void {
+    for (m.data.object) |f| {
+        if (!barcodeIgnores(format, f.key)) continue;
+        try l.report(.warning, 1115, f.key_pos, try std.fmt.allocPrint(l.arena, "'{s}' has no effect on a {s} barcode (layer '{s}')", .{ f.key, @tagName(format), id }), "remove it or pick a format that uses it; the format's page in the docs lists its fields");
+    }
 }
 
 /// Checks `format` [1104, 1105]. Shared by every file type.
@@ -2025,7 +2076,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
 
     const shape_polygon = kind == .polygon and m.get("shape") != null;
     switch (kind) {
-        .rect, .ellipse, .image, .qr, .polygon => if (kind != .polygon or shape_polygon) {
+        .rect, .ellipse, .image, .qr, .barcode, .polygon => if (kind != .polygon or shape_polygon) {
             if (m.get("box")) |bn| {
                 if (try l.expectObject(bn, "box")) {
                     try l.checkFields(bn, &.{ "x", "y", "w", "h" }, "box");
@@ -2222,11 +2273,47 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                 try l.report(.warning, 1101, v.pos, try std.fmt.allocPrint(arena, "'{s}' only applies with \"markup\": true", .{key}), "add \"markup\": true to the layer");
             };
         },
-        .qr => {
-            if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "qr layer '{s}' needs \"text\"", .{id});
+        .qr, .barcode => {
+            if (kind == .barcode) {
+                if (m.get("format")) |v| {
+                    const got = try l.enumOrExpr(BarcodeFormat, v, "format", scope);
+                    layer.format = got.lit orelse .qr;
+                    layer.format_expr = got.expr;
+                } else try l.err(1102, m.pos, "barcode layer '{s}' needs \"format\"", .{id});
+                if (m.get("check")) |v| {
+                    const got = try l.enumOrExpr(BarcodeCheck, v, "check", scope);
+                    layer.check = got.lit orelse .auto;
+                    layer.check_expr = got.expr;
+                }
+                if (m.get("label")) |v| layer.label = try l.prop(v, .bool, scope);
+                if (m.get("label_text")) |v| layer.label_text = try l.template(v, scope);
+                if (m.get("label_color")) |v| layer.label_color = try l.prop(v, .color, scope);
+                if (m.get("label_gap")) |v| layer.label_gap = try l.prop(v, .number, scope);
+                if (m.get("font")) |v| if (try l.literalString(v, "font")) |fs| {
+                    layer.font = fs;
+                    try checkFontName(l, d, fs, v.pos);
+                };
+                if (m.get("size")) |v| layer.size = try l.prop(v, .number, scope);
+            }
+            if (kind == .barcode) {
+                layer.alignment = .center;
+                if (m.get("align")) |v| {
+                    const got = try l.enumOrExpr(Align, v, "align", scope);
+                    layer.alignment = got.lit orelse .center;
+                    layer.align_expr = got.expr;
+                }
+                if (layer.format_expr == null) try warnIgnoredBarcodeFields(l, m, layer.format, id);
+            }
+            if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "{s} layer '{s}' needs \"text\"", .{ @tagName(kind), id });
             if (m.get("color")) |v| layer.color = try l.prop(v, .color, scope);
             if (m.get("fill")) |v| layer.fill = try l.prop(v, .color, scope);
             if (m.get("margin")) |v| layer.margin = try l.prop(v, .number, scope);
+            if (m.get("ecc")) |v| layer.ecc = try l.prop(v, .number, scope);
+            if (m.get("mode")) |v| {
+                const got = try l.enumOrExpr(QrMode, v, "mode", scope);
+                layer.qr_mode = got.lit;
+                layer.qr_mode_expr = got.expr;
+            }
             if (m.get("level")) |v| {
                 const got = try l.enumOrExpr(QrLevel, v, "level", scope);
                 layer.qr_level = got.lit orelse .medium;

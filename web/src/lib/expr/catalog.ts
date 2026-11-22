@@ -750,6 +750,20 @@ export const LAYER_FIELDS: Record<string, FieldDoc[]> = {
 		...box,
 		{ name: "src", type: "text", doc: "Image path or URL." },
 	],
+	qr: [
+		...common,
+		...box,
+		{ name: "text", type: "text", doc: "What the code holds." },
+		{ name: "color", type: "color", doc: "Color of the dark modules." },
+		{ name: "fill", type: "color", doc: "Color behind the code." },
+	],
+	barcode: [
+		...common,
+		...box,
+		{ name: "text", type: "text", doc: "What the code holds." },
+		{ name: "color", type: "color", doc: "Color of the bars or modules." },
+		{ name: "fill", type: "color", doc: "Color behind the code." },
+	],
 	group: common,
 };
 

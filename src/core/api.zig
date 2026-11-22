@@ -8,6 +8,9 @@ const value = @import("value.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const render = @import("render.zig");
+const symbol = @import("symbol.zig");
+const barcode = @import("barcode.zig");
+const qr = @import("qr.zig");
 const Writer = std.Io.Writer;
 const Value = value.Value;
 
@@ -227,3 +230,54 @@ pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void 
     }
     try w.writeByte(']');
 }
+
+/// What the editor asks about a barcode while the text is typed: the
+/// symbol's size, the text as it will be encoded (check digit added) and the
+/// problem if there is one. `bits` adds the module grid, row by row as
+/// "0" and "1", for previews. Answers
+/// `{"ok":true,"format","w","h","normalized","check_digit","note","version","capacity","modules"?}`
+/// or `{"ok":false,"code","message","hint"}`.
+pub fn writeBarcodeInfo(arena: std.mem.Allocator, w: *Writer, req: BarcodeRequest) !void {
+    var prob: symbol.Problem = .{};
+    const sy = barcode.encode(arena, &prob, req.format, req.text, .{
+        .check = req.check,
+        .level = req.level,
+        .qr_mode = req.qr_mode,
+        .ecc = req.ecc,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => {
+            try w.print("{{\"ok\":false,\"code\":{d},\"message\":", .{prob.code});
+            try json.writeString(w, prob.msg);
+            try w.writeAll(",\"hint\":");
+            if (prob.hint) |h| try json.writeString(w, h) else try w.writeAll("null");
+            try w.writeByte('}');
+            return;
+        },
+    };
+    try w.print("{{\"ok\":true,\"format\":\"{s}\",\"w\":{d},\"h\":{d},\"normalized\":", .{ @tagName(sy.format), sy.w, sy.h });
+    try json.writeString(w, sy.normalized);
+    if (sy.check_digit) |c| {
+        try w.writeAll(",\"check_digit\":");
+        try json.writeString(w, &.{c});
+    } else try w.writeAll(",\"check_digit\":null");
+    try w.writeAll(",\"note\":");
+    try json.writeString(w, sy.note);
+    try w.print(",\"version\":{d},\"capacity\":{d}", .{ sy.version, sy.capacity });
+    if (req.modules) {
+        try w.writeAll(",\"modules\":\"");
+        for (sy.cells) |c| try w.writeByte(if (c) '1' else '0');
+        try w.writeByte('"');
+    }
+    try w.writeByte('}');
+}
+
+pub const BarcodeRequest = struct {
+    format: symbol.Format,
+    text: []const u8,
+    check: symbol.Check = .auto,
+    level: qr.Level = .medium,
+    qr_mode: qr.Mode = .auto,
+    ecc: u8 = 23,
+    modules: bool = false,
+};

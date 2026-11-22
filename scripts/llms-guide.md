@@ -14,7 +14,7 @@ A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canv
 - **No text concatenation.** `+` only adds numbers. Build text in a template, or with `join`, `replace`, `fmt`.
 - **Logic is words:** `and`, `or`, `not`, `==`, `!=`, `c ? a : b`. There is no `&&`, `||`, `!`, `^` or `1e3`. Put spaces around `%`.
 - **Colors** are `#RRGGBB` or `#RRGGBBAA`, bare in an expression: `"fill": "mix(accent, #FFFFFF, 0.5)"`.
-- **Position.** `rect`, `ellipse`, `image` and `qr` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
+- **Position.** `rect`, `ellipse`, `image`, `qr` and `barcode` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
 - **Units.** Plain numbers are pixels. `50%` is half the canvas along the field's axis, `10vw` and `10vh` are percent of the canvas width and height.
 - **References.** `@id.bounds.bottom` reads another layer's final box (`left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy`), `@id.<field>` an evaluated field. They may point forward or backward; a cycle is error 3004. A repeated layer needs an index from outside: `@id[2].bounds.left`.
 - **Text size.** `max_width`, `max_height` and `min_size` shrink text to fit; `wrap` breaks lines at a width. Long card texts need one of them.
