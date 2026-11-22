@@ -63,6 +63,7 @@ These are candidates for a later 1.x or 2 format. See [Limits and Versioning](@/
 
 ## Builder
 
+- **Linking a project to a folder** works in Chromium browsers only (Chrome, Edge, Brave, Opera). Firefox and Safari cannot write to a folder from a web page; there the project lives in the browser and in `.yoshida` files. Changes made outside the editor are found by looking at the folder every few seconds and when the window gets focus, not by a file watcher, and the browser may ask again for access to the folder in a new session.
 - Layers inside a **rotated group** show unrotated selection boxes on the canvas.
 - **Groups have no resize handles**; their size comes from their layers.
 - **Repeated layers** are moved as a whole: the offset applies to every iteration. A repeated group with a `translate` is moved by changing the translate.
