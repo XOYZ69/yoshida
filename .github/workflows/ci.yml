@@ -102,6 +102,17 @@ jobs:
       - name: Build
         run: zig build -Doptimize=ReleaseSafe
 
+      # Every barcode format is rendered to PNG, SVG and a vector PDF and read
+      # back with ZXing, so a code that looks right but does not scan fails.
+      - name: Barcodes decode (ZXing round trip)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils librsvg2-bin
+          python3 -m venv "$RUNNER_TEMP/zx"
+          "$RUNNER_TEMP/zx/bin/pip" install --quiet zxing-cpp==3.1.1 pillow
+          "$RUNNER_TEMP/zx/bin/python" scripts/barcode-roundtrip.py
+          "$RUNNER_TEMP/zx/bin/python" scripts/barcode-roundtrip.py --sweep datamatrix,aztec,pdf417
+
       - name: Example files are canonically formatted
         run: ./zig-out/bin/yoshida fmt --check examples
 

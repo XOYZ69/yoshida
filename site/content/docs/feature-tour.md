@@ -89,6 +89,17 @@ A `qr` layer turns a text into a code, with a logo in the middle if you like. yo
 
 Details: [qr](@/docs/layer-qr.md).
 
+## Barcodes
+
+A `barcode` layer makes the other kinds of codes from text as well: Code 128, EAN, UPC, Code 39, ITF, Codabar and Code 93 as bars (with the readable digits under them if you like), and QR, Data Matrix and Aztec as squares. EAN and UPC check digits are added or verified for you.
+
+```json
+{ "id": "ean", "type": "barcode", "format": "ean13", "text": "{ean}",
+  "box": { "x": 40, "y": 560, "w": 190, "h": 100 } }
+```
+
+Details: [barcode](@/docs/layer-barcode.md).
+
 ## Formulas
 
 Almost every field takes an expression instead of a fixed value: arithmetic, conditions, text, list, date and colour functions, and the measured size of other layers.

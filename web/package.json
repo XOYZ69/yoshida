@@ -11,7 +11,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
-		"test:unit": "node --experimental-strip-types tests/progress-math.mjs && node tests/expr-core.mjs && node --experimental-strip-types tests/expr-rewrite.mjs && node --experimental-strip-types tests/expr-edit.mjs && node --experimental-strip-types tests/fonts.mjs && node --experimental-strip-types tests/hexcolor.mjs && node --experimental-strip-types tests/export-plan.mjs && node --experimental-strip-types tests/filetypes.mjs && node --experimental-strip-types tests/components.mjs && node --experimental-strip-types tests/telemetry.mjs && node --experimental-strip-types tests/manifest.mjs && node --experimental-strip-types tests/folder.mjs && node --experimental-strip-types tests/polygon-points.mjs",
+		"test:unit": "node --experimental-strip-types tests/progress-math.mjs && node tests/expr-core.mjs && node --experimental-strip-types tests/expr-rewrite.mjs && node --experimental-strip-types tests/expr-edit.mjs && node --experimental-strip-types tests/fonts.mjs && node --experimental-strip-types tests/hexcolor.mjs && node --experimental-strip-types tests/export-plan.mjs && node --experimental-strip-types tests/filetypes.mjs && node --experimental-strip-types tests/components.mjs && node --experimental-strip-types tests/telemetry.mjs && node --experimental-strip-types tests/manifest.mjs && node --experimental-strip-types tests/folder.mjs && node --experimental-strip-types tests/polygon-points.mjs && node --experimental-strip-types tests/barcode-fields.mjs",
 		"test:ui": "node tests/run-ui.mjs",
 		"docs:screenshots": "node scripts/docs-screenshots/run.mjs"
 	},

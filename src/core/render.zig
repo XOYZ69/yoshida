@@ -14,6 +14,8 @@ const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const qr_mod = @import("qr.zig");
+const symbol = @import("symbol.zig");
+const barcode_mod = @import("barcode.zig");
 const raster = @import("raster.zig");
 const svgread = @import("svgread.zig");
 const text = @import("text.zig");
@@ -781,45 +783,67 @@ const Resolved = struct {
     icon_paths: []const []const u8 = &.{},
     src: []const u8 = "",
     image: ?*raster.Image = null,
-    /// QR layers: the encoded symbol, the size of one module in canvas
-    /// pixels and the quiet zone in modules. The bounds are the symbol
-    /// including its quiet zone.
-    qr: ?*const qr_mod.Code = null,
+    /// QR and barcode layers: the encoded symbol, the size of one module in
+    /// canvas pixels and the quiet zone in modules. The bounds are the
+    /// symbol including its quiet zone.
+    sym: ?*const symbol.Symbol = null,
     qr_module: f64 = 0,
     qr_margin: usize = 0,
+    /// Quiet zone above and below, in modules (0 for 1D codes).
+    qr_margin_y: usize = 0,
     qr_style: design_mod.QrStyle = .square,
     qr_eye: design_mod.QrEye = .square,
     /// Color of the corner squares; null means the same as `color`.
     qr_eye_color: ?Color = null,
     /// Modules per side of the cleared square in the middle (odd), 0 for none.
     qr_logo: usize = 0,
+    /// 1D codes: where the bars end, and where the guard bars (EAN, UPC)
+    /// end, in canvas pixels from the top of the layer; the human-readable
+    /// text; the bearer bars' thickness (ITF-14).
+    bc_bar_h: f64 = 0,
+    bc_guard_h: f64 = 0,
+    bc_bearer: f64 = 0,
+    bc_labels: []const BarLabel = &.{},
+    bc_label_color: Color = .{ .r = 0, .g = 0, .b = 0, .a = 255 },
 };
 
-/// What a QR layer draws: which modules are dark once the cleared middle and
-/// the corner squares (drawn on their own when styled) are left out.
+/// A piece of human-readable text under a 1D code: its layout and where its
+/// top-left corner goes, in canvas pixels.
+const BarLabel = struct {
+    layout: text.Layout,
+    x: f64,
+    y: f64,
+    font: *text.Font,
+};
+
+/// What a 2D code layer draws: which modules are dark once the cleared middle
+/// and the corner squares (drawn on their own when styled) are left out.
 const QrView = struct {
-    code: *const qr_mod.Code,
-    size: usize,
+    code: *const symbol.Symbol,
+    w: usize,
+    h: usize,
     logo_lo: usize,
     logo_hi: usize,
     /// The corner squares are drawn as shapes, not as modules.
     eyes: bool,
 
     fn init(r: *const Resolved) QrView {
-        const code = r.qr.?;
-        const size: usize = code.size;
+        const code = r.sym.?;
+        const size: usize = code.w;
         const lo = (size - r.qr_logo) / 2;
+        const is_qr = code.format == .qr;
         return .{
             .code = code,
-            .size = size,
+            .w = code.w,
+            .h = code.h,
             .logo_lo = lo,
             .logo_hi = lo + r.qr_logo,
-            .eyes = r.qr_style != .square or r.qr_eye != .square or r.qr_eye_color != null,
+            .eyes = is_qr and (r.qr_style != .square or r.qr_eye != .square or r.qr_eye_color != null),
         };
     }
 
     fn inEye(v: QrView, x: usize, y: usize) bool {
-        const far = v.size - 7;
+        const far = v.w - 7;
         return (x < 7 and y < 7) or (x >= far and y < 7) or (x < 7 and y >= far);
     }
 
@@ -834,8 +858,8 @@ const QrView = struct {
     fn eyeOrigin(v: QrView, i: usize) [2]usize {
         return switch (i) {
             0 => .{ 0, 0 },
-            1 => .{ v.size - 7, 0 },
-            else => .{ 0, v.size - 7 },
+            1 => .{ v.w - 7, 0 },
+            else => .{ 0, v.w - 7 },
         };
     }
 };
@@ -1612,7 +1636,7 @@ const Ctx = struct {
                 r.pivot = .{ r.left + r.w / 2, r.top + r.h / 2 };
             },
             .rect, .ellipse, .image => try ctx.evalBox(&e, l, r),
-            .qr => try ctx.evalQr(&e, l, r),
+            .qr, .barcode => try ctx.evalBarcode(&e, l, r),
             .polygon => if (l.shape) |shape| {
                 try ctx.evalBox(&e, l, r);
                 r.points = try ctx.shapePoints(&e, l, shape, r);
@@ -1890,9 +1914,44 @@ const Ctx = struct {
         }
     }
 
-    /// A QR code layer: encodes the text and fits the symbol, whole pixels
-    /// per module, in the middle of the box.
-    fn evalQr(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
+    /// A 1D code in pixels: bars in whole pixels, guard and bearer bars,
+    /// then the label.
+    fn paintLinear(ctx: *Ctx, target: *raster.Bitmap, r: *const Resolved, lf: f32, tf: f32, wf: f32, hf: f32, k: f32) Failed!void {
+        const code = r.sym.?;
+        if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
+        const ms: f32 = @floatCast(r.qr_module * ctx.k);
+        const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const oy = @round(tf);
+        const paint = raster.paint(r.color, 1);
+        const bt: f32 = @round(@as(f32, @floatCast(r.bc_bearer)) * k);
+        const bar_end: f32 = @round(@as(f32, @floatCast(r.bc_bar_h)) * k);
+        const guard_end: f32 = @round(@as(f32, @floatCast(r.bc_guard_h)) * k);
+        if (bt > 0) {
+            raster.drawShape(target, .rect, @round(lf), oy, @round(wf), bt, 0, paint, null);
+            raster.drawShape(target, .rect, @round(lf), oy + bar_end - bt, @round(wf), bt, 0, paint, null);
+        }
+        var x: usize = 0;
+        while (x < code.w) {
+            if (!code.get(x, 0)) {
+                x += 1;
+                continue;
+            }
+            const guard = guardAt(code, x);
+            var end = x + 1;
+            while (end < code.w and code.get(end, 0) and guardAt(code, end) == guard) end += 1;
+            const y1 = if (guard) guard_end else bar_end - bt;
+            raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), oy + bt, ms * @as(f32, @floatFromInt(end - x)), y1 - bt, 0, paint, null);
+            x = end;
+        }
+        const lp = raster.paint(r.bc_label_color, 1);
+        for (r.bc_labels) |lb| {
+            try text.draw(ctx.gpa, target, lb.font, null, &lb.layout, @as(f32, @floatCast(lb.x)) * k, @as(f32, @floatCast(lb.y)) * k, .left, lp, null, k);
+        }
+    }
+
+    /// A QR code or barcode layer: encodes the text and fits the symbol,
+    /// whole pixels per module, in the middle of the box.
+    fn evalBarcode(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
         try ctx.evalBox(e, l, r);
         r.text = try ctx.tmpl(e, l, l.text.?);
         if (l.color) |p| r.color = (try ctx.eval(e, l, p)).color;
@@ -1901,48 +1960,73 @@ const Ctx = struct {
         r.qr_style = try ctx.enumValue(design_mod.QrStyle, e, l, l.qr_style_expr, l.qr_style, "style");
         r.qr_eye = try ctx.enumValue(design_mod.QrEye, e, l, l.qr_eye_expr, l.qr_eye, "eye");
         const qr_level = try ctx.enumValue(design_mod.QrLevel, e, l, l.qr_level_expr, l.qr_level, "level");
-        const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
+        const format: design_mod.BarcodeFormat = if (l.kind == .qr) .qr else try ctx.enumValue(design_mod.BarcodeFormat, e, l, l.format_expr, l.format, "format");
+        const check: design_mod.BarcodeCheck = if (l.kind == .qr) .auto else try ctx.enumValue(design_mod.BarcodeCheck, e, l, l.check_expr, l.check, "check");
+        const is_qr = format == .qr;
+        const is_linear = format.isLinear();
+        const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else @floatFromInt(format.quietZone());
         // A logo picture clears a fifth of the side unless `logo` says otherwise.
-        const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
-        if (l.logo_src) |t| {
+        const logo: f64 = if (!is_qr) 0 else if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
+        if (is_qr) if (l.logo_src) |t| {
             r.src = try ctx.tmpl(e, l, t);
             if (r.src.len > 0) r.image = try ctx.loadImage(l, r.src, t.pos);
-        }
+        };
         const logo_pos = if (l.logo) |p| p.pos else if (l.logo_src) |t| t.pos else l.pos;
         const level: qr_mod.Level = @enumFromInt(@intFromEnum(qr_level));
-        const code = try ctx.arena.create(qr_mod.Code);
-        qr_mod.encode(code, r.text, level, null) catch {
-            try ctx.report(.err, 3108, l.text.?.pos, null, try ctx.layerMsg(l, "the text is {d} bytes, but a QR code of level {s} holds at most {d}", .{ r.text.len, @tagName(qr_level), qr_mod.capacity(level) }), "shorten the text or use a lower level");
-            return error.Failed;
+        const what: []const u8 = if (is_qr) "QR code" else "barcode";
+        var prob: symbol.Problem = .{};
+        const code = try ctx.arena.create(symbol.Symbol);
+        const qr_mode: qr_mod.Mode = if (l.qr_mode_expr != null or l.qr_mode != null)
+            @enumFromInt(@intFromEnum(try ctx.enumValue(design_mod.QrMode, e, l, l.qr_mode_expr, l.qr_mode orelse .auto, "mode")))
+        else if (l.kind == .qr) .byte else .auto;
+        const ecc_max: f64 = if (format == .aztec) 90 else 8;
+        const ecc_default: u8 = if (format == .aztec) 23 else if (format == .pdf417) 255 else 0;
+        const ecc_given: f64 = if (l.ecc) |p| @floor(try ctx.num(e, l, p)) else -1;
+        // A negative value (an unset param, say) means the default.
+        const ecc: u8 = if (ecc_given < 0) ecc_default else @intFromFloat(@min(ecc_given, ecc_max));
+        code.* = barcode_mod.encode(ctx.arena, &prob, format, r.text, .{ .check = check, .level = level, .qr_mode = qr_mode, .ecc = ecc }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try ctx.report(.err, prob.code, l.text.?.pos, null, try ctx.layerMsg(l, "{s}", .{prob.msg}), prob.hint);
+                return error.Failed;
+            },
         };
+        if (code.note.len > 0) try ctx.report(.hint, 3213, l.text.?.pos, null, try ctx.layerMsg(l, "{s}", .{code.note}), null);
         const margin_modules: usize = @intFromFloat(margin);
-        const modules: f64 = @floatFromInt(@as(usize, code.size) + 2 * margin_modules);
-        const side = @min(r.w, r.h);
+        const margin_y: usize = if (is_linear) 0 else margin_modules;
+        const modules_x: f64 = @floatFromInt(code.w + 2 * margin_modules);
+        const modules_y: f64 = @floatFromInt(code.h + 2 * margin_y);
+        const side = if (is_linear) r.w else @min(r.w, r.h);
         // Whole bitmap pixels per module keep the edges sharp.
-        var px = @floor(side * ctx.k / modules);
+        const fit_x = r.w * ctx.k / modules_x;
+        const fit_y = if (is_linear) std.math.inf(f64) else r.h * ctx.k / modules_y;
+        var px = @floor(@min(fit_x, fit_y));
         if (px < 1) {
-            px = side * ctx.k / modules;
-            try ctx.report(.warning, 3204, l.pos, null, try ctx.layerMsg(l, "a module of the QR code is smaller than one pixel ({d} modules in {d} px)", .{ modules, side }), "make the box larger or the text shorter");
+            px = @min(fit_x, fit_y);
+            try ctx.report(.warning, 3204, l.pos, null, try ctx.layerMsg(l, "a module of the {s} is smaller than one pixel ({d} modules in {d} px)", .{ what, if (is_linear) modules_x else modules_x, side }), "make the box larger or the text shorter");
         }
         const module = px / ctx.k;
-        const total = module * modules;
+        const total_w = module * modules_x;
+        const total_h = if (is_linear) r.h else module * modules_y;
         const cx = r.left + r.w / 2;
         const cy = r.top + r.h / 2;
-        r.left = @round((cx - total / 2) * ctx.k) / ctx.k;
-        r.top = @round((cy - total / 2) * ctx.k) / ctx.k;
-        r.w = total;
-        r.h = total;
-        r.qr = code;
+        r.left = @round((cx - total_w / 2) * ctx.k) / ctx.k;
+        if (!is_linear) r.top = @round((cy - total_h / 2) * ctx.k) / ctx.k;
+        r.w = total_w;
+        r.h = total_h;
+        r.sym = code;
         r.qr_module = module;
         r.qr_margin = margin_modules;
+        r.qr_margin_y = margin_y;
+        if (is_linear) try ctx.evalBarLabels(e, l, r, code, module);
 
         // The cleared middle for a logo: an odd number of modules so that it
         // sits in the centre, and clear of the corner squares.
         if (logo > 0) {
-            const size: f64 = @floatFromInt(code.size);
+            const size: f64 = @floatFromInt(code.w);
             var n: usize = @intFromFloat(@round(logo * size));
             if (n % 2 == 0) n += 1;
-            n = @min(n, code.size - 18);
+            n = @min(n, code.w - 18);
             r.qr_logo = n;
             const nf: f64 = @floatFromInt(n);
             if (qr_level != .high) {
@@ -1958,12 +2042,12 @@ const Ctx = struct {
             const dark = bcolor.luminance(r.color);
             const light = bcolor.luminance(r.fill);
             if (dark > light) {
-                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code is lighter than its background; many scanners reject inverted codes", .{}), "use dark modules on a light fill");
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the {s} is lighter than its background; many scanners reject inverted codes", .{what}), "use dark modules on a light fill");
             } else if (light - dark < 0.4) {
-                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code has little contrast (luminance differs by {d} %, 40 % is the usual minimum)", .{@round(100 * (light - dark))}), "darken \"color\" or lighten \"fill\"");
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the {s} has little contrast (luminance differs by {d} %, 40 % is the usual minimum)", .{ what, @round(100 * (light - dark)) }), "darken \"color\" or lighten \"fill\"");
             }
         }
-        if (r.fill.a > 0) if (r.qr_eye_color) |ec| {
+        if (is_qr and r.fill.a > 0) if (r.qr_eye_color) |ec| {
             // Scanners find the code by its corner squares.
             if (bcolor.luminance(r.fill) - bcolor.luminance(ec) < 0.4) {
                 try ctx.report(.warning, 3205, l.eye_color.?.pos, null, try ctx.layerMsg(l, "the corner squares of the QR code have little contrast against the fill; scanners find the code by them", .{}), "darken \"eye_color\"");
@@ -1971,10 +2055,98 @@ const Ctx = struct {
         };
         if (ctx.dpi > 0) {
             const mm = module / ctx.dpi * 25.4;
-            if (mm < 0.5) {
-                try ctx.report(.warning, 3208, l.pos, null, try ctx.layerMsg(l, "a module of the QR code prints {d} mm wide at {d} dpi; 0.5 mm is the usual minimum", .{ @round(mm * 100) / 100, ctx.dpi }), "make the box larger, the text shorter or the level lower");
+            const min_mm: f64 = if (is_qr) 0.5 else 0.25;
+            if (mm < min_mm) {
+                try ctx.report(.warning, 3208, l.pos, null, try ctx.layerMsg(l, "a module of the {s} prints {d} mm wide at {d} dpi; {d} mm is the usual minimum", .{ what, @round(mm * 100) / 100, ctx.dpi, min_mm }), if (is_qr) "make the box larger, the text shorter or the level lower" else "make the box wider or the text shorter");
             }
         }
+    }
+
+    /// The human-readable text of a 1D code, and with it the heights of the
+    /// bars: the label takes the bottom of the box.
+    fn evalBarLabels(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved, code: *const symbol.Symbol, module: f64) Failed!void {
+        r.bc_bar_h = r.h;
+        r.bc_guard_h = r.h;
+        if (code.bearer) r.bc_bearer = 5 * module;
+        const want: bool = if (l.label) |p| (try ctx.eval(e, l, p)).bool else switch (code.format) {
+            .ean13, .ean8, .upca, .itf14 => true,
+            else => false,
+        };
+        if (!want) return;
+        const own = if (l.label_text) |t| try ctx.tmpl(e, l, t) else null;
+        const shown = own orelse code.normalized;
+        if (shown.len == 0) return;
+        const font = try ctx.fontFor(l);
+        const explicit: ?f64 = if (l.size) |p| try ctx.num(e, l, p) else null;
+        if (explicit) |sz| if (sz <= 0) {
+            try ctx.report(.err, 3101, l.size.?.pos, null, try ctx.layerMsg(l, "font size must be above 0, got {d}", .{sz}), null);
+            return error.Failed;
+        };
+        var size: f64 = explicit orelse std.math.clamp(module * 8, 6, r.h * 0.3);
+        r.bc_label_color = if (l.label_color) |p| (try ctx.eval(e, l, p)).color else r.color;
+        const bars_left = r.left + module * @as(f64, @floatFromInt(r.qr_margin));
+        const bars_w = module * @as(f64, @floatFromInt(code.w));
+        const groups: []const symbol.LabelGroup = if (own == null) code.groups else &.{};
+        var labels: std.ArrayList(BarLabel) = .empty;
+
+        // Plain text: shrink to the bars unless the size was asked for.
+        if (groups.len == 0 and r.alignment != .justify) {
+            var lay = try text.layout(ctx.arena, font, shown, .{ .size = @floatCast(size) });
+            if (explicit == null and lay.block_w > bars_w) {
+                size = @max(6, size * bars_w / lay.block_w);
+                lay = try text.layout(ctx.arena, font, shown, .{ .size = @floatCast(size) });
+            }
+            if (lay.block_w > bars_w + 0.01) try ctx.report(.warning, 3214, l.pos, null, try ctx.layerMsg(l, "the label is {d} px wide, wider than the bars ({d} px)", .{ @round(lay.block_w), @round(bars_w) }), "use a smaller \"size\" or a wider box");
+            const x: f64 = switch (r.alignment) {
+                .left => bars_left,
+                .right, .justify => bars_left + bars_w - lay.block_w,
+                .center => bars_left + (bars_w - lay.block_w) / 2,
+            };
+            try labels.append(ctx.arena, .{ .layout = lay, .x = x, .y = 0, .font = font });
+        } else {
+            // Each character on its own, in a slot of the bars: the digits of
+            // an EAN group under their bars, or spread over the whole code.
+            const Slot = struct { text: []const u8, x0: f64, x1: f64 };
+            var slots: std.ArrayList(Slot) = .empty;
+            if (groups.len > 0) {
+                for (groups) |g| {
+                    const gx0 = bars_left + module * @as(f64, @floatFromInt(g.x0));
+                    const gx1 = bars_left + module * @as(f64, @floatFromInt(g.x1));
+                    const n: f64 = @floatFromInt(g.text.len);
+                    for (0..g.text.len) |i| {
+                        const fi: f64 = @floatFromInt(i);
+                        try slots.append(ctx.arena, .{ .text = g.text[i .. i + 1], .x0 = gx0 + (gx1 - gx0) * fi / n, .x1 = gx0 + (gx1 - gx0) * (fi + 1) / n });
+                    }
+                }
+            } else {
+                const n: f64 = @floatFromInt(shown.len);
+                for (0..shown.len) |i| {
+                    const fi: f64 = @floatFromInt(i);
+                    try slots.append(ctx.arena, .{ .text = shown[i .. i + 1], .x0 = bars_left + bars_w * fi / n, .x1 = bars_left + bars_w * (fi + 1) / n });
+                }
+            }
+            for (slots.items) |sl| {
+                const lay = try text.layout(ctx.arena, font, sl.text, .{ .size = @floatCast(size) });
+                try labels.append(ctx.arena, .{ .layout = lay, .x = (sl.x0 + sl.x1) / 2 - lay.block_w / 2, .y = 0, .font = font });
+            }
+        }
+        const text_h = labels.items[0].layout.block_h;
+        const gap: f64 = if (l.label_gap) |p| @max(0, try ctx.num(e, l, p)) else size * 0.25;
+        const zone = r.h - text_h - gap;
+        if (zone < r.h * 0.25 or zone < 2 * r.bc_bearer + 1) {
+            try ctx.report(.warning, 3214, l.pos, null, try ctx.layerMsg(l, "the box is {d} px high, too short for bars and a label of {d} px; the label is left out", .{ @round(r.h), @round(text_h + gap) }), "make the box higher or the label smaller");
+            return;
+        }
+        for (labels.items) |*lb| lb.y = r.top + r.h - text_h;
+        r.bc_labels = labels.items;
+        r.bc_bar_h = zone;
+        r.bc_guard_h = if (code.guards.len > 0 and groups.len > 0) r.h else zone;
+    }
+
+    /// Whether the module `x` of a 1D code is drawn with the guard height.
+    fn guardAt(code: *const symbol.Symbol, x: usize) bool {
+        for (code.guards) |g| if (x >= g[0] and x < g[1]) return true;
+        return false;
     }
 
     /// Points of a preset shape filling the layer's box.
@@ -2459,24 +2631,24 @@ const Ctx = struct {
                     try ctx.paintShape(target, l, &plain, st);
                 }
             } else try ctx.paintShape(target, l, r, stroke),
-            .qr => {
+            .qr, .barcode => if (r.sym.?.format.isLinear()) try ctx.paintLinear(target, r, lf, tf, wf, hf, k) else {
                 const v = QrView.init(r);
                 if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
                 const ms: f32 = @floatCast(r.qr_module * ctx.k);
                 const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
-                const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+                const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin_y));
                 const paint = raster.paint(r.color, 1);
                 const mod_r = qrModuleRadius(r.qr_style) * ms;
                 // Dots are a little smaller than a module so they do not touch.
                 const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
-                for (0..v.size) |y| {
+                for (0..v.h) |y| {
                     var x: usize = 0;
-                    while (x < v.size) : (x += 1) {
+                    while (x < v.w) : (x += 1) {
                         if (!v.dark(x, y)) continue;
                         const my = oy + ms * @as(f32, @floatFromInt(y));
                         if (r.qr_style == .square) {
                             var end = x + 1;
-                            while (end < v.size and v.dark(end, y)) end += 1;
+                            while (end < v.w and v.dark(end, y)) end += 1;
                             raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), my, ms * @as(f32, @floatFromInt(end - x)), ms, 0, paint, null);
                             x = end;
                         } else {
@@ -2712,7 +2884,7 @@ const Ctx = struct {
             .polygon => try ctx.emitPolygon(sc, l, r),
             .text => try ctx.emitText(sc, l, r),
             .image => try ctx.emitImage(sc, l, r),
-            .qr => try ctx.emitQr(sc, r),
+            .qr, .barcode => try ctx.emitBarcode(sc, r),
         }
         try closeFrame(sc, n);
     }
@@ -2819,28 +2991,30 @@ const Ctx = struct {
     }
 
     /// The background square, then every dark run of modules as one path.
-    fn emitQr(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+    fn emitBarcode(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+        if (r.sym.?.format.isLinear()) return ctx.emitLinear(sc, r);
         const v = QrView.init(r);
         const left: f32 = @floatCast(r.left);
         const top: f32 = @floatCast(r.top);
         const total: f32 = @floatCast(r.w);
+        const total_h: f32 = @floatCast(r.h);
         var bg = vector.PathBuilder.init(sc.allocator());
-        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total }, .{ left, top + total } }, true);
+        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total_h }, .{ left, top + total_h } }, true);
         try addFill(sc, bg.finish(), r.fill);
         const ms: f32 = @floatCast(r.qr_module);
         const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
-        const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin_y));
         const mod_r = qrModuleRadius(r.qr_style) * ms;
         const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
         var b = vector.PathBuilder.init(sc.allocator());
-        for (0..v.size) |y| {
+        for (0..v.h) |y| {
             var x: usize = 0;
-            while (x < v.size) : (x += 1) {
+            while (x < v.w) : (x += 1) {
                 if (!v.dark(x, y)) continue;
                 const y0 = oy + ms * @as(f32, @floatFromInt(y));
                 if (r.qr_style == .square) {
                     var end = x + 1;
-                    while (end < v.size and v.dark(end, y)) end += 1;
+                    while (end < v.w and v.dark(end, y)) end += 1;
                     const x0 = ox + ms * @as(f32, @floatFromInt(x));
                     const x1 = ox + ms * @as(f32, @floatFromInt(end));
                     try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y0 + ms }, .{ x0, y0 + ms } }, true);
@@ -2875,6 +3049,51 @@ const Ctx = struct {
                 bytes = "";
             }
             try sc.add(.{ .image = .{ .image = drawn, .bytes = bytes, .rect = q, .clip = .{ q[0], q[1], q[0] + q[2], q[1] + q[3] }, .smooth = true } });
+        };
+    }
+
+    /// A 1D code: the background, every bar of one height as one path, the
+    /// guard and bearer bars, then the text.
+    fn emitLinear(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+        _ = ctx;
+        const code = r.sym.?;
+        const left: f32 = @floatCast(r.left);
+        const top: f32 = @floatCast(r.top);
+        const total: f32 = @floatCast(r.w);
+        const total_h: f32 = @floatCast(r.h);
+        var bg = vector.PathBuilder.init(sc.allocator());
+        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total_h }, .{ left, top + total_h } }, true);
+        try addFill(sc, bg.finish(), r.fill);
+        const ms: f32 = @floatCast(r.qr_module);
+        const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const bt: f32 = @floatCast(r.bc_bearer);
+        const bar_end: f32 = @floatCast(r.bc_bar_h);
+        const guard_end: f32 = @floatCast(r.bc_guard_h);
+        var b = vector.PathBuilder.init(sc.allocator());
+        if (bt > 0) {
+            try b.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + bt }, .{ left, top + bt } }, true);
+            try b.polyline(&.{ .{ left, top + bar_end - bt }, .{ left + total, top + bar_end - bt }, .{ left + total, top + bar_end }, .{ left, top + bar_end } }, true);
+        }
+        var x: usize = 0;
+        while (x < code.w) {
+            if (!code.get(x, 0)) {
+                x += 1;
+                continue;
+            }
+            const guard = guardAt(code, x);
+            var end = x + 1;
+            while (end < code.w and code.get(end, 0) and guardAt(code, end) == guard) end += 1;
+            const x0 = ox + ms * @as(f32, @floatFromInt(x));
+            const x1 = ox + ms * @as(f32, @floatFromInt(end));
+            const y0 = top + bt;
+            const y1 = top + (if (guard) guard_end else bar_end - bt);
+            try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y1 }, .{ x0, y1 } }, true);
+            x = end;
+        }
+        try addFill(sc, b.finish(), r.color);
+        if (r.bc_label_color.a > 0) for (r.bc_labels) |lb| {
+            var pass: GlyphPass = .{ .scene = sc, .color = r.bc_label_color, .size = lb.layout.size };
+            try text.walkRich(lb.font, null, &lb.layout, @floatCast(lb.x), @floatCast(lb.y), .left, &pass, GlyphPass.add);
         };
     }
 
@@ -4106,6 +4325,90 @@ test "vector scene of a qr layer" {
     try std.testing.expect(items[0] == .fill and items[1] == .fill);
     try std.testing.expect(items[1].fill.color.eql(Color.black));
     try std.testing.expect(items[1].fill.path.cmds.len > 100);
+}
+
+const barcode_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "code", "type": "barcode", "format": "code128", "text": "Yoshida", "box": { "x": 0, "y": 0, "w": 200, "h": 100 } }
+    \\  ]
+    \\}
+;
+
+test "barcode layer with format qr and mode byte is identical to a qr layer" {
+    const gpa = std.testing.allocator;
+    var a = (try testRenderDesign(gpa, qr_styled_design, .{}, null)).?;
+    defer a.deinit(gpa);
+    const same = try std.mem.replaceOwned(u8, gpa, qr_styled_design, "\"type\": \"qr\"", "\"type\": \"barcode\", \"format\": \"qr\", \"mode\": \"byte\"");
+    defer gpa.free(same);
+    var b = (try testRenderDesign(gpa, same, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqualSlices(u16, a.px[0 .. a.w * a.h * 4], b.px[0 .. b.w * b.h * 4]);
+}
+
+test "barcode layer draws code 128 in whole pixels, all bars as tall as the box" {
+    const gpa = std.testing.allocator;
+    var b = (try testRenderDesign(gpa, barcode_design, .{}, null)).?;
+    defer b.deinit(gpa);
+    for (0..b.w * b.h) |i| {
+        const v = b.px[i * 4];
+        try std.testing.expect(v == 0 or v == 65535);
+    }
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var prob: symbol.Problem = .{};
+    const sy = try barcode_mod.encode(arena.allocator(), &prob, .code128, "Yoshida", .{});
+    // 11 * 9 + 13 modules plus a quiet zone of 10 on each side: 132 modules
+    // in 200 px, 1 px each, centred at 34.
+    const modules = sy.w + 20;
+    try std.testing.expectEqual(@as(usize, 132), modules);
+    const x0 = (200 - modules) / 2;
+    for (0..sy.w) |m| {
+        const want: u16 = if (sy.get(m, 0)) 0 else 65535;
+        try std.testing.expectEqual(want, pixel(&b, x0 + 10 + m, 0)[0]);
+        try std.testing.expectEqual(want, pixel(&b, x0 + 10 + m, 99)[0]);
+    }
+}
+
+test "barcode layer: a wrong check digit is error 3112, a missing one is added" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "code", "type": "barcode", "format": "ean13", "text": "{digits}", "box": { "x": 0, "y": 0, "w": 200, "h": 100 } }
+        \\  ],
+        \\  "params": { "digits": { "type": "text", "default": "4006381333932" } }
+        \\}
+    ;
+    var code: u16 = 0;
+    if (try testRenderDesign(gpa, design, .{}, &code)) |*b| {
+        var bb = b.*;
+        bb.deinit(gpa);
+    }
+    try std.testing.expectEqual(@as(u16, 3112), code);
+    const good = try std.mem.replaceOwned(u8, gpa, design, "4006381333932", "400638133393");
+    defer gpa.free(good);
+    code = 0;
+    var b = (try testRenderDesign(gpa, good, .{}, &code)).?;
+    b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+}
+
+test "vector scene of a barcode layer" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, barcode_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // The white background, then the bars as one path.
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    try std.testing.expect(items[1] == .fill and items[1].fill.color.eql(Color.black));
 }
 
 const qr_styled_design =

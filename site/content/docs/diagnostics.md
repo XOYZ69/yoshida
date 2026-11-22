@@ -98,6 +98,7 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 1112 | error | `extends` across different layer types (including a group), or of a divider |
 | 1113 | warning | A design function has the name of a built-in function; the design's function is used in this design instead of the built-in |
 | 1114 | warning | A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill |
+| 1115 | warning | A `barcode` layer sets a field its `format` does not read (for example `logo` on a Code 128, or `label` on a QR code) |
 | 1201 | error | File not found |
 | 1202 | error | CSV syntax error (also a missing header row, or a row with the wrong number of fields) |
 | 1203 | error | Path escapes the project root |
@@ -133,14 +134,18 @@ The [Problems panel](@/docs/builder-problems.md) collects them, groups identical
 | 3108 | error | QR code text too long for its error correction level (at render time) |
 | 3109 | error | An `anchor`, `align` or `fit` expression gives a word that is not one of the options, or a baseline anchor on a layer that is not text (at render time) |
 | 3110 | error | A polygon whose points come from point runs has fewer than 3 points (2 for an open polygon) (at render time) |
+| 3111 | error | A `barcode` layer's text cannot be encoded: characters the format does not hold, text too long for the symbol (at render time) |
+| 3112 | error | An EAN, UPC or ITF-14 text has the wrong number of digits, or a wrong check digit (at render time) |
 | 3201 | warning | Text truncated by `max_lines` |
 | 3202 | hint | Layer entirely outside the canvas |
 | 3203 | warning | Text does not fit `max_width` / `max_height` even at `min_size` |
-| 3204 | warning | A module of a QR code is smaller than one pixel |
-| 3205 | warning | A QR code has little contrast against its fill, or is lighter than it |
+| 3204 | warning | A module of a QR code or barcode is smaller than one pixel |
+| 3205 | warning | A QR code or barcode has little contrast against its fill, or is lighter than it |
 | 3207 | warning | A QR code with `logo` is not at level `high`, or the cleared middle covers more than 20 % |
-| 3208 | warning | A module of a QR code prints narrower than 0.5 mm at the canvas `dpi` |
+| 3208 | warning | A module of a QR code prints narrower than 0.5 mm, of another code narrower than 0.25 mm, at the canvas `dpi` |
 | 3209 | warning | Text with `markup` uses an icon the design does not know (left out), or `<i>` without `font_italic` (drawn upright) |
+| 3213 | hint | A `barcode` text was changed to fit its format: a leading 0 added to ITF digits, start and stop added to Codabar |
+| 3214 | warning | A 1D code's label is wider than its bars, or the box is too short for bars and label (the label is left out) |
 
 ### 4xxx: assets
 

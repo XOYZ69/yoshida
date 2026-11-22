@@ -54,6 +54,16 @@ type Msg = { id: number } & (
 	| { op: "checkCards"; set: string; date: string; now: string }
 	| { op: "scope"; set: string; path: string }
 	| {
+			op: "barcode";
+			format: string;
+			text: string;
+			check?: string;
+			level?: string;
+			mode?: string;
+			ecc?: number;
+			modules?: boolean;
+	  }
+	| {
 			op: "eval";
 			set: string;
 			path: string;
@@ -289,6 +299,7 @@ async function handle(
 					now: msg.now,
 				}).json,
 			};
+		case "barcode":
 		case "scope":
 		case "eval": {
 			const { id: _, ...req } = msg;

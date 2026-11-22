@@ -29,6 +29,9 @@
 //!   {"op":"sheet_finish"}: the cards tiled left to right, top to bottom into
 //!   one PNG (result_bin), like `yoshida render --sheet`. Begin again for the
 //!   next sheet of a set with more cards than one sheet holds.
+//!   {"op":"barcode","format":"ean13","text":"...","check":"auto","level":"medium","mode":"auto","ecc":23,"modules":false}:
+//!   the size, the encoded text and the problem (if any) of a barcode, for
+//!   the editor's info line; "modules" adds the grid as a string of 0 and 1.
 //!   {"op":"scope","set":"name","path":"/layers/3/fill"}: the names and types an
 //!   expression field can use.
 //!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
@@ -194,6 +197,30 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
 
     if (std.mem.eql(u8, op, "info")) {
         try w.print("{{\"version\":\"{s}\",\"format\":{d},\"channel\":\"{s}\"}}", .{ y.version, y.format_version, y.channel });
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "barcode")) {
+        const str = struct {
+            fn of(r: *const y.json.Node, key: []const u8) ?[]const u8 {
+                const n = r.get(key) orelse return null;
+                return if (n.data == .string) n.data.string else null;
+            }
+        }.of;
+        const format = std.meta.stringToEnum(y.symbol.Format, str(&req, "format") orelse "") orelse {
+            try w.writeAll("{\"error\":\"unknown barcode format\"}");
+            return 1;
+        };
+        var br: y.api.BarcodeRequest = .{ .format = format, .text = str(&req, "text") orelse "" };
+        if (format == .pdf417) br.ecc = y.pdf417.auto_level;
+        if (str(&req, "check")) |c| br.check = std.meta.stringToEnum(y.symbol.Check, c) orelse .auto;
+        if (str(&req, "level")) |c| br.level = std.meta.stringToEnum(y.qr.Level, c) orelse .medium;
+        if (str(&req, "mode")) |c| br.qr_mode = std.meta.stringToEnum(y.qr.Mode, c) orelse .auto;
+        if (req.get("ecc")) |e| if (e.data == .number) {
+            br.ecc = @intFromFloat(std.math.clamp(@floor(e.data.number), 0, 90));
+        };
+        if (req.get("modules")) |m| br.modules = m.data == .bool and m.data.bool;
+        try y.api.writeBarcodeInfo(arena, w, br);
         return 0;
     }
 
