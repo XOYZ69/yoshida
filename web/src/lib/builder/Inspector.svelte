@@ -1135,6 +1135,7 @@ let newFunction = $state("");
         {/if}
         {#if barcodeFormat !== 'qr' && type === 'barcode'}
           {@const labelFont = String(effVal(['font']) ?? 'default')}
+          {@const labelOn = effVal(['label']) !== false && (effVal(['label']) !== undefined || ['ean13', 'ean8', 'upca', 'itf14'].includes(barcodeFormat))}
           {@const linearLike = barcodeFormat === '' || BARCODE_FORMATS.find((x) => x.id === barcodeFormat)?.kind === 'linear'}
           {#if barcodeFormat === '' || !ignores(barcodeFormat, 'check')}
             <p class="sub">Check digit</p>
@@ -1143,16 +1144,18 @@ let newFunction = $state("");
           {#if barcodeFormat === 'aztec' || barcodeFormat === 'pdf417'}
             <Field label="ecc" kind="number" optional value={ownVal(['ecc'])} fallback={effVal(['ecc']) ?? (barcodeFormat === 'aztec' ? 23 : undefined)} placeholder="auto" bindings={numberParams} error={errorAt(['ecc'])} path={pathOf(['ecc'])} title={barcodeFormat === 'aztec' ? 'Aztec: the least share of error correction, in percent of the data' : 'PDF417: error correction level 0 to 8; automatic when empty'} onchange={(v) => set(['ecc'], v)} />
           {/if}
-          <p class="sub">Label{linearLike ? '' : ' (bars only)'}</p>
-          <div class:ignored={!linearLike} inert={!linearLike} title={linearLike ? '' : 'Only bar codes have a human-readable text'}>
+          {#if linearLike}
+          <p class="sub">Label</p>
             <Field label="label" kind="bool" optional value={ownVal(['label'])} fallback={effVal(['label']) ?? ['ean13', 'ean8', 'upca', 'itf14'].includes(barcodeFormat)} bindings={boolParams} error={errorAt(['label'])} path={pathOf(['label'])} title="Print the text under the bars" onchange={(v) => set(['label'], v)} />
-            <Field label="label_text" kind="template" optional value={ownVal(['label_text'])} fallback={effVal(['label_text'])} placeholder="the encoded text" bindings={textParams} error={errorAt(['label_text'])} path={pathOf(['label_text'])} onchange={(v) => set(['label_text'], v === '' ? undefined : v)} />
-            <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={labelFont} options={fontOptions} sample={sampleOf(labelFont) ?? null} defaultSample={sampleOf(labelFont)} onchange={pickFont} />
-            <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size'])} placeholder="auto" bindings={numberParams} error={errorAt(['size'])} path={pathOf(['size'])} title="Text size in pixels; automatic when empty" onchange={(v) => set(['size'], v)} />
-            <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'center')} options={['left', 'center', 'right', 'justify']} title="justify spreads the characters over the bars; EAN and UPC digits stay under their bars" onchange={(v) => set(['align'], v)} />
-            <Field label="label_color" kind="color" optional value={ownVal(['label_color'])} fallback={effVal(['label_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['label_color'])} path={pathOf(['label_color'])} onchange={(v) => set(['label_color'], v)} />
-            <Field label="label_gap" kind="number" optional value={ownVal(['label_gap'])} fallback={effVal(['label_gap'])} placeholder="auto" bindings={numberParams} error={errorAt(['label_gap'])} path={pathOf(['label_gap'])} title="Space between bars and text in pixels" onchange={(v) => set(['label_gap'], v)} />
-          </div>
+            {#if labelOn}
+              <Field label="label_text" kind="template" optional value={ownVal(['label_text'])} fallback={effVal(['label_text'])} placeholder="the encoded text" bindings={textParams} error={errorAt(['label_text'])} path={pathOf(['label_text'])} onchange={(v) => set(['label_text'], v === '' ? undefined : v)} />
+              <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={labelFont} options={fontOptions} sample={sampleOf(labelFont) ?? null} defaultSample={sampleOf(labelFont)} onchange={pickFont} />
+              <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size'])} placeholder="auto" bindings={numberParams} error={errorAt(['size'])} path={pathOf(['size'])} title="Text size in pixels; automatic when empty" onchange={(v) => set(['size'], v)} />
+              <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'center')} options={['left', 'center', 'right', 'justify']} title="justify spreads the characters over the bars; EAN and UPC digits stay under their bars" onchange={(v) => set(['align'], v)} />
+              <Field label="label_color" kind="color" optional value={ownVal(['label_color'])} fallback={effVal(['label_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['label_color'])} path={pathOf(['label_color'])} onchange={(v) => set(['label_color'], v)} />
+              <Field label="label_gap" kind="number" optional value={ownVal(['label_gap'])} fallback={effVal(['label_gap'])} placeholder="auto" bindings={numberParams} error={errorAt(['label_gap'])} path={pathOf(['label_gap'])} title="Space between bars and text in pixels" onchange={(v) => set(['label_gap'], v)} />
+            {/if}
+          {/if}
         {/if}
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />

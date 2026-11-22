@@ -85,6 +85,21 @@ await p.keyboard.press("Tab");
 await p.waitForFunction(() => /check digit/.test(document.querySelector("aside.right p.sub[role=status]")?.textContent ?? "") && /ends in 2/.test(document.querySelector("aside.right p.sub[role=status]")?.textContent ?? ""), null, { timeout: 5000 });
 ok("a wrong check digit is explained", /ends in 2/.test(await info()), await info());
 
+// The label options only show while the label is on (EAN's is on by default).
+const labelFields = ["label_text", "label_color", "label_gap"];
+const shown = async () => {
+	let n = 0;
+	for (const f of labelFields) n += await p.locator(`aside.right .label:text-is("${f}")`).count();
+	return n;
+};
+ok("label options show for an EAN, whose label is on", (await shown()) === 3);
+await p.locator('aside.right .field:has(.label:text-is("label")) input[type=checkbox]').uncheck();
+await rendered();
+ok("label options are hidden when the label is off", (await shown()) === 0);
+await p.locator('aside.right .field:has(.label:text-is("label")) input[type=checkbox]').check();
+await rendered();
+ok("label options come back when it is on again", (await shown()) === 3);
+
 // Fields the format does not read are greyed out and inert.
 ok("QR-only fields are not offered for an EAN", (await p.locator('aside.right .label:text-is("level"), aside.right .label:text-is("eye"), aside.right .label:text-is("logo")').count()) === 0);
 const ignored = await p.locator("aside.right .ignored[inert]").count();
