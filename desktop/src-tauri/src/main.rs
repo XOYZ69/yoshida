@@ -314,6 +314,14 @@ fn start_server(app: &tauri::App) -> Option<Child> {
 }
 
 fn main() {
+    // WebKitGTK copies every frame through system memory when this is set
+    // (often set globally to work around blank windows on some NVIDIA
+    // setups), which makes dragging and resizing in the editor choppy. The
+    // app turns it off; set YOSHIDA_KEEP_WEBKIT_ENV=1 to keep it.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("YOSHIDA_KEEP_WEBKIT_ENV").is_none() {
+        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

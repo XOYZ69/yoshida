@@ -48,6 +48,10 @@ cp binaries/yoshida-server-* target/release/yoshida-server
 | Projects not linked to a folder | The app's webview storage, tied to port **47810**. If that port is busy the app uses another one and starts with an empty list; the projects are back on the next start on the usual port |
 | Server log | The terminal you started the app from |
 
+## Dragging feels slow
+
+On Linux the app clears `WEBKIT_DISABLE_DMABUF_RENDERER` when it starts: with it set, WebKitGTK copies every frame through system memory and dragging and resizing get choppy. If you need it (a blank window on some NVIDIA setups), start the app with `YOSHIDA_KEEP_WEBKIT_ENV=1`. `GDK_BACKEND=x11` is another thing to try.
+
 ## Known gaps
 
 - No prebuilt downloads and no auto-update yet.
