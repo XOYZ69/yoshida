@@ -9,6 +9,7 @@ All of these run the same core and produce the same pixels. Pick by what you wan
 | --- | --- |
 | Try it, or design cards now and then | [The hosted editor](#the-hosted-editor), nothing to install |
 | Work offline, or render from scripts | [The release zip](#the-release-zip) |
+| Link projects to real folders in any system, with no permission prompts | [The desktop app](@/docs/desktop-app.md) (beta: installers for Windows and Linux) |
 | Host the editor for a team or a home lab | [Docker](#docker) |
 | Try what comes next | [The dev preview](#the-dev-preview) |
 | Change yoshida itself | [Building from Source](@/docs/building-from-source.md) |

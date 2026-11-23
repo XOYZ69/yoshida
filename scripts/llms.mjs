@@ -186,6 +186,7 @@ async function full() {
 		['schema/cards.schema.json', '`*.cards.json`, card data'],
 		['schema/defs.schema.json', '`*.defs.json`, params and consts shared through a design\'s `import`'],
 		['schema/component.schema.json', '`*.component.json`, layers shared through a group\'s `include`'],
+		['schema/qa.schema.json', '`qa.json`, the card review state written by the editor'],
 	]) {
 		const s = json(file);
 		p(`### ${title}`, '', ...(s.description ? [s.description, ''] : []), ...fields(s.properties, s.required), '');
@@ -252,6 +253,7 @@ function index() {
 		`- [component.schema.json](${REPO}/blob/master/schema/component.schema.json): JSON Schema of a shared component`,
 		`- [defs.schema.json](${REPO}/blob/master/schema/defs.schema.json): JSON Schema of shared params and constants`,
 		`- [yoshida.schema.json](${REPO}/blob/master/schema/yoshida.schema.json): JSON Schema of the project manifest`,
+		`- [qa.schema.json](${REPO}/blob/master/schema/qa.schema.json): JSON Schema of the card review file`,
 		'',
 	];
 	for (const group of docsNav()) {

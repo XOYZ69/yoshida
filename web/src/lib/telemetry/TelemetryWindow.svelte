@@ -1,6 +1,7 @@
 <script lang="ts">
 // Privacy settings: the level, what each level collects, a live view of the
 // events this browser sent, and a download of that local log.
+import { hostWord } from "../desktop.ts";
 import Window from "../ui/Window.svelte";
 import { KNOWN_EVENTS, type Level, pingBody } from "./core";
 import {
@@ -29,7 +30,7 @@ const options: { value: Level; label: string; about: string }[] = [
 		value: "basic",
 		label: "Basic",
 		about:
-			"One anonymous ping per session. The server counts visitors per day with a salted hash that changes every UTC day and is never stored. Your address is not stored or logged, and this browser keeps no ID.",
+			`One anonymous ping per session. The server counts visitors per day with a salted hash that changes every UTC day and is never stored. Your address is not stored or logged, and ${hostWord()} keeps no ID.`,
 	},
 	{
 		value: "advanced",
@@ -50,7 +51,7 @@ function time(t: string): string {
 		{#if !available()}
 			<p class="banner">
 				This editor is not served by a yoshida server that collects usage statistics, so
-				nothing is sent, whatever the level. Projects stay in this browser.
+				nothing is sent, whatever the level. Projects stay in {hostWord()}.
 			</p>
 		{:else}
 			{#if locked}
@@ -98,7 +99,7 @@ function time(t: string): string {
 			and nothing else.
 		</p>
 
-		<h3>Sent from this browser</h3>
+		<h3>Sent from {hostWord()}</h3>
 		<ul class="log" aria-live="polite" data-testid="telemetry-log">
 			{#each log as e (e.t + e.kind + e.name)}
 				<li>
@@ -119,7 +120,7 @@ function time(t: string): string {
 			{/if}
 		</div>
 		<p class="note">
-			The log lives in this browser only. The server stores totals per day, not individual
+			The log lives in {hostWord()} only. The server stores totals per day, not individual
 			events, so it cannot tell which of them were yours.
 		</p>
 	</div>

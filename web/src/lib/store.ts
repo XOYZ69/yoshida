@@ -2,6 +2,7 @@
 // machine: the files of a project, images and fonts included, are stored
 // as they are, under a random id.
 
+import type { FolderRecord } from "./folder/backend";
 import type { Files } from "./project";
 
 export type ProjectMeta = {
@@ -21,16 +22,21 @@ const SUFFIX = CHANNEL ? `-${CHANNEL}` : "";
 const DB = `yoshida${SUFFIX}`;
 const META = "meta";
 const FILES = "files";
+// Folder links: the folder a project is linked to, by project id.
+const FOLDERS = "folders";
 const LAST = `yoshida${SUFFIX}.last-project`;
 
 let opening: Promise<IDBDatabase> | null = null;
 
 function db(): Promise<IDBDatabase> {
 	opening ??= new Promise((resolve, reject) => {
-		const req = indexedDB.open(DB, 1);
+		const req = indexedDB.open(DB, 2);
 		req.onupgradeneeded = () => {
-			req.result.createObjectStore(META, { keyPath: "id" });
-			req.result.createObjectStore(FILES);
+			const names = req.result.objectStoreNames;
+			if (!names.contains(META))
+				req.result.createObjectStore(META, { keyPath: "id" });
+			if (!names.contains(FILES)) req.result.createObjectStore(FILES);
+			if (!names.contains(FOLDERS)) req.result.createObjectStore(FOLDERS);
 		};
 		req.onsuccess = () => resolve(req.result);
 		req.onerror = () => {
@@ -111,11 +117,40 @@ export async function saveProject(
 }
 
 export async function deleteProject(id: string) {
-	const tx = (await db()).transaction([META, FILES], "readwrite");
+	const tx = (await db()).transaction([META, FILES, FOLDERS], "readwrite");
 	tx.objectStore(META).delete(id);
 	tx.objectStore(FILES).delete(id);
+	tx.objectStore(FOLDERS).delete(id);
 	await done(tx);
 	if (lastProject() === id) setLastProject(null);
+}
+
+/** The folder a project is linked to, or null. */
+export async function loadFolder(id: string): Promise<FolderRecord | null> {
+	try {
+		const tx = (await db()).transaction(FOLDERS, "readonly");
+		return (
+			((await result(tx.objectStore(FOLDERS).get(id))) as
+				| FolderRecord
+				| undefined) ?? null
+		);
+	} catch {
+		return null;
+	}
+}
+
+/** Remembers the folder of a project (the browser keeps the handle). */
+export async function saveFolder(id: string, rec: FolderRecord) {
+	const tx = (await db()).transaction(FOLDERS, "readwrite");
+	tx.objectStore(FOLDERS).put(rec, id);
+	await done(tx);
+}
+
+/** Forgets the folder of a project; the files stay where they are. */
+export async function deleteFolder(id: string) {
+	const tx = (await db()).transaction(FOLDERS, "readwrite");
+	tx.objectStore(FOLDERS).delete(id);
+	await done(tx);
 }
 
 /** The project to reopen on the next visit. */

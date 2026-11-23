@@ -311,8 +311,9 @@ async function release() {
 }
 
 // bump.mjs imports the helpers above, so only run a mode when started directly.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-	const mode = process.argv[2];
+// No top-level await: preview() imports bump.mjs, which imports this file, and
+// that import would wait for this module to finish evaluating (a deadlock).
+async function main(mode) {
 	if (mode === 'title') await title();
 	else if (mode === 'preview') await preview();
 	else if (mode === 'release') await release();
@@ -320,4 +321,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		console.error('usage: release-notes.mjs title|preview|release');
 		process.exit(2);
 	}
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main(process.argv[2]).catch((e) => {
+		console.error(e);
+		process.exit(1);
+	});
 }

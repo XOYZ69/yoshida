@@ -35,6 +35,7 @@ Schemas for editors live in `schema/` of the repository (JSON Schema draft 2020-
 | `schema/defs.schema.json` | definitions files for [`import`](@/docs/params.md#sharing-params-and-constants-between-designs) |
 | `schema/cards.schema.json` | `*.cards.json` |
 | `schema/yoshida.schema.json` | `yoshida.json` |
+| `schema/qa.schema.json` | `qa.json`, see [Card review](@/docs/project-layout-and-manifest.md#card-review-qa-json) |
 
 Add a `$schema` key at the top of a file (adjust the relative path):
 

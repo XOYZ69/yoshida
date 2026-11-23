@@ -6,6 +6,7 @@
 	import LayerTree from "./lib/builder/LayerTree.svelte";
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
+	import { hostWord, isDesktop, rendererWord } from "./lib/desktop.ts";
 	import CardForm from "./lib/CardForm.svelte";
 	import TelemetryNotice from "./lib/telemetry/TelemetryNotice.svelte";
 	import TelemetryWindow from "./lib/telemetry/TelemetryWindow.svelte";
@@ -117,7 +118,6 @@
 		blankDesign,
 		bytesOf,
 		type CardListOp,
-		canOpenWritable,
 		cardIdRe,
 		download,
 		type Example,
@@ -134,14 +134,11 @@
 		listExamples,
 		loadExample,
 		MANIFEST,
-		openWritable,
 		PROJECT_EXT,
 		PROJECT_MIME,
 		parseCsv,
-		pickDirectory,
 		projectFileRe,
 		projectZip,
-		removeFile,
 		setCardValue,
 		slug,
 		textOf,
@@ -152,23 +149,63 @@
 		withSet,
 		withUtcOffset,
 		writeCsv,
-		writeFile,
 	} from "./lib/project";
 	import {
+		type QaDoc,
+		type QaMark,
+		QA_FILE,
+		cardHash,
+		contentHash,
+		designFingerprint,
+		parseQa,
+		reconcileQa,
+		statusOf,
+		openComments,
+		stampNow,
+		withComment,
+		withCommentEdit,
+		withMark,
+		withoutComment,
+		needsReview,
+		type QaComment,
+		writeQa,
+	} from "./lib/qa";
+	import {
+		activeBackend,
+		backendById,
+		type FolderLink,
+	} from "./lib/folder/backend";
+	// The desktop app's backend first: it wins wherever both are supported.
+	import "./lib/folder/native";
+	import "./lib/folder/browser";
+	import {
+		diffCount,
+		diffFiles,
+		type FileDiff,
+		findExternalChanges,
+		planReconnect,
+		type Sigs,
+	} from "./lib/folder/sync";
+	import {
+		deleteFolder,
 		deleteProject,
 		formatAge,
 		formatSize,
 		lastProject,
 		listProjects,
+		loadFolder,
 		loadProject,
 		newProjectId,
 		type ProjectMeta,
 		persistStorage,
+		saveFolder,
 		saveProject,
 		setLastProject,
 	} from "./lib/store";
 	import CardBrowser from "./lib/ui/CardBrowser.svelte";
 	import CardList from "./lib/ui/CardList.svelte";
+	import QaControl from "./lib/ui/QaControl.svelte";
+	import QaBadge from "./lib/ui/QaBadge.svelte";
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import ExportDialog from "./lib/ui/ExportDialog.svelte";
@@ -207,6 +244,7 @@
 	import MenuHost from "./lib/ui/MenuHost.svelte";
 	import {
 		askText,
+		chooseAction,
 		confirmAction,
 		type MenuItem,
 		openMenu,
@@ -267,7 +305,18 @@
 	let myProjects = $state.raw<ProjectMeta[]>([]);
 	let files = $state.raw<Files>(new Map());
 	let dirty = $state.raw(new Set<string>());
-	let dirHandle: FileSystemDirectoryHandle | null = $state(null);
+	/** The folder on disk this project is linked to, or null. */
+	let folder = $state.raw<FolderLink | null>(null);
+	/** Fingerprints of the folder's files after the last sync. */
+	let folderSigs: Sigs = new Map();
+	type FolderNotice =
+		| { kind: "permission" }
+		| { kind: "changed"; paths: string[]; sigs: Sigs }
+		| { kind: "conflict"; diff: FileDiff }
+		| { kind: "error"; message: string };
+	/** Something about the linked folder that needs an answer from the user. */
+	let folderNotice = $state.raw<FolderNotice | null>(null);
+	let folderWriting = $state(false);
 	let selected: string | null = $state(null);
 	let check = $state.raw<CheckResult | null>(null);
 	let setName = $state("");
@@ -496,6 +545,42 @@
 	const sets = $derived(check?.project.sets ?? []);
 	const currentSet = $derived(sets.find((s) => s.name === setName));
 	const currentCard = $derived(currentSet?.cards[cardIndex]);
+
+	// Card review (qa.json): the status of each card of the current set. An
+	// approval is stale once the card or the design inputs hash differently.
+	// Reviews follow renamed and moved cards (`reconcileQa`); the file is
+	// brought up to date with the next review that is recorded.
+	const qaSets = $derived(
+		sets.map((s) => {
+			const inputs = designFingerprint(files, s.design);
+			return {
+				key: s.cards_file ?? s.name,
+				cards: s.cards.map((c) => ({
+					id: c.id,
+					hash: cardHash(c, inputs),
+					content: contentHash(c, inputs),
+				})),
+			};
+		}),
+	);
+	const qaDoc = $derived(
+		reconcileQa(
+			parseQa(files.has(QA_FILE) ? textOf(files.get(QA_FILE)!) : undefined),
+			qaSets,
+		),
+	);
+	const qaKey = $derived(currentSet?.cards_file ?? currentSet?.name ?? "");
+	const qaHashes = $derived(
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.hash) ?? [],
+	);
+	const qaContent = $derived(
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.content) ?? [],
+	);
+	const qaStatuses = $derived(
+		(currentSet?.cards ?? []).map((c, i) =>
+			statusOf(qaDoc.cards[qaKey]?.[c.id], qaHashes[i]),
+		),
+	);
 	// Keys of each list param (for `list.Key` suggestions): the current card's
 	// first, then the other cards', then the default's.
 	const listKeys = $derived.by(() => {
@@ -673,6 +758,8 @@
 				(res.headers.get("content-type") ?? "").includes("json")
 			)
 				server = await res.json();
+			// The app starts its own renderer: always use it (it is the fast one).
+			if (server?.render && isDesktop()) useServer = true;
 		} catch {
 			server = null;
 		}
@@ -704,9 +791,10 @@
 	async function openProject(
 		name: string,
 		f: Files,
-		handle: FileSystemDirectoryHandle | null = null,
+		link: FolderLink | null = null,
 		id: string | null = null,
 		saved = false,
+		sigs: Sigs = new Map(),
 	) {
 		loading = { name, step: 0, label: loadSteps[0] };
 		projectName = name;
@@ -716,7 +804,9 @@
 		if (id) setLastProject(id);
 		files = f;
 		dirty = new Set();
-		dirHandle = handle;
+		folder = link;
+		folderSigs = sigs;
+		folderNotice = null;
 		lastRender = null;
 		check = null;
 		setName = "";
@@ -741,6 +831,7 @@
 			fileList.find((p) => p.endsWith(".design.json")) ??
 			fileList[0] ??
 			null;
+		if (link && id) persistFolder();
 		await refresh();
 	}
 
@@ -757,6 +848,7 @@
 			const p = await loadProject(id);
 			if (!p) return false;
 			await openProject(p.meta.name, p.files, null, id, true);
+			await reopenFolder(id);
 			return true;
 		} catch (e) {
 			status = `Could not open the saved project: ${(e as Error).message}`;
@@ -782,16 +874,26 @@
 	}
 
 	async function openFolder() {
-		if (canOpenWritable()) {
+		const backend = activeBackend();
+		if (backend) {
 			try {
-				const { name, files: f, handle } = await openWritable();
-				await openProject(name, f, handle, newProjectId());
+				const link = await backend.pick();
+				const { files: f, sigs } = await link.read();
+				await openProject(link.name, f, link, newProjectId(), false, sigs);
 			} catch (e) {
 				if ((e as Error).name !== "AbortError")
 					status = `Could not open the folder: ${(e as Error).message}`;
 			}
 			return;
 		}
+		await openFolderCopy();
+	}
+
+	/**
+	 * Copies a folder into the project in this browser (the browser's upload
+	 * dialog): the folder on disk is not linked and never written to.
+	 */
+	async function openFolderCopy() {
 		const list = await pickFiles("", { directory: true });
 		if (!list.length) return;
 		const { name, files: f } = await filesFromInput(list);
@@ -866,13 +968,14 @@
 			persistStorage();
 		} catch (e) {
 			saveState = "error";
-			status = `Could not save in this browser: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
+			status = `Could not save in ${hostWord()}: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
 		}
 	}
 
 	function onHide() {
 		if (document.visibilityState === "hidden" && saveState === "unsaved")
 			saveInBrowser();
+		if (document.visibilityState === "visible") checkFolder();
 	}
 
 	async function renameProject() {
@@ -892,10 +995,25 @@
 	}
 
 	async function forgetProject(meta: ProjectMeta) {
+		// A linked project: the folder on disk is not touched, only the copy in
+		// this browser and the link to the folder go.
+		let linked: string | null = null;
+		if (meta.id === projectId && folder) linked = folder.name;
+		else {
+			const rec = await loadFolder(meta.id).catch(() => null);
+			if (rec) {
+				try {
+					linked = backendById(rec.backend)?.open(rec.ref).name ?? "a folder";
+				} catch {
+					linked = "a folder";
+				}
+			}
+		}
 		const ok = await confirmAction({
-			title: `Delete '${meta.name}' from this browser?`,
-			message:
-				"Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
+			title: `Delete '${meta.name}' from ${hostWord()}?`,
+			message: linked
+				? `Its copy (images included) and the link to the folder '${linked}' are removed from ${hostWord()}. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
+				: `Its files (images included) are removed from ${hostWord()}. Export it as a .yoshida file first if you want to keep it.`,
 			confirm: "Delete",
 			danger: true,
 		});
@@ -904,7 +1022,7 @@
 		myProjects = await listProjects();
 		if (meta.id === projectId) {
 			await closeProject();
-			status = `Deleted '${meta.name}' from this browser. Open a project to continue.`;
+			status = `Deleted '${meta.name}' from ${hostWord()}. Open a project to continue.`;
 		}
 	}
 
@@ -916,7 +1034,9 @@
 		saveState = "idle";
 		files = new Map();
 		dirty = new Set();
-		dirHandle = null;
+		folder = null;
+		folderSigs = new Map();
+		folderNotice = null;
 		lastRender = null;
 		check = null;
 		setName = "";
@@ -943,7 +1063,24 @@
 		const items: MenuItem[] = [
 			{ heading: "Start" },
 			{ label: "New project…", icon: "plus", action: newProject },
-			{ label: "Open folder…", icon: "folder", action: openFolder },
+			{
+				label: "Open folder…",
+				icon: "folder",
+				detail: activeBackend()
+					? "edit the files on disk in place"
+					: `copies it into ${hostWord()}`,
+				action: openFolder,
+			},
+			...(activeBackend()
+				? [
+						{
+							label: "Open folder as a copy…",
+							icon: "upload",
+							detail: "upload it, the folder is left alone",
+							action: openFolderCopy,
+						} satisfies MenuItem,
+					]
+				: []),
 			{
 				label: "Open project file…",
 				icon: "file",
@@ -982,22 +1119,32 @@
 				disabled: !projectName,
 				action: addFiles,
 			},
-			{
-				label: dirHandle
-					? `Save to ${dirHandle.name}`
-					: "Save to folder…",
-				icon: "save",
-				detail: dirHandle
-					? dirty.size
-						? `${dirty.size} changed`
-						: "up to date"
-					: "keeps saving there",
-				disabled:
-					!open ||
-					(!!dirHandle && !dirty.size) ||
-					(!dirHandle && !canOpenWritable()),
-				action: dirHandle ? save : saveToFolder,
-			},
+			folder
+				? {
+						label: `Unlink from ${folder.name}`,
+						icon: "folder",
+						detail: "keeps the files, stops writing to them",
+						action: unlinkFolder,
+					}
+				: {
+						label: "Link to folder…",
+						icon: "folder",
+						detail: activeBackend()
+							? "edit the files on disk, saved as you work"
+							: `not available in ${hostWord()}, click to see why`,
+						disabled: !open,
+						action: linkFolder,
+					},
+			...(folder
+				? [
+						{
+							label: "Reload from folder",
+							icon: "folder",
+							detail: "after changes outside the editor",
+							action: reloadFromFolder,
+						} satisfies MenuItem,
+					]
+				: []),
 			{
 				label: "Export project file",
 				icon: "download",
@@ -1020,12 +1167,12 @@
 		];
 		if (current)
 			items.push({
-				label: "Delete from this browser…",
+				label: `Delete from ${hostWord()}…`,
 				icon: "trash",
 				danger: true,
 				action: () => forgetProject(current),
 			});
-		items.push({ separator: true }, { heading: "Saved in this browser" });
+		items.push({ separator: true }, { heading: `Saved in ${hostWord()}` });
 		if (!myProjects.length)
 			items.push({
 				label: "Nothing yet: changes are saved here automatically",
@@ -1641,19 +1788,313 @@
 		else importFiles(list);
 	}
 
-	/** Writes the whole project to a folder the user picks, then saves there. */
-	async function saveToFolder() {
+	// ---------------------------------------------------------------- linked folder
+	//
+	// A project can be linked to a folder on disk (lib/folder): every change
+	// is written there as it happens, and changes made outside the editor (a
+	// git pull, another editor) are noticed and offered for reload. The link
+	// is kept in this browser, so a reload only asks for access again.
+
+	/** Remembers the link and the last sync for the next visit. */
+	async function persistFolder() {
+		const link = folder;
+		const id = projectId;
+		if (!link || !id) return;
 		try {
-			const handle = await pickDirectory();
-			for (const [p, d] of files) await writeFile(handle, p, d);
-			dirHandle = handle;
-			dirty = new Set();
-			status = `Saved ${files.size} file(s) to ${handle.name}.`;
-		} catch (e) {
-			if ((e as Error).name !== "AbortError")
-				status = `Could not save: ${(e as Error).message}`;
+			await saveFolder(id, {
+				backend: link.backend,
+				ref: link.ref,
+				sigs: [...folderSigs],
+			});
+		} catch {
+			// Not stored: the link works until the page is closed.
 		}
 	}
+
+	/** Reconnects the folder a saved project was linked to, if it had one. */
+	async function reopenFolder(id: string) {
+		const rec = await loadFolder(id);
+		const backend = rec && backendById(rec.backend);
+		if (!rec || !backend || id !== projectId) return;
+		const link = backend.open(rec.ref);
+		folder = link;
+		folderSigs = new Map(rec.sigs);
+		try {
+			if ((await link.permission()) !== "granted")
+				folderNotice = { kind: "permission" };
+			else await reconcileFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/**
+	 * Compares the project with the folder after a reconnect: it is left alone
+	 * when equal, written out when only the project changed, and the user
+	 * chooses when both did.
+	 */
+	async function reconcileFolder() {
+		const link = folder;
+		if (!link) return;
+		const { files: onDisk, sigs } = await link.read();
+		const plan = planReconnect(files, onDisk, sigs, folderSigs);
+		if (link !== folder) return;
+		if (plan.kind === "ask") {
+			folderNotice = { kind: "conflict", diff: plan.diff };
+			return;
+		}
+		folderSigs = plan.sigs;
+		if (plan.kind === "push") markForWrite(plan.diff);
+		persistFolder();
+	}
+
+	function markForWrite(d: { onlyMine: string[]; onlyTheirs: string[]; differ: string[] }) {
+		dirty = new Set([...dirty, ...d.onlyMine, ...d.onlyTheirs, ...d.differ]);
+	}
+
+	/** Asks for access to the folder again (needs a click). */
+	async function allowFolder() {
+		const link = folder;
+		if (!link) return;
+		try {
+			if ((await link.permission(true)) !== "granted") {
+				status = `No access to ${link.name}. Allow it, or unlink the folder.`;
+				return;
+			}
+			folderNotice = null;
+			await reconcileFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/** Links the open project to a folder the user picks. */
+	async function linkFolder() {
+		const backend = activeBackend();
+		if (!files.size) return;
+		if (!backend) {
+			await confirmAction({
+				title: "This browser cannot link a folder",
+				message:
+					"Linking needs the File System Access API: Chrome, Edge and other Chromium browsers have it. Brave has it switched off: open brave://flags/#file-system-access-api, set it to Enabled and restart Brave. Firefox and Safari do not have it; use Export project file there.",
+				confirm: "OK",
+			});
+			return;
+		}
+		try {
+			const link = await backend.pick();
+			const { files: onDisk, sigs } = await link.read();
+			const diff = diffFiles(files, onDisk);
+			if (diff.differ.length) {
+				const ok = await confirmAction({
+					title: `Link to '${link.name}'?`,
+					message: `${diff.differ.length} file(s) in the folder are replaced by this project's version. ${
+						diff.onlyTheirs.length
+							? `${diff.onlyTheirs.length} file(s) that exist only in the folder are added to the project. `
+							: ""
+					}Nothing else in the folder is deleted.`,
+					confirm: "Link and overwrite",
+					danger: true,
+				});
+				if (!ok) return;
+			}
+			if (folder) await unlinkFolder();
+			projectId ??= newProjectId();
+			if (diff.onlyTheirs.length) {
+				const next = new Map(files);
+				for (const p of diff.onlyTheirs) {
+					const d = onDisk.get(p) as Uint8Array;
+					next.set(p, d);
+					await engine.put(p, d);
+				}
+				files = next;
+			}
+			folder = link;
+			folderSigs = sigs;
+			folderNotice = null;
+			markForWrite({ onlyMine: diff.onlyMine, onlyTheirs: [], differ: diff.differ });
+			await saveInBrowser();
+			await persistFolder();
+			status = `Linked to ${link.name}: changes are saved there as you work.`;
+			if (diff.onlyTheirs.length) await refresh();
+		} catch (e) {
+			if ((e as Error).name !== "AbortError")
+				status = `Could not link the folder: ${(e as Error).message}`;
+		}
+	}
+
+	/** Stops writing to the folder. Its files and the project's both stay as they are. */
+	async function unlinkFolder() {
+		const link = folder;
+		if (!link) return;
+		await flushFolder();
+		folder = null;
+		folderSigs = new Map();
+		folderNotice = null;
+		if (projectId) await deleteFolder(projectId).catch(() => {});
+		status = `Unlinked from ${link.name}. The project stays in ${hostWord()}.`;
+	}
+
+	/** Replaces the project's files with what is in the folder now. */
+	async function reloadFromFolder() {
+		const link = folder;
+		if (!link) return;
+		try {
+			if ((await link.permission(true)) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			const { files: f, sigs } = await link.read();
+			if (link !== folder) return;
+			files = f;
+			dirty = new Set();
+			folderSigs = sigs;
+			folderNotice = null;
+			undoStack = [];
+			redoStack = [];
+			if (filesSelected && !f.has(filesSelected)) filesSelected = null;
+			await engine.setFiles(f);
+			if (!selected || !f.has(selected))
+				selected =
+					fileList.find((p) => p.endsWith(".design.json")) ??
+					fileList[0] ??
+					null;
+			await refresh();
+			persistFolder();
+			status = `Reloaded ${f.size} file(s) from ${link.name}.`;
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		}
+	}
+
+	/** Keeps the project's version of the files the folder changed. */
+	function keepProjectVersion() {
+		const n = folderNotice;
+		if (n?.kind === "changed") {
+			folderSigs = n.sigs;
+			// Files that were added outside the editor are left alone.
+			dirty = new Set([...dirty, ...n.paths.filter((p) => files.has(p))]);
+			folderNotice = null;
+			persistFolder();
+		} else if (n?.kind === "conflict") {
+			// Files that exist only in the folder are not deleted.
+			markForWrite({ ...n.diff, onlyTheirs: [] });
+			folderNotice = null;
+			// The folder's fingerprints are taken again so that the write
+			// below is not mistaken for an outside change.
+			folder?.scan().then((s) => {
+				folderSigs = s;
+				persistFolder();
+			});
+		}
+	}
+
+	let folderTimer: ReturnType<typeof setTimeout> | undefined;
+	let folderFlush: Promise<void> = Promise.resolve();
+
+	/** Writes the changed files to the folder, one flush at a time. */
+	function flushFolder(): Promise<void> {
+		clearTimeout(folderTimer);
+		folderFlush = folderFlush.then(writeToFolder, writeToFolder);
+		return folderFlush;
+	}
+
+	async function writeToFolder() {
+		const link = folder;
+		// Writing over a folder that has changed under us would lose those
+		// changes, so it waits for the user's answer to a notice.
+		if (!link || !dirty.size || (folderNotice && folderNotice.kind !== "error"))
+			return;
+		const todo = [...dirty].map((p) => [p, files.get(p)] as const);
+		try {
+			if ((await link.permission()) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			folderWriting = true;
+			const sigs = new Map(folderSigs);
+			for (const [p, d] of todo) {
+				if (d) sigs.set(p, await link.write(p, d));
+				else {
+					await link.remove(p);
+					sigs.delete(p);
+				}
+			}
+			if (link !== folder) return;
+			folderSigs = sigs;
+			// A file edited again while it was being written stays pending.
+			const rest = new Set(dirty);
+			for (const [p, d] of todo) if (files.get(p) === d) rest.delete(p);
+			dirty = rest;
+			if (folderNotice?.kind === "error") folderNotice = null;
+			persistFolder();
+		} catch (e) {
+			folderNotice = { kind: "error", message: (e as Error).message };
+		} finally {
+			folderWriting = false;
+		}
+	}
+
+	// Writes shortly after a change, so typing is not one write per key.
+	$effect(() => {
+		if (!folder || !dirty.size || (folderNotice && folderNotice.kind !== "error"))
+			return;
+		clearTimeout(folderTimer);
+		folderTimer = setTimeout(flushFolder, 500);
+		return () => clearTimeout(folderTimer);
+	});
+
+	/** Looks for changes made outside the editor. */
+	async function checkFolder() {
+		const link = folder;
+		if (
+			!link ||
+			folderNotice ||
+			folderWriting ||
+			dirty.size ||
+			document.visibilityState !== "visible"
+		)
+			return;
+		const known = folderSigs;
+		try {
+			if ((await link.permission()) !== "granted") {
+				folderNotice = { kind: "permission" };
+				return;
+			}
+			const found = await findExternalChanges(link, files, known);
+			// Edited, written or switched while scanning: the next check sees it.
+			if (!found || link !== folder || known !== folderSigs || dirty.size) return;
+			if (found.changed.length)
+				folderNotice = { kind: "changed", paths: found.changed, sigs: found.sigs };
+			else {
+				folderSigs = found.sigs;
+				persistFolder();
+			}
+		} catch {
+			// A file may be half written (a git checkout): the next check tries again.
+		}
+	}
+
+	$effect(() => {
+		if (!folder) return;
+		const t = setInterval(checkFolder, 3000);
+		return () => clearInterval(t);
+	});
+
+	const folderNoticeText = $derived.by(() => {
+		const n = folderNotice;
+		const name = folder?.name ?? "";
+		if (!n) return "";
+		if (n.kind === "permission")
+			return `The browser needs your permission to use the folder '${name}' again.`;
+		if (n.kind === "changed") {
+			const shown = n.paths.slice(0, 3).join(", ");
+			return `${n.paths.length} file(s) in '${name}' changed outside the editor (${shown}${n.paths.length > 3 ? ", …" : ""}).`;
+		}
+		if (n.kind === "conflict")
+			return `'${name}' differs from this project: ${diffCount(n.diff)} file(s). They changed while the project was closed.`;
+		return `Could not write to '${name}': ${n.message}`;
+	});
 
 	// ---------------------------------------------------------------- refresh
 
@@ -1889,6 +2330,220 @@
 		} catch (e) {
 			status = `Could not update ${cf}: ${(e as Error).message}`;
 		}
+	}
+
+	function writeQaDoc(next: QaDoc) {
+		const before = currentText(QA_FILE);
+		const text = writeQa(next);
+		if (text === before) return;
+		record(QA_FILE, before);
+		updateFile(QA_FILE, text, true);
+	}
+
+	// Reviewer name: kept in this browser, written next to marks and comments.
+	const reviewerKey = "yoshida.reviewer";
+	let reviewer = $state(
+		(() => {
+			try {
+				return localStorage.getItem(reviewerKey) ?? "";
+			} catch {
+				return "";
+			}
+		})(),
+	);
+	function setReviewer(name: string) {
+		reviewer = name.trim().slice(0, 60);
+		try {
+			if (reviewer) localStorage.setItem(reviewerKey, reviewer);
+			else localStorage.removeItem(reviewerKey);
+		} catch {
+			// The name just is not remembered.
+		}
+	}
+	const stamp = () => ({ ...(reviewer ? { by: reviewer } : {}), at: stampNow() });
+
+	const qaEntry = $derived(
+		currentCard ? qaDoc.cards[qaKey]?.[currentCard.id] : undefined,
+	);
+	/** The comment shown highlighted, and the one waiting for a click on the card to be pinned. */
+	let qaActive = $state<string | null>(null);
+	let pinTarget = $state<string | null>(null);
+	let qaComposer = $state<HTMLInputElement>();
+	let qaOverviewOpen = $state(false);
+	let qaKeysOpen = $state(false);
+	// The comments belong to a card: another card starts clean.
+	$effect(() => {
+		void currentCard?.id;
+		void setName;
+		qaActive = null;
+		pinTarget = null;
+	});
+
+	function reviewCard(mark: QaMark | null) {
+		const c = currentCard;
+		if (!c) return;
+		if (mark === "approved" && openComments(qaEntry).length) {
+			status = "Resolve the open comments before approving.";
+			return;
+		}
+		writeQaDoc(
+			withMark(
+				qaDoc,
+				qaKey,
+				c.id,
+				mark,
+				qaHashes[cardIndex],
+				stamp(),
+				qaContent[cardIndex],
+			),
+		);
+	}
+
+	function addComment(text: string) {
+		const c = currentCard;
+		if (!c) return;
+		const r = withComment(qaDoc, qaKey, c.id, qaHashes[cardIndex], {
+			text,
+			content: qaContent[cardIndex],
+			...stamp(),
+		});
+		writeQaDoc(r.doc);
+		qaActive = r.id;
+	}
+
+	function editComment(
+		id: string,
+		patch: Partial<Pick<QaComment, "text" | "resolved" | "x" | "y">>,
+	) {
+		if (currentCard)
+			writeQaDoc(withCommentEdit(qaDoc, qaKey, currentCard.id, id, patch));
+	}
+
+	function removeComment(id: string) {
+		if (currentCard)
+			writeQaDoc(withoutComment(qaDoc, qaKey, currentCard.id, id));
+		if (qaActive === id) qaActive = null;
+		if (pinTarget === id) pinTarget = null;
+	}
+
+	function placePin(x: number, y: number) {
+		if (!pinTarget) return;
+		editComment(pinTarget, { x: Math.round(x), y: Math.round(y) });
+		qaActive = pinTarget;
+		pinTarget = null;
+	}
+
+	const qaPins = $derived(
+		(qaEntry?.comments ?? []).flatMap((c, i) =>
+			c.x === undefined || c.y === undefined
+				? []
+				: [
+						{
+							id: c.id,
+							n: i + 1,
+							x: c.x,
+							y: c.y,
+							resolved: !!c.resolved,
+							active: qaActive === c.id,
+						},
+					],
+		),
+	);
+
+	/** Every card with a mark or comments, for the overview. */
+	const qaRows = $derived(
+		sets.flatMap((s, si) =>
+			s.cards.flatMap((c, i) => {
+				const e = qaDoc.cards[qaSets[si]?.key]?.[c.id];
+				if (!e) return [];
+				return [
+					{
+						set: s.name,
+						setLabel: s.design_name,
+						index: i,
+						id: c.id,
+						status: statusOf(e, qaSets[si].cards[i].hash),
+						entry: e,
+					},
+				];
+			}),
+		),
+	);
+
+	/** The card last looked at in each set, so switching designs comes back to it. */
+	const lastCard = new Map<string, number>();
+
+	function goToCard(set: string, index: number | null) {
+		if (set !== setName) lastCard.set(setName, cardIndex);
+		index ??= lastCard.get(set) ?? 0;
+		if (set !== setName) {
+			setName = set;
+			selectedLayers = [];
+		}
+		cardIndex = index;
+		cardIdError = "";
+		renderPreview();
+	}
+
+	function stepCard(by: number) {
+		const n = currentSet?.cards.length ?? 0;
+		if (!n) return;
+		goToCard(setName, Math.min(n - 1, Math.max(0, cardIndex + by)));
+	}
+
+	function stepSet(by: number) {
+		if (sets.length < 2) return;
+		const i = sets.findIndex((s) => s.name === setName);
+		goToCard(sets[(i + by + sets.length) % sets.length].name, null);
+	}
+
+	/** The next card, in the sets' order after this one and wrapping round, that still needs review. */
+	function nextToReview() {
+		const flat = sets.flatMap((s, si) =>
+			s.cards.map((c, i) => ({
+				set: s.name,
+				i,
+				st: statusOf(qaDoc.cards[qaSets[si]?.key]?.[c.id], qaSets[si].cards[i].hash),
+			})),
+		);
+		const at = flat.findIndex((x) => x.set === setName && x.i === cardIndex);
+		for (let k = 1; k <= flat.length; k++) {
+			const x = flat[(at + k) % flat.length];
+			if (needsReview(x.st)) {
+				goToCard(x.set, x.i);
+				return;
+			}
+		}
+		status = "No card needs review.";
+	}
+
+	/** The review keys; true when the key was one of them. */
+	function reviewKey(e: KeyboardEvent): boolean {
+		const k = e.key;
+		if (k === "?" || (k === "/" && e.shiftKey)) qaKeysOpen = !qaKeysOpen;
+		else if (k === "Escape" && (pinTarget || qaKeysOpen || qaOverviewOpen)) {
+			pinTarget = null;
+			qaKeysOpen = false;
+			qaOverviewOpen = false;
+		} else if (!currentCard) return false;
+		else if (k === "j") stepCard(1);
+		else if (k === "k") stepCard(-1);
+		else if (k === "]") stepSet(1);
+		else if (k === "[") stepSet(-1);
+		else if (k === "a") reviewCard("approved");
+		else if (k === "n") reviewCard("needs-changes");
+		else if (k === "x") reviewCard(null);
+		else if (k === "u") nextToReview();
+		else if (k === "o") qaOverviewOpen = !qaOverviewOpen;
+		else if (k === "c") queueMicrotask(() => qaComposer?.focus());
+		else if (k === "p") {
+			const target =
+				qaActive ??
+				[...(qaEntry?.comments ?? [])].reverse().find((c) => !c.resolved)?.id ??
+				null;
+			pinTarget = pinTarget || !target ? null : target;
+		} else return false;
+		return true;
 	}
 
 	function editCards(op: CardListOp) {
@@ -3054,6 +3709,10 @@
 			browsing = false;
 			return;
 		}
+		if (!typing && !mod && !e.altKey && reviewKey(e)) {
+			e.preventDefault();
+			return;
+		}
 		if (mode !== "build" || typing || !doc) return;
 		if (k === "escape") selectedLayers = [];
 		if (mod && k === "a") {
@@ -3190,18 +3849,6 @@
 		sidePanel = "files";
 	}
 
-	/** Writes the changed files back into the folder opened with write access. */
-	async function save() {
-		if (!dirty.size || !dirHandle) return;
-		for (const p of dirty) {
-			const d = files.get(p);
-			if (d) await writeFile(dirHandle, p, d);
-			else await removeFile(dirHandle, p);
-		}
-		status = `Saved ${dirty.size} file(s) to ${dirHandle.name}.`;
-		dirty = new Set();
-	}
-
 	// ---------------------------------------------------------------- export
 
 	/** Time per card of the last export in this browser, for the next estimate. */
@@ -3230,7 +3877,7 @@
 		const clock = renderClock();
 		busy = "Rendering PNG…";
 		try {
-			run.log(`Rendering card '${card.id}' at full size in this browser`);
+			run.log(`Rendering card '${card.id}' at full size in ${hostWord()}`);
 			// One call with no progress inside: the bar stays indeterminate and
 			// the estimate is shown as text only.
 			run.estimate(fullCardEstimate());
@@ -3285,7 +3932,7 @@
 		try {
 			run.step(0, `0 / ${n}`);
 			run.log(
-				`Rendering ${n} card(s) of '${set.design_name}' in this browser`,
+				`Rendering ${n} card(s) of '${set.design_name}' in ${hostWord()}`,
 			);
 			const zip: Record<string, Uint8Array> = {};
 			const diagnostics: Diagnostic[] = [];
@@ -3375,7 +4022,7 @@
 			run.perUnit(per);
 			run.count(0, n);
 			run.log(
-				`Rendering ${n} page(s) in this browser${bleed ? " with crop marks" : ""}` +
+				`Rendering ${n} page(s) in ${hostWord()}${bleed ? " with crop marks" : ""}` +
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
@@ -3600,7 +4247,7 @@
 			run.fail(
 				`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
 			);
-			status = "Server render refused: the project is too big for this server.";
+			status = `Render refused: the project is too big for ${isDesktop() ? "the built-in renderer" : "this server"}.`;
 			return null;
 		}
 		return body;
@@ -3620,18 +4267,18 @@
 		// Weights: a rough share of the time on a local network; the bar moves
 		// with the bytes sent, the cards the server reports and the bytes received.
 		const run = new Run(
-			`Rendering ${n} card${n === 1 ? "" : "s"} on the server (${what})`,
+			`Rendering ${n} card${n === 1 ? "" : "s"} with ${rendererWord()} (${what})`,
 			[
 				["Pack the project", 3],
-				["Upload to the server", 10],
-				["Render on the server", 77],
+				[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+				[isDesktop() ? "Render" : "Render on the server", 77],
 				["Download the result", 8],
 				["Save", 2],
 			],
 		);
 		const ctl: { abort?: () => void } = {};
 		run.onCancel(() => ctl.abort?.());
-		busy = "Rendering on the server…";
+		busy = isDesktop() ? "Rendering…" : "Rendering on the server…";
 		try {
 			run.step(0);
 			const raw = [...files.values()].reduce((a, d) => a + d.length, 0);
@@ -3664,13 +4311,13 @@
 				res.blob,
 				format === "pdf" ? "application/pdf" : "application/zip",
 			);
-			status = `Rendered ${n} card(s) on the server in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
+			status = `Rendered ${n} card(s) ${isDesktop() ? "with the built-in renderer" : "on the server"} in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
 			run.finish(`Saved ${fileName} (${formatBytes(res.blob.size)})`);
 		} catch (e) {
 			if ((e as Error).name === "AbortError")
-				status = "Server render cancelled.";
+				status = "Render cancelled.";
 			else {
-				status = `Server render failed: ${(e as Error).message}`;
+				status = `Render failed: ${(e as Error).message}`;
 				run.fail(status);
 			}
 		} finally {
@@ -3859,13 +4506,13 @@
 			...(remote.length
 				? ([
 						["Pack the project", 3],
-						["Upload to the server", 10],
-						["Render on the server", passes ? 50 : 77],
+						[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+						[isDesktop() ? "Render" : "Render on the server", passes ? 50 : 77],
 						["Download the result", 8],
 					] as [string, number][])
 				: []),
 			...(passes
-				? ([["Render in this browser", remote.length ? 27 : 94]] as [
+				? ([[`Render in ${hostWord()}`, remote.length ? 27 : 94]] as [
 						string,
 						number,
 					][])
@@ -3966,8 +4613,8 @@
 				run.step(at.local, `0 / ${units}`);
 				run.log(
 					oneScale
-						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in this browser`
-						: `Rendering ${plan.cards} card(s) in this browser, each design at the scale for ${st.dpi} dpi`,
+						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in ${hostWord()}`
+						: `Rendering ${plan.cards} card(s) in ${hostWord()}, each design at the scale for ${st.dpi} dpi`,
 				);
 				// Time grows with the pixels: the scale squared, per card.
 				const area =
@@ -4155,6 +4802,7 @@
 
 <svelte:document onvisibilitychange={onHide} />
 <svelte:window
+	onfocus={checkFolder}
 	bind:innerWidth={winW}
 	bind:innerHeight={winH}
 	onkeydown={onKey}
@@ -4202,6 +4850,7 @@
 		<CardPicker
 			cards={currentSet?.cards ?? []}
 			params={currentSet?.params ?? []}
+			qa={qaStatuses}
 			onbrowse={() => (browsing = true)}
 			index={cardIndex}
 			disabled={!currentSet?.cards.length}
@@ -4251,7 +4900,7 @@
 	<FileBrowser
 		{files}
 		{dirty}
-		saveTarget={dirHandle?.name ?? null}
+		saveTarget={folder?.name ?? null}
 		uses={fileUses}
 		usedBy={fileUsedBy}
 		problems={fileProblems}
@@ -4343,6 +4992,7 @@
 			<CardList
 				cards={currentSet.cards}
 				params={currentSet.params}
+				qa={qaStatuses}
 				index={cardIndex}
 				height={Math.max(
 					60,
@@ -4438,6 +5088,26 @@
 					{#if cardIdError}<p class="err">{cardIdError}</p>{/if}
 				{/if}
 			{/if}
+			{#if currentCard}
+				<QaControl
+					status={qaStatuses[cardIndex] ?? "unreviewed"}
+					entry={qaEntry}
+					onmark={reviewCard}
+					oncomment={addComment}
+					onedit={editComment}
+					onremove={removeComment}
+					{pinTarget}
+					onpin={(id) => {
+						pinTarget = id;
+						if (id) qaActive = id;
+					}}
+					active={qaActive}
+					onactive={(id) => (qaActive = id)}
+					onkeys={() => (qaKeysOpen = true)}
+					onoverview={() => (qaOverviewOpen = true)}
+					bind:composer={qaComposer}
+				/>
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -4462,6 +5132,26 @@
 		ondrop={onDrop}
 		role="application"
 	>
+		{#if folderNotice}
+			<div class="folder-toast" role="alert" data-testid="folder-notice">
+				<Icon name="alert" />
+				<span class="msg">{folderNoticeText}</span>
+				<span class="actions">
+					{#if folderNotice.kind === "permission"}
+						<button onclick={allowFolder}>Allow access</button>
+					{:else if folderNotice.kind === "changed"}
+						<button onclick={reloadFromFolder}>Reload from folder</button>
+						<button onclick={keepProjectVersion}>Keep project version</button>
+					{:else if folderNotice.kind === "conflict"}
+						<button onclick={reloadFromFolder}>Use folder version</button>
+						<button onclick={keepProjectVersion}>Use project version</button>
+					{:else}
+						<button onclick={flushFolder}>Try again</button>
+					{/if}
+					<button onclick={unlinkFolder}>Unlink</button>
+				</span>
+			</div>
+		{/if}
 		<header class="top">
 			<span class="brand"><Logo size={26} /></span>
 			<span class="ver">{engine.version}</span>
@@ -4492,14 +5182,18 @@
 			</button>
 			<span
 				class="saved {saveState}"
-				title="Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."
+				title={folder
+					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in ${hostWord()}. Nothing is sent to a server.`
+					: `Projects are saved in ${hostWord()} only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere.`}
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
 					>{saveState === "saving"
 						? "Saving…"
 						: saveState === "saved"
-							? "Saved in this browser"
+							? folder
+								? `Saved to folder ${folder.name}`
+								: `Saved in ${hostWord()}`
 							: saveState === "unsaved"
 								? "Unsaved"
 								: saveState === "error"
@@ -4516,7 +5210,7 @@
 					<button
 						onclick={exportPng}
 						title="Export the card shown ({currentCard?.id ??
-							'none'}) as a PNG image, rendered in this browser"
+							'none'}) as a PNG image, rendered in {hostWord()}"
 						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
 					>
 					<button
@@ -4544,10 +5238,10 @@
 						>Export…</button
 					>
 				</span>
-				{#if server?.render}
+				{#if server?.render && !isDesktop()}
 					<label
 						class="switch server"
-						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in {hostWord()}. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
 					>
 						<input type="checkbox" role="switch" bind:checked={useServer} />
 						<Icon name="cloud" />
@@ -4555,16 +5249,22 @@
 					</label>
 				{/if}
 			</span>
-			{#if dirHandle}
-				<button
-					class="save-btn"
-					onclick={save}
-					disabled={!dirty.size}
-					title="Write changes to the folder {dirHandle.name}"
-					><Icon name="save" /> Save{dirty.size
-						? ` (${dirty.size})`
-						: ""}</button
+			{#if folder}
+				<span
+					class="folder-chip"
+					class:warn={!!folderNotice}
+					data-testid="folder-chip"
+					title="Linked to the folder {folder.name}: changes are written there as you make them, and changes made outside the editor are offered for reload"
 				>
+					<Icon name={folderNotice ? "alert" : "folder"} />
+					<span class="text"
+						>{folder.name} · {folderNotice
+							? "needs attention"
+							: folderWriting || dirty.size
+								? "writing…"
+								: "in sync"}</span
+					>
+				</span>
 			{/if}
 			<button
 				class="fn-btn"
@@ -4579,7 +5279,7 @@
 				onclick={openPrivacy}
 				aria-pressed={telemetry.settingsOpen}
 				data-testid="privacy-button"
-				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what this browser sent"
+				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what {hostWord()} sent"
 				><Icon name="lock" /> Privacy</button
 			>
 			<ThemeToggle />
@@ -4738,6 +5438,10 @@
 					ongesture={onGesture}
 					pick={pickOnCanvas}
 					oncontext={layerMenu}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				{#if loading}
 					<div class="loading" role="status" aria-live="polite">
@@ -4961,6 +5665,10 @@
 					interactive={false}
 					onselect={() => {}}
 					ongesture={() => {}}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				<div class="status">{busy || status}</div>
 			</section>
@@ -5050,6 +5758,86 @@
 				onclick={() => setUtcOffset(-new Date().getTimezoneOffset() / 60 || 0)}
 			>Use my browser's offset</button>
 			{#if offsetError}<p class="err" role="alert">{offsetError}</p>{/if}
+			<label class="offset">
+				<span>Your name for reviews</span>
+				<input
+					type="text"
+					maxlength="60"
+					placeholder="Optional, e.g. a username"
+					value={reviewer}
+					onchange={(e) => setReviewer(e.currentTarget.value)}
+				/>
+			</label>
+			<p class="note">
+				Written next to the marks and comments you add in card review.
+				It is kept in this browser only, not in the project.
+			</p>
+		</div>
+	</Window>
+{/if}
+
+{#if qaKeysOpen}
+	<Window
+		key="qa-keys"
+		title="Card review keys"
+		width={380}
+		fit
+		onclose={() => (qaKeysOpen = false)}
+	>
+		<div class="qa-keys">
+			<p class="note">Work when the focus is not in a text field.</p>
+			<table>
+				<tbody>
+					<tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>Next / previous card</td></tr>
+					<tr><td><kbd>]</kbd> / <kbd>[</kbd></td><td>Next / previous design</td></tr>
+					<tr><td><kbd>U</kbd></td><td>Next card that needs review</td></tr>
+					<tr><td><kbd>A</kbd></td><td>Approve (needs no open comments)</td></tr>
+					<tr><td><kbd>N</kbd></td><td>Needs changes</td></tr>
+					<tr><td><kbd>X</kbd></td><td>Remove the mark</td></tr>
+					<tr><td><kbd>C</kbd></td><td>Write a comment</td></tr>
+					<tr><td><kbd>P</kbd></td><td>Pin the selected comment: then click the card</td></tr>
+					<tr><td><kbd>O</kbd></td><td>Overview of all comments</td></tr>
+					<tr><td><kbd>?</kbd></td><td>This list</td></tr>
+					<tr><td><kbd>Esc</kbd></td><td>Cancel pinning, close this window</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</Window>
+{/if}
+
+{#if qaOverviewOpen}
+	<Window
+		key="qa-overview"
+		title="Card review overview"
+		width={620}
+		height={440}
+		onclose={() => (qaOverviewOpen = false)}
+	>
+		<div class="qa-overview">
+			{#if !qaRows.length}
+				<p class="note">Nothing reviewed yet. Approve a card or write a comment on it.</p>
+			{/if}
+			{#each qaRows as r (r.set + "/" + r.id)}
+				<button
+					class="row"
+					onclick={() => {
+						goToCard(r.set, r.index);
+						qaOverviewOpen = false;
+					}}
+				>
+					<span class="head"
+						><QaBadge status={r.status} text />
+						<strong>{r.id}</strong>
+						<span class="muted">{r.setLabel}</span></span
+					>
+					{#each r.entry.comments ?? [] as c, i}
+						<span class="c" class:done={c.resolved}
+							>{i + 1}. {c.text}
+							{#if c.by}<span class="muted">· {c.by}</span>{/if}</span
+						>
+					{/each}
+				</button>
+			{/each}
 		</div>
 	</Window>
 {/if}
@@ -5334,6 +6122,51 @@
 	.fn-mark {
 		font: italic 600 14px var(--mono);
 		color: var(--accent);
+	}
+	.folder-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 12px;
+		color: var(--muted);
+		white-space: nowrap;
+		overflow: hidden;
+		max-width: 16em;
+	}
+	.folder-chip .text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.folder-chip.warn {
+		color: var(--warn);
+	}
+	.folder-toast {
+		position: fixed;
+		left: 50%;
+		bottom: 40px;
+		transform: translateX(-50%);
+		z-index: 60;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		max-width: min(92vw, 720px);
+		padding: 8px 12px;
+		border: 1px solid var(--warn);
+		border-radius: 8px;
+		background: var(--bg);
+		color: var(--fg);
+		font-size: 12px;
+		box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+	}
+	.folder-toast .msg {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.folder-toast .actions {
+		display: flex;
+		gap: 6px;
+		flex: none;
 	}
 	.saved {
 		display: inline-flex;
@@ -5768,5 +6601,52 @@
 	}
 	.settings button {
 		justify-self: start;
+	}
+	.qa-keys {
+		padding: 14px 18px 16px;
+	}
+	.qa-keys .note {
+		margin: 0 0 10px;
+	}
+	.qa-keys table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.qa-keys td {
+		padding: 5px 8px;
+	}
+	.qa-keys td:first-child {
+		white-space: nowrap;
+		padding-right: 16px;
+	}
+	.qa-keys kbd {
+		border: 1px solid var(--muted);
+		border-radius: 3px;
+		padding: 0 5px;
+	}
+	.qa-overview {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		font-size: 13px;
+	}
+	.qa-overview .row {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		text-align: left;
+		padding: 6px 8px;
+	}
+	.qa-overview .head {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.qa-overview .c.done {
+		text-decoration: line-through;
+		color: var(--muted);
 	}
 </style>

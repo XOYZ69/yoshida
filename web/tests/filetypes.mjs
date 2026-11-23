@@ -62,6 +62,7 @@ ok(
 	describeFile("cards/a.cards.json", bytes("{")) === "Card data",
 );
 ok("manifest", d("yoshida.json") === "Project manifest", d("yoshida.json"));
+ok("qa file", describeFile("qa.json", bytes("{}")) === "Card review state");
 ok(
 	"font shows family and style",
 	d("assets/fonts/CinzelDecorative-Bold.ttf") ===

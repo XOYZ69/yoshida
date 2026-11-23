@@ -4,6 +4,8 @@
 
 import { cardLabel, nameParam } from "../cards";
 import type { CardInfo, Param } from "../engine";
+import { needsReview, type QaStatus } from "../qa";
+import QaBadge from "./QaBadge.svelte";
 
 let {
 	cards,
@@ -13,6 +15,7 @@ let {
 	autofocus = false,
 	onclose = undefined,
 	params = [],
+	qa = undefined,
 }: {
 	cards: CardInfo[];
 	/** The design's params, to show each card's name. */
@@ -23,10 +26,13 @@ let {
 	height?: number;
 	autofocus?: boolean;
 	onclose?: () => void;
+	/** Review status per card (same order as `cards`); omitted: no review controls. */
+	qa?: QaStatus[];
 } = $props();
 
 const row = 34;
 let query = $state("");
+let onlyReview = $state(false);
 let scroller: HTMLDivElement | undefined = $state();
 let search: HTMLInputElement | undefined = $state();
 let scrollTop = $state(0);
@@ -46,8 +52,11 @@ const items = $derived(
 );
 const shown = $derived.by(() => {
 	const q = query.trim().toLowerCase();
-	return q ? items.filter((x) => x.hay.includes(q)) : items;
+	let out = q ? items.filter((x) => x.hay.includes(q)) : items;
+	if (onlyReview && qa) out = out.filter((x) => needsReview(qa[x.i] ?? "unreviewed"));
+	return out;
 });
+const reviewCount = $derived(qa ? qa.filter(needsReview).length : 0);
 const first = $derived(Math.max(0, Math.floor(scrollTop / row) - 4));
 const last = $derived(
 	Math.min(shown.length, Math.ceil((scrollTop + viewH) / row) + 4),
@@ -106,7 +115,12 @@ function onkeydown(e: KeyboardEvent) {
 <div class="cards" style:height={height ? `${height + 40}px` : '100%'}>
   <div class="bar">
     <input bind:this={search} type="search" placeholder="Search {cards.length} card{cards.length === 1 ? '' : 's'}…" bind:value={query} {onkeydown} aria-label="Search cards" />
-    {#if query}<span class="count">{shown.length}</span>{/if}
+    {#if query || onlyReview}<span class="count">{shown.length}</span>{/if}
+    {#if qa}
+      <label class="only" title="Show only cards that are unreviewed, changed since their approval, or marked as needing changes">
+        <input type="checkbox" bind:checked={onlyReview} /> Needs review ({reviewCount})
+      </label>
+    {/if}
   </div>
   <div class="scroll" bind:this={scroller} onscroll={() => (scrollTop = scroller!.scrollTop)} role="listbox" aria-label="Cards" tabindex="-1" {onkeydown}>
     <div style:height="{shown.length * row}px" class="spacer">
@@ -125,10 +139,11 @@ function onkeydown(e: KeyboardEvent) {
             {#if x.name}<span class="id">{x.id}</span>{/if}
           </span>
           {#if x.detail}<span class="sum">{x.detail}</span>{/if}
+          {#if qa}<QaBadge status={qa[x.i] ?? 'unreviewed'} />{/if}
         </button>
       {/each}
     </div>
-    {#if !shown.length}<p class="empty">No card matches “{query}”.</p>{/if}
+    {#if !shown.length}<p class="empty">{onlyReview && !query.trim() ? 'No card needs review.' : `No card matches “${query}”.`}</p>{/if}
   </div>
 </div>
 
@@ -153,6 +168,14 @@ function onkeydown(e: KeyboardEvent) {
   }
   .bar input {
     flex: 1;
+  }
+  .only {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
   }
   .count {
     font-size: 11px;

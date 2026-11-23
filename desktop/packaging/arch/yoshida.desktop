@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=yoshida
+Comment=Make cards from JSON designs and card data
+Exec=yoshida-desktop
+Icon=yoshida
+Terminal=false
+Categories=Graphics;Utility;

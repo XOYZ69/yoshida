@@ -32,6 +32,7 @@ Run in `web/`. These need no browser, only the built WASM modules (`npm run wasm
 | `tests/expr-rewrite.mjs` | the quick actions on expressions |
 | `tests/filetypes.mjs` | file kinds and descriptions in the Files tab |
 | `tests/components.mjs` | components in the builder: filling includes in, splitting edits back into files, detached copies |
+| `tests/folder.mjs` | linking a project to a folder: finding outside changes, reconnecting, the browser backend on an in-memory folder, the desktop app's native backend over a fake Tauri bridge |
 | `tests/fonts.mjs` | font readers and the Google Fonts catalog |
 | `tests/hexcolor.mjs` | the hex colour helper against the core's rules |
 | `tests/progress-math.mjs` | export progress and time left |
@@ -66,6 +67,7 @@ node tests/ui-organise.mjs http://localhost:4173/
 | `ui-rename.mjs` | renaming fonts and design functions |
 | `ui-files.mjs` | the Files panel layout on a short window |
 | `ui-export.mjs` | the quick PNG / ZIP / PDF buttons and the export dialog: keyboard, one card as JPEG at 2x, a design as PNG + JPEG, all designs, vector and image PDF with and without crop marks, 16-bit PNG, WebP, remembered settings, one card as SVG compared with its PNG, a design as SVG, the target dpi and the resolution slider, the resolution limit, designs with and without a dpi |
+| `ui-folder.mjs` | linking a project to a folder: writing as you work, outside changes, keeping either version, reconnecting after a reload or a lost permission, unlinking (the folder picker is replaced by a folder in the browser's private file system) |
 | `ui-file-types.mjs` | the Files tab: icons per file kind, selected file details, upload target, size column |
 | `ui-components.mjs` | components (create, include, edit in place, detach, duplicate) and colour tags |
 

@@ -8,6 +8,7 @@
 // settings panel and download.
 
 import { download } from "../project";
+import { hostWord } from "../desktop.ts";
 import {
 	effectiveLevel,
 	eventsBody,
@@ -252,7 +253,7 @@ export function closeSettings() {
 export function downloadData() {
 	const data = {
 		about:
-			"Everything this editor sent (or queued) to the server that hosts it, as logged in this browser. Times exist only here; the server receives no timestamps and no ID.",
+			`Everything this editor sent (or queued) to the server that hosts it, as logged in ${hostWord()}. Times exist only here; the server receives no timestamps and no ID.`,
 		generated: new Date().toISOString(),
 		settings: {
 			server_collects: available(),

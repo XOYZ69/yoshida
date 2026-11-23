@@ -43,6 +43,10 @@ let {
 	ongesture,
 	pick = (id: string) => id,
 	oncontext = undefined,
+	pins = [],
+	pinning = false,
+	onpin = undefined,
+	onpinselect = undefined,
 }: {
 	image: ImageData | null;
 	/** Canvas size; the image may be a smaller proxy render of it. */
@@ -64,6 +68,12 @@ let {
 	pick?: (id: string, deep: boolean) => string | null;
 	/** Right click; `id` is the layer under the pointer, if any. */
 	oncontext?: (e: MouseEvent, id: string | null) => void;
+	/** Review comments pinned to the card, as numbered bubbles over it (never part of a render or an export). */
+	pins?: { id: string; n: number; x: number; y: number; resolved: boolean; active: boolean }[];
+	/** A click on the card places a pin (onpin gets the spot in canvas pixels). */
+	pinning?: boolean;
+	onpin?: (x: number, y: number) => void;
+	onpinselect?: (id: string) => void;
 } = $props();
 
 let wrap: HTMLDivElement | undefined = $state();
@@ -914,6 +924,29 @@ function cursorFor(h: string, rot: number) {
           {/if}
         {/if}
       </svg>
+      {#if pinning}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div
+          class="pin-catch"
+          role="button"
+          tabindex="-1"
+          aria-label="Place the pin here"
+          onclick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            onpin?.((e.clientX - r.left) / scale, (e.clientY - r.top) / scale);
+          }}></div>
+      {/if}
+      {#each pins as p (p.id)}
+        <button
+          class="pin"
+          class:resolved={p.resolved}
+          class:active={p.active}
+          style:left="{p.x * scale}px"
+          style:top="{p.y * scale}px"
+          onclick={() => onpinselect?.(p.id)}
+          title="Comment {p.n}"
+          aria-label="Comment {p.n}">{p.n}</button>
+      {/each}
       {#if stale && staleNote}<div class="stale-note" role="status">{staleNote}</div>{/if}
     </div>
   {/if}
@@ -1059,5 +1092,35 @@ function cursorFor(h: string, rot: number) {
   }
   .zoom .on {
     color: var(--accent);
+  }
+  .pin-catch {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+    background: color-mix(in srgb, var(--err) 8%, transparent);
+  }
+  .pin {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: var(--err);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: 0 1px 4px #0008;
+    cursor: pointer;
+  }
+  .pin.resolved {
+    background: #6b7280;
+    opacity: 0.7;
+  }
+  .pin.active {
+    outline: 2px solid var(--err);
+    outline-offset: 2px;
   }
 </style>

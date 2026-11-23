@@ -1,0 +1,48 @@
+# Builds the yoshida desktop app from this checkout (no download) and installs
+# it as an Arch package:  cd desktop/packaging/arch && makepkg -si
+#
+# It needs Zig 0.16.0 on the PATH (Arch's `zig` package or zvm), Node 22 and
+# Rust; makepkg does not check for Zig.
+
+pkgname=yoshida-desktop
+pkgver=0.8.0 # set by pkgver() from web/package.json
+pkgrel=1
+pkgdesc='Card maker with a native window, folders on disk and a built-in renderer'
+arch=('x86_64' 'aarch64')
+url='https://github.com/XOYZ69/yoshida'
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3')
+makedepends=('cargo' 'nodejs' 'npm')
+options=('!strip' '!lto')
+# Nothing to download: the source is the checkout three folders up.
+source=()
+sha256sums=()
+
+_root="$startdir/../../.."
+
+pkgver() {
+  node -p "require('$_root/web/package.json').version"
+}
+
+build() {
+  cd "$_root"
+  zig build -Doptimize=ReleaseFast
+  (cd web && npm ci && npm run wasm && npm run examples && npm run build)
+  mkdir -p desktop/src-tauri/binaries
+  cp zig-out/bin/yoshida-server \
+    "desktop/src-tauri/binaries/yoshida-server-$(rustc -vV | sed -n 's/host: //p')"
+  cd desktop/src-tauri
+  cargo build --release --locked --features tauri/custom-protocol
+}
+
+package() {
+  cd "$_root/desktop/src-tauri"
+  # The app finds its server next to itself and its editor in /usr/lib/yoshida/web.
+  install -Dm755 target/release/yoshida-desktop "$pkgdir/usr/bin/yoshida-desktop"
+  install -Dm755 "$_root/zig-out/bin/yoshida-server" "$pkgdir/usr/bin/yoshida-server"
+  install -dm755 "$pkgdir/usr/lib/yoshida"
+  cp -r "$_root/web/dist" "$pkgdir/usr/lib/yoshida/web"
+  install -Dm644 icons/icon.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/yoshida.png"
+  install -Dm644 ../packaging/arch/yoshida.desktop "$pkgdir/usr/share/applications/yoshida.desktop"
+  install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

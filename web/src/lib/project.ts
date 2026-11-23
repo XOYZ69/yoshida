@@ -1,5 +1,6 @@
-// Project files in the browser: loading examples and folders, saving, card
-// data edits written back into JSON or CSV, and the formatter.
+// Project files in the browser: loading examples and folders, project files,
+// card data edits written back into JSON or CSV, and the formatter. Folders
+// on disk are in lib/folder/.
 
 import { unzipSync, type Zippable, zipSync } from "fflate";
 
@@ -33,7 +34,8 @@ export function pictureUrl(path: string, data: Uint8Array) {
 	return URL.createObjectURL(new Blob([data as BlobPart], { type }));
 }
 
-const skipDirs = new Set([".git", ".yoshida", "node_modules", "out"]);
+/** Folders that are not part of a project when reading one from disk. */
+export const skipDirs = new Set([".git", ".yoshida", "node_modules", "out"]);
 
 export type Example = { name: string; title: string; files: string[] };
 
@@ -73,74 +75,6 @@ export async function filesFromInput(
 		files.set(rel.join("/"), new Uint8Array(await f.arrayBuffer()));
 	}
 	return { name, files };
-}
-
-// File System Access API (Chromium): open a folder read/write.
-type DirHandle = FileSystemDirectoryHandle;
-
-type PickerWindow = Window & {
-	showDirectoryPicker?: (options: {
-		mode: "readwrite";
-	}) => Promise<FileSystemDirectoryHandle>;
-};
-
-export function canOpenWritable() {
-	return typeof (window as PickerWindow).showDirectoryPicker === "function";
-}
-
-function showDirectoryPicker(): Promise<DirHandle> {
-	const pick = (window as PickerWindow).showDirectoryPicker;
-	if (!pick) throw new Error("This browser cannot open folders for writing.");
-	return pick({ mode: "readwrite" });
-}
-
-export async function openWritable(): Promise<{
-	name: string;
-	files: Files;
-	handle: DirHandle;
-}> {
-	const handle = await showDirectoryPicker();
-	const files: Files = new Map();
-	const walk = async (dir: DirHandle, prefix: string) => {
-		for await (const [name, entry] of dir.entries()) {
-			if (entry.kind === "directory") {
-				if (!skipDirs.has(name))
-					await walk(entry as DirHandle, `${prefix}${name}/`);
-			} else {
-				const file = await (entry as FileSystemFileHandle).getFile();
-				files.set(prefix + name, new Uint8Array(await file.arrayBuffer()));
-			}
-		}
-	};
-	await walk(handle, "");
-	return { name: handle.name, files, handle };
-}
-
-export async function writeFile(
-	root: DirHandle,
-	path: string,
-	data: Uint8Array,
-) {
-	const parts = path.split("/");
-	let dir = root;
-	for (const p of parts.slice(0, -1))
-		dir = await dir.getDirectoryHandle(p, { create: true });
-	const fh = await dir.getFileHandle(parts[parts.length - 1], { create: true });
-	const w = await fh.createWritable();
-	await w.write(data as Uint8Array<ArrayBuffer>);
-	await w.close();
-}
-
-/** Deletes a file in a folder opened with write access; a missing file is fine. */
-export async function removeFile(root: DirHandle, path: string) {
-	const parts = path.split("/");
-	let dir = root;
-	try {
-		for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p);
-		await dir.removeEntry(parts[parts.length - 1]);
-	} catch (e) {
-		if ((e as Error).name !== "NotFoundError") throw e;
-	}
 }
 
 export function download(
@@ -472,11 +406,6 @@ export function importPath(name: string) {
 	if (/\.design\.json$/i.test(base)) return `designs/${base}`;
 	if (/\.cards\.(json|csv)$/i.test(base)) return `cards/${base}`;
 	return base;
-}
-
-/** Asks for a folder to write to (File System Access API). */
-export async function pickDirectory(): Promise<DirHandle> {
-	return showDirectoryPicker();
 }
 
 // ---------------------------------------------------------------- project files

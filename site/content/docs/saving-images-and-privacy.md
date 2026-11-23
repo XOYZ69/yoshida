@@ -19,15 +19,26 @@ Every change is saved automatically in the browser's storage (IndexedDB), with *
 The project's name in the top bar opens the menu, in sections:
 
 - **Start**: new project, open a folder, open a project file (`.yoshida`).
-- **This project**: new design (with its own card file), add files, save to a folder, export the project file, rename, delete from this browser.
+- **This project**: new design (with its own card file), add files, link to a folder, export the project file, rename, delete from this browser.
 - **Saved in this browser** and **Examples**.
 
 Next to it the editor shows whether the project is saved in this browser.
 
-## Open a folder, save to a folder
+## Work on a folder on your computer
 
-- **Open a folder**: read and write in Chromium-based browsers (Chrome, Edge), read-only elsewhere.
-- **Save to folder…** (Chromium, in the project menu): write the whole project to a folder you pick and keep saving there; a **Save** button in the top bar then writes the changed files. The result is a normal project folder you can render with the [command line](@/docs/command-line.md) or commit to git.
+A project can live in a normal folder, so you can edit its files with other tools, keep them in git and render them with the [command line](@/docs/command-line.md). This needs a browser with the File System Access API: **Chrome, Edge and other Chromium browsers**. Firefox and Safari have no folder picker for web pages; there, *Open folder…* reads the folder once (it cannot write back) and *Link to folder…* is greyed out. Use *Export project file* to take your work out. The [desktop app](@/docs/building-from-source.md#desktop-app) (see [Desktop App](@/docs/desktop-app.md)) links folders on any system, with the system's folder dialog and without asking for access again.
+
+- **Open folder…** opens a folder as a project and links it.
+- **Link to folder…** (project menu) links the open project, from this browser or an example, to a folder you pick. Files in the folder that the project also has are replaced by the project's version (the editor asks first); files only the folder has are added to the project; nothing is deleted.
+- **Unlink from …** goes the other way: the project stays in this browser, and the folder's files stay as they are.
+
+While a project is linked:
+
+- **Every change is written to the folder** a moment after you make it, with no save button. The top bar shows the folder's name and whether it is in sync.
+- **Changes made outside the editor** (a `git pull`, another editor) are noticed within a few seconds, or as soon as you return to the window. A notice offers *Reload from folder*, or *Keep project version*, which writes the project's files back. Editor changes are held back while a notice waits, so nothing is overwritten by accident.
+- **The link is remembered.** After reloading the page or reopening the project, the editor reconnects to the folder. The browser may ask you to allow access again; a notice with *Allow access* appears then. If the folder changed while the project was closed, you choose between the folder's version and the project's.
+
+The project is also kept in this browser, as always, so a linked folder is a second copy that follows it. Deleting a project from the browser leaves the folder alone.
 
 ## Export and open a project file
 

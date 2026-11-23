@@ -80,6 +80,7 @@ Hovering a button or a field shows what it does in a tooltip drawn like the expr
 - [Files](@/docs/builder-files.md): the project's files, uploads, renames
 - [Problems](@/docs/builder-problems.md): the problems panel
 - [Expression editor](@/docs/builder-expression-editor.md): highlighting, completion, reference
+- [Card review](@/docs/qa-review.md): approve cards and track what changed
 - [Shortcuts](@/docs/builder-shortcuts.md)
 
 <img class="only-light" src="../images/editor-project-menu-light.png" alt="The project menu" width="509" height="596">

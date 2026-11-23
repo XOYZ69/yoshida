@@ -148,7 +148,8 @@ To release: merge `dev` to `master` and wait; the version is already right if th
 1. If the version in `build.zig.zon` already has a tag, either `v<version>` (such as `v0.6.0`) or the bare `<version>` that releases up to 0.4.0 used (such as `0.4.0`), it does nothing.
 2. Otherwise it checks the version copies against the tag, builds the release bundle with `scripts/release.sh` and zips it as `yoshida-<version>.zip`.
 3. It writes the notes with `.github/scripts/release-notes.mjs release`, then creates the tag `v<version>` and the release with the zip attached. A version with a pre-release part, such as `0.6.0-rc.1`, becomes a pre-release.
-4. The site is built after that, in the same run, so it already has the new release page. If the release job fails, the site is not published; fix the cause and run **Deploy** again from the Actions tab.
+4. The **Desktop** job builds the desktop app (beta) for Linux (`.AppImage`, `.deb`, `.rpm`, on Ubuntu 22.04) and Windows (`.exe`, NSIS) and attaches the installers to the release a few minutes later. The release notes already say so. The site does not wait for it, and a failed installer build does not undo the release: fix the cause and re-run the failed *Desktop* job from the run's page in the Actions tab (it needs no new release).
+5. The site is built after that, in the same run, so it already has the new release page. If the release job fails, the site is not published; fix the cause and run **Deploy** again from the Actions tab.
 
 ### Pre-releases from `dev`
 

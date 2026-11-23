@@ -12,11 +12,13 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [component.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/component.schema.json): JSON Schema of a shared component
 - [defs.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/defs.schema.json): JSON Schema of shared params and constants
 - [yoshida.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/yoshida.schema.json): JSON Schema of the project manifest
+- [qa.schema.json](https://github.com/XOYZ69/yoshida/blob/master/schema/qa.schema.json): JSON Schema of the card review file
 
 ## Docs: Start
 
 - [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/): Your first card in five minutes: in the editor, from scratch and on the command line.
 - [Installation](https://yoshida.xoyz.dev/docs/installation/): Run yoshida in the browser, from the release zip, with Docker or from source.
+- [Desktop App](https://yoshida.xoyz.dev/docs/desktop-app/): The editor in a native window, with folders on disk and a built-in renderer.
 - [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/): What a design can do, one short snippet per feature, with links to the details.
 - [Usage Statistics](https://yoshida.xoyz.dev/docs/telemetry/): Optional anonymous counts, kept only on the server that hosts the editor.
 - [Examples](https://yoshida.xoyz.dev/docs/examples/): The four example projects, what each one shows and how to open them.

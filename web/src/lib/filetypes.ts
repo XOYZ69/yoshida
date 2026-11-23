@@ -81,7 +81,8 @@ export function describeFile(path: string, data: Uint8Array): string {
 			return n < 0 ? "Card data" : `Card data, ${plural(n, "card")}`;
 		}
 		case "json":
-			return path === "yoshida.json" ? "Project manifest" : "JSON";
+			if (path === "yoshida.json") return "Project manifest";
+			return path === "qa.json" ? "Card review state" : "JSON";
 		case "font": {
 			const f = readFont(data);
 			const label = [f.family, f.style].filter(Boolean).join(" ");
