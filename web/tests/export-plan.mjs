@@ -10,6 +10,13 @@ import {
 	defaultExportSettings,
 	designHasBleed,
 	designOutputs,
+	estimateSizes,
+	fallbackSample,
+	formatEstimate,
+	formatSize,
+	sampleScale,
+	sizeBreakdown,
+	spreadCards,
 	dpiRange,
 	fitScale,
 	followsDpi,
@@ -422,6 +429,47 @@ ok(
 	ok("card sizes: the largest card in each direction", grown.w === 1000 && grown.h === 1200 && grown.dpi === 300);
 	const small = withCardSizes(base, [{ canvas: { width: 100, height: 100 } }]);
 	ok("card sizes: smaller cards do not shrink it", small.w === 750 && small.h === 1050);
+}
+
+{
+	ok("size: bytes", formatSize(0) === "0 B" && formatSize(812) === "812 B" && formatSize(999) === "999 B");
+	ok("size: KB", formatSize(1000) === "1.0 KB" && formatSize(4300) === "4.2 KB" && formatSize(49152) === "48 KB");
+	ok("size: MB", formatSize(1.2 * 1048576) === "1.2 MB" && formatSize(48 * 1048576) === "48 MB" && formatSize(1020 * 1024) === "1.0 MB");
+	ok("size: GB", formatSize(3.45 * 1073741824) === "3.45 GB" && formatSize(12.34 * 1073741824) === "12.3 GB" && formatSize(150 * 1073741824) === "150 GB");
+	ok("size: estimate sign", formatEstimate(48 * 1048576) === "≈\u00a048 MB");
+
+	const sz = (set, w, h) => ({ set, size: { w, h } });
+	const p = (formats, scope = "design", cur = "number") => planExport({ scope, formats }, "poker", sets, cur, 0);
+	const one = p(["png"]);
+	// 2 cards of a 100 x 100 sample of 10 000 bytes, shown at 200 x 200: 4x the pixels.
+	const e1 = estimateSizes(one, [sz("number", 200, 200)], { png: { bytes: 10000, w: 100, h: 100 } });
+	ok("estimate: png scales with pixels and cards", e1.perFormat.png === 80000 && e1.missing.length === 0 && e1.total === 80000 + 2 * 120 + 22, JSON.stringify(e1));
+	const single = planExport({ scope: "card", formats: ["png"] }, "poker", sets, "number", 0);
+	ok("estimate: one file has no zip headers", estimateSizes(single, [sz("number", 100, 100)], { png: { bytes: 5000, w: 100, h: 100 } }).total === 5000);
+	const all = p(["png", "svg"], "all");
+	const e2 = estimateSizes(all, [sz("number", 100, 100), sz("court", 200, 100)], { png: { bytes: 1000, w: 100, h: 100 }, svg: { bytes: 300, w: 100, h: 100 } });
+	ok("estimate: each design at its own size", e2.perFormat.png === 1000 * 2 + 2000 * 1 && e2.perFormat.svg === 900, JSON.stringify(e2));
+	ok("estimate: missing sample is left out", estimateSizes(all, [sz("number", 100, 100), sz("court", 100, 100)], { svg: { bytes: 300, w: 1, h: 1 } }).missing.join() === "png");
+	ok("estimate: unknown size leaves a raster out", estimateSizes(one, [{ set: "number", size: null }], { png: { bytes: 1, w: 1, h: 1 } }).missing.join() === "png");
+	const pdf = p(["pdf"]);
+	const v = estimateSizes(pdf, [sz("number", 100, 100)], { pdf: { bytes: 50000, w: 100, h: 100, more: 60000 } });
+	ok("estimate: vector pdf is a first page plus what each adds", v.perFormat.pdf === 50000 + 10000, JSON.stringify(v));
+	const v3 = estimateSizes(planExport({ scope: "all", formats: ["pdf"] }, "poker", sets, "number", 0), [sz("number", 1, 1), sz("court", 1, 1)], { pdf: { bytes: 50000, w: 1, h: 1, more: 60000 } });
+	ok("estimate: a pdf for each design", v3.perFormat.pdf === 60000 + 50000, JSON.stringify(v3));
+	const img = estimateSizes(pdf, [sz("number", 200, 100)], { pdf: { bytes: 1000, w: 100, h: 100, pixels: true } });
+	ok("estimate: image pdf scales with pixels", img.perFormat.pdf === 4000, JSON.stringify(img));
+	const sheet = planExport({ scope: "design", formats: ["sheet"], sheetCols: 2, sheetRows: 2 }, "poker", sets, "number", 0);
+	ok("estimate: sheet is the cards' pixels", estimateSizes(sheet, [sz("number", 100, 100)], { sheet: { bytes: 1000, w: 100, h: 100 } }).perFormat.sheet === 2000);
+	const v5 = estimateSizes(pdf, [sz("number", 1, 1)], { pdf: { bytes: 50000, w: 1, h: 1, more: 70000, pages: 3 } });
+	ok("estimate: pdf pages added by the sample's pages", v5.perFormat.pdf === 60000, JSON.stringify(v5));
+	ok("spread: cards over the design", spreadCards(40).join() === "6,20,33" && spreadCards(2).join() === "0,1" && spreadCards(1).join() === "0" && spreadCards(0).length === 0);
+	ok("estimate: breakdown in the dialog's order", sizeBreakdown({ jpeg: 8.2 * 1048576, png: 30 * 1048576 }) === "PNG 30 MB · JPEG 8.2 MB");
+	ok("sample scale: small cards at the export's scale", sampleScale({ w: 750, h: 1050 }, 2) === 2);
+	const k = sampleScale({ w: 3000, h: 4200 }, 4);
+	ok("sample scale: capped near 3 megapixels", k < 4 && Math.abs(3000 * 4200 * (k / 4) ** 2 - 3_000_000) < 1, String(k));
+	const fb = fallbackSample("jpeg", 1000, 1000, { ...defaultExportSettings, jpegQuality: 90 });
+	ok("fallback: jpeg by quality", fb.bytes > 100000 && fb.bytes < 1000000 && fallbackSample("jpeg", 1000, 1000, { ...defaultExportSettings, jpegQuality: 30 }).bytes < fb.bytes);
+	ok("fallback: 16 bit png is bigger", fallbackSample("png", 100, 100, { ...defaultExportSettings, pngDepth: 16 }).bytes > fallbackSample("png", 100, 100, { ...defaultExportSettings, pngDepth: 8 }).bytes);
 }
 
 console.log(failed ? `${failed} failed` : "all passed");

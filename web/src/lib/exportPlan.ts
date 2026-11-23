@@ -815,3 +815,210 @@ export async function canEncodeLosslessWebp(): Promise<boolean> {
 		return false;
 	}
 }
+
+// ----------------------------------------------------------- size estimate
+
+/**
+ * A card written in one format, measured by rendering a few cards of the
+ * set and taking the mean. Raster formats scale with the pixels (`w` x `h`
+ * is the size it was drawn at); SVG does not. A sheet is measured as one
+ * sheet of a few cards (`w` x `h` is the sheet's size). A PDF is measured as
+ * a one page file and as a file of `pages` pages (`more`), so the file's
+ * fixed part (fonts, headers) is not counted for every page; `pixels` says
+ * its pages are images, which scale with the pixels like the other rasters.
+ */
+export type FormatSample = {
+	bytes: number;
+	w: number;
+	h: number;
+	more?: number;
+	pages?: number;
+	pixels?: boolean;
+};
+export type SampleSet = Partial<Record<ExportFormat, FormatSample>>;
+
+/** What the browser renders for an estimate: one card in these formats. */
+export type SampleRequest = {
+	set: string;
+	/** The cards to render; the estimate takes their mean. */
+	cards: number[];
+	/** The scale to draw at (the export's own, or lower to keep the sample cheap). */
+	scale: number;
+	/** The card's bitmap size at that scale, for the samples that are not bitmaps. */
+	size: { w: number; h: number };
+	formats: ExportFormat[];
+	settings: Pick<
+		ExportSettings,
+		| "pngDepth"
+		| "pngCompression"
+		| "jpegQuality"
+		| "jpegBackground"
+		| "webpQuality"
+		| "webpLossless"
+		| "pdfVector"
+		| "cropMarks"
+	>;
+};
+
+export type SizeEstimate = {
+	/** Bytes per format (the PDFs and the sheets of all designs together). */
+	perFormat: Partial<Record<ExportFormat, number>>;
+	/** The file the export downloads: the formats together, plus the ZIP's own bytes. */
+	total: number;
+	/** Formats left out for want of a sample or a known size. */
+	missing: ExportFormat[];
+};
+
+/** A ZIP entry: local and central headers around a name like `set/card.png`. */
+const ZIP_ENTRY_BYTES = 120;
+const ZIP_END_BYTES = 22;
+
+/** Pixels the estimate renders at most, so a sample at 4x stays cheap. */
+export const SAMPLE_MAX_PIXELS = 3_000_000;
+
+/** How many cards the estimate renders per format. */
+export const SAMPLE_CARDS = 3;
+
+/** `k` cards spread evenly over `n` (the middle of each part), so the sample is not just the card in view. */
+export const spreadCards = (n: number, k = SAMPLE_CARDS) =>
+	Array.from({ length: Math.min(k, n) }, (_, i) =>
+		Math.floor(((i + 0.5) * n) / Math.min(k, n)),
+	);
+
+/**
+ * The scale to draw the sample at: the export's own, lowered so the sample
+ * stays within SAMPLE_MAX_PIXELS (the estimate scales it back by the pixels).
+ */
+export function sampleScale(
+	size: { w: number; h: number },
+	scale: number,
+): number {
+	const px = size.w * size.h;
+	if (!(px > SAMPLE_MAX_PIXELS)) return scale;
+	return scale * Math.sqrt(SAMPLE_MAX_PIXELS / px);
+}
+
+/**
+ * Typical bytes of a card without measuring it, from the pixels alone: for
+ * a format whose sample could not be made. Rough, within a factor of two
+ * for card art.
+ */
+export function fallbackSample(
+	format: ExportFormat,
+	w: number,
+	h: number,
+	s: Pick<
+		ExportSettings,
+		| "pngDepth"
+		| "pngCompression"
+		| "jpegQuality"
+		| "webpQuality"
+		| "webpLossless"
+		| "pdfVector"
+	>,
+): FormatSample {
+	const px = Math.max(1, w * h);
+	const png =
+		1.2 *
+		(s.pngDepth === 16 ? 1.9 : 1) *
+		(s.pngCompression === "fast" ? 1.3 : s.pngCompression === "smallest" ? 0.9 : 1);
+	const q = Math.max(0.01, Math.min(1, s.jpegQuality / 100));
+	const jpeg = 0.05 + 0.55 * q * q;
+	const wq = Math.max(0.01, Math.min(1, s.webpQuality / 100));
+	const webp = s.webpLossless ? 0.8 * png : 0.7 * (0.05 + 0.55 * wq * wq);
+	if (format === "svg") return { bytes: 30_000, w, h };
+	if (format === "pdf")
+		return s.pdfVector
+			? { bytes: 60_000, w, h, more: 80_000 }
+			: { bytes: Math.round(png * px), w, h, pixels: true };
+	const bpp = format === "jpeg" ? jpeg : format === "webp" ? webp : png;
+	return { bytes: Math.round(bpp * px), w, h };
+}
+
+/**
+ * The size of an export from samples of one card per format: the samples
+ * scaled to each design's pixels and multiplied by its cards (a PDF by its
+ * pages, a sheet by the cards it holds), plus the ZIP's headers. An
+ * estimate: the cards of a design differ, a sample drawn at a lower scale
+ * than the export compresses a little differently.
+ */
+export function estimateSizes(
+	plan: ExportPlan,
+	outputs: Pick<DesignOutput, "set" | "size">[],
+	samples: SampleSet,
+): SizeEstimate {
+	const perFormat: Partial<Record<ExportFormat, number>> = {};
+	const missing: ExportFormat[] = [];
+	const formats: ExportFormat[] = [
+		...plan.imageFormats,
+		...(plan.pdf ? (["pdf"] as const) : []),
+		...(plan.sheet ? (["sheet"] as const) : []),
+	];
+	for (const f of formats) {
+		const sample = samples[f];
+		let sum = 0;
+		let known = !!sample && sample.bytes >= 0;
+		for (const t of plan.targets) {
+			if (!sample || !known) break;
+			if (f === "pdf" && plan.noPdf.includes(t.set)) continue;
+			const size = outputs.find((o) => o.set === t.set)?.size;
+			const n = t.cards.length;
+			const px = sample.w * sample.h;
+			const ratio = size && px > 0 ? (size.w * size.h) / px : null;
+			if (f === "svg") sum += sample.bytes * n;
+			else if (f === "pdf" && !sample.pixels) {
+				// A first page with the file's fixed part, then what a page adds.
+				const extra = Math.max(1, (sample.pages ?? 2) - 1);
+				const add =
+					sample.more === undefined
+						? sample.bytes
+						: Math.min(
+								sample.bytes,
+								Math.max(
+									(sample.more - sample.bytes) / extra,
+									sample.bytes * 0.05,
+								),
+							);
+				sum += sample.bytes + (n - 1) * add;
+			} else if (ratio === null) known = false;
+			// Per pixel; a sheet's sample is a sheet of a few cards.
+			else sum += sample.bytes * ratio * n;
+		}
+		if (known && sample) perFormat[f] = Math.round(sum);
+		else missing.push(f);
+	}
+	const parts = Object.values(perFormat);
+	const zip = plan.zip ? plan.files * ZIP_ENTRY_BYTES + ZIP_END_BYTES : 0;
+	return {
+		perFormat,
+		total: Math.round(parts.reduce((a, b) => a + b, 0) + (parts.length ? zip : 0)),
+		missing,
+	};
+}
+
+/** "812 B", "4.2 KB", "48 KB", "1.2 MB", "3.45 GB". */
+export function formatSize(bytes: number): string {
+	const n = Math.max(0, bytes);
+	if (n < 1000) return `${Math.round(n)} B`;
+	const units = ["KB", "MB", "GB"];
+	let v = n / 1024;
+	let i = 0;
+	while (v >= 1000 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	const digits = v < 10 ? (i === 2 ? 2 : 1) : i === 2 && v < 100 ? 1 : 0;
+	return `${v.toFixed(digits)} ${units[i]}`;
+}
+
+/** "≈ 48 MB", with a no-break space after the sign. */
+export const formatEstimate = (bytes: number) => `≈ ${formatSize(bytes)}`;
+
+/** "PNG 30 MB · JPEG 8.2 MB": each format's share, in the order of the dialog. */
+export function sizeBreakdown(
+	perFormat: Partial<Record<ExportFormat, number>>,
+): string {
+	return EXPORT_FORMATS.filter((f) => perFormat[f] !== undefined)
+		.map((f) => `${formatLabels[f]} ${formatSize(perFormat[f] ?? 0)}`)
+		.join(" · ");
+}
