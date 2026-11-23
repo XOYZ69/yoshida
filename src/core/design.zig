@@ -281,6 +281,13 @@ pub const Layer = struct {
     anchor_expr: ?Prop = null,
     repeat: ?Repeat = null,
     effects: []const Effect = &.{},
+    /// Every layer and group: the id of a rect, ellipse or polygon layer
+    /// whose shape clips this layer; nothing outside the shape is drawn
+    /// [1116, 3002, 3005]. `clip_pos` is where the id is written.
+    clip_to: ?[]const u8 = null,
+    clip_pos: u32 = 0,
+    /// Index of `clip_to` in `Design.layers`, set once every layer is compiled.
+    clip_layer: ?usize = null,
     // rect, ellipse, image
     box: ?Box = null,
     // rect, ellipse, polygon
@@ -802,7 +809,7 @@ const Loader = struct {
 
 const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "import", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
-const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
+const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects", "clip_to" };
 
 fn kindFields(kind: LayerKind) []const []const u8 {
     return switch (kind) {
@@ -1569,7 +1576,7 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
+const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "clip_to", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
 const defs_fields = [_][]const u8{ "$schema", "format", "name", "note", "params", "consts" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
@@ -1691,7 +1698,7 @@ fn cloneLayers(arena: Allocator, layers: []const Node, ids: []const []const u8, 
                 nf.value.data = .{ .array = try cloneLayers(arena, f.value.data.array, ids, prefix) };
             } else if (std.mem.eql(u8, f.key, "note") or std.mem.eql(u8, f.key, "tag")) {
                 // Text for people: kept as written.
-            } else if (std.mem.eql(u8, f.key, "extends") and f.value.data == .string) {
+            } else if ((std.mem.eql(u8, f.key, "extends") or std.mem.eql(u8, f.key, "clip_to")) and f.value.data == .string) {
                 for (ids) |id| if (std.mem.eql(u8, id, f.value.data.string)) {
                     nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, id }) };
                 };
@@ -1868,7 +1875,51 @@ fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const
         while (e < ls.len and isInside(ls, e, gi)) e += 1;
         g.end = e;
     }
+    for (ls, 0..) |*x, i| if (x.clip_to) |cid| {
+        x.clip_layer = try clipTarget(l, raws, ls, i, cid);
+    };
     return ls;
+}
+
+/// The layer `clip_to` of layer `i` names [1116, 3002, 3005]: a rect,
+/// ellipse or polygon other than the layer itself, not repeated, and not
+/// inside a repeated group that does not also hold the clipped layer (its
+/// shape is taken from the same iteration the clipped layer is drawn in).
+fn clipTarget(l: *Loader, raws: []const Raw, ls: []const Layer, i: usize, cid: []const u8) Allocator.Error!?usize {
+    const x = &ls[i];
+    var ti: ?usize = null;
+    for (ls, 0..) |o, j| if (std.mem.eql(u8, o.id, cid)) {
+        ti = j;
+    };
+    const t = ti orelse {
+        // A layer that failed to compile has had its error already.
+        for (raws) |r| if (std.mem.eql(u8, r.id, cid) and !r.divider) return null;
+        var ids: std.ArrayList([]const u8) = .empty;
+        for (ls) |o| if (o.kind == .rect or o.kind == .ellipse or o.kind == .polygon) try ids.append(l.arena, o.id);
+        try l.errHint(3002, x.clip_pos, try std.fmt.allocPrint(l.arena, "unknown layer '{s}' in clip_to", .{cid}), diag.suggest(l.arena, cid, ids.items));
+        return null;
+    };
+    const target = &ls[t];
+    if (t == i) {
+        try l.err(1116, x.clip_pos, "layer '{s}' cannot clip itself", .{x.id});
+        return null;
+    }
+    if (!(target.kind == .rect or target.kind == .ellipse or target.kind == .polygon)) {
+        try l.errHint(1116, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is a {s} layer; clip_to needs a rect, ellipse or polygon", .{ cid, @tagName(target.kind) }), "add a shape layer (it may be \"visible\": false) and clip to it");
+        return null;
+    }
+    if (target.repeat != null) {
+        try l.errHint(3005, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is repeated; clip_to needs a layer that is drawn once", .{cid}), "repeat a group that holds both the shape and the clipped layer");
+        return null;
+    }
+    var p = target.parent;
+    while (p) |g| : (p = ls[g].parent) {
+        if (ls[g].repeat == null) continue;
+        if (g == i or isInside(ls, i, g)) continue;
+        try l.errHint(3005, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is inside the repeated group '{s}', which does not hold layer '{s}'", .{ cid, ls[g].id, x.id }), "move the clipped layer into that group, or the shape out of it");
+        return null;
+    }
+    return t;
 }
 
 fn isInside(ls: []const Layer, i: usize, group: usize) bool {
@@ -2028,6 +2079,10 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             flow.cross_expr = got.expr;
         }
         layer.flow = flow;
+    };
+    if (m.get("clip_to")) |v| if (try l.literalString(v, "clip_to")) |s| {
+        layer.clip_to = s;
+        layer.clip_pos = v.pos;
     };
     if (m.get("visible")) |v| layer.visible = try l.prop(v, .bool, scope);
     if (m.get("opacity")) |v| layer.opacity = try l.prop(v, .number, scope);
@@ -2620,6 +2675,64 @@ fn countCode(diags: *const diag.List, code: u16) usize {
         if (d.code == code) n += 1;
     }
     return n;
+}
+
+test "clip_to names a shape layer drawn once [1116, 3002, 3005]" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const ok =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "mask", "type": "ellipse", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "visible": false },
+        \\    { "id": "pic", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "mask" },
+        \\    { "id": "g", "type": "group", "clip_to": "mask", "layers": [] },
+        \\    { "id": "row", "type": "group", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell", "type": "polygon", "points": [[0, 0], [5, 0], [0, 5]] },
+        \\      { "id": "inner", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "cell" }
+        \\    ] },
+        \\    { "id": "whole", "type": "group", "clip_to": "cell2", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell2", "type": "rect", "box": { "x": 0, "y": 0, "w": 5, "h": 5 } }
+        \\    ] }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", ok);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(?usize, 0), d.layers[1].clip_layer);
+    try std.testing.expectEqual(@as(?usize, 0), d.layers[2].clip_layer);
+    try std.testing.expectEqual(d.findLayer("cell"), d.layers[d.findLayer("inner").?].clip_layer);
+
+    const bad =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "words", "type": "text", "text": "x", "at": { "x": 0, "y": 0 } },
+        \\    { "id": "a", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "words" },
+        \\    { "id": "b", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "b" },
+        \\    { "id": "c", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "mask" },
+        \\    { "id": "many", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "repeat": { "count": 2 } },
+        \\    { "id": "d", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "many" },
+        \\    { "id": "row", "type": "group", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell", "type": "rect", "box": { "x": 0, "y": 0, "w": 5, "h": 5 } }
+        \\    ] },
+        \\    { "id": "e", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "cell" },
+        \\    { "id": "f", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": 3 }
+        \\  ]
+        \\}
+    ;
+    diags = diag.List.init(a);
+    _ = try load(a, &diags, "t.design.json", bad);
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 1116));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3002));
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 3005));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1103));
 }
 
 test "a stroke without a fill is warned about (1114), a fill or gradient is not" {

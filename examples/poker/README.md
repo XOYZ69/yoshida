@@ -23,7 +23,7 @@ What it shows:
 - **Several designs in one project**: each card file names its design; `yoshida.json` lists the sets so they render in deck order with short names.
 - **`extends`**: the bottom-right corner index extends the top-left one and only changes its position and turn. Every pip extends one hidden `pip` layer; the ace's ring layers extend each other.
 - **Design functions**: `side_n`, `mid_n`, `side_t` and `mid_t` place the pips for every rank from 2 to 10; `flip` turns the lower pips upside down; `glyph` picks the suit symbol.
-- **Repeated groups**: the court portrait is one group drawn twice, the second time turned 180 degrees, so the card reads the same both ways up. The back's lattice is a nested repeat.
+- **Repeated groups**: the court portrait is one group drawn twice, the second time turned 180 degrees, so the card reads the same both ways up. The back's lattice is a nested repeat, clipped to the rounded field with `clip_to`.
 - **Polygon shapes and points**: crowns, the jester cap, stars and diamonds.
 - **Gradients**: the gold of the crowns, the jester's brim and bells and the star on the back is a three-stop linear gradient; the back's field is a radial gradient that darkens towards the corners.
 - **Params for the whole deck**: `paper`, `red`, `black` and `gold` in every design, `color` and `deck_name` on the back, an optional `title` for court cards.

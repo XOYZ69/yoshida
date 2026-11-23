@@ -68,6 +68,9 @@ pub const Begin = union(enum) {
     transform: Transform,
     crop: Crop,
     fade: Fade,
+    /// Keeps the part of the children inside the path (nonzero rule), in
+    /// the coordinates the group is opened in (a layer's `clip_to`).
+    clip: Path,
 
     pub const Transform = struct {
         /// Degrees clockwise around `pivot`.
@@ -218,6 +221,82 @@ pub const PathBuilder = struct {
         try b.close();
     }
 };
+
+/// The path turned `deg` degrees clockwise (y down) around `pivot`.
+pub fn rotatePath(arena: Allocator, path: Path, deg: f32, pivot: Point) Allocator.Error!Path {
+    const a = deg * std.math.pi / 180.0;
+    const cs = @cos(a);
+    const sn = @sin(a);
+    const R = struct {
+        cs: f32,
+        sn: f32,
+        o: Point,
+        fn at(r: @This(), p: Point) Point {
+            const dx = p[0] - r.o[0];
+            const dy = p[1] - r.o[1];
+            return .{ r.o[0] + dx * r.cs - dy * r.sn, r.o[1] + dx * r.sn + dy * r.cs };
+        }
+    };
+    const r: R = .{ .cs = cs, .sn = sn, .o = pivot };
+    const out = try arena.alloc(Cmd, path.cmds.len);
+    for (path.cmds, out) |cmd, *o| o.* = switch (cmd) {
+        .move => |p| .{ .move = r.at(p) },
+        .line => |p| .{ .line = r.at(p) },
+        .quad => |q| .{ .quad = .{ r.at(q[0]), r.at(q[1]) } },
+        .cubic => |q| .{ .cubic = .{ r.at(q[0]), r.at(q[1]), r.at(q[2]) } },
+        .close => .close,
+    };
+    return .{ .cmds = out };
+}
+
+/// The path as one polygon, scaled by `k`: lines as they are, curves cut
+/// into pieces of about 2 pixels. Meant for a path of one closed subpath
+/// (several are joined one after another).
+pub fn flatten(arena: Allocator, path: Path, k: f32) Allocator.Error![]const Point {
+    var out: std.ArrayList(Point) = .empty;
+    var cur: Point = .{ 0, 0 };
+    for (path.cmds) |cmd| switch (cmd) {
+        .move, .line => |p| {
+            cur = p;
+            try out.append(arena, .{ p[0] * k, p[1] * k });
+        },
+        .quad => |q| {
+            const n = pieces(&.{ cur, q[0], q[1] }, k);
+            for (1..n + 1) |i| {
+                const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
+                const u = 1 - t;
+                const p: Point = .{ u * u * cur[0] + 2 * u * t * q[0][0] + t * t * q[1][0], u * u * cur[1] + 2 * u * t * q[0][1] + t * t * q[1][1] };
+                try out.append(arena, .{ p[0] * k, p[1] * k });
+            }
+            cur = q[1];
+        },
+        .cubic => |q| {
+            const n = pieces(&.{ cur, q[0], q[1], q[2] }, k);
+            for (1..n + 1) |i| {
+                const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
+                const u = 1 - t;
+                const b0 = u * u * u;
+                const b1 = 3 * u * u * t;
+                const b2 = 3 * u * t * t;
+                const b3 = t * t * t;
+                const p: Point = .{ b0 * cur[0] + b1 * q[0][0] + b2 * q[1][0] + b3 * q[2][0], b0 * cur[1] + b1 * q[0][1] + b2 * q[1][1] + b3 * q[2][1] };
+                try out.append(arena, .{ p[0] * k, p[1] * k });
+            }
+            cur = q[2];
+        },
+        .close => {},
+    };
+    return out.items;
+}
+
+/// How many straight pieces a curve with these control points needs at
+/// scale `k`: its control polygon in pieces of about 2 pixels.
+fn pieces(ctrl: []const Point, k: f32) usize {
+    var len: f32 = 0;
+    for (ctrl[1..], ctrl[0 .. ctrl.len - 1]) |b, a| len += @sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+    const n = @ceil(len * k / 2);
+    return @intFromFloat(std.math.clamp(if (std.math.isFinite(n)) n else 1, 2, 256));
+}
 
 /// The point at `a` radians clockwise from 12 o'clock.
 fn ellipsePoint(cx: f32, cy: f32, rx: f32, ry: f32, a: f32) Point {
@@ -400,6 +479,23 @@ test "crop geometry matches raster.crop" {
         try std.testing.expectEqual(g.to.w, b.w);
         try std.testing.expectEqual(g.to.h, b.h);
     };
+}
+
+test "a rotated path flattens to points on the turned shape" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var b = PathBuilder.init(a);
+    try b.arc(50, 50, 20, 20, 0, 360, true);
+    try b.close();
+    const turned = try rotatePath(a, b.finish(), 90, .{ 50, 50 });
+    // The top of the circle turns to its right end.
+    try std.testing.expectApproxEqAbs(@as(f32, 70), turned.cmds[0].move[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 50), turned.cmds[0].move[1], 0.001);
+    const pts = try flatten(a, turned, 2);
+    try std.testing.expect(pts.len > 16);
+    // Every point is on the circle, at twice the size.
+    for (pts) |p| try std.testing.expectApproxEqAbs(@as(f32, 40), @sqrt((p[0] - 100) * (p[0] - 100) + (p[1] - 100) * (p[1] - 100)), 0.2);
 }
 
 test "arc ends where asked" {

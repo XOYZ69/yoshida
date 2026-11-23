@@ -52,8 +52,9 @@
     {
       "id": "lattice_row",
       "type": "group",
-      "note": "Nested repeat: one group per row, one diamond per column. The lattice is sized from consts so it fills the field exactly.",
+      "note": "Nested repeat: one group per row, one diamond per column. The lattice is sized from consts so it fills the field exactly; clip_to keeps it inside the field, rounded corners included, whatever the consts.",
       "repeat": { "count": "rows", "index": "r" },
+      "clip_to": "field",
       "translate": { "x": "margin", "y": "margin + r * cell_h" },
       "layers": [
         {

@@ -839,7 +839,7 @@ function ownFields(l: Obj): Obj {
 	return rest;
 }
 
-/** Layers whose fields mention `@id` or extend it. */
+/** Layers whose fields mention `@id`, extend it or clip to it. */
 export function referencesTo(doc: Obj, id: string): string[] {
 	const re = refRe(id);
 	return layersOf(doc)
@@ -847,7 +847,9 @@ export function referencesTo(doc: Obj, id: string): string[] {
 			re.lastIndex = 0;
 			return (
 				l.id !== id &&
-				(l.extends === id || re.test(JSON.stringify(ownFields(l))))
+				(l.extends === id ||
+					l.clip_to === id ||
+					re.test(JSON.stringify(ownFields(l))))
 			);
 		})
 		.map((l) => String(l.id));
@@ -864,7 +866,10 @@ function mapLayerTree(list: Json[], f: (l: Obj) => Obj): Json[] {
 	});
 }
 
-/** Renames layers and every `@id` reference and `extends` pointing at them. */
+/**
+ * Renames layers and every `@id` reference, `extends` and `clip_to`
+ * pointing at them.
+ */
 function renameIds(list: Json[], renames: Map<string, string>): Json[] {
 	return mapLayerTree(list, (l) => {
 		const { id, layers, ...rest } = l;
@@ -877,13 +882,15 @@ function renameIds(list: Json[], renames: Map<string, string>): Json[] {
 		const n = next as Obj;
 		if (typeof n.extends === "string" && renames.has(n.extends))
 			n.extends = renames.get(n.extends)!;
+		if (typeof n.clip_to === "string" && renames.has(n.clip_to))
+			n.clip_to = renames.get(n.clip_to)!;
 		const out: Obj = { id: renames.get(String(id)) ?? id, ...n };
 		if (layers !== undefined) out.layers = layers;
 		return out;
 	});
 }
 
-/** Renames a layer and every `@id` reference and `extends` pointing at it. */
+/** Renames a layer and every `@id` reference, `extends` and `clip_to` pointing at it. */
 export function renameLayer(doc: Obj, from: string, to: string) {
 	if (Array.isArray(doc.layers))
 		doc.layers = renameIds(doc.layers as Json[], new Map([[from, to]]));
@@ -1068,6 +1075,7 @@ const plainFields = new Set([
 	"note",
 	"anchor",
 	"extends",
+	"clip_to",
 	"font",
 	"align",
 	"fit",
