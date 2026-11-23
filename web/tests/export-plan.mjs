@@ -365,5 +365,40 @@ ok(
 	mod.setMaxSide(10000);
 }
 
+// The PDF print layout: paper, the request for the core, the grid and the backs.
+{
+	const mod = await import("../src/lib/exportPlan.ts");
+	const d = mod.defaultExportSettings;
+	ok("print: off by default", d.pdfLayout === "card" && d.paper === "a4" && d.printBack === "" && d.duplex === "long");
+	const a4 = mod.paperSize(d);
+	const land = mod.paperSize({ ...d, paper: "letter", landscape: true });
+	const custom = mod.paperSize({ ...d, paper: "custom", paperW: 330, paperH: 482.6 });
+	ok("print: paper sizes", a4.w === 210 && a4.h === 297 && land.w === 279.4 && land.h === 215.9 && custom.w === 330 && custom.h === 482.6);
+	const req = mod.printRequest({ ...d, landscape: true, printGap: 3, duplex: "short" }, true);
+	ok("print: request", req.page === "a4-landscape" && req.gap === 3 && req.margin === 5 && req.crop_marks && req.duplex === "short");
+	ok("print: custom request", mod.printRequest({ ...d, paper: "custom", paperW: 100, paperH: 150.5 }, false).page === "100x150.5");
+	const poker = { w: 63.5, h: 88.9 };
+	const g = mod.printGrid(a4, poker, 0, 5);
+	const gl = mod.printGrid(mod.paperSize({ ...d, paper: "letter", landscape: true }), poker, 0, 5);
+	ok("print: grid as the core lays it out", g.cols === 3 && g.rows === 3 && gl.cols === 4 && gl.rows === 2);
+	ok("print: a gap can cost a column", mod.printGrid(a4, poker, 5, 5).cols === 2 && mod.printGrid(a4, poker, 4, 5).cols === 3);
+	ok("print: a card that does not fit", mod.printGrid({ w: 50, h: 50 }, poker, 0, 5).cols === 0 && mod.printGrid(a4, poker, 0, 75).rows === 0);
+	const c = mod.cleanSettings({ pdfLayout: "print", paper: "tabloid", paperW: 5, paperH: 9999, printGap: -1, printMargin: 7.25, printBack: "back", duplex: "sideways" });
+	ok("print: stored settings are cleaned", c.pdfLayout === "print" && c.paper === "a4" && c.paperW === 20 && c.paperH === 2000 && c.printGap === 0 && c.printMargin === 7.3 && c.printBack === "back" && c.duplex === "long");
+	// The back set gets no PDF of its own, unless it is all that is exported.
+	const deck = [
+		{ name: "numbers", label: "Numbers", ok: true, cards: ["AS", "2S"] },
+		{ name: "back", label: "Back", ok: true, cards: ["back"] },
+	];
+	const all = mod.planExport({ scope: "all", formats: ["pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: no PDF of the backs", all.noPdf.join() === "back" && all.files === 1 && !all.zip && all.fileName === "poker-numbers.pdf", JSON.stringify(all));
+	const withPng = mod.planExport({ scope: "all", formats: ["png", "pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: the backs still get their PNG", withPng.files === 4 && mod.planSummary(withPng) === "4 files in poker.zip: 3 PNG, 1 PDF", mod.planSummary(withPng));
+	const only = mod.planExport({ scope: "design", formats: ["pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "back", 0);
+	ok("print: the back design alone", only.noPdf.length === 0 && only.files === 1);
+	const plain = mod.planExport({ scope: "all", formats: ["pdf"], pdfLayout: "card", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: a card a page prints every design", plain.noPdf.length === 0 && plain.files === 2);
+}
+
 console.log(failed ? `${failed} failed` : "all passed");
 process.exit(failed ? 1 : 0);

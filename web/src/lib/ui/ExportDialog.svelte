@@ -11,8 +11,15 @@ import {
 	type DesignOutput,
 	type ExportFormat,
 	type ExportSettings,
+	MAX_GAP,
+	MAX_MARGIN,
+	MAX_PAPER,
 	MAX_SCALE,
 	MAX_SHEET_GRID,
+	MIN_PAPER,
+	cleanMm,
+	paperSize,
+	printGrid,
 	MAX_SIDE,
 	cleanGrid,
 	sheetProblem,
@@ -116,6 +123,13 @@ const unavailable = $derived<Partial<Record<ExportFormat, string>>>(
 /** The formats that will be written: chosen and available. */
 const formats = $derived(s.formats.filter((f) => !unavailable[f]));
 const chosen = (f: ExportFormat) => formats.includes(f);
+/** The print layout's back: a set without errors, else none. */
+const backName = $derived(okSets.some((x) => x.name === s.printBack) ? s.printBack : "");
+const backOptions = $derived([
+	{ value: "", label: "None" },
+	...okSets.map((x) => ({ value: x.name, label: x.label })),
+]);
+const printing = $derived(chosen("pdf") && s.pdfLayout === "print");
 const plan = $derived(
 	planExport(
 		{
@@ -123,6 +137,8 @@ const plan = $derived(
 			formats,
 			sheetCols: cleanGrid(s.sheetCols, defaultExportSettings.sheetCols),
 			sheetRows: cleanGrid(s.sheetRows, defaultExportSettings.sheetRows),
+			pdfLayout: s.pdfLayout,
+			printBack: backName,
 		},
 		project,
 		sets,
@@ -310,13 +326,46 @@ const where = $derived.by(() => {
 		return "A single card always renders in this browser.";
 	// JPEG and WebP are encoded by the browser, so they render here.
 	const names = (fs: ExportFormat[]) => fs.map((f) => formatLabels[f]);
-	const there = formats.filter((f) => f !== "jpeg" && f !== "webp");
-	const here = formats.filter((f) => f === "jpeg" || f === "webp");
+	// JPEG, WebP and the PDF print layout are made in this browser only.
+	const local = (f: ExportFormat) =>
+		f === "jpeg" || f === "webp" || (f === "pdf" && printing);
+	const there = formats.filter((f) => !local(f));
+	const here = formats.filter(local);
 	const verb = here.length > 1 ? "render" : "renders";
 	if (!here.length) return "The server renders everything.";
 	if (!there.length)
 		return `${listOf(names(here))} always ${verb} in this browser.`;
 	return `The server renders ${listOf(names(there))}; ${listOf(names(here))} ${verb} in this browser.`;
+});
+
+/**
+ * The print layout: cards a page of the designs printed ("3 × 3 cards a
+ * page", or one line per grid when they differ), and the first design whose
+ * card does not fit on the page.
+ */
+const printFit = $derived.by(() => {
+	if (!printing) return { text: "", problem: "" };
+	const page = paperSize(s);
+	const gap = cleanMm(s.printGap, 0, MAX_GAP, 0);
+	const margin = cleanMm(s.printMargin, 0, MAX_MARGIN, 5);
+	const grids = new Set<string>();
+	for (const t of plan.targets) {
+		if (plan.noPdf.includes(t.set)) continue;
+		const set = sets.find((x) => x.name === t.set);
+		const c = set?.canvas;
+		if (!c) continue;
+		// Without canvas.dpi, a canvas pixel is a point, as in the core.
+		const mm = (px: number) => (px / (c.dpi > 0 ? c.dpi : 72)) * 25.4;
+		const bleed = c.bleed ?? 0;
+		const g = printGrid(page, { w: mm(c.w - 2 * bleed), h: mm(c.h - 2 * bleed) }, gap, margin);
+		if (!g.cols)
+			return {
+				text: "",
+				problem: `${set?.label ?? t.set} (${formatMm({ w: mm(c.w), h: mm(c.h) })}) does not fit on the page inside the margins`,
+			};
+		grids.add(`${g.cols} × ${g.rows}`);
+	}
+	return { text: grids.size ? `${[...grids].join(", ")} cards a page` : "", problem: "" };
 });
 
 /** The first design whose sheet is over the core's sheet size, and why. */
@@ -349,6 +398,7 @@ const blocked = $derived.by(() => {
 	if (over.length)
 		return `Over the limit of ${MAX_SIDE} px on each side: lower the resolution.`;
 	if (sheetOver) return `Sheet too large: ${sheetOver}.`;
+	if (printFit.problem) return `Print layout: ${printFit.problem}.`;
 	return "";
 });
 const canExport = $derived(!blocked && plan.files > 0);
@@ -407,6 +457,17 @@ function commitDpi(): boolean {
 	return Number(formatDpi(fieldDpi)) !== was;
 }
 
+/** Typed print layout lengths within their ranges. */
+function cleanPrint() {
+	const d = defaultExportSettings;
+	return {
+		paperW: cleanMm(s.paperW, MIN_PAPER, MAX_PAPER, d.paperW),
+		paperH: cleanMm(s.paperH, MIN_PAPER, MAX_PAPER, d.paperH),
+		printGap: cleanMm(s.printGap, 0, MAX_GAP, d.printGap),
+		printMargin: cleanMm(s.printMargin, 0, MAX_MARGIN, d.printMargin),
+	};
+}
+
 /** Typed qualities within 1 to 100; true when one changed. */
 function cleanQualities(): boolean {
 	const d = defaultExportSettings;
@@ -450,6 +511,8 @@ function submit() {
 		formats,
 		sheetCols: cleanGrid(s.sheetCols, defaultExportSettings.sheetCols),
 		sheetRows: cleanGrid(s.sheetRows, defaultExportSettings.sheetRows),
+		printBack: backName,
+		...cleanPrint(),
 		webpLossless: s.webpLossless && lossless,
 		scale: sliderScale,
 		dpi: byDpi ? clampDpi(s.dpi) : s.dpi,
@@ -615,6 +678,41 @@ $effect(() => {
               <span class="ctl">Crop marks
                 <Select label="Crop marks" title="Auto: crop marks when the design has a bleed, the edge that is cut off (canvas.bleed)" value={s.cropMarks} options={[{ value: "auto", label: "Auto", detail: "when the design has a bleed" }, { value: "on", label: "On" }, { value: "off", label: "Off" }]} onchange={(v) => (s.cropMarks = v as ExportSettings["cropMarks"])} />
               </span>
+              <span class="ctl">Layout
+                <Select label="Layout" title="Print sheets: the cards side by side on paper pages, with an optional page of backs after each for duplex printing" value={s.pdfLayout} options={[{ value: "card", label: "A card a page" }, { value: "print", label: "Print sheets", detail: "cards side by side on paper" }]} onchange={(v) => (s.pdfLayout = v as ExportSettings["pdfLayout"])} />
+              </span>
+              {#if s.pdfLayout === "print"}
+                <span class="ctl">Paper
+                  <Select label="Paper" value={s.paper} options={[{ value: "a4", label: "A4", detail: "210 × 297 mm" }, { value: "letter", label: "Letter", detail: "8.5 × 11 in" }, { value: "custom", label: "Custom" }]} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
+                </span>
+                {#if s.paper === "custom"}
+                  <span class="ctl">
+                    <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper width in mm" title="Paper width, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperW} onchange={() => (s.paperW = cleanMm(s.paperW, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperW))} />
+                    ×
+                    <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper height in mm" title="Paper height, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperH} onchange={() => (s.paperH = cleanMm(s.paperH, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperH))} />
+                    mm
+                  </span>
+                {:else}
+                  <span class="ctl">Orientation
+                    <Select label="Orientation" value={s.landscape ? "landscape" : "portrait"} options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} onchange={(v) => (s.landscape = v === "landscape")} />
+                  </span>
+                {/if}
+                <span class="ctl">Gap
+                  <input type="number" min="0" max={MAX_GAP} step="0.5" aria-label="Gap between cards in mm" title="Between neighbouring cards, 0 to {MAX_GAP} mm" bind:value={s.printGap} onchange={() => (s.printGap = cleanMm(s.printGap, 0, MAX_GAP, defaultExportSettings.printGap))} /> mm
+                </span>
+                <span class="ctl">Margin
+                  <input type="number" min="0" max={MAX_MARGIN} step="0.5" aria-label="Page margin in mm" title="The least room at each edge of the page, 0 to {MAX_MARGIN} mm" bind:value={s.printMargin} onchange={() => (s.printMargin = cleanMm(s.printMargin, 0, MAX_MARGIN, defaultExportSettings.printMargin))} /> mm
+                </span>
+                <span class="ctl">Backs
+                  <Select label="Backs" title="The first card of this design behind every card: a page of backs after each page of fronts" value={backName} options={backOptions} onchange={(v) => (s.printBack = v)} />
+                </span>
+                {#if backName}
+                  <span class="ctl">Duplex
+                    <Select label="Duplex" title="The edge your printer turns the sheet over on, as in its print dialog" value={s.duplex} options={[{ value: "long", label: "Flip on long edge" }, { value: "short", label: "Flip on short edge" }]} onchange={(v) => (s.duplex = v as ExportSettings["duplex"])} />
+                  </span>
+                {/if}
+                {#if printFit.text}<span class="ctl">{printFit.text}</span>{/if}
+              {/if}
             </span>
           {:else}
             <span class="more muted" id="export-about-pdf">For print: one PDF per design, a page per card</span>

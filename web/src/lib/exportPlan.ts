@@ -9,6 +9,13 @@ export type ExportScope = "card" | "design" | "all";
 export type ExportFormat = "png" | "jpeg" | "webp" | "svg" | "pdf" | "sheet";
 export type PngCompression = "fast" | "default" | "smallest";
 export type CropMarks = "auto" | "on" | "off";
+/**
+ * A PDF's pages: one card a page, or the cards side by side on paper pages
+ * ("print"), like `yoshida render --pdf --page`.
+ */
+export type PdfLayout = "card" | "print";
+export type Paper = "a4" | "letter" | "custom";
+export type Duplex = "long" | "short";
 
 export type ExportSettings = {
 	scope: ExportScope;
@@ -38,6 +45,19 @@ export type ExportSettings = {
 	/** Cards per row and rows per sheet. */
 	sheetCols: number;
 	sheetRows: number;
+	pdfLayout: PdfLayout;
+	/** Print layout: the paper, turned to landscape, and a custom size in mm. */
+	paper: Paper;
+	landscape: boolean;
+	paperW: number;
+	paperH: number;
+	/** Print layout: millimetres between cards and at least at the page edges. */
+	printGap: number;
+	printMargin: number;
+	/** Print layout: the set whose first card is shown behind every card; "" for none. */
+	printBack: string;
+	/** The edge the duplex printer turns the sheet over on. */
+	duplex: Duplex;
 };
 
 export const EXPORT_FORMATS: ExportFormat[] = [
@@ -96,6 +116,26 @@ export const defaultExportSettings: ExportSettings = {
 	// Ten by seven: the largest deck image the common tabletop simulators take.
 	sheetCols: 10,
 	sheetRows: 7,
+	pdfLayout: "card",
+	paper: "a4",
+	landscape: false,
+	paperW: 210,
+	paperH: 297,
+	printGap: 0,
+	printMargin: 5,
+	printBack: "",
+	duplex: "long",
+};
+
+/** Print layout limits in millimetres (what the core accepts). */
+export const MIN_PAPER = 20;
+export const MAX_PAPER = 2000;
+export const MAX_GAP = 50;
+export const MAX_MARGIN = 50;
+
+const papers: Record<Exclude<Paper, "custom">, { w: number; h: number }> = {
+	a4: { w: 210, h: 297 },
+	letter: { w: 215.9, h: 279.4 },
 };
 
 const extensions: Record<ExportFormat, string> = {
@@ -131,6 +171,12 @@ export const cleanQuality = (v: unknown, fallback: number) =>
 /** A typed number of columns or rows: 1 to 100, anything else gives `fallback`. */
 export const cleanGrid = (v: unknown, fallback: number) =>
 	clampInt(v, 1, MAX_SHEET_GRID, fallback);
+
+/** A typed length in mm within `lo` to `hi`: out of range is clamped, anything else gives `fallback`. */
+export const cleanMm = (v: unknown, lo: number, hi: number, fallback: number) =>
+	typeof v === "number" && Number.isFinite(v)
+		? Math.max(lo, Math.min(hi, Math.round(v * 10) / 10))
+		: fallback;
 
 /** Settings read back from storage: anything unknown becomes the default. */
 export function cleanSettings(raw: unknown): ExportSettings {
@@ -169,7 +215,83 @@ export function cleanSettings(raw: unknown): ExportSettings {
 		pdfVector: typeof r.pdfVector === "boolean" ? r.pdfVector : d.pdfVector,
 		sheetCols: cleanGrid(r.sheetCols, d.sheetCols),
 		sheetRows: cleanGrid(r.sheetRows, d.sheetRows),
+		pdfLayout: pick(r.pdfLayout, ["card", "print"] as const, d.pdfLayout),
+		paper: pick(r.paper, ["a4", "letter", "custom"] as const, d.paper),
+		landscape: typeof r.landscape === "boolean" ? r.landscape : d.landscape,
+		paperW: cleanMm(r.paperW, MIN_PAPER, MAX_PAPER, d.paperW),
+		paperH: cleanMm(r.paperH, MIN_PAPER, MAX_PAPER, d.paperH),
+		printGap: cleanMm(r.printGap, 0, MAX_GAP, d.printGap),
+		printMargin: cleanMm(r.printMargin, 0, MAX_MARGIN, d.printMargin),
+		printBack: typeof r.printBack === "string" ? r.printBack : d.printBack,
+		duplex: pick(r.duplex, ["long", "short"] as const, d.duplex),
 	};
+}
+
+type PrintSettings = Pick<
+	ExportSettings,
+	| "paper"
+	| "landscape"
+	| "paperW"
+	| "paperH"
+	| "printGap"
+	| "printMargin"
+	| "duplex"
+>;
+
+/** The page of a print layout in millimetres, turned for landscape. */
+export function paperSize(s: PrintSettings): { w: number; h: number } {
+	if (s.paper === "custom")
+		return {
+			w: cleanMm(s.paperW, MIN_PAPER, MAX_PAPER, 210),
+			h: cleanMm(s.paperH, MIN_PAPER, MAX_PAPER, 297),
+		};
+	const p = papers[s.paper];
+	return s.landscape ? { w: p.h, h: p.w } : p;
+}
+
+/** The print layout as the core takes it with pdf_begin. */
+export type PrintRequest = {
+	page: string;
+	gap: number;
+	margin: number;
+	crop_marks: boolean;
+	duplex: Duplex;
+};
+
+export function printRequest(
+	s: PrintSettings,
+	cropMarks: boolean,
+): PrintRequest {
+	const size = paperSize(s);
+	return {
+		page:
+			s.paper === "custom"
+				? `${size.w}x${size.h}`
+				: `${s.paper}${s.landscape ? "-landscape" : ""}`,
+		gap: cleanMm(s.printGap, 0, MAX_GAP, 0),
+		margin: cleanMm(s.printMargin, 0, MAX_MARGIN, 5),
+		crop_marks: cropMarks,
+		duplex: s.duplex,
+	};
+}
+
+/**
+ * Cards of `trim` mm a page of `page` mm holds: as many as fit inside the
+ * margin, `gap` apart (the core's print layout). 0 x 0 when one does not fit.
+ */
+export function printGrid(
+	page: { w: number; h: number },
+	trim: { w: number; h: number },
+	gap: number,
+	margin: number,
+): { cols: number; rows: number } {
+	const fit = (avail: number, size: number) =>
+		avail < size || !(size > 0)
+			? 0
+			: Math.min(100, Math.floor((avail + gap) / (size + gap) + 1e-9));
+	const cols = fit(page.w - 2 * margin, trim.w);
+	const rows = fit(page.h - 2 * margin, trim.h);
+	return cols && rows ? { cols, rows } : { cols: 0, rows: 0 };
 }
 
 /**
@@ -198,6 +320,11 @@ export type ExportPlan = {
 	/** Card images (PNG, JPEG, WebP, SVG) per card, and PDFs per set. */
 	imageFormats: ExportFormat[];
 	pdf: boolean;
+	/**
+	 * Sets that get no PDF: the backs of a print layout, shown behind the
+	 * other sets' cards (unless they are the only set exported).
+	 */
+	noPdf: string[];
 	/** Sheets are written, and how many files that makes over all sets. */
 	sheet: boolean;
 	sheets: number;
@@ -252,7 +379,12 @@ export function sheetProblem(
  */
 export function planExport(
 	s: Pick<ExportSettings, "scope" | "formats"> &
-		Partial<Pick<ExportSettings, "sheetCols" | "sheetRows">>,
+		Partial<
+			Pick<
+				ExportSettings,
+				"sheetCols" | "sheetRows" | "pdfLayout" | "printBack"
+			>
+		>,
 	project: string,
 	sets: PlanSet[],
 	current: string,
@@ -283,17 +415,25 @@ export function planExport(
 				: set.cards.map((_, i) => i);
 		if (cards.length) targets.push({ set: set.name, cards });
 	}
+	const back =
+		pdf && s.pdfLayout === "print" && s.printBack ? s.printBack : "";
+	const noPdf =
+		back && targets.some((t) => t.set !== back)
+			? targets.filter((t) => t.set === back).map((t) => t.set)
+			: [];
 	const cards = targets.reduce((a, t) => a + t.cards.length, 0);
 	const sheets = sheet
 		? targets.reduce((a, t) => a + sheetCount(t.cards.length, cols, rows), 0)
 		: 0;
 	const files =
-		cards * imageFormats.length + (pdf ? targets.length : 0) + sheets;
+		cards * imageFormats.length +
+		(pdf ? targets.length - noPdf.length : 0) +
+		sheets;
 	let fileName =
 		s.scope === "all" ? `${project}.zip` : `${project}-${current}.zip`;
 	const zip = files !== 1;
 	if (!zip) {
-		const t = targets[0];
+		const t = targets.find((x) => !noPdf.includes(x.set)) ?? targets[0];
 		const id = sets.find((x) => x.name === t.set)?.cards[t.cards[0]] ?? "";
 		if (imageFormats.length) fileName = `${id}.${extensions[imageFormats[0]]}`;
 		else if (sheet) fileName = `${project}-${t.set}.png`;
@@ -305,6 +445,7 @@ export function planExport(
 		skipped,
 		imageFormats,
 		pdf,
+		noPdf,
 		sheet,
 		sheets,
 		cards,
@@ -320,7 +461,7 @@ export function planSummary(p: ExportPlan): string {
 	if (!p.zip) return `1 file: ${p.fileName}`;
 	// The files of each format: "40 PNG", "1 PDF".
 	const counts = p.imageFormats.map((f) => `${p.cards} ${formatLabels[f]}`);
-	if (p.pdf) counts.push(`${p.targets.length} PDF`);
+	if (p.pdf) counts.push(`${p.targets.length - p.noPdf.length} PDF`);
 	if (p.sheet) counts.push(`${p.sheets} ${formatLabels.sheet}`);
 	return counts.length === 1
 		? `${counts[0]} files in ${p.fileName}`

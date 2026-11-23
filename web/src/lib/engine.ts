@@ -2,6 +2,7 @@
 
 import type { Placed } from "./design";
 import type { EvalResult } from "./expr/live";
+import type { PrintRequest } from "./exportPlan";
 
 export type Severity = "error" | "warning" | "hint";
 
@@ -415,10 +416,27 @@ export class Engine {
 
 	/**
 	 * A PDF built one page per call (pdfBegin, pdfPage per card, pdfFinish),
-	 * so an export can stop between cards.
+	 * so an export can stop between cards. With `print` the cards go side by
+	 * side on pages of a paper size instead (`yoshida render --pdf --page`),
+	 * and `pdfBack` before the cards adds a page of backs after each page.
 	 */
-	pdfBegin() {
-		return this.call<{ pages: number }>({ op: "pdfBegin" });
+	pdfBegin(print?: PrintRequest) {
+		return this.call<{ pages: number }>({ op: "pdfBegin", print });
+	}
+
+	/** The card shown behind every card of a print layout. */
+	pdfBack(args: {
+		set: string;
+		card: number;
+		date: string;
+		now: string;
+		scale?: number;
+		vector?: boolean;
+	}) {
+		return this.call<{ back: boolean; diagnostics: Diagnostic[] }>({
+			op: "pdfBack",
+			args,
+		});
 	}
 
 	pdfPage(args: {
@@ -435,14 +453,26 @@ export class Engine {
 		/** Draw the page as vectors instead of as an image. */
 		vector?: boolean;
 	}) {
-		return this.call<{ pages: number; diagnostics: Diagnostic[] }>({
+		return this.call<{
+			pages: number;
+			diagnostics: Diagnostic[];
+			/** Print layout: cards placed so far, and false for a card of another size than the first. */
+			cards?: number;
+			fits?: boolean;
+		}>({
 			op: "pdfPage",
 			args,
 		});
 	}
 
 	pdfFinish() {
-		return this.call<{ pages: number; bin: Uint8Array }>({ op: "pdfFinish" });
+		return this.call<{
+			pages: number;
+			/** The print layout's grid (0 without one). */
+			cols: number;
+			rows: number;
+			bin: Uint8Array;
+		}>({ op: "pdfFinish" });
 	}
 
 	/**

@@ -13,6 +13,8 @@ yoshida render <project>  [--set NAME] [--card ID] [--out DIR]
                           [--utc-offset HOURS] [--16bit] [--preview]
                           [--offline] [--pdf] [--crop-marks] [--svg]
                           [--vector] [--scale N] [--sheet COLSxROWS]
+                          [--page a4|letter|WxH] [--gap MM] [--margin MM]
+                          [--back SET[:ID]] [--duplex long|short]
                           [--format text|json]
 yoshida fmt    <project or file>...  [--check]
 yoshida version
@@ -51,11 +53,16 @@ Renders cards to PNG files at `<out>/<set>/<card id>.png`, or to [SVG files](#sv
 | `--preview`         | A missing or undecodable image becomes a placeholder and a warning instead of an error                                                                                                |
 | `--offline`         | Do not download `https://` and `http://` images                                                                                                                                       |
 | `--pdf`             | Write one PDF per set, `<out>/<set>.pdf`, one page per card, instead of PNG files. See [PDF](#pdf)                                                                                    |
-| `--crop-marks`      | Put each card on a white sheet with crop marks at the trim line (`canvas.bleed` inside the edge). Works for PNG and PDF                                                               |
+| `--crop-marks`      | Put each card on a white sheet with crop marks at the trim line (`canvas.bleed` inside the edge). Works for PNG and PDF. With `--page`, the marks go around the grid instead, see [Print layout](#print-layout) |
 | `--svg`             | Write one SVG file per card, `<out>/<set>/<card id>.svg`, instead of PNG files. See [SVG](#svg)                                                                                    |
 | `--vector`          | With `--pdf`: draw the pages as vectors instead of images. See [PDF](#pdf)                                                                                                            |
 | `--scale N`         | Render at N times the canvas size, 1 to 4 (default 1), for sharper print. The printed size stays the same: the PNG dpi is `canvas.dpi` times N and PDF pages keep their size. A side over 10000 pixels is error 5001. With `--svg` or `--vector` it is the resolution of the parts that stay pixels (default 2). See [Resolution](@/docs/saving-images-and-privacy.md#resolution) |
 | `--sheet COLSxROWS` | Tile the cards of each set into one PNG per set, e.g. `10x7` for a tabletop simulator deck. See [Sheets](#sheets) |
+| `--page SIZE`       | With `--pdf`: lay the cards out side by side on pages of this size, `a4`, `letter`, `a4-landscape`, `letter-landscape` or `WxH` in millimetres (`297x420`). See [Print layout](#print-layout) |
+| `--gap MM`          | With `--page`: millimetres between neighbouring cards, 0 to 50 (default 0) |
+| `--margin MM`       | With `--page`: the least room left at each edge of the page, 0 to 50 mm (default 5) |
+| `--back SET[:ID]`   | With `--page`: a page of backs after each page of fronts, showing the first card of `SET` (or card `ID`) behind every card |
+| `--duplex EDGE`     | With `--back`: the edge your duplex printer flips the sheet on, `long` (default) or `short` |
 | `--format json`     | Print one JSON document (diagnostics, sets, written files, files with errors) instead of text                                                                                         |
 
 ### Where the files go
@@ -97,6 +104,23 @@ yoshida render examples/board-game --out out --pdf
 yoshida render examples/poker --set numbers --out out --pdf --vector
 # wrote out/numbers.pdf (40 page(s))
 ```
+
+### Print layout
+
+`--page` turns the PDF into sheets to print at home or at a copy shop: the cards of each set side by side on pages of a paper size, instead of one page per card.
+
+```sh
+yoshida render examples/poker --pdf --vector --page a4 --back back --crop-marks
+# wrote examples/poker/out/numbers.pdf (40 card(s) on 10 page(s), 3x3 per page, backs for flip on long edge)
+```
+
+- **Pages**: `a4` (210 x 297 mm), `letter` (8.5 x 11 in), either with `-landscape`, or any size as `WxH` in millimetres, 20 to 2000 each. The page is the size given, never turned to fit more cards.
+- **Grid**: as many cards as fit inside `--margin` (default 5 mm, the edge most printers cannot print on), `--gap` millimetres apart (default 0), centred on the page. Cards keep their printed size (see `canvas.dpi`); a card larger than the page inside the margins is an error. The grid is set by the first card; a card of another size is centred on its place, cut to it, and the tool warns.
+- **Bleed**: the cards are placed by their trim size (`canvas.bleed` inside the edge). The bleed shows at the outside of the grid and up to half the gap between cards, so neighbours never cover each other. With no gap, cards meet at the trim line and the cuts are shared.
+- **Crop marks**: with `--crop-marks`, short lines in the margin above, below, left and right of the grid at every trim line, for cutting with a guillotine or a ruler. They start 2 mm outside the bleed and are cut short at the edge of the page.
+- **Backs**: `--back back` puts the first card of the set `back` behind every card (`--back back:blue` picks the card `blue`). After each page of fronts comes a page with one back for each card on it, placed so that each back lands behind its front when the pages are printed on both sides of the sheet. The back is stored once, however many pages show it. The back set is left out of the sets that are printed unless `--set` names it.
+- **Duplex**: with `--duplex long` (the default), the backs of a portrait page are mirrored left to right, for a printer that turns the sheet over its long edge, like the page of a book. With `--duplex short` the rows are mirrored top to bottom and each back is turned 180°, so a cut card still shows its back the right way up when turned over sideways. On a landscape page the two swap. Print a test sheet first: hold it against the light to check that fronts and backs line up, and print at 100 % (no "fit to page").
+- `--vector` draws the cards as vectors, as for other PDFs; without it each card is an image at `--scale`. `--card` and `--set` pick cards as usual.
 
 ### SVG
 
