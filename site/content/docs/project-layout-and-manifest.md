@@ -129,15 +129,21 @@ Reserved for caches. Do not commit it.
 
 ## Card review: `qa.json`
 
-The editor can record a review per card: unreviewed (the default), approved or needs changes, with an optional note. The state is kept in `qa.json` at the project root, so commit it with the rest. The command line does not read it; `yoshida check` ignores the file and `yoshida fmt` formats it like any JSON file. The schema is `schema/qa.schema.json`.
+The editor can record a review per card: unreviewed (the default), approved or needs changes, plus any number of comments, each optionally pinned to a spot on the card. The state is kept in `qa.json` at the project root, so commit it with the rest. The command line does not read it; `yoshida check` ignores the file and `yoshida fmt` formats it like any JSON file. The schema is `schema/qa.schema.json`. Format 1 files (one note per card) are read and rewritten as format 2 the next time the editor saves.
 
 ```json
 {
-  "format": 1,
+  "format": 2,
   "cards": {
     "cards/forge.cards.json": {
-      "bs-01": { "status": "approved", "hash": "1f3a9c0b7d2e45" },
-      "bs-02": { "status": "needs-changes", "hash": "0a7c3e91b4d2f8", "note": "Title is too long" }
+      "bs-01": { "status": "approved", "hash": "1f3a9c0b7d2e45", "by": "yuki", "at": "2026-11-23T04:30Z" },
+      "bs-02": {
+        "hash": "0a7c3e91b4d2f8",
+        "comments": [
+          { "id": "c1", "text": "Title is too long", "x": 120, "y": 64, "by": "yuki", "at": "2026-11-23T04:31Z" },
+          { "id": "c2", "text": "Check the icon", "resolved": true }
+        ]
+      }
     }
   }
 }

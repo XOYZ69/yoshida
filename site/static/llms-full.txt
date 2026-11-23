@@ -134,11 +134,11 @@ Layers shared by designs: a group takes them with "include"
 
 ### `qa.json`, the card review state written by the editor
 
-Written by the editor. The command line does not read it. An approval stays valid while the card and the design inputs hash to the same value.
+Written by the editor. The command line does not read it. An approval stays valid while the card and the design inputs hash to the same value. Format 1 files (one note per card) are read and rewritten as format 2.
 
 - `$schema` (string)
-- `format` (1, required)
-- `cards` ({ name: { name: { status, hash, note } } }): Reviews by card file path, then by card id. A card without an entry is unreviewed.
+- `format` (1 | 2, required): The editor writes 2. Format 1 has a single "note" per card instead of "comments".
+- `cards` ({ name: { name: { status, hash, by, at, note, comments } } }): Reviews by card file path, then by card id. A card without an entry is unreviewed.
 
 ### `*.design.json`, a design
 

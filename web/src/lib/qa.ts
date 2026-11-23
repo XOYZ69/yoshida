@@ -18,12 +18,36 @@ export type QaMark = "approved" | "needs-changes";
 /** What the editor shows: a mark, or one of the two states without a mark. */
 export type QaStatus = "unreviewed" | "approved" | "needs-changes" | "stale";
 
-export type QaEntry = { status: QaMark; hash: string; note?: string };
+/** A point to address on a card. `x` and `y` pin it to a spot of the card, in canvas pixels. */
+export type QaComment = {
+	id: string;
+	text: string;
+	/** Who wrote it and when (UTC, to the minute); both optional. */
+	by?: string;
+	at?: string;
+	x?: number;
+	y?: number;
+	resolved?: boolean;
+};
+
+/**
+ * What is recorded about a card: an optional mark with the hash of the card
+ * when it was marked, and a list of comments. A card with open comments
+ * counts as needing changes.
+ */
+export type QaEntry = {
+	status?: QaMark;
+	hash: string;
+	/** Who set the mark and when. */
+	by?: string;
+	at?: string;
+	comments?: QaComment[];
+};
 
 /** Entries by key (the set's card file) and then by card id. */
-export type QaDoc = { format: 1; cards: Record<string, Record<string, QaEntry>> };
+export type QaDoc = { format: 2; cards: Record<string, Record<string, QaEntry>> };
 
-export const emptyQa = (): QaDoc => ({ format: 1, cards: {} });
+export const emptyQa = (): QaDoc => ({ format: 2, cards: {} });
 
 /** `JSON.stringify` with object keys sorted, so equal data gives equal text. */
 export function stableJson(v: unknown): string {
@@ -140,13 +164,21 @@ export function reconcileQa(doc: QaDoc, sets: QaSet[]): QaDoc {
 			(cards[set.key] ??= {})[c.id] = o.entry;
 			changed = true;
 		}
-	return changed ? { format: 1, cards } : doc;
+	return changed ? { format: 2, cards } : doc;
 }
 
-/** The status of a card, given its entry (if any) and its current hash. */
+/** Comments of a card that are not resolved yet. */
+export const openComments = (entry: QaEntry | undefined): QaComment[] =>
+	(entry?.comments ?? []).filter((c) => !c.resolved);
+
+/**
+ * The status of a card, given its entry (if any) and its current hash. Open
+ * comments mean "needs changes"; once they are resolved, the mark decides.
+ */
 export function statusOf(entry: QaEntry | undefined, hash: string): QaStatus {
 	if (!entry) return "unreviewed";
-	if (entry.status === "needs-changes") return "needs-changes";
+	if (openComments(entry).length || entry.status === "needs-changes") return "needs-changes";
+	if (!entry.status) return "unreviewed";
 	return entry.hash === hash ? "approved" : "stale";
 }
 
@@ -160,7 +192,10 @@ export const statusLabel: Record<QaStatus, string> = {
 	stale: "Changed since review",
 };
 
-/** Reads qa.json text. Anything unreadable gives an empty document; bad entries are dropped. */
+const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined);
+
+/** Reads qa.json text (format 1 or 2). Anything unreadable gives an empty document; bad entries are dropped. A format 1 note becomes the first comment. */
 export function parseQa(text: string | undefined): QaDoc {
 	const out = emptyQa();
 	let v: unknown;
@@ -174,13 +209,36 @@ export function parseQa(text: string | undefined): QaDoc {
 	for (const [key, byId] of Object.entries(cards)) {
 		if (!byId || typeof byId !== "object" || Array.isArray(byId)) continue;
 		for (const [id, e] of Object.entries(byId)) {
-			const x = e as Partial<QaEntry> | null;
-			if (!x || (x.status !== "approved" && x.status !== "needs-changes")) continue;
-			const entry: QaEntry = {
-				status: x.status,
-				hash: typeof x.hash === "string" ? x.hash : "",
-			};
-			if (typeof x.note === "string" && x.note) entry.note = x.note;
+			const x = e as (Partial<QaEntry> & { note?: unknown }) | null;
+			if (!x || typeof x !== "object") continue;
+			const mark = x.status === "approved" || x.status === "needs-changes" ? x.status : undefined;
+			const comments: QaComment[] = [];
+			const note = str(x.note);
+			if (note) comments.push({ id: "c1", text: note });
+			if (Array.isArray(x.comments))
+				for (const c of x.comments as Partial<QaComment>[]) {
+					const text = str(c?.text);
+					if (!text) continue;
+					const cid = str(c.id) ?? `c${comments.length + 1}`;
+					if (comments.some((o) => o.id === cid)) continue;
+					const k: QaComment = { id: cid, text };
+					if (str(c.by)) k.by = c.by;
+					if (str(c.at)) k.at = c.at;
+					const px = num(c.x);
+					const py = num(c.y);
+					if (px !== undefined && py !== undefined) {
+						k.x = px;
+						k.y = py;
+					}
+					if (c.resolved === true) k.resolved = true;
+					comments.push(k);
+				}
+			if (!mark && !comments.length) continue;
+			const entry: QaEntry = { hash: typeof x.hash === "string" ? x.hash : "" };
+			if (mark) entry.status = mark;
+			if (str(x.by)) entry.by = x.by;
+			if (str(x.at)) entry.at = x.at;
+			if (comments.length) entry.comments = comments;
 			(out.cards[key] ??= {})[id] = entry;
 		}
 	}
@@ -189,42 +247,125 @@ export function parseQa(text: string | undefined): QaDoc {
 
 /** The canonical text of a document: keys sorted, `yoshida fmt` layout. */
 export function writeQa(doc: QaDoc): string {
-	const cards: QaDoc["cards"] = {};
+	const cards: Record<string, Record<string, unknown>> = {};
 	for (const key of Object.keys(doc.cards).sort()) {
 		const byId = doc.cards[key];
 		const ids = Object.keys(byId).sort();
 		if (!ids.length) continue;
 		cards[key] = {};
 		for (const id of ids) {
-			const { status, hash, note } = byId[id];
-			cards[key][id] = note ? { status, hash, note } : { status, hash };
+			const { status, hash, by, at, comments } = byId[id];
+			cards[key][id] = {
+				...(status ? { status } : {}),
+				hash,
+				...(status && by ? { by } : {}),
+				...(status && at ? { at } : {}),
+				...(comments?.length ? { comments } : {}),
+			};
 		}
 	}
-	return formatJson({ format: 1, cards });
+	return formatJson({ format: 2, cards });
+}
+
+/** Who and when, as recorded with a mark or a comment. */
+export type QaStamp = { by?: string; at?: string };
+
+/** The current time as a stamp value: UTC, to the minute. */
+export const stampNow = (d = new Date()) => `${d.toISOString().slice(0, 16)}Z`;
+
+function put(doc: QaDoc, key: string, id: string, entry: QaEntry | undefined): QaDoc {
+	const cards = { ...doc.cards, [key]: { ...doc.cards[key] } };
+	if (entry && (entry.status || entry.comments?.length)) cards[key][id] = entry;
+	else delete cards[key][id];
+	return { format: 2, cards };
 }
 
 /**
- * The document after recording a review: `status` null clears the card's
- * entry. The hash is that of the card as reviewed now. An empty note is dropped.
+ * The document after recording a mark: `mark` null removes the mark and keeps
+ * the comments. The hash is that of the card as reviewed now.
  */
-export function withReview(
+export function withMark(
 	doc: QaDoc,
 	key: string,
 	id: string,
-	status: QaMark | null,
+	mark: QaMark | null,
 	hash: string,
-	note = "",
+	stamp: QaStamp = {},
 ): QaDoc {
-	const cards = { ...doc.cards, [key]: { ...doc.cards[key] } };
-	if (status) cards[key][id] = { status, hash, ...(note.trim() ? { note: note.trim() } : {}) };
-	else delete cards[key][id];
-	return { format: 1, cards };
+	const old = doc.cards[key]?.[id];
+	const entry: QaEntry = { hash: mark ? hash : (old?.hash ?? hash) };
+	if (mark) {
+		entry.status = mark;
+		if (stamp.by) entry.by = stamp.by;
+		if (stamp.at) entry.at = stamp.at;
+	}
+	if (old?.comments?.length) entry.comments = old.comments;
+	return put(doc, key, id, entry);
 }
 
-/** The document after changing only a card's note (kept with its mark and hash). */
-export function withNote(doc: QaDoc, key: string, id: string, note: string): QaDoc {
-	const e = doc.cards[key]?.[id];
-	return e ? withReview(doc, key, id, e.status, e.hash, note) : doc;
+const nextCommentId = (list: QaComment[]) =>
+	`c${Math.max(0, ...list.map((c) => Number(/^c(\d+)$/.exec(c.id)?.[1] ?? 0))) + 1}`;
+
+/** The document with a new comment on the card. Returns the new comment's id too. */
+export function withComment(
+	doc: QaDoc,
+	key: string,
+	id: string,
+	hash: string,
+	fields: { text: string; x?: number; y?: number } & QaStamp,
+): { doc: QaDoc; id: string } {
+	const old = doc.cards[key]?.[id];
+	const list = old?.comments ?? [];
+	const cid = nextCommentId(list);
+	const c: QaComment = { id: cid, text: fields.text };
+	if (fields.by) c.by = fields.by;
+	if (fields.at) c.at = fields.at;
+	if (fields.x !== undefined && fields.y !== undefined) {
+		c.x = Math.round(fields.x);
+		c.y = Math.round(fields.y);
+	}
+	return { doc: put(doc, key, id, { ...(old ?? { hash }), comments: [...list, c] }), id: cid };
+}
+
+/** The document after changing a comment. A comment left without text is removed. */
+export function withCommentEdit(
+	doc: QaDoc,
+	key: string,
+	id: string,
+	commentId: string,
+	patch: Partial<Pick<QaComment, "text" | "x" | "y" | "resolved">>,
+): QaDoc {
+	const old = doc.cards[key]?.[id];
+	if (!old?.comments) return doc;
+	const list: QaComment[] = [];
+	for (const c of old.comments) {
+		if (c.id !== commentId) {
+			list.push(c);
+			continue;
+		}
+		const n: QaComment = { ...c, ...patch };
+		if (!n.resolved) delete n.resolved;
+		if (n.x === undefined || n.y === undefined) {
+			delete n.x;
+			delete n.y;
+		}
+		if (n.text.trim()) list.push({ ...n, text: n.text.trim() });
+	}
+	const next: QaEntry = { ...old };
+	if (list.length) next.comments = list;
+	else delete next.comments;
+	return put(doc, key, id, next);
+}
+
+/** The document without one comment. */
+export function withoutComment(doc: QaDoc, key: string, id: string, commentId: string): QaDoc {
+	const old = doc.cards[key]?.[id];
+	if (!old?.comments) return doc;
+	const comments = old.comments.filter((c) => c.id !== commentId);
+	const next: QaEntry = { ...old };
+	if (comments.length) next.comments = comments;
+	else delete next.comments;
+	return put(doc, key, id, next);
 }
 
 /** Counts of each status over a set's cards. */

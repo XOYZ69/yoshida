@@ -19,6 +19,10 @@ On macOS use <kbd>Cmd</kbd> where the table says <kbd>Ctrl</kbd>. Shortcuts that
 | <kbd>Ctrl</kbd>+<kbd>Up</kbd> / <kbd>Down</kbd> | Move the layer in the stack (one layer selected) |
 | <kbd>Esc</kbd> | Deselect (or close the card browser) |
 
+## Card review
+
+The keys for [card review](@/docs/qa-review.md#keys) (<kbd>J</kbd>/<kbd>K</kbd> cards, <kbd>A</kbd> approve, <kbd>N</kbd> needs changes, <kbd>C</kbd> comment, <kbd>?</kbd> list of keys) work in every mode when the focus is not in a text field.
+
 ## Mouse
 
 | Action | Does |

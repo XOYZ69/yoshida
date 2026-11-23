@@ -158,8 +158,14 @@
 		parseQa,
 		reconcileQa,
 		statusOf,
-		withNote,
-		withReview,
+		openComments,
+		stampNow,
+		withComment,
+		withCommentEdit,
+		withMark,
+		withoutComment,
+		needsReview,
+		type QaComment,
 		writeQa,
 	} from "./lib/qa";
 	import {
@@ -195,6 +201,7 @@
 	import CardBrowser from "./lib/ui/CardBrowser.svelte";
 	import CardList from "./lib/ui/CardList.svelte";
 	import QaControl from "./lib/ui/QaControl.svelte";
+	import QaBadge from "./lib/ui/QaBadge.svelte";
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import ExportDialog from "./lib/ui/ExportDialog.svelte";
@@ -2320,15 +2327,196 @@
 		updateFile(QA_FILE, text, true);
 	}
 
+	// Reviewer name: kept in this browser, written next to marks and comments.
+	const reviewerKey = "yoshida.reviewer";
+	let reviewer = $state(
+		(() => {
+			try {
+				return localStorage.getItem(reviewerKey) ?? "";
+			} catch {
+				return "";
+			}
+		})(),
+	);
+	function setReviewer(name: string) {
+		reviewer = name.trim().slice(0, 60);
+		try {
+			if (reviewer) localStorage.setItem(reviewerKey, reviewer);
+			else localStorage.removeItem(reviewerKey);
+		} catch {
+			// The name just is not remembered.
+		}
+	}
+	const stamp = () => ({ ...(reviewer ? { by: reviewer } : {}), at: stampNow() });
+
+	const qaEntry = $derived(
+		currentCard ? qaDoc.cards[qaKey]?.[currentCard.id] : undefined,
+	);
+	/** The comment shown highlighted, and the one waiting for a click on the card to be pinned. */
+	let qaActive = $state<string | null>(null);
+	let pinTarget = $state<string | null>(null);
+	let qaComposer = $state<HTMLInputElement>();
+	let qaOverviewOpen = $state(false);
+	let qaKeysOpen = $state(false);
+	// The comments belong to a card: another card starts clean.
+	$effect(() => {
+		void currentCard?.id;
+		void setName;
+		qaActive = null;
+		pinTarget = null;
+	});
+
 	function reviewCard(mark: QaMark | null) {
 		const c = currentCard;
 		if (!c) return;
-		const note = qaDoc.cards[qaKey]?.[c.id]?.note ?? "";
-		writeQaDoc(withReview(qaDoc, qaKey, c.id, mark, qaHashes[cardIndex], note));
+		if (mark === "approved" && openComments(qaEntry).length) {
+			status = "Resolve the open comments before approving.";
+			return;
+		}
+		writeQaDoc(
+			withMark(qaDoc, qaKey, c.id, mark, qaHashes[cardIndex], stamp()),
+		);
 	}
 
-	function noteCard(note: string) {
-		if (currentCard) writeQaDoc(withNote(qaDoc, qaKey, currentCard.id, note));
+	function addComment(text: string) {
+		const c = currentCard;
+		if (!c) return;
+		const r = withComment(qaDoc, qaKey, c.id, qaHashes[cardIndex], {
+			text,
+			...stamp(),
+		});
+		writeQaDoc(r.doc);
+		qaActive = r.id;
+	}
+
+	function editComment(
+		id: string,
+		patch: Partial<Pick<QaComment, "text" | "resolved" | "x" | "y">>,
+	) {
+		if (currentCard)
+			writeQaDoc(withCommentEdit(qaDoc, qaKey, currentCard.id, id, patch));
+	}
+
+	function removeComment(id: string) {
+		if (currentCard)
+			writeQaDoc(withoutComment(qaDoc, qaKey, currentCard.id, id));
+		if (qaActive === id) qaActive = null;
+		if (pinTarget === id) pinTarget = null;
+	}
+
+	function placePin(x: number, y: number) {
+		if (!pinTarget) return;
+		editComment(pinTarget, { x: Math.round(x), y: Math.round(y) });
+		qaActive = pinTarget;
+		pinTarget = null;
+	}
+
+	const qaPins = $derived(
+		(qaEntry?.comments ?? []).flatMap((c, i) =>
+			c.x === undefined || c.y === undefined
+				? []
+				: [
+						{
+							id: c.id,
+							n: i + 1,
+							x: c.x,
+							y: c.y,
+							resolved: !!c.resolved,
+							active: qaActive === c.id,
+						},
+					],
+		),
+	);
+
+	/** Every card with a mark or comments, for the overview. */
+	const qaRows = $derived(
+		sets.flatMap((s, si) =>
+			s.cards.flatMap((c, i) => {
+				const e = qaDoc.cards[qaSets[si]?.key]?.[c.id];
+				if (!e) return [];
+				return [
+					{
+						set: s.name,
+						setLabel: s.design_name,
+						index: i,
+						id: c.id,
+						status: statusOf(e, qaSets[si].cards[i].hash),
+						entry: e,
+					},
+				];
+			}),
+		),
+	);
+
+	function goToCard(set: string, index: number) {
+		if (set !== setName) {
+			setName = set;
+			selectedLayers = [];
+		}
+		cardIndex = index;
+		cardIdError = "";
+		renderPreview();
+	}
+
+	function stepCard(by: number) {
+		const n = currentSet?.cards.length ?? 0;
+		if (!n) return;
+		goToCard(setName, Math.min(n - 1, Math.max(0, cardIndex + by)));
+	}
+
+	function stepSet(by: number) {
+		if (sets.length < 2) return;
+		const i = sets.findIndex((s) => s.name === setName);
+		goToCard(sets[(i + by + sets.length) % sets.length].name, 0);
+	}
+
+	/** The next card, in the sets' order after this one and wrapping round, that still needs review. */
+	function nextToReview() {
+		const flat = sets.flatMap((s, si) =>
+			s.cards.map((c, i) => ({
+				set: s.name,
+				i,
+				st: statusOf(qaDoc.cards[qaSets[si]?.key]?.[c.id], qaSets[si].cards[i].hash),
+			})),
+		);
+		const at = flat.findIndex((x) => x.set === setName && x.i === cardIndex);
+		for (let k = 1; k <= flat.length; k++) {
+			const x = flat[(at + k) % flat.length];
+			if (needsReview(x.st)) {
+				goToCard(x.set, x.i);
+				return;
+			}
+		}
+		status = "No card needs review.";
+	}
+
+	/** The review keys; true when the key was one of them. */
+	function reviewKey(e: KeyboardEvent): boolean {
+		const k = e.key;
+		if (k === "?" || (k === "/" && e.shiftKey)) qaKeysOpen = !qaKeysOpen;
+		else if (k === "Escape" && (pinTarget || qaKeysOpen || qaOverviewOpen)) {
+			pinTarget = null;
+			qaKeysOpen = false;
+			qaOverviewOpen = false;
+		} else if (!currentCard) return false;
+		else if (k === "j") stepCard(1);
+		else if (k === "k") stepCard(-1);
+		else if (k === "]") stepSet(1);
+		else if (k === "[") stepSet(-1);
+		else if (k === "a") reviewCard("approved");
+		else if (k === "n") reviewCard("needs-changes");
+		else if (k === "x") reviewCard(null);
+		else if (k === "u") nextToReview();
+		else if (k === "o") qaOverviewOpen = !qaOverviewOpen;
+		else if (k === "c") queueMicrotask(() => qaComposer?.focus());
+		else if (k === "p") {
+			const target =
+				qaActive ??
+				[...(qaEntry?.comments ?? [])].reverse().find((c) => !c.resolved)?.id ??
+				null;
+			pinTarget = pinTarget || !target ? null : target;
+		} else return false;
+		return true;
 	}
 
 	function editCards(op: CardListOp) {
@@ -3492,6 +3680,10 @@
 		}
 		if (k === "escape" && browsing && !typing) {
 			browsing = false;
+			return;
+		}
+		if (!typing && !mod && !e.altKey && reviewKey(e)) {
+			e.preventDefault();
 			return;
 		}
 		if (mode !== "build" || typing || !doc) return;
@@ -4872,9 +5064,21 @@
 			{#if currentCard}
 				<QaControl
 					status={qaStatuses[cardIndex] ?? "unreviewed"}
-					entry={qaDoc.cards[qaKey]?.[currentCard.id]}
+					entry={qaEntry}
 					onmark={reviewCard}
-					onnote={noteCard}
+					oncomment={addComment}
+					onedit={editComment}
+					onremove={removeComment}
+					{pinTarget}
+					onpin={(id) => {
+						pinTarget = id;
+						if (id) qaActive = id;
+					}}
+					active={qaActive}
+					onactive={(id) => (qaActive = id)}
+					onkeys={() => (qaKeysOpen = true)}
+					onoverview={() => (qaOverviewOpen = true)}
+					bind:composer={qaComposer}
 				/>
 			{/if}
 		</div>
@@ -5207,6 +5411,10 @@
 					ongesture={onGesture}
 					pick={pickOnCanvas}
 					oncontext={layerMenu}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				{#if loading}
 					<div class="loading" role="status" aria-live="polite">
@@ -5430,6 +5638,10 @@
 					interactive={false}
 					onselect={() => {}}
 					ongesture={() => {}}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				<div class="status">{busy || status}</div>
 			</section>
@@ -5519,6 +5731,86 @@
 				onclick={() => setUtcOffset(-new Date().getTimezoneOffset() / 60 || 0)}
 			>Use my browser's offset</button>
 			{#if offsetError}<p class="err" role="alert">{offsetError}</p>{/if}
+			<label class="offset">
+				<span>Your name for reviews</span>
+				<input
+					type="text"
+					maxlength="60"
+					placeholder="Optional, e.g. a username"
+					value={reviewer}
+					onchange={(e) => setReviewer(e.currentTarget.value)}
+				/>
+			</label>
+			<p class="note">
+				Written next to the marks and comments you add in card review.
+				It is kept in this browser only, not in the project.
+			</p>
+		</div>
+	</Window>
+{/if}
+
+{#if qaKeysOpen}
+	<Window
+		key="qa-keys"
+		title="Card review keys"
+		width={380}
+		fit
+		onclose={() => (qaKeysOpen = false)}
+	>
+		<div class="qa-keys">
+			<p class="note">Work when the focus is not in a text field.</p>
+			<table>
+				<tbody>
+					<tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>Next / previous card</td></tr>
+					<tr><td><kbd>]</kbd> / <kbd>[</kbd></td><td>Next / previous design</td></tr>
+					<tr><td><kbd>U</kbd></td><td>Next card that needs review</td></tr>
+					<tr><td><kbd>A</kbd></td><td>Approve (needs no open comments)</td></tr>
+					<tr><td><kbd>N</kbd></td><td>Needs changes</td></tr>
+					<tr><td><kbd>X</kbd></td><td>Remove the mark</td></tr>
+					<tr><td><kbd>C</kbd></td><td>Write a comment</td></tr>
+					<tr><td><kbd>P</kbd></td><td>Pin the selected comment: then click the card</td></tr>
+					<tr><td><kbd>O</kbd></td><td>Overview of all comments</td></tr>
+					<tr><td><kbd>?</kbd></td><td>This list</td></tr>
+					<tr><td><kbd>Esc</kbd></td><td>Cancel pinning, close this window</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</Window>
+{/if}
+
+{#if qaOverviewOpen}
+	<Window
+		key="qa-overview"
+		title="Card review overview"
+		width={620}
+		height={440}
+		onclose={() => (qaOverviewOpen = false)}
+	>
+		<div class="qa-overview">
+			{#if !qaRows.length}
+				<p class="note">Nothing reviewed yet. Approve a card or write a comment on it.</p>
+			{/if}
+			{#each qaRows as r (r.set + "/" + r.id)}
+				<button
+					class="row"
+					onclick={() => {
+						goToCard(r.set, r.index);
+						qaOverviewOpen = false;
+					}}
+				>
+					<span class="head"
+						><QaBadge status={r.status} text />
+						<strong>{r.id}</strong>
+						<span class="muted">{r.setLabel}</span></span
+					>
+					{#each r.entry.comments ?? [] as c, i}
+						<span class="c" class:done={c.resolved}
+							>{i + 1}. {c.text}
+							{#if c.by}<span class="muted">· {c.by}</span>{/if}</span
+						>
+					{/each}
+				</button>
+			{/each}
 		</div>
 	</Window>
 {/if}
@@ -6282,5 +6574,42 @@
 	}
 	.settings button {
 		justify-self: start;
+	}
+	.qa-keys table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.qa-keys td {
+		padding: 3px 6px;
+	}
+	.qa-keys kbd {
+		border: 1px solid var(--muted);
+		border-radius: 3px;
+		padding: 0 5px;
+	}
+	.qa-overview {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		font-size: 13px;
+	}
+	.qa-overview .row {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		text-align: left;
+		padding: 6px 8px;
+	}
+	.qa-overview .head {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.qa-overview .c.done {
+		text-decoration: line-through;
+		color: var(--muted);
 	}
 </style>
