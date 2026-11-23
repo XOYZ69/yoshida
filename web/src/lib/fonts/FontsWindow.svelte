@@ -12,6 +12,7 @@ export type FontsTarget = {
 // in the design. "In project" lists the font files of the project (offline);
 // "Google Fonts" browses the bundled catalog once the user allows it.
 import { tick } from "svelte";
+import { hostWord } from "../desktop.ts";
 import type { Files } from "../project";
 import { bytesOf, textOf } from "../project";
 import { freePath } from "../paths";
@@ -550,7 +551,7 @@ const licenseTag = (kind: string) =>
         <div class="consent" role="region" aria-label="Google Fonts">
           <h3>Use Google Fonts?</h3>
           <p>Previews and imports download fonts from <b>fonts.googleapis.com</b> and <b>fonts.gstatic.com</b>, and license texts from <b>raw.githubusercontent.com</b>. Google receives your IP address and the preview text. Your project files are not sent.</p>
-          <p class="muted">About 1,900 families, all under the SIL Open Font License, the Apache License or the Ubuntu Font Licence, so they may be shared inside a project. Your choice is remembered in this browser.</p>
+          <p class="muted">About 1,900 families, all under the SIL Open Font License, the Apache License or the Ubuntu Font Licence, so they may be shared inside a project. Your choice is remembered in {hostWord()}.</p>
           <div class="row end">
             <button onclick={() => allowGoogle('declined')}>Not now</button>
             <button class="primary" onclick={() => allowGoogle('allowed')}>Allow Google Fonts</button>
@@ -696,7 +697,7 @@ const licenseTag = (kind: string) =>
     <footer>
       <span class="hint" class:err={status.startsWith('Nothing') || status.includes('cannot read') || status.includes('not a TrueType')} role="status">{status || primary.hint}</span>
       {#if tab === 'google' && google === 'allowed'}
-        <button class="link" title="Stop using Google Fonts in this browser" onclick={() => allowGoogle('declined')}>Turn off Google Fonts</button>
+        <button class="link" title="Stop using Google Fonts in {hostWord()}" onclick={() => allowGoogle('declined')}>Turn off Google Fonts</button>
       {/if}
       <button onclick={onclose}>Close</button>
       <button class="primary" bind:this={primaryEl} disabled={primary.disabled} onclick={() => primary.run?.()}>{busy ? 'Importing…' : primary.label}</button>

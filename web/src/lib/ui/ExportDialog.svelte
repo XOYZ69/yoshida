@@ -5,6 +5,7 @@
 // A format's settings show only while the format is chosen, so the dialog
 // stays short.
 import ColorPicker from "./ColorPicker.svelte";
+import { hostWord, isDesktop } from "../desktop.ts";
 import Icon from "./Icon.svelte";
 import Select from "./Select.svelte";
 import {
@@ -110,7 +111,7 @@ const unavailable = $derived<Partial<Record<ExportFormat, string>>>(
 	webp === false
 		? { webp: "This browser cannot write WebP images." }
 		: webp === null
-			? { webp: "Checking whether this browser can write WebP…" }
+			? { webp: `Checking whether ${hostWord()} can write WebP…` }
 			: {},
 );
 /** The formats that will be written: chosen and available. */
@@ -305,9 +306,9 @@ const overText = $derived.by(() => {
 
 const server = $derived(canServer && useServer);
 const where = $derived.by(() => {
-	if (!server) return "Everything renders in this browser.";
+	if (!server) return "Everything renders in {hostWord()}.";
 	if (s.scope === "card")
-		return "A single card always renders in this browser.";
+		return `A single card always renders in ${hostWord()}.`;
 	// JPEG and WebP are encoded by the browser, so they render here.
 	const names = (fs: ExportFormat[]) => fs.map((f) => formatLabels[f]);
 	const there = formats.filter((f) => f !== "jpeg" && f !== "webp");
@@ -315,8 +316,8 @@ const where = $derived.by(() => {
 	const verb = here.length > 1 ? "render" : "renders";
 	if (!here.length) return "The server renders everything.";
 	if (!there.length)
-		return `${listOf(names(here))} always ${verb} in this browser.`;
-	return `The server renders ${listOf(names(there))}; ${listOf(names(here))} ${verb} in this browser.`;
+		return `${listOf(names(here))} always ${verb} in ${hostWord()}.`;
+	return `The server renders ${listOf(names(there))}; ${listOf(names(here))} ${verb} in ${hostWord()}.`;
 });
 
 /** The first design whose sheet is over the core's sheet size, and why. */
@@ -337,7 +338,7 @@ const blocked = $derived.by(() => {
 		return !s.formats.length
 			? "Choose at least one format."
 			: webp === null
-				? "Checking whether this browser can write WebP…"
+				? `Checking whether ${hostWord()} can write WebP…`
 				: "This browser cannot write WebP: choose another format.";
 	if (!plan.targets.length)
 		return plan.skipped.length
@@ -707,7 +708,7 @@ $effect(() => {
         {/if}
       </div>
 
-      {#if canServer}
+      {#if canServer && !isDesktop()}
         <span class="label" id="export-where">Rendering</span>
         <div class="body where">
           <label class="switch" title="Renders whole designs as PNG, SVG and PDF on the yoshida server this editor comes from, with all its CPU cores. The same setting as the switch next to the export buttons.">

@@ -6,6 +6,7 @@
 	import LayerTree from "./lib/builder/LayerTree.svelte";
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
+	import { hostWord, isDesktop, rendererWord } from "./lib/desktop.ts";
 	import CardForm from "./lib/CardForm.svelte";
 	import TelemetryNotice from "./lib/telemetry/TelemetryNotice.svelte";
 	import TelemetryWindow from "./lib/telemetry/TelemetryWindow.svelte";
@@ -757,6 +758,8 @@
 				(res.headers.get("content-type") ?? "").includes("json")
 			)
 				server = await res.json();
+			// The app starts its own renderer: always use it (it is the fast one).
+			if (server?.render && isDesktop()) useServer = true;
 		} catch {
 			server = null;
 		}
@@ -965,7 +968,7 @@
 			persistStorage();
 		} catch (e) {
 			saveState = "error";
-			status = `Could not save in this browser: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
+			status = `Could not save in ${hostWord()}: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
 		}
 	}
 
@@ -1007,10 +1010,10 @@
 			}
 		}
 		const ok = await confirmAction({
-			title: `Delete '${meta.name}' from this browser?`,
+			title: `Delete '${meta.name}' from ${hostWord()}?`,
 			message: linked
-				? `Its copy (images included) and the link to the folder '${linked}' are removed from this browser. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
-				: "Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
+				? `Its copy (images included) and the link to the folder '${linked}' are removed from ${hostWord()}. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
+				: `Its files (images included) are removed from ${hostWord()}. Export it as a .yoshida file first if you want to keep it.`,
 			confirm: "Delete",
 			danger: true,
 		});
@@ -1019,7 +1022,7 @@
 		myProjects = await listProjects();
 		if (meta.id === projectId) {
 			await closeProject();
-			status = `Deleted '${meta.name}' from this browser. Open a project to continue.`;
+			status = `Deleted '${meta.name}' from ${hostWord()}. Open a project to continue.`;
 		}
 	}
 
@@ -1065,7 +1068,7 @@
 				icon: "folder",
 				detail: activeBackend()
 					? "edit the files on disk in place"
-					: "copies it into this browser",
+					: `copies it into ${hostWord()}`,
 				action: openFolder,
 			},
 			...(activeBackend()
@@ -1128,7 +1131,7 @@
 						icon: "folder",
 						detail: activeBackend()
 							? "edit the files on disk, saved as you work"
-							: "not available in this browser, click to see why",
+							: `not available in ${hostWord()}, click to see why`,
 						disabled: !open,
 						action: linkFolder,
 					},
@@ -1164,12 +1167,12 @@
 		];
 		if (current)
 			items.push({
-				label: "Delete from this browser…",
+				label: `Delete from ${hostWord()}…`,
 				icon: "trash",
 				danger: true,
 				action: () => forgetProject(current),
 			});
-		items.push({ separator: true }, { heading: "Saved in this browser" });
+		items.push({ separator: true }, { heading: `Saved in ${hostWord()}` });
 		if (!myProjects.length)
 			items.push({
 				label: "Nothing yet: changes are saved here automatically",
@@ -1929,7 +1932,7 @@
 		folderSigs = new Map();
 		folderNotice = null;
 		if (projectId) await deleteFolder(projectId).catch(() => {});
-		status = `Unlinked from ${link.name}. The project stays in this browser.`;
+		status = `Unlinked from ${link.name}. The project stays in ${hostWord()}.`;
 	}
 
 	/** Replaces the project's files with what is in the folder now. */
@@ -3874,7 +3877,7 @@
 		const clock = renderClock();
 		busy = "Rendering PNG…";
 		try {
-			run.log(`Rendering card '${card.id}' at full size in this browser`);
+			run.log(`Rendering card '${card.id}' at full size in ${hostWord()}`);
 			// One call with no progress inside: the bar stays indeterminate and
 			// the estimate is shown as text only.
 			run.estimate(fullCardEstimate());
@@ -3929,7 +3932,7 @@
 		try {
 			run.step(0, `0 / ${n}`);
 			run.log(
-				`Rendering ${n} card(s) of '${set.design_name}' in this browser`,
+				`Rendering ${n} card(s) of '${set.design_name}' in ${hostWord()}`,
 			);
 			const zip: Record<string, Uint8Array> = {};
 			const diagnostics: Diagnostic[] = [];
@@ -4019,7 +4022,7 @@
 			run.perUnit(per);
 			run.count(0, n);
 			run.log(
-				`Rendering ${n} page(s) in this browser${bleed ? " with crop marks" : ""}` +
+				`Rendering ${n} page(s) in ${hostWord()}${bleed ? " with crop marks" : ""}` +
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
@@ -4244,7 +4247,7 @@
 			run.fail(
 				`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
 			);
-			status = "Server render refused: the project is too big for this server.";
+			status = `Render refused: the project is too big for ${isDesktop() ? "the built-in renderer" : "this server"}.`;
 			return null;
 		}
 		return body;
@@ -4264,18 +4267,18 @@
 		// Weights: a rough share of the time on a local network; the bar moves
 		// with the bytes sent, the cards the server reports and the bytes received.
 		const run = new Run(
-			`Rendering ${n} card${n === 1 ? "" : "s"} on the server (${what})`,
+			`Rendering ${n} card${n === 1 ? "" : "s"} with ${rendererWord()} (${what})`,
 			[
 				["Pack the project", 3],
-				["Upload to the server", 10],
-				["Render on the server", 77],
+				[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+				[isDesktop() ? "Render" : "Render on the server", 77],
 				["Download the result", 8],
 				["Save", 2],
 			],
 		);
 		const ctl: { abort?: () => void } = {};
 		run.onCancel(() => ctl.abort?.());
-		busy = "Rendering on the server…";
+		busy = isDesktop() ? "Rendering…" : "Rendering on the server…";
 		try {
 			run.step(0);
 			const raw = [...files.values()].reduce((a, d) => a + d.length, 0);
@@ -4308,13 +4311,13 @@
 				res.blob,
 				format === "pdf" ? "application/pdf" : "application/zip",
 			);
-			status = `Rendered ${n} card(s) on the server in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
+			status = `Rendered ${n} card(s) ${isDesktop() ? "with the built-in renderer" : "on the server"} in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
 			run.finish(`Saved ${fileName} (${formatBytes(res.blob.size)})`);
 		} catch (e) {
 			if ((e as Error).name === "AbortError")
-				status = "Server render cancelled.";
+				status = "Render cancelled.";
 			else {
-				status = `Server render failed: ${(e as Error).message}`;
+				status = `Render failed: ${(e as Error).message}`;
 				run.fail(status);
 			}
 		} finally {
@@ -4503,13 +4506,13 @@
 			...(remote.length
 				? ([
 						["Pack the project", 3],
-						["Upload to the server", 10],
-						["Render on the server", passes ? 50 : 77],
+						[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+						[isDesktop() ? "Render" : "Render on the server", passes ? 50 : 77],
 						["Download the result", 8],
 					] as [string, number][])
 				: []),
 			...(passes
-				? ([["Render in this browser", remote.length ? 27 : 94]] as [
+				? ([[`Render in ${hostWord()}`, remote.length ? 27 : 94]] as [
 						string,
 						number,
 					][])
@@ -4610,8 +4613,8 @@
 				run.step(at.local, `0 / ${units}`);
 				run.log(
 					oneScale
-						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in this browser`
-						: `Rendering ${plan.cards} card(s) in this browser, each design at the scale for ${st.dpi} dpi`,
+						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in ${hostWord()}`
+						: `Rendering ${plan.cards} card(s) in ${hostWord()}, each design at the scale for ${st.dpi} dpi`,
 				);
 				// Time grows with the pixels: the scale squared, per card.
 				const area =
@@ -5180,8 +5183,8 @@
 			<span
 				class="saved {saveState}"
 				title={folder
-					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in this browser. Nothing is sent to a server.`
-					: "Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."}
+					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in ${hostWord()}. Nothing is sent to a server.`
+					: `Projects are saved in ${hostWord()} only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere.`}
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
@@ -5190,7 +5193,7 @@
 						: saveState === "saved"
 							? folder
 								? `Saved to folder ${folder.name}`
-								: "Saved in this browser"
+								: `Saved in ${hostWord()}`
 							: saveState === "unsaved"
 								? "Unsaved"
 								: saveState === "error"
@@ -5207,7 +5210,7 @@
 					<button
 						onclick={exportPng}
 						title="Export the card shown ({currentCard?.id ??
-							'none'}) as a PNG image, rendered in this browser"
+							'none'}) as a PNG image, rendered in {hostWord()}"
 						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
 					>
 					<button
@@ -5235,10 +5238,10 @@
 						>Export…</button
 					>
 				</span>
-				{#if server?.render}
+				{#if server?.render && !isDesktop()}
 					<label
 						class="switch server"
-						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in {hostWord()}. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
 					>
 						<input type="checkbox" role="switch" bind:checked={useServer} />
 						<Icon name="cloud" />
@@ -5276,7 +5279,7 @@
 				onclick={openPrivacy}
 				aria-pressed={telemetry.settingsOpen}
 				data-testid="privacy-button"
-				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what this browser sent"
+				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what {hostWord()} sent"
 				><Icon name="lock" /> Privacy</button
 			>
 			<ThemeToggle />
