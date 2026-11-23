@@ -6597,13 +6597,23 @@
 	.settings button {
 		justify-self: start;
 	}
+	.qa-keys {
+		padding: 14px 18px 16px;
+	}
+	.qa-keys .note {
+		margin: 0 0 10px;
+	}
 	.qa-keys table {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 13px;
 	}
 	.qa-keys td {
-		padding: 3px 6px;
+		padding: 5px 8px;
+	}
+	.qa-keys td:first-child {
+		white-space: nowrap;
+		padding-right: 16px;
 	}
 	.qa-keys kbd {
 		border: 1px solid var(--muted);
