@@ -18,8 +18,8 @@ import {
 	MAX_SHEET_GRID,
 	MIN_PAPER,
 	cleanMm,
-	paperSize,
-	printGrid,
+	PAPER_OPTIONS,
+	printSummary,
 	MAX_SIDE,
 	cleanGrid,
 	sheetProblem,
@@ -339,34 +339,14 @@ const where = $derived.by(() => {
 });
 
 /**
- * The print layout: cards a page of the designs printed ("3 × 3 cards a
- * page", or one line per grid when they differ), and the first design whose
- * card does not fit on the page.
+ * The print layout: the printed card size and the cards a page, and the
+ * first design whose card does not fit on the page.
  */
-const printFit = $derived.by(() => {
-	if (!printing) return { text: "", problem: "" };
-	const page = paperSize(s);
-	const gap = cleanMm(s.printGap, 0, MAX_GAP, 0);
-	const margin = cleanMm(s.printMargin, 0, MAX_MARGIN, 5);
-	const grids = new Set<string>();
-	for (const t of plan.targets) {
-		if (plan.noPdf.includes(t.set)) continue;
-		const set = sets.find((x) => x.name === t.set);
-		const c = set?.canvas;
-		if (!c) continue;
-		// Without canvas.dpi, a canvas pixel is a point, as in the core.
-		const mm = (px: number) => (px / (c.dpi > 0 ? c.dpi : 72)) * 25.4;
-		const bleed = c.bleed ?? 0;
-		const g = printGrid(page, { w: mm(c.w - 2 * bleed), h: mm(c.h - 2 * bleed) }, gap, margin);
-		if (!g.cols)
-			return {
-				text: "",
-				problem: `${set?.label ?? t.set} (${formatMm({ w: mm(c.w), h: mm(c.h) })}) does not fit on the page inside the margins`,
-			};
-		grids.add(`${g.cols} × ${g.rows}`);
-	}
-	return { text: grids.size ? `${[...grids].join(", ")} cards a page` : "", problem: "" };
-});
+const printFit = $derived(
+	printing
+		? printSummary(s, sets, plan.targets, plan.noPdf)
+		: { text: "", note: "", problem: "" },
+);
 
 /** The first design whose sheet is over the core's sheet size, and why. */
 const sheetOver = $derived.by(() => {
@@ -687,7 +667,7 @@ $effect(() => {
                 <div class="sect" role="group" aria-label="Paper">
                   <span class="sect-h">Paper</span>
                   <span class="ctl">Paper
-                    <Select label="Paper" value={s.paper} options={[{ value: "a4", label: "A4", detail: "210 × 297 mm" }, { value: "letter", label: "Letter", detail: "8.5 × 11 in" }, { value: "custom", label: "Custom" }]} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
+                    <Select label="Paper" value={s.paper} options={PAPER_OPTIONS} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
                   </span>
                   {#if s.paper === "custom"}
                     <span class="ctl">
@@ -724,7 +704,7 @@ $effect(() => {
                     <span class="muted">Pick a back to print a page of backs after each page of fronts.</span>
                   {/if}
                 </div>
-                {#if printFit.text}<span class="print-sum">{printFit.text}</span>{/if}
+                {#if printFit.text}<span class="print-sum">{printFit.text}.<br /><span class="muted">{printFit.note}</span></span>{/if}
               </div>
             {/if}
           {:else}

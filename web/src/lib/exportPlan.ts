@@ -14,7 +14,15 @@ export type CropMarks = "auto" | "on" | "off";
  * ("print"), like `yoshida render --pdf --page`.
  */
 export type PdfLayout = "card" | "print";
-export type Paper = "a4" | "letter" | "custom";
+export type Paper =
+	| "a3"
+	| "a4"
+	| "a5"
+	| "a6"
+	| "letter"
+	| "legal"
+	| "tabloid"
+	| "custom";
 export type Duplex = "long" | "short";
 
 export type ExportSettings = {
@@ -134,9 +142,27 @@ export const MAX_GAP = 50;
 export const MAX_MARGIN = 50;
 
 const papers: Record<Exclude<Paper, "custom">, { w: number; h: number }> = {
+	a3: { w: 297, h: 420 },
 	a4: { w: 210, h: 297 },
+	a5: { w: 148, h: 210 },
+	a6: { w: 105, h: 148 },
 	letter: { w: 215.9, h: 279.4 },
+	legal: { w: 215.9, h: 355.6 },
+	tabloid: { w: 279.4, h: 431.8 },
 };
+
+/** The papers of the dropdown, as the core's `--page` names them. */
+export const PAPER_OPTIONS: { value: Paper; label: string; detail: string }[] =
+	[
+		{ value: "a3", label: "A3", detail: "297 × 420 mm" },
+		{ value: "a4", label: "A4", detail: "210 × 297 mm" },
+		{ value: "a5", label: "A5", detail: "148 × 210 mm" },
+		{ value: "a6", label: "A6", detail: "105 × 148 mm" },
+		{ value: "letter", label: "Letter", detail: "8.5 × 11 in" },
+		{ value: "legal", label: "Legal", detail: "8.5 × 14 in" },
+		{ value: "tabloid", label: "Tabloid", detail: "11 × 17 in" },
+		{ value: "custom", label: "Custom", detail: "" },
+	];
 
 const extensions: Record<ExportFormat, string> = {
 	png: "png",
@@ -216,7 +242,11 @@ export function cleanSettings(raw: unknown): ExportSettings {
 		sheetCols: cleanGrid(r.sheetCols, d.sheetCols),
 		sheetRows: cleanGrid(r.sheetRows, d.sheetRows),
 		pdfLayout: pick(r.pdfLayout, ["card", "print"] as const, d.pdfLayout),
-		paper: pick(r.paper, ["a4", "letter", "custom"] as const, d.paper),
+		paper: pick(
+			r.paper,
+			["a3", "a4", "a5", "a6", "letter", "legal", "tabloid", "custom"] as const,
+			d.paper,
+		),
 		landscape: typeof r.landscape === "boolean" ? r.landscape : d.landscape,
 		paperW: cleanMm(r.paperW, MIN_PAPER, MAX_PAPER, d.paperW),
 		paperH: cleanMm(r.paperH, MIN_PAPER, MAX_PAPER, d.paperH),
@@ -293,6 +323,52 @@ export function printGrid(
 	const rows = fit(page.h - 2 * margin, trim.h);
 	return cols && rows ? { cols, rows } : { cols: 0, rows: 0 };
 }
+
+/**
+ * The print layout's summary for the designs a PDF writes: the printed card
+ * size and the cards a page ("Cards print at 63.5 × 88.9 mm, 3 × 3 a page"),
+ * one entry per distinct size when the designs differ, and the first design
+ * whose card does not fit the page inside the margins.
+ */
+export function printSummary(
+	s: PrintSettings,
+	sets: PlanSet[],
+	targets: PlanTarget[],
+	noPdf: string[] = [],
+): { text: string; note: string; problem: string } {
+	const page = paperSize(s);
+	const gap = cleanMm(s.printGap, 0, MAX_GAP, 0);
+	const margin = cleanMm(s.printMargin, 0, MAX_MARGIN, 5);
+	const parts = new Set<string>();
+	for (const t of targets) {
+		if (noPdf.includes(t.set)) continue;
+		const set = sets.find((x) => x.name === t.set);
+		const c = set?.canvas;
+		if (!c) continue;
+		// Without canvas.dpi, a canvas pixel is a point, as in the core.
+		const mm = (px: number) => (px / (c.dpi > 0 ? c.dpi : 72)) * 25.4;
+		const bleed = c.bleed ?? 0;
+		const trim = { w: mm(c.w - 2 * bleed), h: mm(c.h - 2 * bleed) };
+		const g = printGrid(page, trim, gap, margin);
+		if (!g.cols)
+			return {
+				text: "",
+				note: "",
+				problem: `${set?.label ?? t.set} (${formatMm({ w: mm(c.w), h: mm(c.h) })}) does not fit on the page inside the margins`,
+			};
+		parts.add(`${formatMm(trim)}, ${g.cols} × ${g.rows} a page`);
+	}
+	if (!parts.size) return { text: "", note: "", problem: "" };
+	return {
+		text: `Cards print at ${[...parts].join("; ")}`,
+		note: PRINT_SCALE_NOTE,
+		problem: "",
+	};
+}
+
+/** Said next to the summary: a scaled page prints the cards at the wrong size. */
+export const PRINT_SCALE_NOTE =
+	"Print at 100% (actual size), not “fit to page”.";
 
 /**
  * A design's canvas: its size and its bleed (on every side, inside the edge)

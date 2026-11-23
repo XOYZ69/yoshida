@@ -384,7 +384,20 @@ ok(
 	ok("print: grid as the core lays it out", g.cols === 3 && g.rows === 3 && gl.cols === 4 && gl.rows === 2);
 	ok("print: a gap can cost a column", mod.printGrid(a4, poker, 5, 5).cols === 2 && mod.printGrid(a4, poker, 4, 5).cols === 3);
 	ok("print: a card that does not fit", mod.printGrid({ w: 50, h: 50 }, poker, 0, 5).cols === 0 && mod.printGrid(a4, poker, 0, 75).rows === 0);
-	const c = mod.cleanSettings({ pdfLayout: "print", paper: "tabloid", paperW: 5, paperH: 9999, printGap: -1, printMargin: 7.25, printBack: "back", duplex: "sideways" });
+	// Every paper changes the page, the request and the grid (the summary follows).
+	const sz = (paper, landscape = false) => mod.paperSize({ ...d, paper, landscape });
+	ok("print: more papers", sz("a3").h === 420 && sz("a5").w === 148 && sz("a6").h === 148 && sz("legal").h === 355.6 && sz("tabloid").w === 279.4 && sz("tabloid", true).w === 431.8);
+	ok("print: paper requests", ["a3", "a5", "a6", "legal", "tabloid"].every((p) => mod.printRequest({ ...d, paper: p, landscape: true }, false).page === `${p}-landscape`));
+	ok("print: every option is a paper", mod.PAPER_OPTIONS.every((o) => o.value === "custom" || sz(o.value).w > 0));
+	const grid = (paper, over = {}) => mod.printGrid(mod.paperSize({ ...d, paper, ...over }), poker, 0, 5);
+	ok("print: the grid follows the paper", grid("a3").cols === 4 && grid("a3").rows === 4 && grid("a5").cols === 2 && grid("a6").cols === 1 && grid("tabloid", { landscape: true }).cols === 6);
+	const pset = [{ name: "p", label: "P", ok: true, cards: ["a"], canvas: { w: 750, h: 1050, bleed: 0, dpi: 300 } }];
+	const tg = [{ set: "p", cards: [0] }];
+	const sum = (over) => mod.printSummary({ ...d, ...over }, pset, tg);
+	ok("print: summary has the printed size and the count", sum({}).text === "Cards print at 63.5 × 88.9 mm, 3 × 3 a page" && sum({}).note.includes("100%"));
+	ok("print: summary follows paper, orientation, size, margin and gap", sum({ paper: "a3" }).text.endsWith("4 × 4 a page") && sum({ landscape: true }).text.endsWith("4 × 2 a page") && sum({ paper: "custom", paperW: 100, paperH: 100 }).text.endsWith("1 × 1 a page") && sum({ printMargin: 40 }).text.endsWith("2 × 2 a page") && sum({ printGap: 5 }).text.endsWith("2 × 3 a page"));
+	ok("print: summary says a card does not fit", sum({ paper: "custom", paperW: 60, paperH: 60 }).problem.includes("does not fit") && sum({ paper: "custom", paperW: 60, paperH: 60 }).text === "");
+	const c = mod.cleanSettings({ pdfLayout: "print", paper: "foolscap", paperW: 5, paperH: 9999, printGap: -1, printMargin: 7.25, printBack: "back", duplex: "sideways" });
 	ok("print: stored settings are cleaned", c.pdfLayout === "print" && c.paper === "a4" && c.paperW === 20 && c.paperH === 2000 && c.printGap === 0 && c.printMargin === 7.3 && c.printBack === "back" && c.duplex === "long");
 	// The back set gets no PDF of its own, unless it is all that is exported.
 	const deck = [
