@@ -681,39 +681,52 @@ $effect(() => {
               <span class="ctl">Layout
                 <Select label="Layout" title="Print sheets: the cards side by side on paper pages, with an optional page of backs after each for duplex printing" value={s.pdfLayout} options={[{ value: "card", label: "A card a page" }, { value: "print", label: "Print sheets", detail: "cards side by side on paper" }]} onchange={(v) => (s.pdfLayout = v as ExportSettings["pdfLayout"])} />
               </span>
-              {#if s.pdfLayout === "print"}
-                <span class="ctl">Paper
-                  <Select label="Paper" value={s.paper} options={[{ value: "a4", label: "A4", detail: "210 × 297 mm" }, { value: "letter", label: "Letter", detail: "8.5 × 11 in" }, { value: "custom", label: "Custom" }]} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
-                </span>
-                {#if s.paper === "custom"}
-                  <span class="ctl">
-                    <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper width in mm" title="Paper width, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperW} onchange={() => (s.paperW = cleanMm(s.paperW, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperW))} />
-                    ×
-                    <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper height in mm" title="Paper height, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperH} onchange={() => (s.paperH = cleanMm(s.paperH, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperH))} />
-                    mm
-                  </span>
-                {:else}
-                  <span class="ctl">Orientation
-                    <Select label="Orientation" value={s.landscape ? "landscape" : "portrait"} options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} onchange={(v) => (s.landscape = v === "landscape")} />
-                  </span>
-                {/if}
-                <span class="ctl">Gap
-                  <input type="number" min="0" max={MAX_GAP} step="0.5" aria-label="Gap between cards in mm" title="Between neighbouring cards, 0 to {MAX_GAP} mm" bind:value={s.printGap} onchange={() => (s.printGap = cleanMm(s.printGap, 0, MAX_GAP, defaultExportSettings.printGap))} /> mm
-                </span>
-                <span class="ctl">Margin
-                  <input type="number" min="0" max={MAX_MARGIN} step="0.5" aria-label="Page margin in mm" title="The least room at each edge of the page, 0 to {MAX_MARGIN} mm" bind:value={s.printMargin} onchange={() => (s.printMargin = cleanMm(s.printMargin, 0, MAX_MARGIN, defaultExportSettings.printMargin))} /> mm
-                </span>
-                <span class="ctl">Backs
-                  <Select label="Backs" title="The first card of this design behind every card: a page of backs after each page of fronts" value={backName} options={backOptions} onchange={(v) => (s.printBack = v)} />
-                </span>
-                {#if backName}
-                  <span class="ctl">Duplex
-                    <Select label="Duplex" title="The edge your printer turns the sheet over on, as in its print dialog" value={s.duplex} options={[{ value: "long", label: "Flip on long edge" }, { value: "short", label: "Flip on short edge" }]} onchange={(v) => (s.duplex = v as ExportSettings["duplex"])} />
-                  </span>
-                {/if}
-                {#if printFit.text}<span class="ctl">{printFit.text}</span>{/if}
-              {/if}
             </span>
+            {#if s.pdfLayout === "print"}
+              <div class="print">
+                <div class="sect" role="group" aria-label="Paper">
+                  <span class="sect-h">Paper</span>
+                  <span class="ctl">Paper
+                    <Select label="Paper" value={s.paper} options={[{ value: "a4", label: "A4", detail: "210 × 297 mm" }, { value: "letter", label: "Letter", detail: "8.5 × 11 in" }, { value: "custom", label: "Custom" }]} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
+                  </span>
+                  {#if s.paper === "custom"}
+                    <span class="ctl">
+                      <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper width in mm" title="Paper width, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperW} onchange={() => (s.paperW = cleanMm(s.paperW, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperW))} />
+                      ×
+                      <input type="number" min={MIN_PAPER} max={MAX_PAPER} step="0.1" aria-label="Paper height in mm" title="Paper height, {MIN_PAPER} to {MAX_PAPER} mm" bind:value={s.paperH} onchange={() => (s.paperH = cleanMm(s.paperH, MIN_PAPER, MAX_PAPER, defaultExportSettings.paperH))} />
+                      mm
+                    </span>
+                  {:else}
+                    <span class="ctl">Orientation
+                      <Select label="Orientation" value={s.landscape ? "landscape" : "portrait"} options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} onchange={(v) => (s.landscape = v === "landscape")} />
+                    </span>
+                  {/if}
+                </div>
+                <div class="sect" role="group" aria-label="Spacing">
+                  <span class="sect-h">Spacing</span>
+                  <span class="ctl">Margin
+                    <input type="number" min="0" max={MAX_MARGIN} step="0.5" aria-label="Page margin in mm" title="The least room at each edge of the page, 0 to {MAX_MARGIN} mm" bind:value={s.printMargin} onchange={() => (s.printMargin = cleanMm(s.printMargin, 0, MAX_MARGIN, defaultExportSettings.printMargin))} /> mm
+                  </span>
+                  <span class="ctl">Gap
+                    <input type="number" min="0" max={MAX_GAP} step="0.5" aria-label="Gap between cards in mm" title="Between neighbouring cards, 0 to {MAX_GAP} mm" bind:value={s.printGap} onchange={() => (s.printGap = cleanMm(s.printGap, 0, MAX_GAP, defaultExportSettings.printGap))} /> mm
+                  </span>
+                </div>
+                <div class="sect" role="group" aria-label="Backs and duplex">
+                  <span class="sect-h">Backs &amp; duplex</span>
+                  <span class="ctl">Backs
+                    <Select label="Backs" title="The first card of this design behind every card: a page of backs after each page of fronts" value={backName} options={backOptions} onchange={(v) => (s.printBack = v)} />
+                  </span>
+                  {#if backName}
+                    <span class="ctl">Duplex
+                      <Select label="Duplex" title="The edge your printer turns the sheet over on, as in its print dialog" value={s.duplex} options={[{ value: "long", label: "Flip on long edge" }, { value: "short", label: "Flip on short edge" }]} onchange={(v) => (s.duplex = v as ExportSettings["duplex"])} />
+                    </span>
+                  {:else}
+                    <span class="muted">Pick a back to print a page of backs after each page of fronts.</span>
+                  {/if}
+                </div>
+                {#if printFit.text}<span class="print-sum">{printFit.text}</span>{/if}
+              </div>
+            {/if}
           {:else}
             <span class="more muted" id="export-about-pdf">For print: one PDF per design, a page per card</span>
           {/if}
@@ -961,6 +974,32 @@ $effect(() => {
     flex-wrap: wrap;
     align-items: center;
     gap: 4px 14px;
+  }
+  /* Print sheet options: small labelled sections, one under the other. */
+  .print {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .sect {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    padding-left: 10px;
+    border-left: 2px solid var(--line);
+  }
+  .sect-h {
+    flex-basis: 100%;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .print-sum {
+    font-size: 13px;
+    font-weight: 500;
   }
   .ctl {
     display: inline-flex;
