@@ -41,7 +41,7 @@ Usage:
                             [--utc-offset HOURS] [--16bit] [--preview]
                             [--offline] [--pdf] [--crop-marks] [--svg]
                             [--vector] [--scale N] [--sheet COLSxROWS]
-                            [--page a4|letter|WxH] [--gap MM] [--margin MM]
+                            [--page a4|letter|...|WxH] [--gap MM] [--margin MM]
                             [--back SET[:ID]] [--duplex long|short]
                             [--format text|json]
   yoshida fmt    <project or file>...  [--check]
@@ -64,10 +64,11 @@ render  writes <out>/<set>/<card id>.png (default out: <project>/out).
         bottom into <out>/<set>.png (a deck sheet for a tabletop
         simulator), and <set>-2.png ... when they do not fit on one.
         --pdf --page a4 lays the cards out side by side on A4 pages
-        (letter, a4-landscape, letter-landscape, or WxH in mm such as
-        297x420): as many as fit inside --margin (default 5 mm), --gap
-        mm apart (default 0), centred; --crop-marks marks the trim lines
-        around the grid. --back SET puts the first card of SET (or card
+        (a3, a5, a6, letter, legal, tabloid, each also with -landscape,
+        or WxH in mm such as 297x420): as many as fit inside --margin
+        (default 5 mm), --gap mm apart (default 0), centred, at their
+        printed size: print at 100% (actual size), not "fit to page".
+        --crop-marks marks the trim lines around the grid. --back SET puts the first card of SET (or card
         ID) behind every card: a page of backs after each page of fronts,
         mirrored for a duplex printer that flips on the --duplex edge
         (default long). The back set is not rendered as fronts itself.

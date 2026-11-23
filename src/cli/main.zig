@@ -16,7 +16,7 @@ const usage =
     \\                            [--utc-offset HOURS] [--16bit] [--preview]
     \\                            [--offline] [--pdf] [--crop-marks] [--svg]
     \\                            [--vector] [--scale N] [--sheet COLSxROWS]
-    \\                            [--page a4|letter|WxH] [--gap MM] [--margin MM]
+    \\                            [--page a4|letter|...|WxH] [--gap MM] [--margin MM]
     \\                            [--back SET[:ID]] [--duplex long|short]
     \\                            [--format text|json]
     \\  yoshida fmt    <project or file>...  [--check]
@@ -39,10 +39,11 @@ const usage =
     \\        bottom into <out>/<set>.png (a deck sheet for a tabletop
     \\        simulator), and <set>-2.png ... when they do not fit on one.
     \\        --pdf --page a4 lays the cards out side by side on A4 pages
-    \\        (letter, a4-landscape, letter-landscape, or WxH in mm such as
-    \\        297x420): as many as fit inside --margin (default 5 mm), --gap
-    \\        mm apart (default 0), centred; --crop-marks marks the trim lines
-    \\        around the grid. --back SET puts the first card of SET (or card
+    \\        (a3, a5, a6, letter, legal, tabloid, each also with -landscape,
+    \\        or WxH in mm such as 297x420): as many as fit inside --margin
+    \\        (default 5 mm), --gap mm apart (default 0), centred, at their
+    \\        printed size: print at 100% (actual size), not "fit to page".
+    \\        --crop-marks marks the trim lines around the grid. --back SET puts the first card of SET (or card
     \\        ID) behind every card: a page of backs after each page of fronts,
     \\        mirrored for a duplex printer that flips on the --duplex edge
     \\        (default long). The back set is not rendered as fronts itself.
@@ -431,7 +432,8 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
                 if (pdf_errors) try failed_files.append(arena, file);
                 if (args.json) {} else if (sheets) |*sh| {
                     const l = sh.layout.?;
-                    try out.print("wrote {s} ({d} card(s) on {d} page(s), {d}x{d} per page{s}){s}\n", .{ file, pdf_pages, p.pages.items.len, l.cols, l.rows, if (sh.back == null) "" else if (sh.opts.duplex == .long) ", backs for flip on long edge" else ", backs for flip on short edge", if (pdf_errors) " with errors: parts of some cards are missing" else "" });
+                    try out.print("wrote {s} ({d} card(s) of {d:.1} x {d:.1} mm on {d} page(s), {d}x{d} per page{s}){s}\n", .{ file, pdf_pages, l.trim_w / y.print.mm, l.trim_h / y.print.mm, p.pages.items.len, l.cols, l.rows, if (sh.back == null) "" else if (sh.opts.duplex == .long) ", backs for flip on long edge" else ", backs for flip on short edge", if (pdf_errors) " with errors: parts of some cards are missing" else "" });
+                    try out.print("  print at 100% (actual size), not \"fit to page\": the cards are {d:.1} x {d:.1} mm\n", .{ l.trim_w / y.print.mm, l.trim_h / y.print.mm });
                 } else try out.print("wrote {s} ({d} page(s)){s}\n", .{ file, pdf_pages, if (pdf_errors) " with errors: parts of some cards are missing" else "" });
             };
         }
@@ -595,7 +597,7 @@ fn printLayout(args: Args, err: *Io.Writer) !?PrintLayout {
         return error.Usage;
     }
     const page = y.print.parsePage(page_text) orelse {
-        try err.print("error: --page must be a4, letter, a4-landscape, letter-landscape or WxH in mm like 210x297 (each side {d} to {d}), got '{s}'\n", .{ y.print.min_page_mm, y.print.max_page_mm, page_text });
+        try err.print("error: --page must be a3, a4, a5, a6, letter, legal or tabloid (each also with -landscape) or WxH in mm like 210x297 (each side {d} to {d}), got '{s}'\n", .{ y.print.min_page_mm, y.print.max_page_mm, page_text });
         return error.Usage;
     };
     var p: PrintLayout = .{ .opts = .{ .page_w = page[0], .page_h = page[1], .crop_marks = args.crop_marks } };

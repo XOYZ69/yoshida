@@ -42,13 +42,19 @@ pub const Options = struct {
     duplex: Duplex = .long,
 };
 
-/// A page size in points from `a4`, `letter` (either with `-landscape`) or
+/// A page size in points from `a3`, `a4`, `a5`, `a6`, `letter`, `legal` or
+/// `tabloid` (11 x 17 in), each with `-landscape` too, or
 /// `WxH` in millimetres such as `63.5x88.9`; null for anything else or a side
 /// outside `min_page_mm` to `max_page_mm`.
 pub fn parsePage(s: []const u8) ?[2]f64 {
     const sizes = [_]struct { name: []const u8, w: f64, h: f64 }{
+        .{ .name = "a3", .w = 297, .h = 420 },
         .{ .name = "a4", .w = 210, .h = 297 },
+        .{ .name = "a5", .w = 148, .h = 210 },
+        .{ .name = "a6", .w = 105, .h = 148 },
         .{ .name = "letter", .w = 215.9, .h = 279.4 },
+        .{ .name = "legal", .w = 215.9, .h = 355.6 },
+        .{ .name = "tabloid", .w = 279.4, .h = 431.8 },
     };
     for (sizes) |p| {
         if (std.ascii.eqlIgnoreCase(s, p.name)) return .{ p.w * mm, p.h * mm };
@@ -326,9 +332,23 @@ test "page sizes" {
     try testing.expect(near(letter[0], 612) and near(letter[1], 792));
     const land = parsePage("letter-landscape").?;
     try testing.expect(near(land[0], 792) and near(land[1], 612));
+    const named = [_]struct { name: []const u8, w: f64, h: f64 }{
+        .{ .name = "a3", .w = 297, .h = 420 },
+        .{ .name = "a5", .w = 148, .h = 210 },
+        .{ .name = "a6", .w = 105, .h = 148 },
+        .{ .name = "legal", .w = 8.5 * 25.4, .h = 14 * 25.4 },
+        .{ .name = "tabloid", .w = 11 * 25.4, .h = 17 * 25.4 },
+    };
+    for (named) |n| {
+        const p = parsePage(n.name).?;
+        try testing.expect(near(p[0], n.w * mm) and near(p[1], n.h * mm));
+        var buf: [32]u8 = undefined;
+        const l = parsePage(try std.fmt.bufPrint(&buf, "{s}-Landscape", .{n.name})).?;
+        try testing.expect(near(l[0], n.h * mm) and near(l[1], n.w * mm));
+    }
     const custom = parsePage("63.5x88.9").?;
     try testing.expect(near(custom[0], poker_w) and near(custom[1], poker_h));
-    for ([_][]const u8{ "a5", "", "x", "10x297", "210x", "-210x297", "210x297mm", "a4-portrait", "3000x100" }) |bad|
+    for ([_][]const u8{ "a2", "tabloid-portrait", "", "x", "10x297", "210x", "-210x297", "210x297mm", "a4-portrait", "3000x100" }) |bad|
         try testing.expect(parsePage(bad) == null);
     try testing.expect(parseMm("2.5", 0, 50).? == 2.5);
     try testing.expect(parseMm("51", 0, 50) == null);
