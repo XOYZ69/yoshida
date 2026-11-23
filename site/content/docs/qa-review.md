@@ -63,7 +63,7 @@ Images and fonts are not part of the hash. After a change to a design, every car
 
 ## Renaming and moving cards
 
-A review follows the card, not its name. If you rename a card id, move a card to another set, or rename a card file, the review is found again by matching the card's content, and the mark and comments come with it. This only works while the card's values and its design are unchanged; if you rename and edit a card in one step, it counts as a new card. Two cards with identical content share one review once: the first one in the set gets it.
+A review follows the card, not its name. If you rename a card id, move a card to another set, or rename a card file, the review is found again by matching the card's content, and the mark and comments come with it. If the design draws the card id (`card.id`), a renamed card looks different, so its approval shows as **Changed since review** while its marks and comments stay. Matching only works while the card's values and its design are unchanged; if you rename and edit a card in one step, it counts as a new card. Two cards with identical content share one review once: the first one in the set gets it.
 
 The file is brought up to date the next time you record a review. Until then the old entry just sits in `qa.json`.
 

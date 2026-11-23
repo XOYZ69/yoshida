@@ -3,6 +3,7 @@
 //   node --experimental-strip-types tests/qa.mjs
 import {
 	cardHash,
+	contentHash,
 	designFingerprint,
 	hashText,
 	needsReview,
@@ -108,6 +109,17 @@ ok("a card with new content starts over", !moved.cards["b.cards.json"].y);
 ok("nothing to follow gives the same document", reconcileQa(rd, [{ key: "a.cards.json", cards: [{ id: "1", hash: "h1" }, { id: "2", hash: "h2" }] }]) === rd);
 const dup = reconcileQa(withMark(parseQa(undefined), "k", "old", "approved", "h"), [{ key: "k", cards: [{ id: "a", hash: "h" }, { id: "b", hash: "h" }] }]);
 ok("identical cards share one review only once", Object.keys(dup.cards.k).join() === "a");
+
+// A design that shows the card id: a rename must still find the review.
+const idCard = { id: "1", values: { t: "x" } };
+const ih = cardHash(idCard, idInputs);
+const ic = contentHash(idCard, idInputs);
+const idDoc = withMark(parseQa(undefined), "k", "1", "approved", ih, {}, ic);
+ok("the content hash ignores the id", ic === contentHash({ ...idCard, id: "2" }, idInputs) && ih !== cardHash({ ...idCard, id: "2" }, idInputs));
+const renamed = reconcileQa(idDoc, [{ key: "k", cards: [{ id: "2", hash: cardHash({ ...idCard, id: "2" }, idInputs), content: ic }] }]);
+ok("a renamed card is found by its content hash", renamed.cards.k["2"]?.status === "approved");
+ok("its approval is stale, as the id is drawn on the card", statusOf(renamed.cards.k["2"], cardHash({ ...idCard, id: "2" }, idInputs)) === "stale");
+ok("the content hash survives a round trip", parseQa(writeQa(idDoc)).cards.k["1"].content === ic);
 
 const t = tally(["approved", "stale", "stale", "unreviewed"]);
 ok("tally counts", t.approved === 1 && t.stale === 2 && t.unreviewed === 1 && t["needs-changes"] === 0);

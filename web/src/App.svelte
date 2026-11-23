@@ -154,6 +154,7 @@
 		type QaMark,
 		QA_FILE,
 		cardHash,
+		contentHash,
 		designFingerprint,
 		parseQa,
 		reconcileQa,
@@ -551,7 +552,11 @@
 			const inputs = designFingerprint(files, s.design);
 			return {
 				key: s.cards_file ?? s.name,
-				cards: s.cards.map((c) => ({ id: c.id, hash: cardHash(c, inputs) })),
+				cards: s.cards.map((c) => ({
+					id: c.id,
+					hash: cardHash(c, inputs),
+					content: contentHash(c, inputs),
+				})),
 			};
 		}),
 	);
@@ -564,6 +569,9 @@
 	const qaKey = $derived(currentSet?.cards_file ?? currentSet?.name ?? "");
 	const qaHashes = $derived(
 		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.hash) ?? [],
+	);
+	const qaContent = $derived(
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.content) ?? [],
 	);
 	const qaStatuses = $derived(
 		(currentSet?.cards ?? []).map((c, i) =>
@@ -2374,7 +2382,15 @@
 			return;
 		}
 		writeQaDoc(
-			withMark(qaDoc, qaKey, c.id, mark, qaHashes[cardIndex], stamp()),
+			withMark(
+				qaDoc,
+				qaKey,
+				c.id,
+				mark,
+				qaHashes[cardIndex],
+				stamp(),
+				qaContent[cardIndex],
+			),
 		);
 	}
 
@@ -2383,6 +2399,7 @@
 		if (!c) return;
 		const r = withComment(qaDoc, qaKey, c.id, qaHashes[cardIndex], {
 			text,
+			content: qaContent[cardIndex],
 			...stamp(),
 		});
 		writeQaDoc(r.doc);
@@ -2448,7 +2465,12 @@
 		),
 	);
 
-	function goToCard(set: string, index: number) {
+	/** The card last looked at in each set, so switching designs comes back to it. */
+	const lastCard = new Map<string, number>();
+
+	function goToCard(set: string, index: number | null) {
+		if (set !== setName) lastCard.set(setName, cardIndex);
+		index ??= lastCard.get(set) ?? 0;
 		if (set !== setName) {
 			setName = set;
 			selectedLayers = [];
@@ -2467,7 +2489,7 @@
 	function stepSet(by: number) {
 		if (sets.length < 2) return;
 		const i = sets.findIndex((s) => s.name === setName);
-		goToCard(sets[(i + by + sets.length) % sets.length].name, 0);
+		goToCard(sets[(i + by + sets.length) % sets.length].name, null);
 	}
 
 	/** The next card, in the sets' order after this one and wrapping round, that still needs review. */

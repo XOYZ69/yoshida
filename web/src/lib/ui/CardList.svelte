@@ -117,7 +117,7 @@ function onkeydown(e: KeyboardEvent) {
     <input bind:this={search} type="search" placeholder="Search {cards.length} card{cards.length === 1 ? '' : 's'}…" bind:value={query} {onkeydown} aria-label="Search cards" />
     {#if query || onlyReview}<span class="count">{shown.length}</span>{/if}
     {#if qa}
-      <label class="only" title="Show only cards that are unreviewed or changed since their approval">
+      <label class="only" title="Show only cards that are unreviewed, changed since their approval, or marked as needing changes">
         <input type="checkbox" bind:checked={onlyReview} /> Needs review ({reviewCount})
       </label>
     {/if}

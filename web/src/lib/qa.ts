@@ -38,6 +38,8 @@ export type QaComment = {
 export type QaEntry = {
 	status?: QaMark;
 	hash: string;
+	/** The hash without the card id, when the design shows the id: how a renamed card is found again. Left out when it equals `hash`. */
+	content?: string;
 	/** Who set the mark and when. */
 	by?: string;
 	at?: string;
@@ -132,8 +134,13 @@ export function cardHash(
 	);
 }
 
+/** The hash of the card without its id: what stays the same when the card is renamed. */
+export function contentHash(card: { values: Record<string, unknown> }, inputs: DesignInputs): string {
+	return hashText(`${inputs.print}\0${stableJson([card.values])}`);
+}
+
 /** One set as the reconciliation sees it: its key in qa.json and its cards with their current hashes. */
-export type QaSet = { key: string; cards: { id: string; hash: string }[] };
+export type QaSet = { key: string; cards: { id: string; hash: string; content?: string }[] };
 
 /**
  * Follows renamed and moved cards. A review whose card id is gone from its
@@ -157,7 +164,7 @@ export function reconcileQa(doc: QaDoc, sets: QaSet[]): QaDoc {
 	for (const set of sets)
 		for (const c of set.cards) {
 			if (cards[set.key]?.[c.id]) continue;
-			const i = orphans.findIndex((o) => o.entry.hash === c.hash);
+			const i = orphans.findIndex((o) => (o.entry.content ?? o.entry.hash) === (c.content ?? c.hash));
 			if (i < 0) continue;
 			const [o] = orphans.splice(i, 1);
 			delete cards[o.key][o.id];
@@ -235,6 +242,7 @@ export function parseQa(text: string | undefined): QaDoc {
 				}
 			if (!mark && !comments.length) continue;
 			const entry: QaEntry = { hash: typeof x.hash === "string" ? x.hash : "" };
+			if (str(x.content)) entry.content = x.content;
 			if (mark) entry.status = mark;
 			if (str(x.by)) entry.by = x.by;
 			if (str(x.at)) entry.at = x.at;
@@ -254,10 +262,11 @@ export function writeQa(doc: QaDoc): string {
 		if (!ids.length) continue;
 		cards[key] = {};
 		for (const id of ids) {
-			const { status, hash, by, at, comments } = byId[id];
+			const { status, hash, content, by, at, comments } = byId[id];
 			cards[key][id] = {
 				...(status ? { status } : {}),
 				hash,
+				...(content && content !== hash ? { content } : {}),
 				...(status && by ? { by } : {}),
 				...(status && at ? { at } : {}),
 				...(comments?.length ? { comments } : {}),
@@ -291,9 +300,12 @@ export function withMark(
 	mark: QaMark | null,
 	hash: string,
 	stamp: QaStamp = {},
+	content?: string,
 ): QaDoc {
 	const old = doc.cards[key]?.[id];
 	const entry: QaEntry = { hash: mark ? hash : (old?.hash ?? hash) };
+	const c = mark ? content : old?.content;
+	if (c && c !== entry.hash) entry.content = c;
 	if (mark) {
 		entry.status = mark;
 		if (stamp.by) entry.by = stamp.by;
@@ -312,7 +324,7 @@ export function withComment(
 	key: string,
 	id: string,
 	hash: string,
-	fields: { text: string; x?: number; y?: number } & QaStamp,
+	fields: { text: string; x?: number; y?: number; content?: string } & QaStamp,
 ): { doc: QaDoc; id: string } {
 	const old = doc.cards[key]?.[id];
 	const list = old?.comments ?? [];
@@ -324,7 +336,11 @@ export function withComment(
 		c.x = Math.round(fields.x);
 		c.y = Math.round(fields.y);
 	}
-	return { doc: put(doc, key, id, { ...(old ?? { hash }), comments: [...list, c] }), id: cid };
+	const base: QaEntry = old ?? {
+		hash,
+		...(fields.content && fields.content !== hash ? { content: fields.content } : {}),
+	};
+	return { doc: put(doc, key, id, { ...base, comments: [...list, c] }), id: cid };
 }
 
 /** The document after changing a comment. A comment left without text is removed. */

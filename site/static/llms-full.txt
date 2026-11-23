@@ -138,7 +138,7 @@ Written by the editor. The command line does not read it. An approval stays vali
 
 - `$schema` (string)
 - `format` (1 | 2, required): The editor writes 2. Format 1 has a single "note" per card instead of "comments".
-- `cards` ({ name: { name: { status, hash, by, at, note, comments } } }): Reviews by card file path, then by card id. A card without an entry is unreviewed.
+- `cards` ({ name: { name: { status, hash, by, at, note, comments, content } } }): Reviews by card file path, then by card id. A card without an entry is unreviewed.
 
 ### `*.design.json`, a design
 

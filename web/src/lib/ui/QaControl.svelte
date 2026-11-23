@@ -59,6 +59,12 @@ function add() {
     <button class="bad" class:on={status === 'needs-changes'} onclick={() => onmark('needs-changes')} title="Mark the card as needing changes (N)">Needs changes</button>
     <button disabled={!entry?.status} onclick={() => onmark(null)} title="Remove the mark of this card. Comments stay.">Clear</button>
   </div>
+  {#if open && !comments.every((c) => c.resolved)}
+    <p class="hint">Resolve the open comments to approve.</p>
+  {/if}
+  {#if comments.length && !open && entry?.status === 'needs-changes'}
+    <p class="hint">All comments are resolved. Approve the card when it is ready.</p>
+  {/if}
   {#if status === 'stale'}
     <p class="hint">{statusLabel.stale}: approve it again after looking at it.</p>
   {/if}
@@ -71,17 +77,23 @@ function add() {
         <li class:resolved={c.resolved} class:active={active === c.id}>
           <button class="num" class:pinned={c.x !== undefined} onclick={() => onactive(active === c.id ? null : c.id)} title={c.x !== undefined ? 'Pinned to the card' : 'Not pinned'}>{i + 1}</button>
           <div class="body">
-            <input
+            <textarea
               class="text"
-              type="text"
+              rows="1"
               value={c.text}
               aria-label="Comment {i + 1}"
               onfocus={() => onactive(c.id)}
               onchange={(e) => onedit(c.id, { text: e.currentTarget.value })}
-              onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+              onkeydown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}></textarea>
             {#if c.by || c.at}<span class="meta">{c.by ?? ''}{c.by && c.at ? ' · ' : ''}{c.at ? c.at.replace('T', ' ') : ''}</span>{/if}
             <div class="acts">
           <button class:on={pinTarget === c.id} onclick={() => onpin(pinTarget === c.id ? null : c.id)} title={pinTarget === c.id ? 'Click the card to place the pin (Esc cancels)' : c.x !== undefined ? 'Move the pin (P)' : 'Pin to the card (P)'}>{pinTarget === c.id ? 'Click card' : c.x !== undefined ? 'Move' : 'Pin'}</button>
+          {#if c.x !== undefined}<button onclick={() => onedit(c.id, { x: undefined, y: undefined })} title="Take the pin off the card">Unpin</button>{/if}
           <button onclick={() => onedit(c.id, { resolved: !c.resolved })} title={c.resolved ? 'Open it again' : 'Mark as addressed'}>{c.resolved ? 'Reopen' : 'Resolve'}</button>
           <button class="x" onclick={() => onremove(c.id)} aria-label="Delete comment {i + 1}" title="Delete the comment">×</button>
             </div>
@@ -203,6 +215,12 @@ function add() {
   .composer {
     width: 100%;
     box-sizing: border-box;
+  }
+  .text {
+    resize: none;
+    field-sizing: content;
+    min-height: 1.6em;
+    font: inherit;
   }
   li button.on {
     border-color: var(--err);

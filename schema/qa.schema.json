@@ -53,6 +53,10 @@
                   "resolved": { "type": "boolean" }
                 }
               }
+            },
+            "content": {
+              "type": "string",
+              "description": "The hash without the card id, written when the design draws card.id. It lets a renamed card find its review again."
             }
           }
         }
