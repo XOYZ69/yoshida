@@ -74,7 +74,7 @@ To make them match, give the layers the same `shrink_group`. Every text layer wi
 
 ## Squeeze sideways
 
-`min_squeeze` lets a line that is too wide for `max_width` get narrower letters instead of a smaller size. The glyphs are scaled in x only (their height, the line height and the size stay), by `max_width` over the block width, but never below `min_squeeze`. `0.8` allows at most a 20 % squeeze; `1` (the default) is off.
+`min_squeeze` lets a line that is too wide for `max_width` get narrower letters instead of a smaller size. The glyphs are scaled in x only (their height, the line height and the size stay), by `max_width` over the block width, but never below `min_squeeze`. `0.8` allows at most a 20 % squeeze; `1` (the default) is off. Values outside 0.05 to 1 are clamped to that range, so `2` behaves like `1`.
 
 ```json
 { "id": "name", "type": "text", "text": "{name}", "at": { "x": 40, "y": 60 }, "size": 40, "max_width": 300, "min_squeeze": 0.75, "min_size": 24 }
