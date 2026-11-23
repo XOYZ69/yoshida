@@ -206,6 +206,7 @@
 		setMaxSide,
 		sheetCount,
 		sheetPath,
+		withCardSizes,
 	} from "./lib/exportPlan";
 	import {
 		type DragPreview,
@@ -4097,12 +4098,15 @@
 						only: [],
 					});
 					if (r.canvas_width && r.canvas_height)
-						out[x.name] = {
-							w: r.canvas_width,
-							h: r.canvas_height,
-							dpi: (r.dpi ?? 0) / k,
-							bleed: (r.bleed ?? 0) / k,
-						};
+						out[x.name] = withCardSizes(
+							{
+								w: r.canvas_width,
+								h: r.canvas_height,
+								dpi: (r.dpi ?? 0) / k,
+								bleed: (r.bleed ?? 0) / k,
+							},
+							x.cards,
+						);
 				} catch {
 					// Not measured: the dialog shows its size as unknown.
 				}

@@ -300,6 +300,26 @@ export function printGrid(
  */
 export type CanvasInfo = { w: number; h: number; dpi: number; bleed?: number };
 
+/**
+ * The canvas an export has to plan for when cards set their own size: the
+ * design's canvas grown to the largest card in each direction, so the pixel
+ * limit and the printed size shown cover every card. The dpi and the bleed
+ * stay the measured card's.
+ */
+export function withCardSizes(
+	base: CanvasInfo,
+	cards: { canvas?: { width?: number; height?: number } }[],
+): CanvasInfo {
+	let w = base.w;
+	let h = base.h;
+	for (const c of cards) {
+		if (c.canvas?.width !== undefined && c.canvas.width > w) w = c.canvas.width;
+		if (c.canvas?.height !== undefined && c.canvas.height > h)
+			h = c.canvas.height;
+	}
+	return { ...base, w, h };
+}
+
 /** A set as the plan needs it. */
 export type PlanSet = {
 	name: string;
