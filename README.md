@@ -17,7 +17,7 @@
 yoshida is the card creator I always wanted. Way too complicated, way too many possibilities... and now with a functional browser version.
 Design your cards and just apply the data, press export and happy playing, printing, whatever you wanna do.
 
-Designs are simple JSON files that are easy to share, modify and abuse as much as you want. The editor runs in your browser and your cards stay there. (Rendering on a server is an **optional** switch for self-hosted setups; only then does your data leave your machine.)
+Designs are simple JSON files that are easy to share, modify and abuse as much as you want. The editor runs in your browser and your cards stay there; there is also a **desktop app (beta)** for Windows and Linux. (Rendering on a server is an **optional** switch for self-hosted setups; only then does your data leave your machine.)
 
 <!-- The same screenshot as the docs, retaken with `npm run docs:screenshots` in web/. -->
 <p align="center">
@@ -33,6 +33,7 @@ Designs are simple JSON files that are easy to share, modify and abuse as much a
 | --- | --- |
 | **In the browser** | Open <https://yoshida.xoyz.dev/editor/>, nothing to install. Pick an example from the project menu, change it, export. |
 | **On your computer** | Download the [latest release](https://github.com/XOYZ69/yoshida/releases/latest) zip (Linux, macOS, Windows), unzip it and run `./start.sh`, `start.command` or `start.bat`. Then open <http://localhost:8080/editor/>. |
+| **Desktop app (beta)** | Download the installer from the [latest release](https://github.com/XOYZ69/yoshida/releases/latest): `yoshida_<version>_x64-setup.exe` for Windows, `.AppImage`, `.deb` or `.rpm` for Linux. It links projects to real folders on disk and renders with its own built-in renderer. On Arch Linux build the package from a checkout: [`desktop/packaging/arch`](desktop/packaging/arch). More in [Desktop App](https://yoshida.xoyz.dev/docs/desktop-app/). |
 | **With Docker** | `docker compose up --build`, then open <http://localhost:8080/editor/>. |
 | **From the command line** | `yoshida check examples/forge` and `yoshida render examples/forge --out out` (the `yoshida` program is in the release zip). |
 
@@ -86,7 +87,7 @@ The **[documentation](https://yoshida.xoyz.dev/docs/)** has a page for every fea
 
 | I want to | Read |
 | --- | --- |
-| Make my first card | [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/) · [Installation](https://yoshida.xoyz.dev/docs/installation/) |
+| Make my first card | [Getting Started](https://yoshida.xoyz.dev/docs/getting-started/) · [Installation](https://yoshida.xoyz.dev/docs/installation/) · [Desktop App](https://yoshida.xoyz.dev/docs/desktop-app/) |
 | See what is possible | [Feature Tour](https://yoshida.xoyz.dev/docs/feature-tour/) · [Examples](https://yoshida.xoyz.dev/docs/examples/) |
 | Use the visual editor | [Builder](https://yoshida.xoyz.dev/docs/builder/) |
 | Write designs by hand | [Designs](https://yoshida.xoyz.dev/docs/designs/) · [Params](https://yoshida.xoyz.dev/docs/params/) · [Layers](https://yoshida.xoyz.dev/docs/layers/) · [Expressions](https://yoshida.xoyz.dev/docs/expressions/) · [Card Data](https://yoshida.xoyz.dev/docs/card-data/) |

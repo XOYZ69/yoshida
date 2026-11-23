@@ -48,6 +48,10 @@ cargo fmt --check
 cargo test        # path checks (needs binaries/ and web/dist as above, like any build)
 ```
 
+## Releases
+
+The release workflow (`.github/workflows/deploy.yml`, job *Desktop*) builds a Windows installer (`.exe`, NSIS) and Linux packages (`.AppImage`, `.deb`, `.rpm`) with the steps above and attaches them to the GitHub release. Nothing is code-signed. The app is marked beta in the release notes and the docs.
+
 ## Install on Arch Linux
 
 `desktop/packaging/arch/PKGBUILD` builds the app from this checkout: `cd desktop/packaging/arch && makepkg -si`. See the [Desktop App](../site/content/docs/desktop-app.md) page.
