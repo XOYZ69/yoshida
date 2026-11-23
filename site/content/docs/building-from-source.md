@@ -60,11 +60,11 @@ Options and environment variables: [Server and Docker](@/docs/server-and-docker.
 
 ## Desktop app
 
-`desktop/` is a [Tauri 2](https://tauri.app) shell around the editor, not part of the releases yet. It links projects to folders on disk in any operating system, with the system's folder dialog and no permission prompts, and starts `yoshida-server` as a sidecar on `127.0.0.1` so **Render on server** works offline. It needs Rust, the Tauri CLI (`cargo install tauri-cli --version "^2"`) and the system packages Tauri lists for your platform (WebKitGTK 4.1 on Linux).
+`desktop/` is a [Tauri 2](https://tauri.app) shell around the editor, not part of the releases yet; what it does and how to use it is on [Desktop App](@/docs/desktop-app.md). It needs Rust, the Tauri CLI (`cargo install tauri-cli --version "^2"`, only for `cargo tauri build` and `dev`) and the system packages Tauri lists for your platform (WebKitGTK 4.1 on Linux).
 
 ```sh
 zig build -Doptimize=ReleaseFast
-(cd web && npm run build)
+(cd web && npm ci && npm run wasm && npm run examples && npm run build)
 mkdir -p desktop/src-tauri/binaries
 cp zig-out/bin/yoshida-server "desktop/src-tauri/binaries/yoshida-server-$(rustc -vV | sed -n 's/host: //p')"
 cd desktop/src-tauri && cargo tauri build

@@ -3,7 +3,7 @@
 A [Tauri 2](https://tauri.app) shell around the web editor (`web/`). It adds two things a browser tab cannot do:
 
 - **Folders on disk in every webview.** Projects link to real folders, picked with the system dialog, with no permission prompts. This is the `native` backend in `web/src/lib/folder/native.ts`; the Rust side is the commands in `src-tauri/src/main.rs` (`pick_folder`, `read_folder`, `read_file`, `write_file`, `remove_file`). A folder can only be read or written after it was picked in the app (the list is kept in the app's config folder as `folders.json`), and every path must stay inside it.
-- **Render on server, locally.** The app starts `yoshida-server` as a sidecar on `127.0.0.1` (port 47810, or a free one when that is taken) with the bundled editor and `--no-telemetry`, and shows the editor from there, so **Render on server** uses the native renderer. Without the sidecar the window shows the bundled editor and renders in the webview.
+- **Render on server, locally.** The app starts `yoshida-server` as a sidecar on `127.0.0.1` (port 47810, or a free one when that is taken) with the bundled editor and `--no-telemetry`, and shows the editor from there, so exports render with the native renderer (the editor has no "Render on server" switch in the app, it is always on). Without the sidecar the window shows the bundled editor and renders in the webview.
 
 The editor keeps its projects in the webview's storage, which belongs to the page's origin. That is why the port is fixed: on another port the app starts with an empty project list (the projects are still there on the next start on the usual port).
 
@@ -47,3 +47,7 @@ cd desktop/src-tauri
 cargo fmt --check
 cargo test        # path checks (needs binaries/ and web/dist as above, like any build)
 ```
+
+## Install on Arch Linux
+
+`desktop/packaging/arch/PKGBUILD` builds the app from this checkout: `cd desktop/packaging/arch && makepkg -si`. See the [Desktop App](../site/content/docs/desktop-app.md) page.
