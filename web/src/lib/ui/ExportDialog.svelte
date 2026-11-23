@@ -306,7 +306,7 @@ const overText = $derived.by(() => {
 
 const server = $derived(canServer && useServer);
 const where = $derived.by(() => {
-	if (!server) return "Everything renders in {hostWord()}.";
+	if (!server) return `Everything renders in ${hostWord()}.`;
 	if (s.scope === "card")
 		return `A single card always renders in ${hostWord()}.`;
 	// JPEG and WebP are encoded by the browser, so they render here.
