@@ -30,6 +30,8 @@ let {
 	placeholder = "",
 	title = "",
 	allowAuto = false,
+	min = undefined,
+	max = undefined,
 	expect = undefined,
 	path = undefined,
 	sample = null,
@@ -51,6 +53,9 @@ let {
 	placeholder?: string;
 	title?: string;
 	allowAuto?: boolean;
+	/** number: literal values are clamped to this range (expressions are left alone). */
+	min?: number;
+	max?: number;
 	/** The value type an expression must give (for suggestions). */
 	expect?: "number" | "color" | "bool" | "text" | "list" | "image" | "any";
 	/** JSON pointer of the field in the design file, for live values. */
@@ -94,11 +99,17 @@ const isExpr = $derived.by(() => {
 let forceExpr = $state(false);
 const exprMode = $derived(isExpr || forceExpr);
 
+function clamp(n: number): number {
+	if (min !== undefined && n < min) return min;
+	if (max !== undefined && n > max) return max;
+	return n;
+}
+
 function parseNumber(raw: string): Json | undefined {
 	const s = raw.trim();
 	if (s === "") return optional ? undefined : value;
 	const n = literalNumber(s);
-	return n !== undefined ? n : s;
+	return n !== undefined ? clamp(n) : s;
 }
 
 function commitText(raw: string) {
@@ -142,9 +153,8 @@ function scrubStart(e: PointerEvent) {
 function scrubMove(e: PointerEvent) {
 	if (!scrub) return;
 	const step = e.shiftKey ? 10 : Math.abs(scrub.start) < 2 ? 0.01 : 1;
-	const next = round(
-		scrub.start + Math.round((e.clientX - scrub.x) / 2) * step,
-		2,
+	const next = clamp(
+		round(scrub.start + Math.round((e.clientX - scrub.x) / 2) * step, 2),
 	);
 	if (next !== literalNumber(value)) onchange(next);
 }

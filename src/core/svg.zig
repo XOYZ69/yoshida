@@ -137,7 +137,7 @@ const Svg = struct {
             const g = it.glyph;
             const id = try s.glyphDef(g.font, g.gid);
             try w.print("<use xlink:href=\"#{s}\" transform=\"matrix(", .{id});
-            try numP(w, g.scale, 8);
+            try numP(w, g.scale * g.xscale, 8);
             try w.writeAll(" 0 0 ");
             try numP(w, g.scale, 8);
             try w.writeByte(' ');
@@ -318,6 +318,16 @@ const Svg = struct {
                 try w.print("<g mask=\"url(#m{d})\">\n", .{id});
                 try s.open.append(s.arena, 1);
             },
+            .clip => |path| {
+                const id = s.next_id;
+                s.next_id += 1;
+                const d = &s.defs.writer;
+                try d.print("<clipPath id=\"c{d}\"><path d=\"", .{id});
+                try pathData(d, path);
+                try d.writeAll("\"/></clipPath>\n");
+                try w.print("<g clip-path=\"url(#c{d})\">\n", .{id});
+                try s.open.append(s.arena, 1);
+            },
         }
     }
 
@@ -461,6 +471,25 @@ test "scene to svg" {
     const again = try write(gpa, &sc);
     defer gpa.free(again);
     try std.testing.expectEqualStrings(out, again);
+    try expectBalanced(out);
+}
+
+test "a clip group is a clipPath with the path" {
+    const gpa = std.testing.allocator;
+    var sc = vector.Scene.init(gpa);
+    defer sc.deinit();
+    sc.width = 100;
+    sc.height = 100;
+    var b = vector.PathBuilder.init(sc.allocator());
+    try b.polyline(&.{ .{ 10, 10 }, .{ 90, 10 }, .{ 50, 90 } }, true);
+    const tri = b.finish();
+    try sc.add(.{ .begin = .{ .clip = tri } });
+    try sc.add(.{ .fill = .{ .path = tri, .color = Color.black } });
+    try sc.add(.end);
+    const out = try write(gpa, &sc);
+    defer gpa.free(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<clipPath id=\"c0\"><path d=\"M10 10 L90 10 L50 90 Z\"/></clipPath>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<g clip-path=\"url(#c0)\">\n<path d=") != null);
     try expectBalanced(out);
 }
 

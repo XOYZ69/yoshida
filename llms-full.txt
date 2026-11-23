@@ -21,9 +21,10 @@ A **project** is a folder. A **design** (`designs/<name>.design.json`) is a canv
 - **Logic is words:** `and`, `or`, `not`, `==`, `!=`, `c ? a : b`. There is no `&&`, `||`, `!`, `^` or `1e3`. Put spaces around `%`.
 - **Colors** are `#RRGGBB` or `#RRGGBBAA`, bare in an expression: `"fill": "mix(accent, #FFFFFF, 0.5)"`.
 - **Position.** `rect`, `ellipse`, `image`, `qr` and `barcode` use `box` (`x`, `y`, `w`, `h`); `text` uses `at` (`x`, `y`). `anchor` says which point of the layer that position is (default `top-left`; `center` centres it there). `polygon` points are absolute coordinates, unless it uses a preset `shape`, which takes `box` and `anchor`.
+- **Per-card canvas.** A card may set `_width`, `_height`, `_dpi` and `_bleed` (JSON keys, CSV columns) to replace the design's canvas size, dpi and bleed for that card; absent ones inherit. `canvas.w`, `canvas.h` and `%` follow the card's size. Plain numbers, not expressions.
 - **Units.** Plain numbers are pixels. `50%` is half the canvas along the field's axis, `10vw` and `10vh` are percent of the canvas width and height.
 - **References.** `@id.bounds.bottom` reads another layer's final box (`left`, `top`, `right`, `bottom`, `w`, `h`, `cx`, `cy`), `@id.<field>` an evaluated field. They may point forward or backward; a cycle is error 3004. A repeated layer needs an index from outside: `@id[2].bounds.left`.
-- **Text size.** `max_width`, `max_height` and `min_size` shrink text to fit; `wrap` breaks lines at a width. Long card texts need one of them.
+- **Text size.** `max_width`, `max_height` and `min_size` shrink text to fit (`min_squeeze` first narrows the letters sideways); `wrap` breaks lines at a width. Long card texts need one of them.
 - **Text markup.** With `"markup": true` a text may use `<b>`, `<i>` and `{icon:name}`; icons come from the design's `"icons": "assets/icons/*.svg"` pattern.
 - **Groups.** A group has no box of its own. `translate` moves its layers and makes their coordinates relative to it; `layout` places its children in a row or column by their measured size; `repeat` draws it once per iteration; `include` takes the layers from a component file.
 - **Reuse.** `extends` copies another layer of the same type and overrides the fields given (every inherited field, `gradient` included). `consts` are named expressions; `functions` take arguments. Constants cannot call the design's functions.
@@ -40,6 +41,8 @@ Usage:
                             [--utc-offset HOURS] [--16bit] [--preview]
                             [--offline] [--pdf] [--crop-marks] [--svg]
                             [--vector] [--scale N] [--sheet COLSxROWS]
+                            [--page a4|letter|...|WxH] [--gap MM] [--margin MM]
+                            [--back SET[:ID]] [--duplex long|short]
                             [--format text|json]
   yoshida fmt    <project or file>...  [--check]
   yoshida version
@@ -60,6 +63,15 @@ render  writes <out>/<set>/<card id>.png (default out: <project>/out).
         --sheet 10x7 tiles the cards of each set left to right, top to
         bottom into <out>/<set>.png (a deck sheet for a tabletop
         simulator), and <set>-2.png ... when they do not fit on one.
+        --pdf --page a4 lays the cards out side by side on A4 pages
+        (a3, a5, a6, letter, legal, tabloid, each also with -landscape,
+        or WxH in mm such as 297x420): as many as fit inside --margin
+        (default 5 mm), --gap mm apart (default 0), centred, at their
+        printed size: print at 100% (actual size), not "fit to page".
+        --crop-marks marks the trim lines around the grid. --back SET puts the first card of SET (or card
+        ID) behind every card: a page of backs after each page of fronts,
+        mirrored for a duplex printer that flips on the --duplex edge
+        (default long). The back set is not rendered as fronts itself.
 clock   --now is the UTC instant the cards are rendered at (render.now,
         render.date, render.time). Without --now or --date it is the
         current UTC time; --date alone pins the local date at midnight.
@@ -108,8 +120,12 @@ Exit status: 0 no errors, 1 errors were reported, 2 usage error.
 - `name` (string)
 - `note` (string)
 - `design` (string, required)
-- `cards` ([{ id }, ...], required)
+- `cards` ([{ id, _width, _height, _dpi, _bleed }, ...], required)
   - `id` (string)
+  - `_width` (number): This card's canvas width in pixels; the design's canvas.width when absent
+  - `_height` (number): This card's canvas height in pixels; the design's canvas.height when absent
+  - `_dpi` (number): This card's print resolution; the design's canvas.dpi when absent
+  - `_bleed` (number): This card's bleed in pixels; the design's canvas.bleed when absent
 
 ### `*.defs.json`, params and consts shared through a design's `import`
 
@@ -198,6 +214,7 @@ Layer types: `rect`, `ellipse`, `polygon`, `text`, `image`, `qr`, `barcode`, `gr
   - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
   - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
   - `color` (string): shadow: color, default black at half opacity (#00000080)
+- `clip_to` (string): Draw only inside the shape of this rect, ellipse or polygon layer (it may be hidden); also on groups
 
 ### `rect`
 
@@ -286,6 +303,7 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
 - `max_width` (number|expr): Auto-shrink: reduce size until the block is at most this wide
 - `max_height` (number|expr): Auto-shrink: reduce size until the block is at most this tall
 - `min_size` (number|expr): Smallest size auto-shrink may use (default 8)
+- `min_squeeze` (number|expr): Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)
 - `stroke` ({ color, width }): Outline around the glyphs
   - `color` (color|expr)
   - `width` (number|expr)
@@ -385,6 +403,7 @@ Readable as `@id.<field>`: `bounds.left`, `bounds.top`, `bounds.right`, `bounds.
   - `y` (number|expr): shadow: vertical offset in canvas pixels (default 4)
   - `blur` (number|expr): shadow: how soft the edge is, in canvas pixels (default 6)
   - `color` (string): shadow: color, default black at half opacity (#00000080)
+- `clip_to` (string): Draw only inside the shape of this rect, ellipse or polygon layer (it may be hidden); also on groups
 - `layers` ([layer, ...]): Layers inside a group, first is bottom
 - `repeat` ({ count, each, index, item })
   - `count` (number|expr)
@@ -560,6 +579,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 1113 warning: A design function has the name of a built-in function; the design's function is used in this design instead of the built-in
 - 1114 warning: A rect, ellipse or closed polygon has a `stroke` but no `fill` (and no `gradient`), so it is filled opaque white. Add `"fill": "#00000000"` for an outline, or a color to fill it on purpose. Not reported for an open polygon or an arc with `"pie": false`, which have no fill
 - 1115 warning: A `barcode` layer sets a field its `format` does not read (for example `logo` on a Code 128, or `label` on a QR code)
+- 1116 error: `clip_to` names the layer itself, or a layer that is not a `rect`, `ellipse` or `polygon`
 - 1201 error: File not found
 - 1202 error: CSV syntax error (also a missing header row, or a row with the wrong number of fields)
 - 1203 error: Path escapes the project root
@@ -573,7 +593,7 @@ Reported as `file:line:column: severity[code]: message`; `yoshida check --format
 - 3002 error: Unknown name or function
 - 3003 error: Type mismatch or wrong function arguments
 - 3004 error: Reference or `extends` cycle (also: an iteration reading a later one, a group's `translate` reading a layer inside it)
-- 3005 error: Reference to a repeated layer without an iteration index, or into nested repeats
+- 3005 error: Reference to a repeated layer without an iteration index, or into nested repeats; `clip_to` naming a repeated layer, or a layer in a repeated group that does not hold the clipped layer
 - 3006 error: Unit not valid in this field
 - 3101 error: Negative width or height (at render time)
 - 3102 error: List index or iteration index out of range, or `last()` of an empty list (at render time)

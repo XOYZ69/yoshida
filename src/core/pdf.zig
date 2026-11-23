@@ -2,7 +2,8 @@
 //! (`addPage`) or as vector drawing (`addVector`, see pdf_vector.zig). The
 //! page size comes from `canvas.dpi` (72 when unknown, one canvas pixel per
 //! point, so a render at a larger scale keeps the page size);
-//! `canvas.bleed` sets the TrimBox and BleedBox.
+//! `canvas.bleed` sets the TrimBox and BleedBox. `imageCard` and
+//! `vectorCard` write a card once for print layout pages (print.zig).
 
 const std = @import("std");
 const raster = @import("raster.zig");
@@ -67,10 +68,27 @@ pub const Page = struct {
         return .{ .w = b.w, .h = b.h, .dpi = b.dpi, .bleed = b.bleed, .margin = b.margin, .scale = b.scale, .rgb = rgb_z, .alpha = if (px.alpha) |a| try raster.deflate(gpa, a) else null };
     }
 
+    /// PDF points per bitmap pixel: from the dpi, or one point per canvas pixel.
+    pub fn pointsPerPixel(p: *const Page) f64 {
+        return 72.0 / (if (p.dpi > 0) p.dpi else 72.0 * (if (p.scale > 0) p.scale else 1));
+    }
+
     pub fn deinit(p: *Page, gpa: Allocator) void {
         gpa.free(p.rgb);
         if (p.alpha) |a| gpa.free(a);
     }
+};
+
+/// A card written once and placed on print layout pages (print.zig).
+pub const Card = struct {
+    /// The object number of an image XObject (drawn into the unit square)
+    /// or of a form XObject (drawn in points from its bottom-left corner).
+    id: u32,
+    image: bool,
+    /// The whole card with its bleed, and the bleed on each side, in points.
+    w: f64,
+    h: f64,
+    bleed: f64 = 0,
 };
 
 pub const Writer = struct {
@@ -126,20 +144,8 @@ pub const Writer = struct {
 
     /// Adds a page prepared (perhaps on another thread) with `Page.init`.
     pub fn addPrepared(w: *Writer, pg: *const Page) !void {
-        var smask: ?u32 = null;
-        if (pg.alpha) |z| {
-            smask = try w.begin();
-            var buf: [160]u8 = undefined;
-            try w.stream(try std.fmt.bufPrint(&buf, "/Type /XObject /Subtype /Image /Width {d} /Height {d} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode", .{ pg.w, pg.h }), z);
-        }
-        const img = try w.begin();
-        {
-            var buf: [200]u8 = undefined;
-            var sm: [32]u8 = undefined;
-            const sm_text = if (smask) |sid| try std.fmt.bufPrint(&sm, " /SMask {d} 0 R", .{sid}) else "";
-            try w.stream(try std.fmt.bufPrint(&buf, "/Type /XObject /Subtype /Image /Width {d} /Height {d} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{s}", .{ pg.w, pg.h, sm_text }), pg.rgb);
-        }
-        const k: f64 = 72.0 / (if (pg.dpi > 0) pg.dpi else 72.0 * (if (pg.scale > 0) pg.scale else 1));
+        const img = try w.imageObject(pg);
+        const k = pg.pointsPerPixel();
         const pw = @as(f64, @floatFromInt(pg.w)) * k;
         const ph = @as(f64, @floatFromInt(pg.h)) * k;
         const content = blk: {
@@ -159,6 +165,37 @@ pub const Writer = struct {
             .{ pw, ph, m, m, pw - m, ph - m, m + bl, m + bl, pw - m - bl, ph - m - bl, img, content },
         ) catch return error.OutOfMemory;
         try w.pages.append(w.gpa, page);
+    }
+
+    /// The image XObject of a page (and its soft mask); its object number.
+    fn imageObject(w: *Writer, pg: *const Page) !u32 {
+        var smask: ?u32 = null;
+        if (pg.alpha) |z| {
+            smask = try w.begin();
+            var buf: [160]u8 = undefined;
+            try w.stream(try std.fmt.bufPrint(&buf, "/Type /XObject /Subtype /Image /Width {d} /Height {d} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode", .{ pg.w, pg.h }), z);
+        }
+        const img = try w.begin();
+        var buf: [200]u8 = undefined;
+        var sm: [32]u8 = undefined;
+        const sm_text = if (smask) |sid| try std.fmt.bufPrint(&sm, " /SMask {d} 0 R", .{sid}) else "";
+        try w.stream(try std.fmt.bufPrint(&buf, "/Type /XObject /Subtype /Image /Width {d} /Height {d} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode{s}", .{ pg.w, pg.h, sm_text }), pg.rgb);
+        return img;
+    }
+
+    /// `b` as an image to place on print layout pages (`print.Sheets`); the
+    /// bitmap has no crop-mark margin.
+    pub fn imageCard(w: *Writer, b: *const raster.Bitmap) !Card {
+        var pg = try Page.init(w.gpa, b);
+        defer pg.deinit(w.gpa);
+        const id = try w.imageObject(&pg);
+        const k = pg.pointsPerPixel();
+        return .{ .id = id, .image = true, .w = @as(f64, @floatFromInt(pg.w)) * k, .h = @as(f64, @floatFromInt(pg.h)) * k, .bleed = pg.bleed * k };
+    }
+
+    /// A vector scene as a form to place on print layout pages.
+    pub fn vectorCard(w: *Writer, scene: *const vector.Scene) !Card {
+        return pdf_vector.cardForm(w, scene);
     }
 
     /// Adds one page drawn from a vector scene, with crop marks in a margin

@@ -114,12 +114,30 @@ pub fn normalize(arena: Allocator, p: []const u8) Allocator.Error!?[]const u8 {
     return try std.mem.join(arena, "/", parts.items);
 }
 
+/// A card's own canvas values (the reserved keys `_width`, `_height`,
+/// `_dpi` and `_bleed` of card data). null inherits the design's value.
+pub const CardCanvas = struct {
+    width: ?f64 = null,
+    height: ?f64 = null,
+    dpi: ?f64 = null,
+    bleed: ?f64 = null,
+
+    pub const keys = [_][]const u8{ "_width", "_height", "_dpi", "_bleed" };
+
+    pub fn isKey(key: []const u8) bool {
+        for (keys) |k| if (std.mem.eql(u8, k, key)) return true;
+        return false;
+    }
+};
+
 pub const Card = struct {
     id: []const u8,
     /// One entry per design param; null means "use the default".
     values: []const ?Value,
     /// Byte offset of the card in its data file.
     pos: u32,
+    /// Canvas size, dpi and bleed this card sets itself.
+    canvas: CardCanvas = .{},
 };
 
 pub const Set = struct {
@@ -439,7 +457,23 @@ const CardBuilder = struct {
         try b.diags.at(sev, code, b.src, pos, path, msg, hint);
     }
 
-    fn finish(b: *CardBuilder, n: usize, id_in: ?[]const u8, id_pos: u32, values: []?Value, card_pos: u32, base: []const u8) Allocator.Error!void {
+    /// Stores a reserved canvas key (`_width` ...) of a card. `num` is null
+    /// when the value is not a number.
+    fn setCanvas(b: *CardBuilder, cv: *CardCanvas, key: []const u8, num: ?f64, pos: u32, path: []const u8) Allocator.Error!void {
+        const x = num orelse {
+            try b.report(.err, 2006, pos, path, try b.diags.fmt("'{s}' must be a number", .{key}), "a card's canvas size is a plain number of pixels");
+            return;
+        };
+        const is_size = std.mem.eql(u8, key, "_width") or std.mem.eql(u8, key, "_height");
+        if (!std.math.isFinite(x) or (is_size and x < 1) or x < 0 or (std.mem.eql(u8, key, "_dpi") and x > 10000)) {
+            const what = if (is_size) "1 or more" else if (std.mem.eql(u8, key, "_dpi")) "from 0 to 10000" else "0 or more";
+            try b.report(.err, 2002, pos, path, try b.diags.fmt("'{s}' must be {s}", .{ key, what }), null);
+            return;
+        }
+        if (std.mem.eql(u8, key, "_width")) cv.width = x else if (std.mem.eql(u8, key, "_height")) cv.height = x else if (std.mem.eql(u8, key, "_dpi")) cv.dpi = x else cv.bleed = x;
+    }
+
+    fn finish(b: *CardBuilder, n: usize, id_in: ?[]const u8, id_pos: u32, values: []?Value, card_pos: u32, base: []const u8, cv: CardCanvas) Allocator.Error!void {
         const id = id_in orelse try std.fmt.allocPrint(b.arena, "{d:0>3}", .{n + 1});
         if (!isSafeId(id)) {
             try b.report(.err, 2005, id_pos, try b.diags.fmt("{s}/id", .{base}), try b.diags.fmt("card id '{s}' is not safe as a file name", .{id}), "use letters, digits, '.', '_' and '-'");
@@ -451,7 +485,7 @@ const CardBuilder = struct {
                 try b.report(.err, 2003, card_pos, base, try b.diags.fmt("card '{s}': required param '{s}' is missing", .{ id, p.name }), null);
             }
         }
-        try b.cards.append(b.arena, .{ .id = id, .values = values, .pos = card_pos });
+        try b.cards.append(b.arena, .{ .id = id, .values = values, .pos = card_pos, .canvas = cv });
     }
 
     fn unknown(b: *CardBuilder, key: []const u8, pos: u32, path: []const u8) Allocator.Error!void {
@@ -508,8 +542,13 @@ fn loadCardsJson(arena: Allocator, diags: *diag.List, src: diag.Source, d: *cons
         @memset(values, null);
         var id: ?[]const u8 = null;
         var id_pos = c.pos;
+        var cv: CardCanvas = .{};
         for (c.data.object) |*f| {
             const path = try diags.fmt("{s}/{s}", .{ base, f.key });
+            if (CardCanvas.isKey(f.key)) {
+                try b.setCanvas(&cv, f.key, if (f.value.data == .number) f.value.data.number else null, f.value.pos, path);
+                continue;
+            }
             if (std.mem.eql(u8, f.key, "id")) {
                 id_pos = f.value.pos;
                 switch (f.value.data) {
@@ -524,7 +563,7 @@ fn loadCardsJson(arena: Allocator, diags: *diag.List, src: diag.Source, d: *cons
             };
             try b.accept(pi, try design_mod.convertJson(arena, &d.params[pi], &f.value), f.value.pos, path, values);
         }
-        try b.finish(n, id, id_pos, values, c.pos, base);
+        try b.finish(n, id, id_pos, values, c.pos, base, cv);
     }
     return b.cards.items;
 }
@@ -602,9 +641,15 @@ fn loadCsv(arena: Allocator, diags: *diag.List, src: diag.Source, d: *const Desi
     const header = rows[0];
     const col_param = try arena.alloc(?usize, header.len);
     var id_col: ?usize = null;
+    const col_canvas = try arena.alloc(?[]const u8, header.len);
     for (header, 0..) |h, ci| {
         col_param[ci] = null;
+        col_canvas[ci] = null;
         const name = std.mem.trim(u8, h.text, " ");
+        if (CardCanvas.isKey(name)) {
+            col_canvas[ci] = name;
+            continue;
+        }
         if (std.mem.eql(u8, name, "id")) {
             id_col = ci;
             continue;
@@ -621,7 +666,14 @@ fn loadCsv(arena: Allocator, diags: *diag.List, src: diag.Source, d: *const Desi
         @memset(values, null);
         var id: ?[]const u8 = null;
         var id_pos = r[0].pos;
+        var cv: CardCanvas = .{};
         for (r, 0..) |cell, ci| {
+            if (col_canvas[ci]) |key| {
+                if (cell.text.len == 0) continue;
+                const t = std.mem.trim(u8, cell.text, " ");
+                try b.setCanvas(&cv, key, std.fmt.parseFloat(f64, t) catch null, cell.pos, try diags.fmt("/{d}/{s}", .{ n + 1, key }));
+                continue;
+            }
             if (id_col != null and ci == id_col.?) {
                 if (cell.text.len > 0) id = cell.text;
                 id_pos = cell.pos;
@@ -632,7 +684,7 @@ fn loadCsv(arena: Allocator, diags: *diag.List, src: diag.Source, d: *const Desi
             const path = try diags.fmt("/{d}/{s}", .{ n + 1, d.params[pi].name });
             try b.accept(pi, try design_mod.convertText(arena, &d.params[pi], cell.text), cell.pos, path, values);
         }
-        try b.finish(n, id, id_pos, values, r[0].pos, try diags.fmt("/{d}", .{n + 1}));
+        try b.finish(n, id, id_pos, values, r[0].pos, try diags.fmt("/{d}", .{n + 1}), cv);
     }
     return b.cards.items;
 }
@@ -867,4 +919,53 @@ fn countCodeIn(diags: *const diag.List, code: u16) usize {
         if (dg.code == code) n += 1;
     }
     return n;
+}
+
+test "card canvas keys: JSON and CSV overrides, bad values are diagnostics" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var mem = MemFs.init(std.testing.allocator);
+    defer mem.deinit();
+    try mem.put("designs/a.design.json", test_design);
+    try mem.put("cards/a.cards.json",
+        \\{ "format": 1, "design": "designs/a.design.json", "cards": [
+        \\  { "id": "ok", "_width": 50, "_dpi": 300 },
+        \\  { "id": "none" },
+        \\  { "id": "text", "_width": "wide" },
+        \\  { "id": "zero", "_height": 0 },
+        \\  { "id": "neg", "_bleed": -1 }
+        \\] }
+    );
+    var diags = diag.List.init(a);
+    const p = try testProject(a, &mem, &diags);
+    const cards = p.sets[0].cards;
+    try std.testing.expectEqual(@as(f64, 50), cards[0].canvas.width.?);
+    try std.testing.expectEqual(@as(f64, 300), cards[0].canvas.dpi.?);
+    try std.testing.expect(cards[0].canvas.height == null);
+    try std.testing.expect(cards[1].canvas.width == null);
+    try std.testing.expect(cards[2].canvas.width == null);
+    var wrong_type = false;
+    var out_of_range: usize = 0;
+    var unknown: usize = 0;
+    for (diags.items.items) |dg| {
+        if (dg.code == 2006) wrong_type = true;
+        if (dg.code == 2002) out_of_range += 1;
+        if (dg.code == 2001) unknown += 1;
+    }
+    try std.testing.expect(wrong_type);
+    try std.testing.expectEqual(@as(usize, 2), out_of_range);
+    try std.testing.expectEqual(@as(usize, 0), unknown);
+
+    var mem2 = MemFs.init(std.testing.allocator);
+    defer mem2.deinit();
+    try mem2.put("designs/a.design.json", test_design);
+    try mem2.put("cards/a.cards.csv", "id,_width,_height\none,40,\ntwo,,x\n");
+    try mem2.put("yoshida.json", "{\"format\":1,\"sets\":[{\"name\":\"x\",\"design\":\"designs/a.design.json\",\"cards\":\"cards/a.cards.csv\"}]}");
+    var diags2 = diag.List.init(a);
+    const p2 = try testProject(a, &mem2, &diags2);
+    try std.testing.expectEqual(@as(f64, 40), p2.sets[0].cards[0].canvas.width.?);
+    try std.testing.expect(p2.sets[0].cards[0].canvas.height == null);
+    try std.testing.expect(p2.sets[0].cards[1].canvas.height == null);
+    try std.testing.expectEqual(@as(usize, 1), diags2.errorCount());
 }

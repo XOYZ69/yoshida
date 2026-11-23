@@ -66,6 +66,7 @@ fn writeParamValue(w: *Writer, p: *const design_mod.Param, v: Value) Writer.Erro
 }
 
 /// `{"name", "sets": [{name, design, group, cards_file, ok, params, cards}]}`.
+/// A card that sets its own canvas size has `"canvas": {width?, height?, dpi?, bleed?}` after `values`.
 pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void {
     try w.writeAll("{\"name\":");
     try json.writeString(w, proj.name);
@@ -163,7 +164,22 @@ pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void 
                 try w.writeByte(':');
                 try writeParamValue(w, p, v.?);
             }
-            try w.writeAll("}}");
+            try w.writeByte('}');
+            // Only a card that sets its own canvas has this.
+            const cv = card.canvas;
+            if (cv.width != null or cv.height != null or cv.dpi != null or cv.bleed != null) {
+                try w.writeAll(",\"canvas\":{");
+                var cfirst = true;
+                inline for (.{ "width", "height", "dpi", "bleed" }) |k| {
+                    if (@field(cv, k)) |x| {
+                        if (!cfirst) try w.writeByte(',');
+                        cfirst = false;
+                        try w.print("\"{s}\":{d}", .{ k, x });
+                    }
+                }
+                try w.writeByte('}');
+            }
+            try w.writeByte('}');
         }
         try w.writeAll("]}");
     }

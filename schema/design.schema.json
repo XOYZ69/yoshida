@@ -287,6 +287,11 @@
           }
         },
         "extends": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "clip_to": {
+          "description": "Draw only inside the shape of this rect, ellipse or polygon layer (it may be hidden); also on groups",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "effects": {
           "type": "array",
           "items": {
@@ -445,6 +450,10 @@
         },
         "min_size": {
           "description": "Smallest size auto-shrink may use (default 8)",
+          "type": ["number", "string"]
+        },
+        "min_squeeze": {
+          "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
           "type": ["number", "string"]
         },
         "src": { "description": "Text with {expression} placeholders", "type": "string" },
@@ -662,6 +671,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "box": {
                 "type": "object",
                 "additionalProperties": false,
@@ -778,6 +788,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "box": {
                 "type": "object",
                 "additionalProperties": false,
@@ -906,6 +917,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "points": {
                 "description": "[x, y] pairs in canvas coordinates, mixed with point runs: { count or each, index, item, x, y } makes one point per iteration. An object alone is one run",
                 "$ref": "#/$defs/points"
@@ -1042,6 +1054,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "text": { "description": "Text with {expression} placeholders", "type": "string" },
               "at": {
                 "type": "object",
@@ -1099,6 +1112,10 @@
                 "description": "Smallest size auto-shrink may use (default 8)",
                 "type": ["number", "string"]
               },
+              "min_squeeze": {
+                "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
+                "type": ["number", "string"]
+              },
               "stroke": {
                 "description": "Outline around the glyphs",
                 "type": "object",
@@ -1152,6 +1169,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "src": { "description": "Text with {expression} placeholders", "type": "string" },
               "box": {
                 "type": "object",
@@ -1236,6 +1254,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "text": {
                 "description": "What the code holds: text with {expression} placeholders, for example a link",
                 "type": "string"
@@ -1345,6 +1364,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "format": {
                 "description": "The kind of code: qr, code128, ean13, ean8, upca, code39, itf, itf14, codabar, code93, datamatrix, aztec or pdf417; or an expression that gives one",
                 "anyOf": [
@@ -1505,6 +1525,7 @@
               "opacity": true,
               "rotate": true,
               "effects": true,
+              "clip_to": true,
               "layers": true,
               "repeat": true,
               "translate": {

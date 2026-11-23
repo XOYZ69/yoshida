@@ -10,6 +10,13 @@ import {
 	defaultExportSettings,
 	designHasBleed,
 	designOutputs,
+	estimateSizes,
+	fallbackSample,
+	formatEstimate,
+	formatSize,
+	sampleScale,
+	sizeBreakdown,
+	spreadCards,
 	dpiRange,
 	fitScale,
 	followsDpi,
@@ -22,6 +29,7 @@ import {
 	scaleFits,
 	scaleFor,
 	setJpegDpi,
+	withCardSizes,
 } from "../src/lib/exportPlan.ts";
 
 let failed = 0;
@@ -363,6 +371,105 @@ ok(
 	mod.setMaxSide(null);
 	ok("side limit: unlimited is the core's ceiling", mod.MAX_SIDE === 65535);
 	mod.setMaxSide(10000);
+}
+
+// The PDF print layout: paper, the request for the core, the grid and the backs.
+{
+	const mod = await import("../src/lib/exportPlan.ts");
+	const d = mod.defaultExportSettings;
+	ok("print: off by default", d.pdfLayout === "card" && d.paper === "a4" && d.printBack === "" && d.duplex === "long");
+	const a4 = mod.paperSize(d);
+	const land = mod.paperSize({ ...d, paper: "letter", landscape: true });
+	const custom = mod.paperSize({ ...d, paper: "custom", paperW: 330, paperH: 482.6 });
+	ok("print: paper sizes", a4.w === 210 && a4.h === 297 && land.w === 279.4 && land.h === 215.9 && custom.w === 330 && custom.h === 482.6);
+	const req = mod.printRequest({ ...d, landscape: true, printGap: 3, duplex: "short" }, true);
+	ok("print: request", req.page === "a4-landscape" && req.gap === 3 && req.margin === 5 && req.crop_marks && req.duplex === "short");
+	ok("print: custom request", mod.printRequest({ ...d, paper: "custom", paperW: 100, paperH: 150.5 }, false).page === "100x150.5");
+	const poker = { w: 63.5, h: 88.9 };
+	const g = mod.printGrid(a4, poker, 0, 5);
+	const gl = mod.printGrid(mod.paperSize({ ...d, paper: "letter", landscape: true }), poker, 0, 5);
+	ok("print: grid as the core lays it out", g.cols === 3 && g.rows === 3 && gl.cols === 4 && gl.rows === 2);
+	ok("print: a gap can cost a column", mod.printGrid(a4, poker, 5, 5).cols === 2 && mod.printGrid(a4, poker, 4, 5).cols === 3);
+	ok("print: a card that does not fit", mod.printGrid({ w: 50, h: 50 }, poker, 0, 5).cols === 0 && mod.printGrid(a4, poker, 0, 75).rows === 0);
+	// Every paper changes the page, the request and the grid (the summary follows).
+	const sz = (paper, landscape = false) => mod.paperSize({ ...d, paper, landscape });
+	ok("print: more papers", sz("a3").h === 420 && sz("a5").w === 148 && sz("a6").h === 148 && sz("legal").h === 355.6 && sz("tabloid").w === 279.4 && sz("tabloid", true).w === 431.8);
+	ok("print: paper requests", ["a3", "a5", "a6", "legal", "tabloid"].every((p) => mod.printRequest({ ...d, paper: p, landscape: true }, false).page === `${p}-landscape`));
+	ok("print: every option is a paper", mod.PAPER_OPTIONS.every((o) => o.value === "custom" || sz(o.value).w > 0));
+	const grid = (paper, over = {}) => mod.printGrid(mod.paperSize({ ...d, paper, ...over }), poker, 0, 5);
+	ok("print: the grid follows the paper", grid("a3").cols === 4 && grid("a3").rows === 4 && grid("a5").cols === 2 && grid("a6").cols === 1 && grid("tabloid", { landscape: true }).cols === 6);
+	const pset = [{ name: "p", label: "P", ok: true, cards: ["a"], canvas: { w: 750, h: 1050, bleed: 0, dpi: 300 } }];
+	const tg = [{ set: "p", cards: [0] }];
+	const sum = (over) => mod.printSummary({ ...d, ...over }, pset, tg);
+	ok("print: summary has the printed size and the count", sum({}).text === "Cards print at 63.5 × 88.9 mm, 3 × 3 a page" && sum({}).note.includes("100%"));
+	ok("print: summary follows paper, orientation, size, margin and gap", sum({ paper: "a3" }).text.endsWith("4 × 4 a page") && sum({ landscape: true }).text.endsWith("4 × 2 a page") && sum({ paper: "custom", paperW: 100, paperH: 100 }).text.endsWith("1 × 1 a page") && sum({ printMargin: 40 }).text.endsWith("2 × 2 a page") && sum({ printGap: 5 }).text.endsWith("2 × 3 a page"));
+	ok("print: summary says a card does not fit", sum({ paper: "custom", paperW: 60, paperH: 60 }).problem.includes("does not fit") && sum({ paper: "custom", paperW: 60, paperH: 60 }).text === "");
+	const c = mod.cleanSettings({ pdfLayout: "print", paper: "foolscap", paperW: 5, paperH: 9999, printGap: -1, printMargin: 7.25, printBack: "back", duplex: "sideways" });
+	ok("print: stored settings are cleaned", c.pdfLayout === "print" && c.paper === "a4" && c.paperW === 20 && c.paperH === 2000 && c.printGap === 0 && c.printMargin === 7.3 && c.printBack === "back" && c.duplex === "long");
+	// The back set gets no PDF of its own, unless it is all that is exported.
+	const deck = [
+		{ name: "numbers", label: "Numbers", ok: true, cards: ["AS", "2S"] },
+		{ name: "back", label: "Back", ok: true, cards: ["back"] },
+	];
+	const all = mod.planExport({ scope: "all", formats: ["pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: no PDF of the backs", all.noPdf.join() === "back" && all.files === 1 && !all.zip && all.fileName === "poker-numbers.pdf", JSON.stringify(all));
+	const withPng = mod.planExport({ scope: "all", formats: ["png", "pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: the backs still get their PNG", withPng.files === 4 && mod.planSummary(withPng) === "4 files in poker.zip: 3 PNG, 1 PDF", mod.planSummary(withPng));
+	const only = mod.planExport({ scope: "design", formats: ["pdf"], pdfLayout: "print", printBack: "back" }, "poker", deck, "back", 0);
+	ok("print: the back design alone", only.noPdf.length === 0 && only.files === 1);
+	const plain = mod.planExport({ scope: "all", formats: ["pdf"], pdfLayout: "card", printBack: "back" }, "poker", deck, "numbers", 0);
+	ok("print: a card a page prints every design", plain.noPdf.length === 0 && plain.files === 2);
+}
+
+{
+	const base = { w: 750, h: 1050, dpi: 300, bleed: 36 };
+	const same = withCardSizes(base, [{}, { canvas: { dpi: 600 } }]);
+	ok("card sizes: none set keeps the canvas", same.w === 750 && same.h === 1050 && same.dpi === 300 && same.bleed === 36);
+	const grown = withCardSizes(base, [{ canvas: { width: 1000 } }, { canvas: { height: 400 } }, { canvas: { width: 100, height: 1200 } }]);
+	ok("card sizes: the largest card in each direction", grown.w === 1000 && grown.h === 1200 && grown.dpi === 300);
+	const small = withCardSizes(base, [{ canvas: { width: 100, height: 100 } }]);
+	ok("card sizes: smaller cards do not shrink it", small.w === 750 && small.h === 1050);
+}
+
+{
+	ok("size: bytes", formatSize(0) === "0 B" && formatSize(812) === "812 B" && formatSize(999) === "999 B");
+	ok("size: KB", formatSize(1000) === "1.0 KB" && formatSize(4300) === "4.2 KB" && formatSize(49152) === "48 KB");
+	ok("size: MB", formatSize(1.2 * 1048576) === "1.2 MB" && formatSize(48 * 1048576) === "48 MB" && formatSize(1020 * 1024) === "1.0 MB");
+	ok("size: GB", formatSize(3.45 * 1073741824) === "3.45 GB" && formatSize(12.34 * 1073741824) === "12.3 GB" && formatSize(150 * 1073741824) === "150 GB");
+	ok("size: estimate sign", formatEstimate(48 * 1048576) === "≈\u00a048 MB");
+
+	const sz = (set, w, h) => ({ set, size: { w, h } });
+	const p = (formats, scope = "design", cur = "number") => planExport({ scope, formats }, "poker", sets, cur, 0);
+	const one = p(["png"]);
+	// 2 cards of a 100 x 100 sample of 10 000 bytes, shown at 200 x 200: 4x the pixels.
+	const e1 = estimateSizes(one, [sz("number", 200, 200)], { png: { bytes: 10000, w: 100, h: 100 } });
+	ok("estimate: png scales with pixels and cards", e1.perFormat.png === 80000 && e1.missing.length === 0 && e1.total === 80000 + 2 * 120 + 22, JSON.stringify(e1));
+	const single = planExport({ scope: "card", formats: ["png"] }, "poker", sets, "number", 0);
+	ok("estimate: one file has no zip headers", estimateSizes(single, [sz("number", 100, 100)], { png: { bytes: 5000, w: 100, h: 100 } }).total === 5000);
+	const all = p(["png", "svg"], "all");
+	const e2 = estimateSizes(all, [sz("number", 100, 100), sz("court", 200, 100)], { png: { bytes: 1000, w: 100, h: 100 }, svg: { bytes: 300, w: 100, h: 100 } });
+	ok("estimate: each design at its own size", e2.perFormat.png === 1000 * 2 + 2000 * 1 && e2.perFormat.svg === 900, JSON.stringify(e2));
+	ok("estimate: missing sample is left out", estimateSizes(all, [sz("number", 100, 100), sz("court", 100, 100)], { svg: { bytes: 300, w: 1, h: 1 } }).missing.join() === "png");
+	ok("estimate: unknown size leaves a raster out", estimateSizes(one, [{ set: "number", size: null }], { png: { bytes: 1, w: 1, h: 1 } }).missing.join() === "png");
+	const pdf = p(["pdf"]);
+	const v = estimateSizes(pdf, [sz("number", 100, 100)], { pdf: { bytes: 50000, w: 100, h: 100, more: 60000 } });
+	ok("estimate: vector pdf is a first page plus what each adds", v.perFormat.pdf === 50000 + 10000, JSON.stringify(v));
+	const v3 = estimateSizes(planExport({ scope: "all", formats: ["pdf"] }, "poker", sets, "number", 0), [sz("number", 1, 1), sz("court", 1, 1)], { pdf: { bytes: 50000, w: 1, h: 1, more: 60000 } });
+	ok("estimate: a pdf for each design", v3.perFormat.pdf === 60000 + 50000, JSON.stringify(v3));
+	const img = estimateSizes(pdf, [sz("number", 200, 100)], { pdf: { bytes: 1000, w: 100, h: 100, pixels: true } });
+	ok("estimate: image pdf scales with pixels", img.perFormat.pdf === 4000, JSON.stringify(img));
+	const sheet = planExport({ scope: "design", formats: ["sheet"], sheetCols: 2, sheetRows: 2 }, "poker", sets, "number", 0);
+	ok("estimate: sheet is the cards' pixels", estimateSizes(sheet, [sz("number", 100, 100)], { sheet: { bytes: 1000, w: 100, h: 100 } }).perFormat.sheet === 2000);
+	const v5 = estimateSizes(pdf, [sz("number", 1, 1)], { pdf: { bytes: 50000, w: 1, h: 1, more: 70000, pages: 3 } });
+	ok("estimate: pdf pages added by the sample's pages", v5.perFormat.pdf === 60000, JSON.stringify(v5));
+	ok("spread: cards over the design", spreadCards(40).join() === "6,20,33" && spreadCards(2).join() === "0,1" && spreadCards(1).join() === "0" && spreadCards(0).length === 0);
+	ok("estimate: breakdown in the dialog's order", sizeBreakdown({ jpeg: 8.2 * 1048576, png: 30 * 1048576 }) === "PNG 30 MB · JPEG 8.2 MB");
+	ok("sample scale: small cards at the export's scale", sampleScale({ w: 750, h: 1050 }, 2) === 2);
+	const k = sampleScale({ w: 3000, h: 4200 }, 4);
+	ok("sample scale: capped near 3 megapixels", k < 4 && Math.abs(3000 * 4200 * (k / 4) ** 2 - 3_000_000) < 1, String(k));
+	const fb = fallbackSample("jpeg", 1000, 1000, { ...defaultExportSettings, jpegQuality: 90 });
+	ok("fallback: jpeg by quality", fb.bytes > 100000 && fb.bytes < 1000000 && fallbackSample("jpeg", 1000, 1000, { ...defaultExportSettings, jpegQuality: 30 }).bytes < fb.bytes);
+	ok("fallback: 16 bit png is bigger", fallbackSample("png", 100, 100, { ...defaultExportSettings, pngDepth: 16 }).bytes > fallbackSample("png", 100, 100, { ...defaultExportSettings, pngDepth: 8 }).bytes);
 }
 
 console.log(failed ? `${failed} failed` : "all passed");

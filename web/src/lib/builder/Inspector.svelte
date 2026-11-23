@@ -462,6 +462,16 @@ const sameTypeIds = $derived(
 		.filter((l) => l.type === type && l.id !== id)
 		.map((l) => String(l.id)),
 );
+/** Layers whose shape `clip_to` can use (docs: layers.md#clip-to). */
+const clipIds = $derived(
+	layersOf(doc)
+		.filter(
+			(l) =>
+				(l.type === "rect" || l.type === "ellipse" || l.type === "polygon") &&
+				l.id !== id,
+		)
+		.map((l) => String(l.id)),
+);
 
 // ------------------------------------------------------------ effects
 
@@ -972,6 +982,7 @@ let newFunction = $state("");
       <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
       {#if typeof eff.include !== 'string'}
         <div class="row">
           <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
@@ -1098,10 +1109,11 @@ let newFunction = $state("");
         <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
         <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'left')} options={['left', 'center', 'right', 'justify']} onchange={(v) => set(['align'], v)} />
         <Field label="line_spacing" kind="number" optional value={ownVal(['line_spacing'])} fallback={effVal(['line_spacing']) ?? 4} bindings={numberParams} error={errorAt(['line_spacing'])} path={pathOf(['line_spacing'])} onchange={(v) => set(['line_spacing'], v)} />
-        <p class="sub">Auto-shrink: the size goes down until the text fits.</p>
+        <p class="sub">Auto-shrink needs max_width (or max_height): without a width to fit to, nothing is squeezed. The letters squeeze sideways (min_squeeze) first, then the size goes down (min_size), until the text fits.</p>
         <Field label="max_width" kind="number" optional value={ownVal(['max_width'])} fallback={effVal(['max_width'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_width'])} path={pathOf(['max_width'])} onchange={(v) => set(['max_width'], v)} />
         <Field label="max_height" kind="number" optional value={ownVal(['max_height'])} fallback={effVal(['max_height'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_height'])} path={pathOf(['max_height'])} onchange={(v) => set(['max_height'], v)} />
         <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} path={pathOf(['min_size'])} onchange={(v) => set(['min_size'], v)} />
+        <Field label="min_squeeze" kind="number" min={0.05} max={1} optional value={ownVal(['min_squeeze'])} fallback={effVal(['min_squeeze']) ?? 1} bindings={numberParams} error={errorAt(['min_squeeze'])} path={pathOf(['min_squeeze'])} title="Narrowest horizontal scale (0.05 to 1) the letters may be squeezed to so the text fits max_width (squeezing does nothing without max_width), before the size shrinks" onchange={(v) => set(['min_squeeze'], v)} />
         <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} path={pathOf(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
         <Field label="shrink_group" kind="text" optional value={ownVal(['shrink_group'])} fallback={effVal(['shrink_group'])} placeholder="none" title="Texts with the same name (and all their iterations) use the smallest size any of them shrank to" onchange={(v) => set(['shrink_group'], v === '' ? undefined : v)} />
       {:else if type === 'qr' || type === 'barcode'}
@@ -1204,6 +1216,7 @@ let newFunction = $state("");
       {/if}
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} fallback={effVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
     </section>
 
     {@render repeatSection()}

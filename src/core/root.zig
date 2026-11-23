@@ -23,6 +23,7 @@ pub const api = @import("api.zig");
 pub const exprapi = @import("exprapi.zig");
 pub const fmt = @import("fmt.zig");
 pub const pdf = @import("pdf.zig");
+pub const print = @import("print.zig");
 pub const qr = @import("qr.zig");
 pub const symbol = @import("symbol.zig");
 pub const barcode = @import("barcode.zig");
