@@ -1,31 +1,57 @@
 {
 	"version": 1,
 	"repo": "XOYZ69/yoshida",
-	"generated_at": "2026-11-22T10:52:39.355Z",
+	"generated_at": "2026-11-23T11:58:39.204Z",
 	"now": {
 		"stars": 1,
 		"forks": 0,
 		"watchers": 1,
-		"contributors": 2,
-		"releases": 10,
-		"downloads": 45,
+		"contributors": 3,
+		"releases": 11,
+		"downloads": 48,
+		"downloads_by": {
+			"kinds": {
+				"bundle": 48
+			},
+			"systems": {},
+			"formats": {
+				"zip": 48
+			}
+		},
 		"latest_release": {
-			"tag": "v0.8.0",
-			"published_at": "2026-11-16T16:40:53Z",
-			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.8.0"
+			"tag": "v0.9.0",
+			"published_at": "2026-11-23T07:22:53Z",
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.9.0"
 		}
 	},
 	"releases": [
+		{
+			"tag": "v0.9.0",
+			"published_at": "2026-11-23T07:22:53Z",
+			"prerelease": false,
+			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.9.0",
+			"downloads": 2,
+			"assets": [
+				{
+					"name": "yoshida-0.9.0.zip",
+					"downloads": 2,
+					"kind": "bundle",
+					"format": "zip"
+				}
+			]
+		},
 		{
 			"tag": "v0.8.0",
 			"published_at": "2026-11-16T16:40:53Z",
 			"prerelease": false,
 			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.8.0",
-			"downloads": 15,
+			"downloads": 16,
 			"assets": [
 				{
 					"name": "yoshida-0.8.0.zip",
-					"downloads": 15
+					"downloads": 16,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -38,7 +64,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.7.2.zip",
-					"downloads": 18
+					"downloads": 18,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -51,7 +79,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.7.1.zip",
-					"downloads": 2
+					"downloads": 2,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -64,7 +94,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.7.0.zip",
-					"downloads": 2
+					"downloads": 2,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -77,7 +109,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.6.2.zip",
-					"downloads": 4
+					"downloads": 4,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -90,7 +124,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.6.1.zip",
-					"downloads": 1
+					"downloads": 1,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -103,7 +139,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.6.0.zip",
-					"downloads": 1
+					"downloads": 1,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -116,7 +154,9 @@
 			"assets": [
 				{
 					"name": "yoshida-0.5.0.zip",
-					"downloads": 1
+					"downloads": 1,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		},
@@ -137,7 +177,9 @@
 			"assets": [
 				{
 					"name": "yoshida-zig-concept.zip",
-					"downloads": 1
+					"downloads": 1,
+					"kind": "bundle",
+					"format": "zip"
 				}
 			]
 		}
@@ -190,6 +232,16 @@
 			"stars": 1,
 			"forks": 0,
 			"downloads": 45
+		},
+		{
+			"date": "2026-11-23",
+			"stars": 1,
+			"forks": 0,
+			"downloads": 48,
+			"kinds": {
+				"bundle": 48
+			},
+			"systems": {}
 		}
 	],
 	"traffic": [
@@ -339,6 +391,13 @@
 			"visitors": 1,
 			"clones": 12,
 			"cloners": 12
+		},
+		{
+			"date": "2026-11-22",
+			"views": 1,
+			"visitors": 1,
+			"clones": 103,
+			"cloners": 24
 		}
 	]
 }
