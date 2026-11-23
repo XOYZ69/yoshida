@@ -1186,11 +1186,13 @@ $effect(() => {
   }
   /* Wide enough (by the dialog, not the window) for the shared columns. The
      size column is as wide as its text, so it is never clipped; the two
-     columns of settings give way (their labels wrap) before it does. */
+     columns of settings give way (their labels wrap) before it does. The
+     third column takes what is left, so a description (which adds no width
+     of its own) has the room of both settings columns. */
   @container (min-width: 600px) {
     .formats {
       display: grid;
-      grid-template-columns: 4.5em minmax(0, max-content) minmax(0, max-content) max-content;
+      grid-template-columns: 4.5em minmax(0, max-content) minmax(0, 1fr) max-content;
       gap: 10px 14px;
     }
     .fmt {
