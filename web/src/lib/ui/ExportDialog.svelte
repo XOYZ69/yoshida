@@ -996,7 +996,12 @@ $effect(() => {
   .dialog {
     width: min(660px, calc(100vw - 32px));
     max-height: calc(100vh - min(10vh, 80px) - 16px);
-    overflow: auto;
+    max-height: calc(100dvh - min(10vh, 80px) - 16px);
+    /* The title and the buttons stay; only the form scrolls (up and down). */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    container-type: inline-size;
     box-sizing: border-box;
     background: var(--bg);
     color: var(--fg);
@@ -1010,6 +1015,7 @@ $effect(() => {
   }
   h2 {
     margin: 0 0 16px;
+    flex: none;
     font-size: 15px;
     font-weight: 600;
   }
@@ -1019,6 +1025,11 @@ $effect(() => {
     grid-template-columns: 84px minmax(0, 1fr);
     gap: 18px 12px;
     align-items: start;
+    min-height: 0;
+    overflow: hidden auto;
+    /* Room for the focus rings at the edges, which overflow clips. */
+    padding: 4px;
+    margin: -4px;
   }
   .label {
     font-size: 11px;
@@ -1173,10 +1184,13 @@ $effect(() => {
     font-size: 13px;
     font-weight: 500;
   }
-  @media (min-width: 721px) {
+  /* Wide enough (by the dialog, not the window) for the shared columns. The
+     size column is as wide as its text, so it is never clipped; the two
+     columns of settings give way (their labels wrap) before it does. */
+  @container (min-width: 600px) {
     .formats {
       display: grid;
-      grid-template-columns: 4.5em max-content max-content minmax(4.5em, 1fr);
+      grid-template-columns: 4.5em minmax(0, max-content) minmax(0, max-content) max-content;
       gap: 10px 14px;
     }
     .fmt {
@@ -1203,6 +1217,12 @@ $effect(() => {
     .print {
       grid-column: 2 / -1;
     }
+    /* Text and the print options fill the columns the settings make; they do
+       not make the columns wider (the text wraps instead). */
+    .print,
+    .more.muted {
+      contain: inline-size;
+    }
   }
   .ctl {
     display: inline-flex;
@@ -1210,7 +1230,8 @@ $effect(() => {
     gap: 6px;
     font-size: 13px;
     color: var(--muted);
-    white-space: nowrap;
+    flex-wrap: wrap;
+    min-width: 0;
   }
   /* Number fields with an edge of 3:1 and the editor's focus ring. */
   .dialog input[type="number"] {
@@ -1431,6 +1452,7 @@ $effect(() => {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: none;
     margin-top: 18px;
     padding-top: 14px;
     border-top: 1px solid var(--line);
