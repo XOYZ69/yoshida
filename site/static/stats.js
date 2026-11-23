@@ -120,6 +120,79 @@
     facts(s, items);
   }
 
+  // Where downloads went, from the file names of the release assets (the
+  // collector sorts them: scripts/stats.mjs, classifyAsset). GitHub counts
+  // downloads per file only, so a person who fetches two files counts twice,
+  // and the web editor, which is opened and not downloaded, is not part of it.
+  var KINDS = { desktop: "Desktop app", bundle: "Release zip", other: "Other files" };
+  var SYSTEMS = { windows: "Windows", linux: "Linux", macos: "macOS" };
+  var FORMATS = { exe: "Windows installer (.exe)", msi: "Windows installer (.msi)", appimage: "AppImage", deb: ".deb package", rpm: ".rpm package", dmg: "macOS disk image (.dmg)", zip: "Release zip (.zip)", other: "Other" };
+  function pairs(map, names) {
+    return Object.keys(map || {})
+      .filter(function (k) { return typeof map[k] === "number" && map[k] > 0; })
+      .map(function (k) { return [names[k] || k, map[k]]; })
+      .sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); });
+  }
+  // Downloads in the last `days` days: the difference of the running total.
+  function recent(history, days) {
+    var list = (Array.isArray(history) ? history : []).filter(function (h) { return h && typeof h.date === "string" && typeof h.downloads === "number"; });
+    if (list.length < 2) return null;
+    var last = list[list.length - 1];
+    var cut = new Date(last.date + "T00:00:00Z").getTime() - days * 86400000;
+    var base = list[0];
+    list.forEach(function (h) { if (new Date(h.date + "T00:00:00Z").getTime() <= cut) base = h; });
+    return { value: Math.max(0, last.downloads - base.downloads), from: base.date };
+  }
+  function downloads(doc) {
+    var by = doc.now && doc.now.downloads_by;
+    if (!by || typeof by !== "object" || !(doc.now.downloads > 0)) return;
+    var s = section("Downloads by option", "Which files people fetch from the releases on GitHub, all releases added up. The release zip holds the CLI, the server and the web editor files. The web editor is opened in a browser, not downloaded, so it is not in here.");
+    var grid = s.appendChild(el("div", "stat-grid three"));
+    [[7, "Last 7 days"], [30, "Last 30 days"]].forEach(function (p) {
+      var r = recent(doc.history, p[0]);
+      if (r) grid.appendChild(tile(p[1], r.value, "downloads since " + day(r.from)));
+    });
+    var kinds = pairs(by.kinds, KINDS);
+    if (kinds.length) grid.appendChild(tile("Most downloaded", kinds[0][0].replace(/ \(.*/, ""), Math.round((kinds[0][1] / (sum(kinds.map(function (k) { return { value: k[1] }; })) || 1)) * 100) + "% of all downloads"));
+    [["Option", pairs(by.kinds, KINDS)], ["Desktop app, by system", pairs(by.systems, SYSTEMS)], ["File type", pairs(by.formats, FORMATS)]].forEach(function (g) {
+      if (!g[1].length) return;
+      s.appendChild(el("h3", null, g[0]));
+      countBars(s, g[1], g[1][0][1] || 1);
+    });
+    // Each option's running total over time, once there are at least two days.
+    var trends = [];
+    Object.keys(KINDS).forEach(function (k) {
+      var pts = (Array.isArray(doc.history) ? doc.history : [])
+        .filter(function (h) { return h && h.kinds && typeof h.kinds[k] === "number"; })
+        .map(function (h) { return { date: h.date, value: h.kinds[k] }; });
+      if (pts.length > 1 && pts[pts.length - 1].value > 0) trends.push([KINDS[k].replace(/ \(.*/, ""), pts]);
+    });
+    if (trends.length) {
+      s.appendChild(el("h3", null, "Running total per option"));
+      var tg = s.appendChild(el("div", "stat-grid two"));
+      trends.forEach(function (t) { tg.appendChild(tile(t[0], t[1][t[1].length - 1].value, "since " + day(t[1][0].date), t[1])); });
+    }
+  }
+
+  // Which releases people choose: the share of the latest one, the most
+  // downloaded one and a fair comparison, downloads per week since a release.
+  function adoption(doc) {
+    var list = (Array.isArray(doc.releases) ? doc.releases : []).filter(function (r) { return r && typeof r.tag === "string" && !r.prerelease; });
+    var total = sum(list.map(function (r) { return { value: r.downloads || 0 }; }));
+    if (list.length < 2 || !total) return;
+    var s = section("Version adoption", "Downloads are counted per release for good, so older releases keep what they got. The weekly rate compares releases of different ages.");
+    var now = doc.generated_at ? new Date(doc.generated_at).getTime() : Date.now();
+    var rate = function (r) {
+      var weeks = Math.max(1, (now - new Date(r.published_at).getTime()) / (7 * 86400000));
+      return (r.downloads || 0) / weeks;
+    };
+    var top = list.slice().sort(function (a, b) { return (b.downloads || 0) - (a.downloads || 0); })[0];
+    var fast = list.filter(function (r) { return r.published_at; }).sort(function (a, b) { return rate(b) - rate(a); })[0];
+    var items = [["Latest release", list[0].tag + ": " + Math.round(((list[0].downloads || 0) / total) * 100) + "% of downloads"], ["Most downloaded", top.tag + " (" + num(top.downloads || 0) + ")"]];
+    if (fast) items.push(["Fastest per week", fast.tag + " (" + (Math.round(rate(fast) * 10) / 10).toLocaleString("en") + " a week)"]);
+    facts(s, items);
+  }
+
   // The newest releases as bars; older ones fold away, so the section keeps
   // its size however many releases there are. Every bar uses the same scale.
   var SHOWN = 6;
@@ -287,7 +360,9 @@
       if (!doc || doc.version !== 1 || typeof doc.now !== "object") throw new Error("unknown format");
       root.textContent = "";
       project(doc);
+      downloads(doc);
       releases(doc);
+      adoption(doc);
       traffic(doc);
       instance(doc);
       if (doc.generated_at) root.appendChild(el("p", "meta", "Updated " + day(String(doc.generated_at).slice(0, 10)) + "."));

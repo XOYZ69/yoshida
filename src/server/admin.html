@@ -4,54 +4,91 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>yoshida telemetry</title>
+<title>Admin · usage statistics · yoshida</title>
+<script>var t=null;try{t=localStorage.getItem("yoshida.theme")}catch(e){}if(t==="light"||t==="dark")document.documentElement.dataset.theme=t</script>
 <style>
+	/* The Paper palette of the editor and the website, as light-dark() pairs. */
 	:root {
 		color-scheme: light dark;
-		--bg: #f6f6f8; --panel: #fff; --text: #1d1d22; --muted: #6b6b76;
-		--line: #dcdce2; --accent: #4f46e5; --bar: #c7c4f7; --danger: #b3261e;
+		--bg: light-dark(#f5f0e6, #1a1814);
+		--panel: light-dark(#fffdf8, #211e1a);
+		--line: light-dark(#e3dccd, #36312a);
+		--ink: light-dark(#22201c, #efe9dd);
+		--muted: light-dark(#6b655a, #a99f8e);
+		--accent: light-dark(#3b6cf6, #6e93ff);
+		--soft: light-dark(#ece5d6, #2c2822);
+		--accent-soft: light-dark(#e6ecfd, #232a40);
 	}
-	@media (prefers-color-scheme: dark) {
-		:root { --bg: #14141a; --panel: #1d1d25; --text: #ececf1; --muted: #9a9aa6; --line: #33333e; --accent: #8b85ff; --bar: #3b3880; --danger: #ff8a80; }
-	}
+	:root[data-theme="light"] { color-scheme: light; }
+	:root[data-theme="dark"] { color-scheme: dark; }
 	* { box-sizing: border-box; }
-	body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
-	main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
-	h1 { font-size: 20px; margin: 0 0 4px; }
-	h2 { font-size: 15px; margin: 28px 0 8px; }
-	p, .muted { color: var(--muted); margin: 0 0 12px; }
-	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-	form, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-	input, select, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
-	input[type=password] { min-width: 260px; }
-	button { cursor: pointer; }
+	body { margin: 0; font: 15px/1.55 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+	main { max-width: 860px; margin: 0 auto; padding: 36px 16px 64px; }
+	h1 { font: 600 32px/1.2 Georgia, serif; margin: 0; }
+	h2 { font: 600 16px/1.3 Georgia, serif; margin: 28px 0 8px; }
+	p { margin: 0; }
+	.lead { margin-top: 6px; color: var(--muted); }
+	.bar-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 22px; color: var(--muted); font-size: 13.5px; }
+	select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+	.status { margin-top: 28px; color: var(--muted); }
+	.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 18px; }
+	.tile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+	.tile-label, .tile-note { color: var(--muted); font-size: 13px; }
+	.tile-label { font-weight: 600; }
+	.tile-value { font: 34px/1.2 Georgia, serif; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+	.tile-note { margin-top: auto; min-height: 1.5em; font-variant-numeric: tabular-nums; }
+	.spark-wrap { position: relative; margin: 6px -5px 4px; touch-action: pan-y; }
+	.spark { display: block; width: 100%; height: 44px; overflow: visible; }
+	.spark-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+	.spark-area { fill: var(--accent-soft); }
+	.spark-dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+	.bars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(10.5rem, max-content) 1fr minmax(2.5rem, max-content); gap: 8px 14px; align-items: center; }
+	.bars li { display: contents; }
+	.bar-name { font: 13px ui-monospace, monospace; overflow-wrap: anywhere; }
+	.bar-track { height: 10px; background: var(--soft); border-radius: 0 4px 4px 0; }
+	.bar-fill { display: block; height: 100%; min-width: 2px; background: var(--accent); border-radius: 0 4px 4px 0; }
+	.bar-value { text-align: right; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+	.facts { display: flex; flex-wrap: wrap; gap: 10px 0; margin: 18px 0 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+	.facts div { flex: 1 1 160px; padding: 0 18px; }
+	.facts div + div { border-left: 1px solid var(--line); }
+	.facts dt { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+	.facts dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+	details { margin-top: 10px; font-size: 14px; }
+	summary { cursor: pointer; color: var(--muted); }
+	details .bars { margin-top: 8px; }
+	.about { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; max-width: 640px; }
+	@media (max-width: 480px) {
+		.bars { grid-template-columns: minmax(5rem, 40%) 1fr max-content; gap: 8px 10px; }
+	}
+	.bar-top input[type=password] { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 260px; }
+	button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
 	button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-	button:disabled { opacity: .5; cursor: default; }
-	.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-	.tile b { display: block; font-size: 24px; }
-	table { width: 100%; border-collapse: collapse; }
-	th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-	td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
-	td.bar { width: 40%; }
-	.bar i { display: block; height: 10px; background: var(--bar); border-radius: 3px; }
-	.err { color: var(--danger); min-height: 1.5em; }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-top: 10px; }
+	.err { color: light-dark(#b3261e, #ff8a80); }
+	.flags { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+	.flags label { font-size: 14px; }
+	table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+	th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+	th:first-child, td:first-child { text-align: left; }
+	th { color: var(--muted); font-weight: 600; }
+	code { font: 12.5px ui-monospace, monospace; }
+	a { color: var(--accent); }
 	[hidden] { display: none !important; }
-	code { font: 12px ui-monospace, monospace; }
 </style>
 </head>
 <body>
 <main>
-	<h1>yoshida telemetry</h1>
-	<p>Counts only, stored on this server. No addresses, no accounts, no project content.</p>
+	<h1>Usage statistics, all of them</h1>
+	<p class="lead">Everything this server counted, not only what is public. Counts only, stored on this server: no addresses, no accounts, no project content.</p>
 
-	<form id="login" class="panel">
+	<form id="login" class="bar-top">
 		<input id="token" type="password" autocomplete="off" placeholder="Admin token" aria-label="Admin token">
 		<button class="primary" type="submit">Show stats</button>
 		<span id="loginerr" class="err" role="alert"></span>
 	</form>
 
 	<div id="app" hidden>
-		<div class="row" style="margin-top:16px">
+		<div class="bar-top">
 			<label>Range
 				<select id="range">
 					<option value="7">7 days</option>
@@ -62,47 +99,139 @@
 				</select>
 			</label>
 			<button id="refresh" type="button">Refresh</button>
-			<span id="retention" class="muted"></span>
+			<span id="period"></span>
+			<span id="retention"></span>
 			<span style="flex:1"></span>
 			<button id="logout" type="button">Sign out</button>
 		</div>
-
-		<h2>Totals</h2>
-		<div id="tiles" class="tiles"></div>
-		<p class="muted" style="margin-top:8px">Uniques are counted per day (a visitor on two days counts twice) with a salted hash that is replaced every UTC day and never stored.</p>
+		<div id="out"></div>
 
 		<h2>Per day</h2>
-		<div class="panel"><table id="days"></table></div>
-
-		<h2>Events (advanced level)</h2>
-		<div id="events"></div>
+		<details open><summary>Show the days as a table</summary><div class="panel"><table id="days"></table></div></details>
 
 		<h2>Public stats</h2>
-		<p>Ticked entries are served to everybody by <code>GET /api/stats</code> and shown on the <a href="/api/stats/page" target="_blank" rel="noopener noreferrer">public stats page</a>. Ticking a group shows all of its events, including ones that appear later.</p>
+		<p class="lead">Ticked entries are served to everybody by <code>GET /api/stats</code> and shown on the <a href="/api/stats/page" target="_blank" rel="noopener noreferrer">public stats page</a>. Ticking a group shows all of its events, including ones that appear later. Nothing is public until you tick it.</p>
 		<div class="panel">
-			<div id="flags" class="row"></div>
-			<div class="row" style="margin-top:12px">
-				<button id="save" class="primary" type="button">Save public stats</button>
-				<span id="saved" class="muted"></span>
-			</div>
+			<div id="flags" class="flags"></div>
+			<p style="margin-top:12px"><button id="save" class="primary" type="button">Save public stats</button> <span id="saved" class="lead"></span></p>
 		</div>
 	</div>
+	<p class="about">Visitors are counted per day with a salted hash that is replaced every UTC day and never stored, so a visitor on two days counts twice. Downloads of the desktop app and the release files are counted by GitHub, not here: they are on the website's Stats page.</p>
 </main>
 <script>
 "use strict";
+// The admin view of GET /api/admin/stats. Everything from the answer is put
+// into the page as text, never as markup.
 const $ = (id) => document.getElementById(id);
-const BASE = ["sessions", "uniques", "advanced_sessions"];
-const LABEL = { sessions: "Sessions", uniques: "Daily uniques", advanced_sessions: "Advanced sessions" };
-const GROUPS = ["feature", "export", "error"];
-let token = "";
-let data = null;
+const SVG = "http://www.w3.org/2000/svg";
+const BASE = [
+	["sessions", "Sessions", "editor sessions"],
+	["uniques", "Visitors", "counted per day; two days count twice"],
+	["advanced_sessions", "Sessions sharing details", "sessions at the Advanced level"],
+];
+const GROUPS = [["feature", "Features used"], ["export", "Exports by format"], ["error", "Problems shown, by code"]];
+const SHOWN = 8;
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en") : "–");
 
-function el(tag, text, cls) {
+function el(tag, cls, text) {
 	const e = document.createElement(tag);
-	if (text !== undefined) e.textContent = text;
 	if (cls) e.className = cls;
+	if (text != null) e.textContent = text;
 	return e;
 }
+function svg(tag, attrs) {
+	const e = document.createElementNS(SVG, tag);
+	for (const k in attrs) e.setAttribute(k, attrs[k]);
+	return e;
+}
+function day(date) {
+	const d = new Date(date + "T00:00:00Z");
+	return Number.isNaN(d.getTime()) ? String(date) : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+// A small line over the days. Pointing at it shows that day in the tile's note line.
+function sparkline(points, note) {
+	const W = 200, H = 44, PAD = 5, last = points.length - 1;
+	const values = points.map((p) => p.value);
+	const lo = Math.min(...values), hi = Math.max(...values);
+	const x = (i) => PAD + (i * (W - 2 * PAD)) / last;
+	const y = (v) => (hi === lo ? H / 2 : H - PAD - ((v - lo) * (H - 2 * PAD)) / (hi - lo));
+	const line = points.map((p, i) => x(i).toFixed(1) + "," + y(p.value).toFixed(1)).join(" ");
+	const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "spark", role: "img", preserveAspectRatio: "none",
+		"aria-label": `From ${day(points[0].date)} (${num(points[0].value)}) to ${day(points[last].date)} (${num(points[last].value)})` });
+	s.appendChild(svg("polygon", { class: "spark-area", points: `${PAD},${H} ${line} ${W - PAD},${H}` }));
+	s.appendChild(svg("polyline", { class: "spark-line", points: line, "vector-effect": "non-scaling-stroke" }));
+	const wrap = el("div", "spark-wrap");
+	const dot = el("span", "spark-dot");
+	wrap.append(s, dot);
+	const rest = note.textContent;
+	const show = (i) => {
+		dot.style.left = (x(i) / W) * 100 + "%";
+		dot.style.top = (y(points[i].value) / H) * 100 + "%";
+	};
+	show(last);
+	wrap.addEventListener("pointermove", (ev) => {
+		const box = wrap.getBoundingClientRect();
+		const i = Math.max(0, Math.min(last, Math.round((((ev.clientX - box.left) / box.width) * W - PAD) / ((W - 2 * PAD) / last))));
+		show(i);
+		note.textContent = day(points[i].date) + ": " + num(points[i].value);
+	});
+	wrap.addEventListener("pointerleave", () => { show(last); note.textContent = rest; });
+	return wrap;
+}
+
+function bars(parent, rows, max, total) {
+	const list = parent.appendChild(el("ul", "bars"));
+	for (const [name, value] of rows) {
+		const li = list.appendChild(el("li"));
+		li.appendChild(el("span", "bar-name", name));
+		const fill = li.appendChild(el("span", "bar-track")).appendChild(el("span", "bar-fill"));
+		fill.style.width = (value / max) * 100 + "%";
+		li.appendChild(el("span", "bar-value", num(value) + (total ? " · " + Math.round((value / total) * 100) + "%" : "")));
+	}
+}
+
+// Numbers worked out from the days that are shown; nothing is added to what the server publishes.
+function derived(days) {
+	const have = (key) => days.filter((d) => typeof d[key] === "number" && Number.isFinite(d[key]));
+	const total = (key) => have(key).reduce((s, d) => s + d[key], 0);
+	const items = [];
+	const sessions = have("sessions");
+	if (sessions.length >= 14) {
+		const week = (list) => list.reduce((s, d) => s + d.sessions, 0);
+		const now = week(sessions.slice(-7)), before = week(sessions.slice(-14, -7));
+		items.push(["Last 7 days", num(now) + (before ? " (" + (now >= before ? "+" : "−") + Math.round((Math.abs(now - before) / before) * 100) + "%)" : "")]);
+	}
+	if (sessions.length && have("advanced_sessions").length && total("sessions")) {
+		items.push(["Sharing details", Math.round((total("advanced_sessions") / total("sessions")) * 100) + "% of sessions"]);
+	}
+	if (have("uniques").length && sessions.length && total("uniques")) {
+		items.push(["Sessions per visitor-day", (Math.round((total("sessions") / total("uniques")) * 10) / 10).toLocaleString("en")]);
+	}
+	if (sessions.length > 1) {
+		const best = sessions.reduce((a, b) => (b.sessions > a.sessions ? b : a));
+		if (best.sessions > 0) items.push(["Busiest day", day(best.day) + " (" + num(best.sessions) + ")"]);
+	}
+	return items;
+}
+
+function weekdays(days) {
+	const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+	const sums = [0, 0, 0, 0, 0, 0, 0];
+	let n = 0;
+	for (const d of days) {
+		if (typeof d.sessions !== "number" || !Number.isFinite(d.sessions)) continue;
+		sums[new Date(d.day + "T00:00:00Z").getUTCDay()] += d.sessions;
+		n++;
+	}
+	if (n < 14 || !Math.max(...sums)) return null;
+	return [1, 2, 3, 4, 5, 6, 0].map((i) => [names[i], sums[i]]);
+}
+
+
+const BASE_ALL = ["sessions", "uniques", "advanced_sessions"];
+let token = "";
+let data = null;
 
 async function api(path, init) {
 	const r = await fetch(path, { ...init, headers: { ...init?.headers, authorization: "Bearer " + token } });
@@ -112,84 +241,86 @@ async function api(path, init) {
 }
 
 async function load() {
-	data = await api("/api/admin/stats?days=" + $("range").value);
+	data = await api("/api/admin/stats?days=" + encodeURIComponent($("range").value));
 	render();
 }
 
-function totals() {
-	const t = { sessions: 0, uniques: 0, advanced_sessions: 0, events: {} };
-	for (const d of data.days) {
-		for (const b of BASE) t[b] += d[b] || 0;
-		for (const [k, v] of Object.entries(d.events)) t.events[k] = (t.events[k] || 0) + v;
-	}
-	return t;
-}
-
 function render() {
-	const t = totals();
-	$("retention").textContent = data.retention_days ? "Kept " + data.retention_days + " days" : "Kept forever";
-	const tiles = $("tiles");
-	tiles.replaceChildren();
-	for (const b of BASE) {
-		const tile = el("div", undefined, "panel tile");
-		tile.append(el("b", String(t[b])), el("span", LABEL[b], "muted"));
-		tiles.append(tile);
-	}
+	const days = data.days.filter((d) => d && typeof d.day === "string");
+	$("period").textContent = days.length === 0 ? "" : days.length === 1 ? day(days[0].day) : day(days[0].day) + " to " + day(days[days.length - 1].day);
+	$("retention").textContent = data.retention_days ? "· kept " + data.retention_days + " days" : "· kept forever";
+	const out = document.createDocumentFragment();
 
-	const days = $("days");
-	days.replaceChildren();
-	const head = el("tr");
-	for (const h of ["Day", ...BASE.map((b) => LABEL[b])]) head.append(el("th", h, h === "Day" ? "" : "n"));
-	days.append(head);
-	for (const d of [...data.days].reverse()) {
-		const tr = el("tr");
-		tr.append(el("td", d.day));
-		for (const b of BASE) tr.append(el("td", String(d[b] || 0), "n"));
-		days.append(tr);
+	const tiles = out.appendChild(el("div", "tiles"));
+	for (const [key, label, note] of BASE) {
+		const points = days.map((d) => ({ date: d.day, value: d[key] || 0 }));
+		const tile = tiles.appendChild(el("div", "tile"));
+		tile.appendChild(el("div", "tile-label", label));
+		tile.appendChild(el("div", "tile-value", num(points.reduce((s, p) => s + p.value, 0))));
+		const n = el("div", "tile-note", note);
+		if (points.length > 1) tile.appendChild(sparkline(points, n));
+		tile.appendChild(n);
 	}
-	if (!data.days.length) {
-		const tr = el("tr");
-		tr.append(el("td", "No data yet."));
-		days.append(tr);
-	}
-
-	const ev = $("events");
-	ev.replaceChildren();
-	for (const g of GROUPS) {
-		const rows = Object.entries(t.events).filter(([k]) => k.startsWith(g + ":")).sort((a, b) => b[1] - a[1]);
-		if (!rows.length) continue;
-		const max = rows[0][1];
-		const panel = el("div", undefined, "panel");
-		panel.style.marginBottom = "10px";
-		panel.append(el("b", g));
-		const table = el("table");
-		for (const [k, v] of rows) {
-			const tr = el("tr");
-			tr.append(el("td", k.slice(g.length + 1)), el("td", String(v), "n"));
-			const bar = el("td", undefined, "bar");
-			const i = el("i");
-			i.style.width = Math.max(2, (v / max) * 100) + "%";
-			bar.append(i);
-			tr.append(bar);
-			table.append(tr);
+	const items = derived(days);
+	if (items.length) {
+		const dl = out.appendChild(el("dl", "facts"));
+		for (const [label, value] of items) {
+			const d = dl.appendChild(el("div"));
+			d.append(el("dt", null, label), el("dd", null, value));
 		}
-		panel.append(table);
-		ev.append(panel);
 	}
-	if (!ev.children.length) ev.append(el("p", "No advanced events yet."));
+	const wd = weekdays(days);
+	if (wd) {
+		out.appendChild(el("h2", null, "Sessions by weekday"));
+		bars(out, wd, Math.max(...wd.map((r) => r[1])));
+	}
+
+	const events = {};
+	for (const d of days) for (const [k, v] of Object.entries(d.events || {})) events[k] = (events[k] || 0) + v;
+	// Per session, so a quiet week and a busy one can be compared.
+	const sessions = days.reduce((s, d) => s + (d.sessions || 0), 0);
+	let any = false;
+	for (const [group, title] of GROUPS) {
+		const rows = Object.keys(events).filter((k) => k.startsWith(group + ":")).map((k) => [k.slice(group.length + 1), events[k]]).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+		if (!rows.length) continue;
+		any = true;
+		const sum = rows.reduce((s, r) => s + r[1], 0);
+		out.appendChild(el("h2", null, title));
+		if (sessions && group !== "feature") {
+			out.appendChild(el("p", "lead", num(sum) + " in total, " + (Math.round((sum / sessions) * 100) / 100).toLocaleString("en") + " per session"));
+		}
+		bars(out, rows.slice(0, SHOWN), rows[0][1] || 1, group === "export" ? sum : 0);
+		const more = rows.slice(SHOWN);
+		if (more.length) {
+			const details = out.appendChild(el("details"));
+			details.appendChild(el("summary", null, "Show " + more.length + " more"));
+			bars(details, more, rows[0][1] || 1, group === "export" ? sum : 0);
+		}
+	}
+	if (!any) out.appendChild(el("p", "status", "No advanced events yet. They appear once people choose the Advanced level in the editor."));
+	$("out").replaceChildren(out);
+
+	const table = $("days");
+	table.replaceChildren();
+	const head = table.appendChild(el("tr"));
+	for (const h of ["Day", ...BASE.map((b) => b[1])]) head.appendChild(el("th", null, h));
+	for (const d of [...days].reverse()) {
+		const tr = table.appendChild(el("tr"));
+		tr.appendChild(el("td", null, d.day));
+		for (const [key] of BASE) tr.appendChild(el("td", null, num(d[key] || 0)));
+	}
+	if (!days.length) table.appendChild(el("tr")).appendChild(el("td", null, "No data yet."));
 
 	const flags = $("flags");
 	flags.replaceChildren();
-	const keys = [...BASE, ...GROUPS, ...Object.keys(t.events).sort()];
-	for (const k of new Set([...keys, ...data.public])) {
-		const lab = el("label");
+	const names = [...BASE_ALL, ...GROUPS.map((g) => g[0]), ...Object.keys(events).sort()];
+	for (const k of new Set([...names, ...data.public])) {
+		const lab = flags.appendChild(el("label"));
 		const cb = el("input");
 		cb.type = "checkbox";
 		cb.value = k;
 		cb.checked = data.public.includes(k);
 		lab.append(cb, " " + k);
-		lab.style.marginRight = "12px";
-		flags.append(lab);
 	}
 }
 
