@@ -58,6 +58,20 @@ The editor is Svelte 5 + Vite + TypeScript. The build uses relative URLs (`base:
 
 Options and environment variables: [Server and Docker](@/docs/server-and-docker.md).
 
+## Desktop app
+
+`desktop/` is a [Tauri 2](https://tauri.app) shell around the editor, not part of the releases yet; what it does and how to use it is on [Desktop App](@/docs/desktop-app.md). It needs Rust, the Tauri CLI (`cargo install tauri-cli --version "^2"`, only for `cargo tauri build` and `dev`) and the system packages Tauri lists for your platform (WebKitGTK 4.1 on Linux).
+
+```sh
+zig build -Doptimize=ReleaseFast
+(cd web && npm ci && npm run wasm && npm run examples && npm run build)
+mkdir -p desktop/src-tauri/binaries
+cp zig-out/bin/yoshida-server "desktop/src-tauri/binaries/yoshida-server-$(rustc -vV | sed -n 's/host: //p')"
+cd desktop/src-tauri && cargo tauri build
+```
+
+`cargo tauri dev` shows the Vite dev server (`npm run dev` in `web/`) instead of starting the sidecar. `desktop/README.md` has the details.
+
 ## Docker
 
 ```sh

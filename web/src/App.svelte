@@ -6,6 +6,7 @@
 	import LayerTree from "./lib/builder/LayerTree.svelte";
 	import ParamsPanel from "./lib/builder/ParamsPanel.svelte";
 	import Stage, { type Sprite } from "./lib/builder/Stage.svelte";
+	import { hostWord, isDesktop, rendererWord } from "./lib/desktop.ts";
 	import CardForm from "./lib/CardForm.svelte";
 	import TelemetryNotice from "./lib/telemetry/TelemetryNotice.svelte";
 	import TelemetryWindow from "./lib/telemetry/TelemetryWindow.svelte";
@@ -151,10 +152,32 @@
 		writeCsv,
 	} from "./lib/project";
 	import {
+		type QaDoc,
+		type QaMark,
+		QA_FILE,
+		cardHash,
+		contentHash,
+		designFingerprint,
+		parseQa,
+		reconcileQa,
+		statusOf,
+		openComments,
+		stampNow,
+		withComment,
+		withCommentEdit,
+		withMark,
+		withoutComment,
+		needsReview,
+		type QaComment,
+		writeQa,
+	} from "./lib/qa";
+	import {
 		activeBackend,
 		backendById,
 		type FolderLink,
 	} from "./lib/folder/backend";
+	// The desktop app's backend first: it wins wherever both are supported.
+	import "./lib/folder/native";
 	import "./lib/folder/browser";
 	import {
 		diffCount,
@@ -182,6 +205,8 @@
 	} from "./lib/store";
 	import CardBrowser from "./lib/ui/CardBrowser.svelte";
 	import CardList from "./lib/ui/CardList.svelte";
+	import QaControl from "./lib/ui/QaControl.svelte";
+	import QaBadge from "./lib/ui/QaBadge.svelte";
 	import CardPicker from "./lib/ui/CardPicker.svelte";
 	import DialogHost from "./lib/ui/DialogHost.svelte";
 	import ExportDialog from "./lib/ui/ExportDialog.svelte";
@@ -525,6 +550,42 @@
 	const sets = $derived(check?.project.sets ?? []);
 	const currentSet = $derived(sets.find((s) => s.name === setName));
 	const currentCard = $derived(currentSet?.cards[cardIndex]);
+
+	// Card review (qa.json): the status of each card of the current set. An
+	// approval is stale once the card or the design inputs hash differently.
+	// Reviews follow renamed and moved cards (`reconcileQa`); the file is
+	// brought up to date with the next review that is recorded.
+	const qaSets = $derived(
+		sets.map((s) => {
+			const inputs = designFingerprint(files, s.design);
+			return {
+				key: s.cards_file ?? s.name,
+				cards: s.cards.map((c) => ({
+					id: c.id,
+					hash: cardHash(c, inputs),
+					content: contentHash(c, inputs),
+				})),
+			};
+		}),
+	);
+	const qaDoc = $derived(
+		reconcileQa(
+			parseQa(files.has(QA_FILE) ? textOf(files.get(QA_FILE)!) : undefined),
+			qaSets,
+		),
+	);
+	const qaKey = $derived(currentSet?.cards_file ?? currentSet?.name ?? "");
+	const qaHashes = $derived(
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.hash) ?? [],
+	);
+	const qaContent = $derived(
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.content) ?? [],
+	);
+	const qaStatuses = $derived(
+		(currentSet?.cards ?? []).map((c, i) =>
+			statusOf(qaDoc.cards[qaKey]?.[c.id], qaHashes[i]),
+		),
+	);
 	// Keys of each list param (for `list.Key` suggestions): the current card's
 	// first, then the other cards', then the default's.
 	const listKeys = $derived.by(() => {
@@ -702,6 +763,8 @@
 				(res.headers.get("content-type") ?? "").includes("json")
 			)
 				server = await res.json();
+			// The app starts its own renderer: always use it (it is the fast one).
+			if (server?.render && isDesktop()) useServer = true;
 		} catch {
 			server = null;
 		}
@@ -910,7 +973,7 @@
 			persistStorage();
 		} catch (e) {
 			saveState = "error";
-			status = `Could not save in this browser: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
+			status = `Could not save in ${hostWord()}: ${(e as Error).message}. Export the project as a .yoshida file to keep it.`;
 		}
 	}
 
@@ -952,10 +1015,10 @@
 			}
 		}
 		const ok = await confirmAction({
-			title: `Delete '${meta.name}' from this browser?`,
+			title: `Delete '${meta.name}' from ${hostWord()}?`,
 			message: linked
-				? `Its copy (images included) and the link to the folder '${linked}' are removed from this browser. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
-				: "Its files (images included) are removed from this browser. Export it as a .yoshida file first if you want to keep it.",
+				? `Its copy (images included) and the link to the folder '${linked}' are removed from ${hostWord()}. The files in that folder stay exactly as they are: nothing on disk is deleted, and you can open the folder again later with Open folder…`
+				: `Its files (images included) are removed from ${hostWord()}. Export it as a .yoshida file first if you want to keep it.`,
 			confirm: "Delete",
 			danger: true,
 		});
@@ -964,7 +1027,7 @@
 		myProjects = await listProjects();
 		if (meta.id === projectId) {
 			await closeProject();
-			status = `Deleted '${meta.name}' from this browser. Open a project to continue.`;
+			status = `Deleted '${meta.name}' from ${hostWord()}. Open a project to continue.`;
 		}
 	}
 
@@ -1010,7 +1073,7 @@
 				icon: "folder",
 				detail: activeBackend()
 					? "edit the files on disk in place"
-					: "copies it into this browser",
+					: `copies it into ${hostWord()}`,
 				action: openFolder,
 			},
 			...(activeBackend()
@@ -1073,7 +1136,7 @@
 						icon: "folder",
 						detail: activeBackend()
 							? "edit the files on disk, saved as you work"
-							: "not available in this browser, click to see why",
+							: `not available in ${hostWord()}, click to see why`,
 						disabled: !open,
 						action: linkFolder,
 					},
@@ -1109,12 +1172,12 @@
 		];
 		if (current)
 			items.push({
-				label: "Delete from this browser…",
+				label: `Delete from ${hostWord()}…`,
 				icon: "trash",
 				danger: true,
 				action: () => forgetProject(current),
 			});
-		items.push({ separator: true }, { heading: "Saved in this browser" });
+		items.push({ separator: true }, { heading: `Saved in ${hostWord()}` });
 		if (!myProjects.length)
 			items.push({
 				label: "Nothing yet: changes are saved here automatically",
@@ -1874,7 +1937,7 @@
 		folderSigs = new Map();
 		folderNotice = null;
 		if (projectId) await deleteFolder(projectId).catch(() => {});
-		status = `Unlinked from ${link.name}. The project stays in this browser.`;
+		status = `Unlinked from ${link.name}. The project stays in ${hostWord()}.`;
 	}
 
 	/** Replaces the project's files with what is in the folder now. */
@@ -2272,6 +2335,220 @@
 		} catch (e) {
 			status = `Could not update ${cf}: ${(e as Error).message}`;
 		}
+	}
+
+	function writeQaDoc(next: QaDoc) {
+		const before = currentText(QA_FILE);
+		const text = writeQa(next);
+		if (text === before) return;
+		record(QA_FILE, before);
+		updateFile(QA_FILE, text, true);
+	}
+
+	// Reviewer name: kept in this browser, written next to marks and comments.
+	const reviewerKey = "yoshida.reviewer";
+	let reviewer = $state(
+		(() => {
+			try {
+				return localStorage.getItem(reviewerKey) ?? "";
+			} catch {
+				return "";
+			}
+		})(),
+	);
+	function setReviewer(name: string) {
+		reviewer = name.trim().slice(0, 60);
+		try {
+			if (reviewer) localStorage.setItem(reviewerKey, reviewer);
+			else localStorage.removeItem(reviewerKey);
+		} catch {
+			// The name just is not remembered.
+		}
+	}
+	const stamp = () => ({ ...(reviewer ? { by: reviewer } : {}), at: stampNow() });
+
+	const qaEntry = $derived(
+		currentCard ? qaDoc.cards[qaKey]?.[currentCard.id] : undefined,
+	);
+	/** The comment shown highlighted, and the one waiting for a click on the card to be pinned. */
+	let qaActive = $state<string | null>(null);
+	let pinTarget = $state<string | null>(null);
+	let qaComposer = $state<HTMLInputElement>();
+	let qaOverviewOpen = $state(false);
+	let qaKeysOpen = $state(false);
+	// The comments belong to a card: another card starts clean.
+	$effect(() => {
+		void currentCard?.id;
+		void setName;
+		qaActive = null;
+		pinTarget = null;
+	});
+
+	function reviewCard(mark: QaMark | null) {
+		const c = currentCard;
+		if (!c) return;
+		if (mark === "approved" && openComments(qaEntry).length) {
+			status = "Resolve the open comments before approving.";
+			return;
+		}
+		writeQaDoc(
+			withMark(
+				qaDoc,
+				qaKey,
+				c.id,
+				mark,
+				qaHashes[cardIndex],
+				stamp(),
+				qaContent[cardIndex],
+			),
+		);
+	}
+
+	function addComment(text: string) {
+		const c = currentCard;
+		if (!c) return;
+		const r = withComment(qaDoc, qaKey, c.id, qaHashes[cardIndex], {
+			text,
+			content: qaContent[cardIndex],
+			...stamp(),
+		});
+		writeQaDoc(r.doc);
+		qaActive = r.id;
+	}
+
+	function editComment(
+		id: string,
+		patch: Partial<Pick<QaComment, "text" | "resolved" | "x" | "y">>,
+	) {
+		if (currentCard)
+			writeQaDoc(withCommentEdit(qaDoc, qaKey, currentCard.id, id, patch));
+	}
+
+	function removeComment(id: string) {
+		if (currentCard)
+			writeQaDoc(withoutComment(qaDoc, qaKey, currentCard.id, id));
+		if (qaActive === id) qaActive = null;
+		if (pinTarget === id) pinTarget = null;
+	}
+
+	function placePin(x: number, y: number) {
+		if (!pinTarget) return;
+		editComment(pinTarget, { x: Math.round(x), y: Math.round(y) });
+		qaActive = pinTarget;
+		pinTarget = null;
+	}
+
+	const qaPins = $derived(
+		(qaEntry?.comments ?? []).flatMap((c, i) =>
+			c.x === undefined || c.y === undefined
+				? []
+				: [
+						{
+							id: c.id,
+							n: i + 1,
+							x: c.x,
+							y: c.y,
+							resolved: !!c.resolved,
+							active: qaActive === c.id,
+						},
+					],
+		),
+	);
+
+	/** Every card with a mark or comments, for the overview. */
+	const qaRows = $derived(
+		sets.flatMap((s, si) =>
+			s.cards.flatMap((c, i) => {
+				const e = qaDoc.cards[qaSets[si]?.key]?.[c.id];
+				if (!e) return [];
+				return [
+					{
+						set: s.name,
+						setLabel: s.design_name,
+						index: i,
+						id: c.id,
+						status: statusOf(e, qaSets[si].cards[i].hash),
+						entry: e,
+					},
+				];
+			}),
+		),
+	);
+
+	/** The card last looked at in each set, so switching designs comes back to it. */
+	const lastCard = new Map<string, number>();
+
+	function goToCard(set: string, index: number | null) {
+		if (set !== setName) lastCard.set(setName, cardIndex);
+		index ??= lastCard.get(set) ?? 0;
+		if (set !== setName) {
+			setName = set;
+			selectedLayers = [];
+		}
+		cardIndex = index;
+		cardIdError = "";
+		renderPreview();
+	}
+
+	function stepCard(by: number) {
+		const n = currentSet?.cards.length ?? 0;
+		if (!n) return;
+		goToCard(setName, Math.min(n - 1, Math.max(0, cardIndex + by)));
+	}
+
+	function stepSet(by: number) {
+		if (sets.length < 2) return;
+		const i = sets.findIndex((s) => s.name === setName);
+		goToCard(sets[(i + by + sets.length) % sets.length].name, null);
+	}
+
+	/** The next card, in the sets' order after this one and wrapping round, that still needs review. */
+	function nextToReview() {
+		const flat = sets.flatMap((s, si) =>
+			s.cards.map((c, i) => ({
+				set: s.name,
+				i,
+				st: statusOf(qaDoc.cards[qaSets[si]?.key]?.[c.id], qaSets[si].cards[i].hash),
+			})),
+		);
+		const at = flat.findIndex((x) => x.set === setName && x.i === cardIndex);
+		for (let k = 1; k <= flat.length; k++) {
+			const x = flat[(at + k) % flat.length];
+			if (needsReview(x.st)) {
+				goToCard(x.set, x.i);
+				return;
+			}
+		}
+		status = "No card needs review.";
+	}
+
+	/** The review keys; true when the key was one of them. */
+	function reviewKey(e: KeyboardEvent): boolean {
+		const k = e.key;
+		if (k === "?" || (k === "/" && e.shiftKey)) qaKeysOpen = !qaKeysOpen;
+		else if (k === "Escape" && (pinTarget || qaKeysOpen || qaOverviewOpen)) {
+			pinTarget = null;
+			qaKeysOpen = false;
+			qaOverviewOpen = false;
+		} else if (!currentCard) return false;
+		else if (k === "j") stepCard(1);
+		else if (k === "k") stepCard(-1);
+		else if (k === "]") stepSet(1);
+		else if (k === "[") stepSet(-1);
+		else if (k === "a") reviewCard("approved");
+		else if (k === "n") reviewCard("needs-changes");
+		else if (k === "x") reviewCard(null);
+		else if (k === "u") nextToReview();
+		else if (k === "o") qaOverviewOpen = !qaOverviewOpen;
+		else if (k === "c") queueMicrotask(() => qaComposer?.focus());
+		else if (k === "p") {
+			const target =
+				qaActive ??
+				[...(qaEntry?.comments ?? [])].reverse().find((c) => !c.resolved)?.id ??
+				null;
+			pinTarget = pinTarget || !target ? null : target;
+		} else return false;
+		return true;
 	}
 
 	function editCards(op: CardListOp) {
@@ -3442,6 +3719,10 @@
 			browsing = false;
 			return;
 		}
+		if (!typing && !mod && !e.altKey && reviewKey(e)) {
+			e.preventDefault();
+			return;
+		}
 		if (mode !== "build" || typing || !doc) return;
 		if (k === "escape") selectedLayers = [];
 		if (mod && k === "a") {
@@ -3606,7 +3887,7 @@
 		const clock = renderClock();
 		busy = "Rendering PNG…";
 		try {
-			run.log(`Rendering card '${card.id}' at full size in this browser`);
+			run.log(`Rendering card '${card.id}' at full size in ${hostWord()}`);
 			// One call with no progress inside: the bar stays indeterminate and
 			// the estimate is shown as text only.
 			run.estimate(fullCardEstimate());
@@ -3661,7 +3942,7 @@
 		try {
 			run.step(0, `0 / ${n}`);
 			run.log(
-				`Rendering ${n} card(s) of '${set.design_name}' in this browser`,
+				`Rendering ${n} card(s) of '${set.design_name}' in ${hostWord()}`,
 			);
 			const zip: Record<string, Uint8Array> = {};
 			const diagnostics: Diagnostic[] = [];
@@ -3752,7 +4033,7 @@
 			run.perUnit(per);
 			run.count(0, n);
 			run.log(
-				`Rendering ${n} page(s) in this browser${bleed ? " with crop marks" : ""}` +
+				`Rendering ${n} page(s) in ${hostWord()}${bleed ? " with crop marks" : ""}` +
 					(per ? `; about ${formatMs(per * n)} expected` : ""),
 			);
 			const t0 = Date.now();
@@ -3977,7 +4258,7 @@
 			run.fail(
 				`The upload would be ${formatBytes(body.length)}; this server accepts up to ${server?.max_body_mb} MB (its --max-body-mb setting).`,
 			);
-			status = "Server render refused: the project is too big for this server.";
+			status = `Render refused: the project is too big for ${isDesktop() ? "the built-in renderer" : "this server"}.`;
 			return null;
 		}
 		return body;
@@ -3997,18 +4278,18 @@
 		// Weights: a rough share of the time on a local network; the bar moves
 		// with the bytes sent, the cards the server reports and the bytes received.
 		const run = new Run(
-			`Rendering ${n} card${n === 1 ? "" : "s"} on the server (${what})`,
+			`Rendering ${n} card${n === 1 ? "" : "s"} with ${rendererWord()} (${what})`,
 			[
 				["Pack the project", 3],
-				["Upload to the server", 10],
-				["Render on the server", 77],
+				[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+				[isDesktop() ? "Render" : "Render on the server", 77],
 				["Download the result", 8],
 				["Save", 2],
 			],
 		);
 		const ctl: { abort?: () => void } = {};
 		run.onCancel(() => ctl.abort?.());
-		busy = "Rendering on the server…";
+		busy = isDesktop() ? "Rendering…" : "Rendering on the server…";
 		try {
 			run.step(0);
 			const raw = [...files.values()].reduce((a, d) => a + d.length, 0);
@@ -4041,13 +4322,13 @@
 				res.blob,
 				format === "pdf" ? "application/pdf" : "application/zip",
 			);
-			status = `Rendered ${n} card(s) on the server in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
+			status = `Rendered ${n} card(s) ${isDesktop() ? "with the built-in renderer" : "on the server"} in ${formatMs(Date.now() - t0)}; saved ${fileName}.`;
 			run.finish(`Saved ${fileName} (${formatBytes(res.blob.size)})`);
 		} catch (e) {
 			if ((e as Error).name === "AbortError")
-				status = "Server render cancelled.";
+				status = "Render cancelled.";
 			else {
-				status = `Server render failed: ${(e as Error).message}`;
+				status = `Render failed: ${(e as Error).message}`;
 				run.fail(status);
 			}
 		} finally {
@@ -4367,13 +4648,13 @@
 			...(remote.length
 				? ([
 						["Pack the project", 3],
-						["Upload to the server", 10],
-						["Render on the server", passes ? 50 : 77],
+						[isDesktop() ? "Hand the project over" : "Upload to the server", 10],
+						[isDesktop() ? "Render" : "Render on the server", passes ? 50 : 77],
 						["Download the result", 8],
 					] as [string, number][])
 				: []),
 			...(passes
-				? ([["Render in this browser", remote.length ? 27 : 94]] as [
+				? ([[`Render in ${hostWord()}`, remote.length ? 27 : 94]] as [
 						string,
 						number,
 					][])
@@ -4474,8 +4755,8 @@
 				run.step(at.local, `0 / ${units}`);
 				run.log(
 					oneScale
-						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in this browser`
-						: `Rendering ${plan.cards} card(s) in this browser, each design at the scale for ${st.dpi} dpi`,
+						? `Rendering ${plan.cards} card(s) at ${formatScale(scaleOf(plan.targets[0].set))} in ${hostWord()}`
+						: `Rendering ${plan.cards} card(s) in ${hostWord()}, each design at the scale for ${st.dpi} dpi`,
 				);
 				// Time grows with the pixels: the scale squared, per card.
 				const area =
@@ -4736,6 +5017,7 @@
 		<CardPicker
 			cards={currentSet?.cards ?? []}
 			params={currentSet?.params ?? []}
+			qa={qaStatuses}
 			onbrowse={() => (browsing = true)}
 			index={cardIndex}
 			disabled={!currentSet?.cards.length}
@@ -4877,6 +5159,7 @@
 			<CardList
 				cards={currentSet.cards}
 				params={currentSet.params}
+				qa={qaStatuses}
 				index={cardIndex}
 				height={Math.max(
 					60,
@@ -4972,6 +5255,26 @@
 					{#if cardIdError}<p class="err">{cardIdError}</p>{/if}
 				{/if}
 			{/if}
+			{#if currentCard}
+				<QaControl
+					status={qaStatuses[cardIndex] ?? "unreviewed"}
+					entry={qaEntry}
+					onmark={reviewCard}
+					oncomment={addComment}
+					onedit={editComment}
+					onremove={removeComment}
+					{pinTarget}
+					onpin={(id) => {
+						pinTarget = id;
+						if (id) qaActive = id;
+					}}
+					active={qaActive}
+					onactive={(id) => (qaActive = id)}
+					onkeys={() => (qaKeysOpen = true)}
+					onoverview={() => (qaOverviewOpen = true)}
+					bind:composer={qaComposer}
+				/>
+			{/if}
 		</div>
 	{/if}
 {/snippet}
@@ -5047,8 +5350,8 @@
 			<span
 				class="saved {saveState}"
 				title={folder
-					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in this browser. Nothing is sent to a server.`
-					: "Projects are saved in this browser only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere."}
+					? `Linked to the folder '${folder.name}': changes are written to the files in it. The browser does not reveal where that folder is (a network drive works too), so check the folder itself. A copy is also kept in ${hostWord()}. Nothing is sent to a server.`
+					: `Projects are saved in ${hostWord()} only; their content is never sent to a server. Use Export project file in the project menu to keep a copy elsewhere.`}
 			>
 				{#if saveState === "saved"}<Icon name="check" />{:else if saveState === "unsaved"}<span class="dot" aria-hidden="true"></span>{:else if saveState === "error"}<Icon name="alert" />{/if}
 				<span class="text"
@@ -5057,7 +5360,7 @@
 						: saveState === "saved"
 							? folder
 								? `Saved to folder ${folder.name}`
-								: "Saved in this browser"
+								: `Saved in ${hostWord()}`
 							: saveState === "unsaved"
 								? "Unsaved"
 								: saveState === "error"
@@ -5074,7 +5377,7 @@
 					<button
 						onclick={exportPng}
 						title="Export the card shown ({currentCard?.id ??
-							'none'}) as a PNG image, rendered in this browser"
+							'none'}) as a PNG image, rendered in {hostWord()}"
 						disabled={!!busy || !currentSet?.ok || !currentCard}>PNG</button
 					>
 					<button
@@ -5102,10 +5405,10 @@
 						>Export…</button
 					>
 				</span>
-				{#if server?.render}
+				{#if server?.render && !isDesktop()}
 					<label
 						class="switch server"
-						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in this browser. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
+						title="ZIP and PDF exports are rendered by the yoshida server this editor comes from, instead of in {hostWord()}. The project files are uploaded, the server renders with all its CPU cores and the result is downloaded; the progress window shows each step. PNG always renders here."
 					>
 						<input type="checkbox" role="switch" bind:checked={useServer} />
 						<Icon name="cloud" />
@@ -5143,7 +5446,7 @@
 				onclick={openPrivacy}
 				aria-pressed={telemetry.settingsOpen}
 				data-testid="privacy-button"
-				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what this browser sent"
+				title="Privacy and usage statistics: what is counted on the server that hosts this editor, and what {hostWord()} sent"
 				><Icon name="lock" /> Privacy</button
 			>
 			<ThemeToggle />
@@ -5302,6 +5605,10 @@
 					ongesture={onGesture}
 					pick={pickOnCanvas}
 					oncontext={layerMenu}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				{#if loading}
 					<div class="loading" role="status" aria-live="polite">
@@ -5526,6 +5833,10 @@
 					interactive={false}
 					onselect={() => {}}
 					ongesture={() => {}}
+					pins={qaPins}
+					pinning={!!pinTarget}
+					onpin={placePin}
+					onpinselect={(id) => (qaActive = id)}
 				/>
 				<div class="status">{busy || status}</div>
 			</section>
@@ -5616,6 +5927,86 @@
 				onclick={() => setUtcOffset(-new Date().getTimezoneOffset() / 60 || 0)}
 			>Use my browser's offset</button>
 			{#if offsetError}<p class="err" role="alert">{offsetError}</p>{/if}
+			<label class="offset">
+				<span>Your name for reviews</span>
+				<input
+					type="text"
+					maxlength="60"
+					placeholder="Optional, e.g. a username"
+					value={reviewer}
+					onchange={(e) => setReviewer(e.currentTarget.value)}
+				/>
+			</label>
+			<p class="note">
+				Written next to the marks and comments you add in card review.
+				It is kept in this browser only, not in the project.
+			</p>
+		</div>
+	</Window>
+{/if}
+
+{#if qaKeysOpen}
+	<Window
+		key="qa-keys"
+		title="Card review keys"
+		width={380}
+		fit
+		onclose={() => (qaKeysOpen = false)}
+	>
+		<div class="qa-keys">
+			<p class="note">Work when the focus is not in a text field.</p>
+			<table>
+				<tbody>
+					<tr><td><kbd>J</kbd> / <kbd>K</kbd></td><td>Next / previous card</td></tr>
+					<tr><td><kbd>]</kbd> / <kbd>[</kbd></td><td>Next / previous design</td></tr>
+					<tr><td><kbd>U</kbd></td><td>Next card that needs review</td></tr>
+					<tr><td><kbd>A</kbd></td><td>Approve (needs no open comments)</td></tr>
+					<tr><td><kbd>N</kbd></td><td>Needs changes</td></tr>
+					<tr><td><kbd>X</kbd></td><td>Remove the mark</td></tr>
+					<tr><td><kbd>C</kbd></td><td>Write a comment</td></tr>
+					<tr><td><kbd>P</kbd></td><td>Pin the selected comment: then click the card</td></tr>
+					<tr><td><kbd>O</kbd></td><td>Overview of all comments</td></tr>
+					<tr><td><kbd>?</kbd></td><td>This list</td></tr>
+					<tr><td><kbd>Esc</kbd></td><td>Cancel pinning, close this window</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</Window>
+{/if}
+
+{#if qaOverviewOpen}
+	<Window
+		key="qa-overview"
+		title="Card review overview"
+		width={620}
+		height={440}
+		onclose={() => (qaOverviewOpen = false)}
+	>
+		<div class="qa-overview">
+			{#if !qaRows.length}
+				<p class="note">Nothing reviewed yet. Approve a card or write a comment on it.</p>
+			{/if}
+			{#each qaRows as r (r.set + "/" + r.id)}
+				<button
+					class="row"
+					onclick={() => {
+						goToCard(r.set, r.index);
+						qaOverviewOpen = false;
+					}}
+				>
+					<span class="head"
+						><QaBadge status={r.status} text />
+						<strong>{r.id}</strong>
+						<span class="muted">{r.setLabel}</span></span
+					>
+					{#each r.entry.comments ?? [] as c, i}
+						<span class="c" class:done={c.resolved}
+							>{i + 1}. {c.text}
+							{#if c.by}<span class="muted">· {c.by}</span>{/if}</span
+						>
+					{/each}
+				</button>
+			{/each}
 		</div>
 	</Window>
 {/if}
@@ -6379,5 +6770,52 @@
 	}
 	.settings button {
 		justify-self: start;
+	}
+	.qa-keys {
+		padding: 14px 18px 16px;
+	}
+	.qa-keys .note {
+		margin: 0 0 10px;
+	}
+	.qa-keys table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.qa-keys td {
+		padding: 5px 8px;
+	}
+	.qa-keys td:first-child {
+		white-space: nowrap;
+		padding-right: 16px;
+	}
+	.qa-keys kbd {
+		border: 1px solid var(--muted);
+		border-radius: 3px;
+		padding: 0 5px;
+	}
+	.qa-overview {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		font-size: 13px;
+	}
+	.qa-overview .row {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		text-align: left;
+		padding: 6px 8px;
+	}
+	.qa-overview .head {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+	}
+	.qa-overview .c.done {
+		text-decoration: line-through;
+		color: var(--muted);
 	}
 </style>

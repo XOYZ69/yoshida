@@ -1,7 +1,11 @@
 // Checks linking a project to a folder: change detection, reconnecting and the
-// browser backend, driven with an in-memory stand-in for a directory handle.
+// browser backend, driven with an in-memory stand-in for a directory handle,
+// and the desktop app's native backend, driven with a fake Tauri bridge.
 //
 //   node --experimental-strip-types tests/folder.mjs
+import { activeBackend, backendById } from "../src/lib/folder/backend.ts";
+// In the editor's order: native first, so it wins where both work.
+import { createNativeBackend } from "../src/lib/folder/native.ts";
 import { linkForHandle } from "../src/lib/folder/browser.ts";
 import {
 	diffFiles,
@@ -173,6 +177,106 @@ const project = (obj) => new Map(Object.entries(obj).map(([k, v]) => [k, bytes(v
 	ok("edited, added and deleted files are reported", real && real.changed.sort().join() === "a.json,b.json,new/c.json");
 	ok("the new fingerprints are returned as the next baseline", real.sigs.has("new/c.json") && !real.sigs.has("a.json"));
 	ok("the files read are the folder's", dec.decode((await link.readFiles(["b.json"])).get("b.json")) === "pulled");
+}
+
+// ---------------------------------------------------------------- native backend
+
+/** The Rust commands of desktop/src-tauri over an in-memory folder. */
+function fakeBridge(root = "/home/me/cards") {
+	const disk = new Map(); // path -> { data, modified }
+	const calls = [];
+	const skip = new Set([".git", ".yoshida", "node_modules", "out"]);
+	const check = (r, path) => {
+		if (r !== root) throw "Forbidden: not a picked folder";
+		if (path !== undefined && (path.startsWith("/") || path.split("/").includes("..")))
+			throw "Forbidden: path leaves the folder";
+	};
+	const bridge = {
+		disk,
+		calls,
+		picked: { root, name: root.split("/").pop() },
+		async invoke(cmd, args, options) {
+			calls.push(cmd);
+			switch (cmd) {
+				case "pick_folder":
+					return bridge.picked;
+				case "read_folder":
+					check(args.root);
+					return [...disk]
+						.filter(([p]) => !p.split("/").some((x) => skip.has(x)))
+						.map(([path, f]) => ({ path, size: f.data.byteLength, modified: f.modified }));
+				case "read_file": {
+					check(args.root, args.path);
+					const f = disk.get(args.path);
+					if (!f) throw `NotFound: ${args.path}`;
+					return f.data.slice().buffer;
+				}
+				case "write_file": {
+					const r = decodeURIComponent(options.headers["x-root"]);
+					const path = decodeURIComponent(options.headers["x-path"]);
+					check(r, path);
+					const f = { data: new Uint8Array(args), modified: clock++ };
+					disk.set(path, f);
+					return { size: f.data.byteLength, modified: f.modified };
+				}
+				case "remove_file":
+					check(args.root, args.path);
+					disk.delete(args.path);
+					return null;
+			}
+			throw `unknown command ${cmd}`;
+		},
+	};
+	return bridge;
+}
+
+{
+	const bridge = fakeBridge();
+	bridge.disk.set("yoshida.json", { data: bytes("{}"), modified: clock++ });
+	bridge.disk.set(".git/HEAD", { data: bytes("ref"), modified: clock++ });
+	const backend = createNativeBackend(() => bridge);
+	ok("native: supported only with a bridge", backend.supported() && !createNativeBackend(() => null).supported());
+
+	const link = await backend.pick();
+	ok("native: pick links the folder by its path", link.backend === "native" && link.name === "cards" && link.ref.root === "/home/me/cards");
+	ok("native: permission is always granted", (await link.permission(true)) === "granted");
+	const { files, sigs } = await link.read();
+	ok("native: read lists project files", [...files.keys()].join() === "yoshida.json" && sigs.size === 1);
+
+	const sig = await link.write("cards/new/001.cards.json", bytes("[]"));
+	ok("native: write returns the fingerprint scan sees", sig === (await link.scan()).get("cards/new/001.cards.json"));
+	ok("native: readFiles skips missing files", (await link.readFiles(["yoshida.json", "nope.json"])).size === 1);
+	await link.remove("cards/new/001.cards.json");
+	await link.remove("cards/new/001.cards.json");
+	ok("native: remove tolerates a missing file", !(await link.scan()).has("cards/new/001.cards.json"));
+
+	let err = "";
+	await link.write("../escape.json", bytes("x")).catch((e) => (err = String(e)));
+	ok("native: a path outside the folder is refused", err.startsWith("Forbidden"));
+
+	const again = backend.open(structuredClone(link.ref));
+	ok("native: a stored ref opens the same folder", dec.decode((await again.readFiles(["yoshida.json"])).get("yoshida.json")) === "{}");
+
+	bridge.picked = null;
+	const cancelled = await backend.pick().catch((e) => e);
+	ok("native: cancelling the dialog is an AbortError", cancelled?.name === "AbortError");
+
+	const changes = await findExternalChanges(again, (await again.read()).files, await again.scan());
+	ok("native: change detection works over the bridge", changes === null);
+
+	let used = "";
+	await createNativeBackend(() => null).open({ root: "/x" }).read().catch((e) => (used = e.message));
+	ok("native: a stored link outside the app fails when used", used.includes("desktop app"));
+}
+
+{
+	// Which backend picks folders: the native one inside the app.
+	globalThis.window = { showDirectoryPicker: async () => fakeDir() };
+	ok("in Chromium the browser backend picks", activeBackend()?.id === "browser");
+	globalThis.window.__TAURI_INTERNALS__ = fakeBridge();
+	ok("in the desktop app the native backend picks", activeBackend()?.id === "native");
+	ok("both are found by id", backendById("native") && backendById("browser"));
+	delete globalThis.window;
 }
 
 if (failed) process.exit(1);

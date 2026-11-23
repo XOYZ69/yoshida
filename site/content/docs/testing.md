@@ -32,7 +32,7 @@ Run in `web/`. These need no browser, only the built WASM modules (`npm run wasm
 | `tests/expr-rewrite.mjs` | the quick actions on expressions |
 | `tests/filetypes.mjs` | file kinds and descriptions in the Files tab |
 | `tests/components.mjs` | components in the builder: filling includes in, splitting edits back into files, detached copies |
-| `tests/folder.mjs` | linking a project to a folder: finding outside changes, reconnecting, the browser backend on an in-memory folder |
+| `tests/folder.mjs` | linking a project to a folder: finding outside changes, reconnecting, the browser backend on an in-memory folder, the desktop app's native backend over a fake Tauri bridge |
 | `tests/fonts.mjs` | font readers and the Google Fonts catalog |
 | `tests/hexcolor.mjs` | the hex colour helper against the core's rules |
 | `tests/progress-math.mjs` | export progress and time left |

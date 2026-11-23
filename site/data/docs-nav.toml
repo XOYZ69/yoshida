@@ -11,6 +11,9 @@ path = "docs/getting-started.md"
 title = "Installation"
 path = "docs/installation.md"
 [[group.item]]
+title = "Desktop App"
+path = "docs/desktop-app.md"
+[[group.item]]
 title = "Feature Tour"
 path = "docs/feature-tour.md"
 [[group.item]]

@@ -57,6 +57,7 @@ scripts/         release.sh (cross-compiled bundle) and the start scripts it shi
                  gh-labels.sh (creates the repository labels);
                  font-catalog.mjs (rebuilds web/public/fonts/google-fonts.json)
 web/             Svelte 5 + Vite + TypeScript editor
+desktop/         Tauri 2 shell: the editor in a native window, native folder access, yoshida-server as a sidecar
 examples/        poker deck and party board game
 ```
 
@@ -77,6 +78,7 @@ The C code (`stb_image`, `stb_truetype`, `simplewebp`) is compiled freestanding 
 | `yoshida-server` | `src/server/` | Static server for the editor plus `POST /api/render` ([Server API](@/docs/server-api.md)) |
 | WebAssembly | `src/wasm/main.zig` | A module with a JSON request interface ([WASM Interface](@/docs/wasm-interface.md)) |
 | Web editor | `web/` | Svelte 5 app; runs the module in a Web Worker so the UI never blocks and card data never leaves the browser |
+| Desktop app | `desktop/` | The web editor in a Tauri window, with folders on disk (`web/src/lib/folder/native.ts`) and the server as a sidecar ([Building from Source](@/docs/building-from-source.md#desktop-app)) |
 
 ## The web editor
 

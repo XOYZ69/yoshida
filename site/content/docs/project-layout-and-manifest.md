@@ -12,6 +12,7 @@ my-cards/
   cards/<name>.cards.json      card data (JSON)
   cards/<name>.cards.csv       card data (CSV)
   assets/...                   images and fonts, any structure
+  qa.json                      card review state, written by the editor (optional)
   .yoshida/                    caches, never committed
 ```
 
@@ -125,3 +126,27 @@ The project menu's **Add set…** adds a card file for a design and lists it in 
 ## `.yoshida/`
 
 Reserved for caches. Do not commit it.
+
+## Card review: `qa.json`
+
+The editor can record a review per card: unreviewed (the default), approved or needs changes, plus any number of comments, each optionally pinned to a spot on the card. The state is kept in `qa.json` at the project root, so commit it with the rest. The command line does not read it; `yoshida check` ignores the file and `yoshida fmt` formats it like any JSON file. The schema is `schema/qa.schema.json`. Format 1 files (one note per card) are read and rewritten as format 2 the next time the editor saves.
+
+```json
+{
+  "format": 2,
+  "cards": {
+    "cards/forge.cards.json": {
+      "bs-01": { "status": "approved", "hash": "1f3a9c0b7d2e45", "by": "yuki", "at": "2026-11-23T04:30Z" },
+      "bs-02": {
+        "hash": "0a7c3e91b4d2f8",
+        "comments": [
+          { "id": "c1", "text": "Title is too long", "x": 120, "y": 64, "by": "yuki", "at": "2026-11-23T04:31Z" },
+          { "id": "c2", "text": "Check the icon", "resolved": true }
+        ]
+      }
+    }
+  }
+}
+```
+
+Reviews are listed by the path of the set's card file and then by card id. An approval stores a hash of what the card's render depends on: the card's values, the design file and the components it includes, and the card id when the design reads `card.id`. If any of them changes, the approval shows as **Changed since review** and the card is listed again under **Needs review** until it is approved again. Images and fonts are not part of the hash. Renamed cards and cards moved to another set keep their review while their content is unchanged. [Card review](@/docs/qa-review.md) explains the workflow.

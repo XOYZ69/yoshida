@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yoshida.local/schema/v1/qa.schema.json",
+  "title": "yoshida card review (format 1)",
+  "description": "Written by the editor. The command line does not read it. An approval stays valid while the card and the design inputs hash to the same value. Format 1 files (one note per card) are read and rewritten as format 2.",
+  "type": "object",
+  "required": ["format"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": {
+      "enum": [1, 2],
+      "description": "The editor writes 2. Format 1 has a single \"note\" per card instead of \"comments\"."
+    },
+    "cards": {
+      "type": "object",
+      "description": "Reviews by card file path, then by card id. A card without an entry is unreviewed.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["hash"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": ["approved", "needs-changes"],
+              "description": "The mark. Without one the card is unreviewed; open comments make it count as needing changes."
+            },
+            "hash": {
+              "type": "string",
+              "description": "Hash of the card's values (and its id when the design reads card.id) and the design inputs (the design file and the components it includes) when it was reviewed. A different hash turns an approval into 'changed since review'."
+            },
+            "by": { "type": "string", "description": "Who set the mark." },
+            "at": { "type": "string", "description": "When the mark was set (UTC, to the minute)." },
+            "note": { "type": "string", "description": "Format 1 only: read as the first comment." },
+            "comments": {
+              "type": "array",
+              "description": "Points to address on the card. A card with an open (not resolved) comment counts as needing changes.",
+              "items": {
+                "type": "object",
+                "required": ["id", "text"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string", "description": "Unique within the card (c1, c2, ...)." },
+                  "text": { "type": "string" },
+                  "by": { "type": "string" },
+                  "at": { "type": "string" },
+                  "x": {
+                    "type": "number",
+                    "description": "Pin position on the card in canvas pixels; needs y."
+                  },
+                  "y": { "type": "number" },
+                  "resolved": { "type": "boolean" }
+                }
+              }
+            },
+            "content": {
+              "type": "string",
+              "description": "The hash without the card id, written when the design draws card.id. It lets a renamed card find its review again."
+            }
+          }
+        }
+      }
+    }
+  }
+}

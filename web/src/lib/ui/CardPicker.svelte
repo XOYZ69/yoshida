@@ -1,6 +1,8 @@
 <script lang="ts">
 // "Card 3 of 120" with previous/next buttons and a searchable list.
 import type { CardInfo, Param } from "../engine";
+import type { QaStatus } from "../qa";
+import QaBadge from "./QaBadge.svelte";
 import CardList from "./CardList.svelte";
 import Icon from "./Icon.svelte";
 import { placeNear } from "./overlay.svelte";
@@ -12,6 +14,7 @@ let {
 	disabled = false,
 	params = [],
 	onbrowse = undefined,
+	qa = undefined,
 }: {
 	cards: CardInfo[];
 	index: number;
@@ -19,6 +22,7 @@ let {
 	disabled?: boolean;
 	params?: Param[];
 	onbrowse?: () => void;
+	qa?: QaStatus[];
 } = $props();
 
 let open = $state(false);
@@ -53,6 +57,7 @@ function pick(i: number) {
   <button bind:this={button} class="current" {disabled} aria-haspopup="listbox" aria-expanded={open} title="Choose the card to preview" onclick={() => (open ? (open = false) : show())}>
     <span class="of">{cards.length ? `${index + 1} / ${cards.length}` : 'no cards'}</span>
     <span class="id">{current?.id ?? '—'}</span>
+    {#if qa && current}<QaBadge status={qa[index] ?? 'unreviewed'} />{/if}
     <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
   </button>
   <button class="step" title="Next card" disabled={disabled || index >= cards.length - 1} onclick={() => onpick(index + 1)}>›</button>
@@ -61,7 +66,7 @@ function pick(i: number) {
 {#if open}
   <div bind:this={pop} class="pop" style:left="{pos.left}px" style:top="{pos.top}px">
     <div class="list" style:height="{Math.min(360, Math.max(80, cards.length * 34 + 48))}px">
-      <CardList {cards} {params} {index} height={0} onpick={pick} autofocus onclose={() => (open = false)} />
+      <CardList {cards} {params} {qa} {index} height={0} onpick={pick} autofocus onclose={() => (open = false)} />
     </div>
     {#if onbrowse}
       <button class="browse" onclick={() => ((open = false), onbrowse?.())}><Icon name="expand" /> Browse all cards…</button>
