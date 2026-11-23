@@ -25,7 +25,17 @@ import {
 	sheetProblem,
 	MIN_SCALE,
 	type PlanSet,
+	type FormatSample,
+	type SampleRequest,
+	type SampleSet,
 	SCALE_STEP,
+	estimateSizes,
+	fallbackSample,
+	formatEstimate,
+	formatSize,
+	sampleScale,
+	sizeBreakdown,
+	spreadCards,
 	clampScale,
 	cleanQuality,
 	defaultExportSettings,
@@ -51,6 +61,7 @@ let {
 	webpLossless,
 	canServer,
 	measuring,
+	sample,
 	useServer = $bindable(false),
 	onexport,
 	onclose,
@@ -70,6 +81,8 @@ let {
 	canServer: boolean;
 	/** Whether the canvases are being measured. */
 	measuring: boolean;
+	/** Renders one card in the given formats, for the size estimate; none: only a guess from the pixels. */
+	sample?: (r: SampleRequest) => Promise<SampleSet>;
 	/** Render on server (whole designs as PNG, SVG and PDF), the same setting as the toolbar switch. */
 	useServer?: boolean;
 	onexport: (s: ExportSettings) => void;
@@ -383,6 +396,131 @@ const blocked = $derived.by(() => {
 });
 const canExport = $derived(!blocked && plan.files > 0);
 
+// ------------------------------------------------------------ size estimate
+// A few cards of the design in view are rendered in each chosen format (half
+// a second after the last change, one request at a time, in the engine's
+// worker), and the plan multiplies their mean out. A sample is kept for as long as
+// the dialog is open, so changing the scope or the format list needs no new
+// render, and neither does a setting of another format.
+
+/** A sample by what it was drawn with; null: the render failed (a guess is used). */
+const samples = new Map<string, FormatSample | null>();
+let version = $state(0);
+let inflight = false;
+
+const sampleOut = $derived(outputs.find((o) => o.set === refSet?.name));
+/** A few cards spread over the design: the card in view alone can be much heavier or lighter than most. */
+const sampleCards = $derived(spreadCards(refSet?.cards.length ?? 0));
+const sampleK = $derived(
+	sampleOut?.size ? sampleScale(sampleOut.size, sampleOut.scale) : 0,
+);
+const qualityOf = (q: number, fallback: number) => cleanQuality(q, fallback);
+const sampleSettings = $derived({
+	pngDepth: s.pngDepth,
+	pngCompression: s.pngCompression,
+	jpegQuality: qualityOf(s.jpegQuality, defaultExportSettings.jpegQuality),
+	jpegBackground: s.jpegBackground,
+	webpQuality: qualityOf(s.webpQuality, defaultExportSettings.webpQuality),
+	webpLossless: s.webpLossless && lossless,
+	pdfVector: s.pdfVector,
+	cropMarks: s.cropMarks,
+});
+/** What each chosen format's sample depends on. */
+const sampleKeys = $derived.by(() => {
+	const t = sampleSettings;
+	const head = `${refSet?.name}|${sampleCards.join()}|${sampleK.toFixed(4)}`;
+	const by: Record<ExportFormat, string> = {
+		png: `${t.pngDepth}|${t.pngCompression}`,
+		jpeg: `${t.jpegQuality}|${t.jpegBackground}`,
+		webp: `${t.webpLossless}|${t.webpQuality}`,
+		svg: "",
+		pdf: `${t.pdfVector}|${t.cropMarks}`,
+		sheet: "",
+	};
+	return Object.fromEntries(
+		Object.entries(by).map(([f, k]) => [f, `${f}|${head}|${k}`]),
+	) as Record<ExportFormat, string>;
+});
+
+$effect(() => {
+	void version;
+	const out = sampleOut;
+	if (!sample || !out?.size || !refSet || !sampleCards.length || !formats.length || inflight) return;
+	const keys = sampleKeys;
+	const todo = formats.filter((f) => !samples.has(keys[f]));
+	if (!todo.length) return;
+	const k = sampleK;
+	const req: SampleRequest = {
+		set: refSet.name,
+		cards: sampleCards,
+		scale: k,
+		size: {
+			w: Math.max(1, Math.round((out.size.w * k) / out.scale)),
+			h: Math.max(1, Math.round((out.size.h * k) / out.scale)),
+		},
+		formats: todo,
+		settings: { ...sampleSettings },
+	};
+	const timer = setTimeout(async () => {
+		inflight = true;
+		try {
+			const got = await sample(req);
+			for (const f of todo) samples.set(keys[f], got[f] ?? null);
+		} catch {
+			for (const f of todo) samples.set(keys[f], null);
+		} finally {
+			inflight = false;
+			version++;
+		}
+	}, 500);
+	return () => clearTimeout(timer);
+});
+
+const estimate = $derived.by(() => {
+	void version;
+	const out = sampleOut;
+	const have: SampleSet = {};
+	let rough = false;
+	let pending = false;
+	for (const f of formats) {
+		const v = sample ? samples.get(sampleKeys[f]) : null;
+		if (v === undefined) pending = true;
+		else if (v === null) {
+			rough = true;
+			if (out?.size)
+				have[f] = fallbackSample(f, out.size.w, out.size.h, sampleSettings);
+		} else have[f] = v;
+	}
+	return {
+		...estimateSizes(plan, outputs, have),
+		rough,
+		// Waiting for a sample, or for the size it is drawn at.
+		pending: pending && (measuring || !!out?.size),
+	};
+});
+const sizeOf = (f: ExportFormat) =>
+	chosen(f) ? estimate.perFormat[f] : undefined;
+/** The line under the summary: the size of what is written, or that it is being worked out. */
+const totalText = $derived(
+	blocked || !formats.length
+		? ""
+		: estimate.pending
+			? "Estimating size…"
+			: estimate.total > 0
+				? `${formatEstimate(estimate.total)}${estimate.rough ? " (rough guess)" : ""}`
+				: "",
+);
+const totalTitle = $derived(
+	[
+		sizeBreakdown(estimate.perFormat),
+		estimate.rough
+			? "A guess from the pixel count: the cards could not be rendered to measure."
+			: "Estimated from a few rendered cards, so the real size differs with the cards' content.",
+	]
+		.filter(Boolean)
+		.join("\n"),
+);
+
 function toggle(f: ExportFormat, on: boolean) {
 	s.formats = on
 		? [...new Set([...s.formats, f])]
@@ -574,6 +712,13 @@ $effect(() => {
   <div bind:this={box} class="dialog" role="dialog" aria-modal="true" aria-labelledby="export-title" tabindex="-1" {onkeydown}>
     <h2 id="export-title">Export</h2>
 
+    {#snippet est(f: ExportFormat)}
+      {@const b = sizeOf(f)}
+      <span class="est" class:wait={b === undefined} title={b === undefined ? (estimate.pending ? "Estimating the size…" : "") : `${formatLabels[f]} files together: ${formatSize(b)}, estimated`}>
+        {b !== undefined ? formatEstimate(b) : estimate.pending && chosen(f) ? "…" : ""}
+      </span>
+    {/snippet}
+
     <div class="form">
       <span class="label" id="export-what">What</span>
       <div class="body what">
@@ -595,6 +740,7 @@ $effect(() => {
       <div class="body formats" role="group" aria-labelledby="export-formats">
         <div class="fmt">
           <label class="opt"><input type="checkbox" checked={s.formats.includes("png")} aria-describedby={chosen("png") ? undefined : "export-about-png"} onchange={(e) => toggle("png", e.currentTarget.checked)} /> PNG</label>
+          {@render est("png")}
           {#if chosen("png")}
             <span class="more">
               <span class="ctl">Bit depth
@@ -611,6 +757,7 @@ $effect(() => {
 
         <div class="fmt">
           <label class="opt"><input type="checkbox" checked={s.formats.includes("jpeg")} aria-describedby={chosen("jpeg") ? undefined : "export-about-jpeg"} onchange={(e) => toggle("jpeg", e.currentTarget.checked)} /> JPEG</label>
+          {@render est("jpeg")}
           {#if chosen("jpeg")}
             <span class="more">
               <span class="ctl">Quality
@@ -628,6 +775,7 @@ $effect(() => {
 
         <div class="fmt">
           <label class="opt" title={unavailable.webp}><input type="checkbox" checked={s.formats.includes("webp") && !unavailable.webp} disabled={!!unavailable.webp} aria-describedby={chosen("webp") ? undefined : "export-about-webp"} onchange={(e) => toggle("webp", e.currentTarget.checked)} /> WebP</label>
+          {@render est("webp")}
           {#if chosen("webp")}
             <span class="more">
               <span class="ctl">Quality
@@ -645,11 +793,13 @@ $effect(() => {
 
         <div class="fmt">
           <label class="opt"><input type="checkbox" checked={s.formats.includes("svg")} aria-describedby="export-about-svg" onchange={(e) => toggle("svg", e.currentTarget.checked)} /> SVG</label>
+          {@render est("svg")}
           <span class="more muted" id="export-about-svg">Vector, sharp at any size</span>
         </div>
 
         <div class="fmt">
           <label class="opt"><input type="checkbox" checked={s.formats.includes("pdf")} aria-describedby={chosen("pdf") ? undefined : "export-about-pdf"} onchange={(e) => toggle("pdf", e.currentTarget.checked)} /> PDF</label>
+          {@render est("pdf")}
           {#if chosen("pdf")}
             <span class="more">
               <span class="ctl">Pages as
@@ -658,7 +808,7 @@ $effect(() => {
               <span class="ctl">Crop marks
                 <Select label="Crop marks" title="Auto: crop marks when the design has a bleed, the edge that is cut off (canvas.bleed)" value={s.cropMarks} options={[{ value: "auto", label: "Auto", detail: "when the design has a bleed" }, { value: "on", label: "On" }, { value: "off", label: "Off" }]} onchange={(v) => (s.cropMarks = v as ExportSettings["cropMarks"])} />
               </span>
-              <span class="ctl">Layout
+              <span class="ctl wide">Layout
                 <Select label="Layout" title="Print sheets: the cards side by side on paper pages, with an optional page of backs after each for duplex printing" value={s.pdfLayout} options={[{ value: "card", label: "A card a page" }, { value: "print", label: "Print sheets", detail: "cards side by side on paper" }]} onchange={(v) => (s.pdfLayout = v as ExportSettings["pdfLayout"])} />
               </span>
             </span>
@@ -666,6 +816,7 @@ $effect(() => {
               <div class="print">
                 <div class="sect" role="group" aria-label="Paper">
                   <span class="sect-h">Paper</span>
+                  <div class="sect-b">
                   <span class="ctl">Paper
                     <Select label="Paper" value={s.paper} options={PAPER_OPTIONS} onchange={(v) => (s.paper = v as ExportSettings["paper"])} />
                   </span>
@@ -681,18 +832,22 @@ $effect(() => {
                       <Select label="Orientation" value={s.landscape ? "landscape" : "portrait"} options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} onchange={(v) => (s.landscape = v === "landscape")} />
                     </span>
                   {/if}
+                  </div>
                 </div>
                 <div class="sect" role="group" aria-label="Spacing">
                   <span class="sect-h">Spacing</span>
+                  <div class="sect-b">
                   <span class="ctl">Margin
                     <input type="number" min="0" max={MAX_MARGIN} step="0.5" aria-label="Page margin in mm" title="The least room at each edge of the page, 0 to {MAX_MARGIN} mm" bind:value={s.printMargin} onchange={() => (s.printMargin = cleanMm(s.printMargin, 0, MAX_MARGIN, defaultExportSettings.printMargin))} /> mm
                   </span>
                   <span class="ctl">Gap
                     <input type="number" min="0" max={MAX_GAP} step="0.5" aria-label="Gap between cards in mm" title="Between neighbouring cards, 0 to {MAX_GAP} mm" bind:value={s.printGap} onchange={() => (s.printGap = cleanMm(s.printGap, 0, MAX_GAP, defaultExportSettings.printGap))} /> mm
                   </span>
+                  </div>
                 </div>
                 <div class="sect" role="group" aria-label="Backs and duplex">
                   <span class="sect-h">Backs &amp; duplex</span>
+                  <div class="sect-b">
                   <span class="ctl">Backs
                     <Select label="Backs" title="The first card of this design behind every card: a page of backs after each page of fronts" value={backName} options={backOptions} onchange={(v) => (s.printBack = v)} />
                   </span>
@@ -703,6 +858,7 @@ $effect(() => {
                   {:else}
                     <span class="muted">Pick a back to print a page of backs after each page of fronts.</span>
                   {/if}
+                  </div>
                 </div>
                 {#if printFit.text}<span class="print-sum">{printFit.text}.<br /><span class="muted">{printFit.note}</span></span>{/if}
               </div>
@@ -714,6 +870,7 @@ $effect(() => {
 
         <div class="fmt">
           <label class="opt"><input type="checkbox" checked={s.formats.includes("sheet")} aria-describedby={chosen("sheet") ? undefined : "export-about-sheet"} onchange={(e) => toggle("sheet", e.currentTarget.checked)} /> Sheet</label>
+          {@render est("sheet")}
           {#if chosen("sheet")}
             <span class="more">
               <span class="ctl">Columns
@@ -812,7 +969,10 @@ $effect(() => {
     </div>
 
     <div class="foot">
-      <p class="summary" class:warn={!!blocked} id="export-summary" aria-live="polite">{blocked || planSummary(plan)}</p>
+      <div class="sum">
+        <p class="summary" class:warn={!!blocked} id="export-summary" aria-live="polite">{blocked || planSummary(plan)}</p>
+        {#if totalText}<p class="total" class:wait={estimate.pending} title={totalTitle}>{totalText}</p>{/if}
+      </div>
       <button type="button" class="ghost" onclick={onclose}>Cancel</button>
       <button type="button" class="primary" onclick={submit} aria-disabled={!canExport} aria-describedby="export-summary">Export</button>
     </div>
@@ -834,7 +994,7 @@ $effect(() => {
     box-sizing: border-box;
   }
   .dialog {
-    width: min(580px, calc(100vw - 32px));
+    width: min(660px, calc(100vw - 32px));
     max-height: calc(100vh - min(10vh, 80px) - 16px);
     overflow: auto;
     box-sizing: border-box;
@@ -931,16 +1091,25 @@ $effect(() => {
     cursor: default;
   }
 
-  /* Formats: the checkbox, then the format's settings while it is chosen
-     (a short description otherwise). */
+  /* Formats: one row each, the same four columns: the checkbox and name,
+     the format's settings (two columns, the same for every row, while it is
+     chosen; a short description otherwise) and its estimated size on the
+     right. Narrow windows put the settings under the name. */
+  .formats {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   .fmt {
     display: grid;
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 4px 12px;
+    gap: 6px 14px;
     min-height: 28px;
   }
   .opt {
+    grid-column: 1;
+    grid-row: 1;
     min-height: 24px;
     font-weight: 500;
   }
@@ -949,37 +1118,91 @@ $effect(() => {
     height: 16px;
     margin: 0;
   }
+  .est {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+  .est.wait {
+    color: var(--muted);
+  }
   .more {
-    display: inline-flex;
+    grid-column: 1 / -1;
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px 14px;
+    gap: 6px 14px;
   }
-  /* Print sheet options: small labelled sections, one under the other. */
+  .more.muted {
+    display: block;
+  }
+  /* Print sheet options: small labelled sections, one under the other, each
+     with its name on the left like the dialog's own sections. */
   .print {
-    grid-column: 2;
+    grid-column: 1 / -1;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
-  }
-  .sect {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 14px;
     padding-left: 10px;
     border-left: 2px solid var(--line);
   }
+  .sect {
+    display: grid;
+    grid-template-columns: 7.5em minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 12px;
+  }
   .sect-h {
-    flex-basis: 100%;
     font-size: 12px;
     font-weight: 600;
     color: var(--muted);
   }
+  .sect-b {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    min-width: 0;
+  }
   .print-sum {
     font-size: 13px;
     font-weight: 500;
+  }
+  @media (min-width: 721px) {
+    .formats {
+      display: grid;
+      grid-template-columns: 4.5em max-content max-content minmax(4.5em, 1fr);
+      gap: 10px 14px;
+    }
+    .fmt {
+      grid-column: 1 / -1;
+      grid-template-columns: subgrid;
+    }
+    .opt {
+      grid-column: 1;
+    }
+    .est {
+      grid-column: 4;
+    }
+    .more {
+      display: contents;
+    }
+    .ctl.wide {
+      grid-column: 2 / 4;
+    }
+    .more.muted {
+      display: block;
+      grid-column: 2 / 4;
+      grid-row: 1;
+    }
+    .print {
+      grid-column: 2 / -1;
+    }
   }
   .ctl {
     display: inline-flex;
@@ -987,6 +1210,7 @@ $effect(() => {
     gap: 6px;
     font-size: 13px;
     color: var(--muted);
+    white-space: nowrap;
   }
   /* Number fields with an edge of 3:1 and the editor's focus ring. */
   .dialog input[type="number"] {
@@ -1018,7 +1242,7 @@ $effect(() => {
     --at: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--f, 0));
     --track: linear-gradient(to right, var(--fill) var(--at), var(--line-strong) 0);
     appearance: none;
-    width: 96px;
+    width: 72px;
     height: 24px;
     margin: 0;
     padding: 0;
@@ -1211,9 +1435,18 @@ $effect(() => {
     padding-top: 14px;
     border-top: 1px solid var(--line);
   }
-  .summary {
+  .sum {
     flex: 1;
     min-width: 0;
+  }
+  .total {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    cursor: help;
+  }
+  .summary {
     margin: 0;
     font-size: 13px;
     font-weight: 500;
@@ -1251,8 +1484,11 @@ $effect(() => {
     .foot {
       flex-wrap: wrap;
     }
-    .summary {
+    .sum {
       flex-basis: 100%;
+    }
+    .sect {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

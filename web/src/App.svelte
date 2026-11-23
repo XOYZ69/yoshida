@@ -201,6 +201,8 @@
 		pdfPath,
 		printRequest,
 		type PlanSet,
+		type SampleRequest,
+		type SampleSet,
 		planExport,
 		setJpegDpi,
 		setMaxSide,
@@ -3730,6 +3732,7 @@
 		if (!currentSet) return;
 		track("export", "pdf");
 		if (onServer) return exportOnServer("pdf");
+		await sampleIdle;
 		const n = currentSet.cards.length;
 		const clock = renderClock();
 		const run = new Run(
@@ -4150,6 +4153,130 @@
 		requestAnimationFrame(() => exportButton?.focus());
 	}
 
+
+	/** The last estimate's renders; exports wait for them (the PDF builder is shared). */
+	let sampleIdle: Promise<unknown> = Promise.resolve();
+
+	/**
+	 * One card in each requested format with the dialog's settings, for the
+	 * size estimate. Runs one at a time and after a running export is done.
+	 */
+	function sampleExport(r: SampleRequest): Promise<SampleSet> {
+		const run = sampleIdle.then(() => renderSample(r));
+		sampleIdle = run.catch(() => {});
+		return run;
+	}
+
+	async function renderSample(r: SampleRequest): Promise<SampleSet> {
+		if (busy) throw new Error("an export is running");
+		const clock = renderClock();
+		const st = r.settings;
+		const base = { set: r.set, ...clock, scale: r.scale };
+		const out: SampleSet = {};
+		const info = sets.find((x) => x.name === r.set);
+		const want = (f: ExportFormat) => r.formats.includes(f);
+		const mean = (v: number[]) =>
+			Math.round(v.reduce((a, b) => a + b, 0) / Math.max(1, v.length));
+		/** A PNG of each card: the mean size and the pixels. */
+		const png = async (
+			depth: 8 | 16,
+			compression: ExportSettings["pngCompression"],
+		) => {
+			const bytes: number[] = [];
+			let w = 0;
+			let h = 0;
+			for (const card of r.cards) {
+				const x = await engine.render({
+					...base,
+					card,
+					preview: false,
+					format: depth === 16 ? "png16" : "png",
+					compression,
+				});
+				if (!x.bin.length) return undefined;
+				bytes.push(x.bin.length);
+				w = x.width;
+				h = x.height;
+			}
+			return { bytes: mean(bytes), w, h };
+		};
+		if (want("png")) out.png = await png(st.pngDepth, st.pngCompression);
+		if (want("sheet")) {
+			// The cards on one sheet: it compresses a little better than the cards alone.
+			const n = r.cards.length;
+			await engine.sheetBegin(n, 1);
+			for (const card of r.cards)
+				await engine.sheetCard({ ...base, card });
+			const x = await engine.sheetFinish();
+			if (x.bin.length)
+				out.sheet = { bytes: x.bin.length, w: x.width, h: x.height };
+		}
+		const encodings = [
+			...(want("jpeg")
+				? [{ type: "image/jpeg" as const, quality: st.jpegQuality / 100, background: st.jpegBackground }]
+				: []),
+			...(want("webp")
+				? [{ type: "image/webp" as const, quality: st.webpLossless ? 1 : st.webpQuality / 100 }]
+				: []),
+		];
+		if (encodings.length) {
+			const bytes = encodings.map(() => [] as number[]);
+			let w = 0;
+			let h = 0;
+			for (const card of r.cards) {
+				const x = await engine.encode({ ...base, card, preview: false }, encodings);
+				w = x.width;
+				h = x.height;
+				encodings.forEach((_, k) => bytes[k].push(x.files[k]?.length ?? 0));
+			}
+			encodings.forEach((e, k) => {
+				if (bytes[k].every((n) => n > 0))
+					out[e.type === "image/jpeg" ? "jpeg" : "webp"] = {
+						bytes: mean(bytes[k]),
+						w,
+						h,
+					};
+			});
+		}
+		if (want("svg")) {
+			const bytes: number[] = [];
+			for (const card of r.cards) {
+				const x = await engine.svg({ ...base, card });
+				if (x.bin.length) bytes.push(x.bin.length);
+			}
+			if (bytes.length === r.cards.length)
+				out.svg = { bytes: mean(bytes), w: r.size.w, h: r.size.h };
+		}
+		if (want("pdf") && info) {
+			const marks = cropMarksFor(info, st.cropMarks);
+			const pdf = async (cards: number[]) => {
+				await engine.pdfBegin();
+				for (const card of cards)
+					await engine.pdfPage({
+						set: r.set,
+						card,
+						...clock,
+						crop_marks: marks,
+						scale: r.scale,
+						...(st.pdfVector ? { vector: true } : {}),
+					});
+				return (await engine.pdfFinish()).bin.length;
+			};
+			// One page, and all the sample cards: what each page adds is the difference.
+			const first = await pdf(r.cards.slice(0, 1));
+			const all = r.cards.length > 1 ? await pdf(r.cards) : undefined;
+			if (first)
+				out.pdf = {
+					bytes: first,
+					w: r.size.w,
+					h: r.size.h,
+					...(all ? { more: all, pages: r.cards.length } : {}),
+					...(st.pdfVector ? {} : { pixels: true }),
+				};
+		}
+		return out;
+	}
+
 	/** Crop marks for a set's PDF: the dialog's choice, or on when the design has a bleed. */
 	function cropMarksFor(set: SetInfo, mode: ExportSettings["cropMarks"]) {
 		if (mode !== "auto") return mode === "on";
@@ -4174,6 +4301,7 @@
 		exportSettings = st;
 		savePref(EXPORT_PREF, st);
 		closeExport();
+		await sampleIdle;
 		const plan = planExport(st, projectName, planSets, setName, cardIndex);
 		if (!plan.files) return;
 		for (const f of st.formats) track("export", f);
@@ -5448,6 +5576,7 @@
 		webpLossless={webpLosslessOk}
 		canServer={!!server?.render}
 		measuring={exportMeasuring}
+		sample={sampleExport}
 		bind:useServer
 		onexport={exportWith}
 		onclose={closeExport}
