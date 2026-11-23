@@ -1685,13 +1685,15 @@ const Ctx = struct {
                 // Auto-shrink: largest size (in 0.5 px steps) whose block fits.
                 const max_w: ?f64 = if (l.max_width) |p| try ctx.num(&e, l, p) else null;
                 const max_h: ?f64 = if (l.max_height) |p| try ctx.num(&e, l, p) else null;
+                // Squeezing: glyphs may get as narrow as this before the size shrinks.
+                const squeeze: f64 = if (l.min_squeeze) |p| std.math.clamp(try ctx.num(&e, l, p), 0.05, 1) else 1;
                 if (max_w != null or max_h != null) {
                     const fits = struct {
-                        fn f(x: text.Layout, mw: ?f64, mh: ?f64) bool {
-                            return (mw == null or x.block_w <= mw.? + 0.01) and (mh == null or x.block_h <= mh.? + 0.01);
+                        fn f(x: text.Layout, mw: ?f64, mh: ?f64, sq: f64) bool {
+                            return (mw == null or x.block_w * sq <= mw.? + 0.01) and (mh == null or x.block_h <= mh.? + 0.01);
                         }
                     }.f;
-                    if (!fits(lay, max_w, max_h)) {
+                    if (!fits(lay, max_w, max_h, squeeze)) {
                         const min_size = if (l.min_size) |p| @max(1, try ctx.num(&e, l, p)) else @min(r.size, 8);
                         var lo: f64 = @floor(@min(min_size, r.size) * 2);
                         var hi: f64 = @floor(r.size * 2);
@@ -1701,7 +1703,7 @@ const Ctx = struct {
                             const mid = @floor((lo + hi) / 2);
                             opts.size = @floatCast(mid / 2);
                             const t = try text.layout(ctx.arena, r.font.?, ltext, opts);
-                            if (fits(t, max_w, max_h)) {
+                            if (fits(t, max_w, max_h, squeeze)) {
                                 best = t;
                                 best_size = mid / 2;
                                 lo = mid + 1;
@@ -1725,10 +1727,13 @@ const Ctx = struct {
                         r.size = m;
                     }
                 };
+                if (max_w) |mw| if (squeeze < 1 and lay.block_w > mw) {
+                    lay.xscale = @floatCast(@max(squeeze, mw / lay.block_w));
+                };
                 r.layout = lay;
                 if (lay.truncated) try ctx.report(.warning, 3201, l.max_lines.?.pos, null, try ctx.layerMsg(l, "text was cut to {d} line(s)", .{max_lines.?}), null);
                 if (lay.missing_glyphs) try ctx.report(.warning, 4003, l.text.?.pos, null, try ctx.layerMsg(l, "neither the font nor the bundled fallback fonts have glyphs for some characters; they are drawn as boxes", .{}), null);
-                r.w = lay.block_w;
+                r.w = lay.block_w * lay.xscale;
                 r.h = lay.block_h;
                 r.left = r.at[0] - fx * r.w;
                 r.top = if (r.anchor.isBaseline()) r.at[1] - lay.ascent else r.at[1] - fy * r.h;
@@ -3421,6 +3426,7 @@ const GlyphPass = struct {
             .x = g.x,
             .y = g.baseline,
             .scale = g.scale,
+            .xscale = g.xscale,
             .color = p.color,
             .stroke = if (p.stroke > 0) p.stroke + thick else 0,
         } };
@@ -5312,6 +5318,96 @@ test "a repeated group in a row: one item per iteration" {
     try std.testing.expectApproxEqAbs(@as(f64, 119 + 34 + 5), lefts[2], 0.001);
     // The dot moves with its iteration.
     try std.testing.expectApproxEqAbs(lefts[1] + 30, dots[1], 0.001);
+}
+
+test "min_squeeze squeezes a line sideways before the size shrinks" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const items = try testOutline(gpa, arena_state.allocator(),
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 800, "height": 400 },
+        \\  "layers": [
+        \\    { "id": "plain", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 10 }, "size": 40 },
+        \\    { "id": "fits", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 60 }, "size": 40, "max_width": 1000, "min_squeeze": 0.5 },
+        \\    { "id": "squeezed", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 110 }, "size": 40, "max_width": 300, "min_squeeze": 0.7 },
+        \\    { "id": "clamped", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 160 }, "size": 40, "max_width": 200, "min_squeeze": 0.7 },
+        \\    { "id": "off", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 210 }, "size": 40, "max_width": 300 }
+        \\  ]
+        \\}
+    );
+    const plain = findPlaced(items, "plain", null);
+    try std.testing.expect(plain.w > 300 and plain.w < 450);
+    // Already fits: untouched.
+    const fits = findPlaced(items, "fits", null);
+    try std.testing.expectApproxEqAbs(plain.w, fits.w, 0.001);
+    try std.testing.expectEqual(@as(f64, 40), fits.size.?);
+    // Needs a little: same size, squeezed to the box (not below 0.7).
+    const sq = findPlaced(items, "squeezed", null);
+    try std.testing.expectEqual(@as(f64, 40), sq.size.?);
+    try std.testing.expect(sq.w <= 300.01 and sq.w >= plain.w * 0.7 - 0.01);
+    try std.testing.expectApproxEqAbs(@as(f64, 300), sq.w, 0.01);
+    // Needs more than the minimum: squeezed to the minimum, then the size shrinks.
+    const cl = findPlaced(items, "clamped", null);
+    try std.testing.expect(cl.size.? < 40);
+    try std.testing.expect(cl.w <= 200.01);
+    // Without min_squeeze the size shrinks as before.
+    const off = findPlaced(items, "off", null);
+    try std.testing.expect(off.size.? < 40);
+    try std.testing.expect(off.w <= 300.01);
+    try std.testing.expect(cl.size.? > off.size.? * 0.99 - 8);
+}
+
+test "squeezed text draws narrower in pixels, SVG and PDF" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 400, "height": 80 },
+        \\  "layers": [
+        \\    { "id": "t", "type": "text", "text": "Squeeze me please", "at": { "x": 0, "y": 10 }, "size": 40, "max_width": 200, "min_squeeze": 0.4, "color": "#000000" }
+        \\  ]
+        \\}
+    ;
+    var b = (try testRenderDesign(gpa, design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Ink only inside the 200 px box, and reaching most of it.
+    var max_x: usize = 0;
+    var y: usize = 0;
+    while (y < b.h) : (y += 1) {
+        var x: usize = 0;
+        while (x < b.w) : (x += 1) if (pixel(&b, x, y)[3] > 0) {
+            max_x = @max(max_x, x);
+        };
+    }
+    try std.testing.expect(max_x > 150 and max_x <= 201);
+    // The vector scene carries the scale, and both writers apply it.
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, design);
+    defer rig.deinit();
+    var seen: usize = 0;
+    for (rig.scene.items.items) |it| if (it == .glyph) {
+        try std.testing.expect(it.glyph.xscale < 1 and it.glyph.xscale >= 0.4);
+        seen += 1;
+    };
+    try std.testing.expect(seen > 0);
+    const svg = try @import("svg.zig").write(gpa, &rig.scene);
+    defer gpa.free(svg);
+    const g0 = for (rig.scene.items.items) |it| {
+        if (it == .glyph) break it.glyph;
+    } else unreachable;
+    // The first glyph's matrix: x factor squeezed, y factor not.
+    const at = std.mem.indexOf(u8, svg, "matrix(").? + "matrix(".len;
+    var parts = std.mem.tokenizeAny(u8, svg[at..], " )");
+    const a = try std.fmt.parseFloat(f32, parts.next().?);
+    _ = parts.next();
+    _ = parts.next();
+    const d = try std.fmt.parseFloat(f32, parts.next().?);
+    try std.testing.expectApproxEqAbs(g0.xscale, a / d, 0.001);
+    try std.testing.expect(a < d);
 }
 
 test "blur softens the edge of a layer and keeps its ink" {

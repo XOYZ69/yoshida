@@ -11,7 +11,7 @@ Fields are grouped as:
 
 1. **Layer**: id, type, note, visible, opacity, `clip_to`, anchor and so on.
 2. **Position and size**, with align-to-canvas buttons and `rotate`.
-3. **Appearance**: fill, stroke, radius, font (with an **Aa** button that opens the [Fonts](@/docs/builder-fonts.md) window), size, color... For text this includes auto-shrink (`max_width`, `max_height`, `min_size`, `shrink_group`) and the **outline** (`stroke`). Strokes of rects, ellipses and polygons take a **dash** pattern (type `12, 6`); open polygons an **arrow** (start, end, both). Ellipses have an **arc** switch with start, end and pie.
+3. **Appearance**: fill, stroke, radius, font (with an **Aa** button that opens the [Fonts](@/docs/builder-fonts.md) window), size, color... For text this includes auto-shrink (`max_width`, `max_height`, `min_size`, `min_squeeze`, `shrink_group`) and the **outline** (`stroke`). Strokes of rects, ellipses and polygons take a **dash** pattern (type `12, 6`); open polygons an **arrow** (start, end, both). Ellipses have an **arc** switch with start, end and pie.
 4. **Repeat** and **Effects**.
 
 A polygon has **drawn from**: *points* (your own corners, listed with + point, or **+ run** for a [run of points](@/docs/layer-polygon.md#points-from-a-list-or-a-count) made from a count or a list) or *shape* (a preset star, polygon, triangle, diamond, arrow, cross or chevron in a box, with `count` and `inner`). Switching to a shape keeps the polygon's area as the box.

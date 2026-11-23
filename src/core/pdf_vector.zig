@@ -266,7 +266,7 @@ const Builder = struct {
         const o = b.out();
         const shaded = g.color.a < 65535;
         if (shaded) try b.setAlpha(g.color.a, g.color.a) else try o.writeAll("q ");
-        try matrix(o, .{ g.scale, 0, 0, g.scale, g.x, g.y });
+        try matrix(o, .{ g.scale * g.xscale, 0, 0, g.scale, g.x, g.y });
         try o.writeAll(" cm ");
         try setColor(o, g.color, "rg");
         if (outline) {
