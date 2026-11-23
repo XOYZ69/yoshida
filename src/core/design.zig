@@ -108,6 +108,12 @@ pub const Fit = enum { fill, contain, cover };
 pub const Smoothing = enum { nearest, bilinear };
 /// Error correction level of a QR code layer.
 pub const QrLevel = enum { low, medium, quartile, high };
+/// What a barcode layer draws; see `symbol.Format`.
+pub const BarcodeFormat = @import("symbol.zig").Format;
+/// How a barcode layer treats check digits; see `symbol.Check`.
+pub const BarcodeCheck = @import("symbol.zig").Check;
+/// How the text of a QR code is cut into segments; see `qr.Mode`.
+pub const QrMode = enum { byte, auto, numeric, alphanumeric };
 /// Shape of the data modules of a QR code layer.
 pub const QrStyle = enum { square, rounded, dots };
 /// Shape of the three corner squares (finder patterns) of a QR code layer.
@@ -144,6 +150,23 @@ pub const Box = struct {
 };
 
 pub const Point = struct { x: Prop, y: Prop };
+
+/// A run of polygon points made from a count or from a list, one point per
+/// iteration (`points` entries given as an object).
+pub const PointRun = struct {
+    count: ?Prop = null,
+    each: ?Prop = null,
+    index_name: []const u8 = "i",
+    item_name: ?[]const u8 = null,
+    x: Prop,
+    y: Prop,
+};
+
+/// One entry of a polygon's `points`: a fixed `[x, y]` or a run.
+pub const PointSpec = union(enum) {
+    fixed: Point,
+    run: PointRun,
+};
 
 pub const Arrow = enum { none, start, end, both };
 
@@ -258,6 +281,13 @@ pub const Layer = struct {
     anchor_expr: ?Prop = null,
     repeat: ?Repeat = null,
     effects: []const Effect = &.{},
+    /// Every layer and group: the id of a rect, ellipse or polygon layer
+    /// whose shape clips this layer; nothing outside the shape is drawn
+    /// [1116, 3002, 3005]. `clip_pos` is where the id is written.
+    clip_to: ?[]const u8 = null,
+    clip_pos: u32 = 0,
+    /// Index of `clip_to` in `Design.layers`, set once every layer is compiled.
+    clip_layer: ?usize = null,
     // rect, ellipse, image
     box: ?Box = null,
     // rect, ellipse, polygon
@@ -272,7 +302,7 @@ pub const Layer = struct {
     // ellipse
     arc: ?Arc = null,
     // polygon
-    points: []const Point = &.{},
+    points: []const PointSpec = &.{},
     closed: bool = true,
     shape: ?Shape = null,
     // text
@@ -291,8 +321,26 @@ pub const Layer = struct {
     max_width: ?Prop = null,
     max_height: ?Prop = null,
     min_size: ?Prop = null,
-    // qr (also uses text, color, fill and box)
+    /// Squeeze sideways: the narrowest horizontal scale (0 to 1) the glyphs
+    /// may get so a line fits `max_width`, tried before the size shrinks.
+    min_squeeze: ?Prop = null,
+    // qr and barcode (also use text, color, fill and box)
     margin: ?Prop = null,
+    // barcode only; `font`, `size` and `align` shape its label
+    format: BarcodeFormat = .qr,
+    format_expr: ?Prop = null,
+    check: BarcodeCheck = .auto,
+    check_expr: ?Prop = null,
+    /// QR text segments; null means the default (`byte` for a qr layer,
+    /// `auto` for a barcode layer).
+    qr_mode: ?QrMode = null,
+    qr_mode_expr: ?Prop = null,
+    /// Aztec: the least share of check words in percent.
+    ecc: ?Prop = null,
+    label: ?Prop = null,
+    label_text: ?Tmpl = null,
+    label_color: ?Prop = null,
+    label_gap: ?Prop = null,
     qr_level: QrLevel = .medium,
     qr_style: QrStyle = .square,
     qr_eye: QrEye = .square,
@@ -661,6 +709,100 @@ const Loader = struct {
         return .{ .t = t, .pos = n.pos };
     }
 
+    /// An expression that must give a list (`repeat.each`, a point run's
+    /// `each`): its compiled form and the item layout. Problems are reported.
+    fn listSource(l: *Loader, v: *const Node, what: []const u8, scope: *const expr.Scope) Allocator.Error!?struct { prop: Prop, def: *const value.ItemDef } {
+        const arena = l.arena;
+        try l.note(v.pos, null, false, scope);
+        var problem: ?expr.Problem = null;
+        if (v.data != .string) {
+            try l.err(1103, v.pos, "{s} must be an expression giving a list", .{what});
+            return null;
+        }
+        const node = expr.parse(arena, v.data.string, 0, &problem) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(v.pos, problem.?);
+                return null;
+            },
+        };
+        var c: expr.Checker = .{ .scope = scope, .problem = &problem };
+        const t = c.check(node) catch |e| switch (e) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try l.exprProblem(v.pos, problem.?);
+                return null;
+            },
+        };
+        if (t != .list) {
+            try l.exprProblem(v.pos, .{ .code = 3003, .start = node.start, .end = node.end, .message = try std.fmt.allocPrint(arena, "{s} needs a list, got a {s}", .{ what, t.name() }) });
+            return null;
+        }
+        return .{ .prop = .{ .node = node, .pos = v.pos }, .def = t.list };
+    }
+
+    /// A `points` entry given as an object: `count` or `each` makes one
+    /// point per iteration from `x` and `y`, which see `index` (default `i`)
+    /// and, with `each`, `item`.
+    fn pointRun(l: *Loader, rn: *const Node, scope: *const expr.Scope) Allocator.Error!?PointRun {
+        const arena = l.arena;
+        try l.checkFields(rn, &.{ "count", "each", "index", "item", "x", "y" }, "points");
+        const has_count = rn.get("count") != null;
+        const has_each = rn.get("each") != null;
+        if (has_count == has_each) {
+            try l.err(1111, rn.pos, "a point run needs exactly one of \"count\" and \"each\"", .{});
+            return null;
+        }
+        var run: PointRun = .{ .x = undefined, .y = undefined };
+        var failed = false;
+        var extra: std.ArrayList(expr.Symbol) = .empty;
+        if (rn.get("index")) |v| {
+            if (try l.literalString(v, "points.index")) |s| {
+                if (expr.isIdent(s) and !expr.isReserved(s)) run.index_name = s else {
+                    try l.err(1103, v.pos, "'{s}' is not a valid loop name", .{s});
+                    failed = true;
+                }
+            } else failed = true;
+        }
+        try extra.append(arena, .{ .name = run.index_name, .ty = .number });
+        if (rn.get("count")) |v| {
+            l.list_counts = true;
+            defer l.list_counts = false;
+            if (try l.prop(v, .number, scope)) |p| run.count = p else failed = true;
+        }
+        if (rn.get("each")) |v| {
+            if (try l.listSource(v, "points.each", scope)) |src| {
+                run.each = src.prop;
+                if (rn.get("item")) |itn| {
+                    if (try l.literalString(itn, "points.item")) |s| {
+                        if (expr.isIdent(s) and !expr.isReserved(s)) {
+                            run.item_name = s;
+                            try extra.append(arena, .{ .name = s, .ty = .{ .item = src.def } });
+                        } else {
+                            try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
+                            failed = true;
+                        }
+                    } else failed = true;
+                }
+            } else failed = true;
+        } else if (rn.get("item")) |itn| try l.err(1101, itn.pos, "points.item only applies with \"each\"", .{});
+        const xn = rn.get("x");
+        const yn = rn.get("y");
+        if (xn == null) try l.err(1102, rn.pos, "a point run needs \"x\"", .{});
+        if (yn == null) try l.err(1102, rn.pos, "a point run needs \"y\"", .{});
+        if (xn == null or yn == null or failed) return null;
+        var inner = scope.*;
+        inner.locals = try std.mem.concat(arena, expr.Symbol, &.{ scope.locals, extra.items });
+        const sx = Loader.withAxis(&inner, .x);
+        const sy = Loader.withAxis(&inner, .y);
+        const px = try l.prop(xn.?, .number, &sx);
+        const py = try l.prop(yn.?, .number, &sy);
+        if (px == null or py == null) return null;
+        run.x = px.?;
+        run.y = py.?;
+        return run;
+    }
+
     fn withAxis(scope: *const expr.Scope, axis: expr.Axis) expr.Scope {
         var s = scope.*;
         s.axis = axis;
@@ -670,18 +812,48 @@ const Loader = struct {
 
 const top_fields = [_][]const u8{ "$schema", "format", "name", "note", "canvas", "fonts", "icons", "import", "params", "consts", "functions", "layers" };
 const param_fields = [_][]const u8{ "type", "default", "required", "label", "note", "min", "max", "max_length", "options", "item", "group" };
-const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects" };
+const common_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "anchor", "repeat", "extends", "effects", "clip_to" };
 
 fn kindFields(kind: LayerKind) []const []const u8 {
     return switch (kind) {
         .rect => &.{ "box", "fill", "radius", "stroke", "gradient" },
         .ellipse => &.{ "box", "fill", "stroke", "arc", "gradient" },
         .polygon => &.{ "points", "closed", "fill", "stroke", "shape", "box", "gradient" },
-        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
+        .text => &.{ "text", "at", "font", "size", "color", "align", "wrap", "line_spacing", "max_lines", "max_width", "max_height", "min_size", "min_squeeze", "stroke", "shrink_group", "markup", "font_bold", "font_italic", "font_bold_italic", "icon_scale" },
         .image => &.{ "src", "box", "fit", "smoothing", "optional", "radius", "clip" },
-        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "style", "eye", "eye_color", "logo", "logo_src" },
+        .qr => &.{ "text", "box", "color", "fill", "margin", "level", "mode", "style", "eye", "eye_color", "logo", "logo_src" },
+        .barcode => &.{ "format", "text", "box", "color", "fill", "margin", "check", "label", "label_text", "label_color", "label_gap", "font", "size", "align", "level", "mode", "ecc", "style", "eye", "eye_color", "logo", "logo_src" },
         .group => &.{"layers"},
     };
+}
+
+/// Fields a barcode format does not read, for the warning [1115].
+fn barcodeIgnores(format: BarcodeFormat, key: []const u8) bool {
+    const eq = std.mem.eql;
+    const qr_only = [_][]const u8{ "level", "mode", "eye", "eye_color", "logo", "logo_src" };
+    const linear_only = [_][]const u8{ "label", "label_text", "label_color", "label_gap", "font", "size", "align" };
+    const checked = [_][]const u8{"check"};
+    if (eq(u8, key, "ecc") and format != .aztec and format != .pdf417) return true;
+    if (format != .qr) for (qr_only) |k| if (eq(u8, k, key)) return true;
+    if (!format.isLinear()) {
+        for (linear_only) |k| if (eq(u8, k, key)) return true;
+        for (checked) |k| if (eq(u8, k, key)) return true;
+        if (eq(u8, key, "style") and format == .pdf417) return true;
+    } else {
+        if (eq(u8, key, "style")) return true;
+        switch (format) {
+            .code128, .codabar, .code93 => if (eq(u8, key, "check")) return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn warnIgnoredBarcodeFields(l: *Loader, m: *const Node, format: BarcodeFormat, id: []const u8) Allocator.Error!void {
+    for (m.data.object) |f| {
+        if (!barcodeIgnores(format, f.key)) continue;
+        try l.report(.warning, 1115, f.key_pos, try std.fmt.allocPrint(l.arena, "'{s}' has no effect on a {s} barcode (layer '{s}')", .{ f.key, @tagName(format), id }), "remove it or pick a format that uses it; the format's page in the docs lists its fields");
+    }
 }
 
 /// Checks `format` [1104, 1105]. Shared by every file type.
@@ -1407,7 +1579,7 @@ const Raw = struct {
     state: enum { todo, busy, done } = .todo,
 };
 
-const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
+const group_fields = [_][]const u8{ "id", "type", "note", "tag", "visible", "opacity", "rotate", "effects", "clip_to", "layers", "repeat", "translate", "layout", "include", "id_prefix" };
 const defs_fields = [_][]const u8{ "$schema", "format", "name", "note", "params", "consts" };
 const component_fields = [_][]const u8{ "$schema", "format", "name", "note", "layers" };
 const divider_fields = [_][]const u8{ "id", "type", "note", "tag", "label" };
@@ -1529,7 +1701,7 @@ fn cloneLayers(arena: Allocator, layers: []const Node, ids: []const []const u8, 
                 nf.value.data = .{ .array = try cloneLayers(arena, f.value.data.array, ids, prefix) };
             } else if (std.mem.eql(u8, f.key, "note") or std.mem.eql(u8, f.key, "tag")) {
                 // Text for people: kept as written.
-            } else if (std.mem.eql(u8, f.key, "extends") and f.value.data == .string) {
+            } else if ((std.mem.eql(u8, f.key, "extends") or std.mem.eql(u8, f.key, "clip_to")) and f.value.data == .string) {
                 for (ids) |id| if (std.mem.eql(u8, id, f.value.data.string)) {
                     nf.value.data = .{ .string = try std.mem.concat(arena, u8, &.{ prefix, id }) };
                 };
@@ -1706,7 +1878,51 @@ fn loadLayers(l: *Loader, d: *Design, top: []const Node) Allocator.Error![]const
         while (e < ls.len and isInside(ls, e, gi)) e += 1;
         g.end = e;
     }
+    for (ls, 0..) |*x, i| if (x.clip_to) |cid| {
+        x.clip_layer = try clipTarget(l, raws, ls, i, cid);
+    };
     return ls;
+}
+
+/// The layer `clip_to` of layer `i` names [1116, 3002, 3005]: a rect,
+/// ellipse or polygon other than the layer itself, not repeated, and not
+/// inside a repeated group that does not also hold the clipped layer (its
+/// shape is taken from the same iteration the clipped layer is drawn in).
+fn clipTarget(l: *Loader, raws: []const Raw, ls: []const Layer, i: usize, cid: []const u8) Allocator.Error!?usize {
+    const x = &ls[i];
+    var ti: ?usize = null;
+    for (ls, 0..) |o, j| if (std.mem.eql(u8, o.id, cid)) {
+        ti = j;
+    };
+    const t = ti orelse {
+        // A layer that failed to compile has had its error already.
+        for (raws) |r| if (std.mem.eql(u8, r.id, cid) and !r.divider) return null;
+        var ids: std.ArrayList([]const u8) = .empty;
+        for (ls) |o| if (o.kind == .rect or o.kind == .ellipse or o.kind == .polygon) try ids.append(l.arena, o.id);
+        try l.errHint(3002, x.clip_pos, try std.fmt.allocPrint(l.arena, "unknown layer '{s}' in clip_to", .{cid}), diag.suggest(l.arena, cid, ids.items));
+        return null;
+    };
+    const target = &ls[t];
+    if (t == i) {
+        try l.err(1116, x.clip_pos, "layer '{s}' cannot clip itself", .{x.id});
+        return null;
+    }
+    if (!(target.kind == .rect or target.kind == .ellipse or target.kind == .polygon)) {
+        try l.errHint(1116, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is a {s} layer; clip_to needs a rect, ellipse or polygon", .{ cid, @tagName(target.kind) }), "add a shape layer (it may be \"visible\": false) and clip to it");
+        return null;
+    }
+    if (target.repeat != null) {
+        try l.errHint(3005, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is repeated; clip_to needs a layer that is drawn once", .{cid}), "repeat a group that holds both the shape and the clipped layer");
+        return null;
+    }
+    var p = target.parent;
+    while (p) |g| : (p = ls[g].parent) {
+        if (ls[g].repeat == null) continue;
+        if (g == i or isInside(ls, i, g)) continue;
+        try l.errHint(3005, x.clip_pos, try std.fmt.allocPrint(l.arena, "'{s}' is inside the repeated group '{s}', which does not hold layer '{s}'", .{ cid, ls[g].id, x.id }), "move the clipped layer into that group, or the shape out of it");
+        return null;
+    }
+    return t;
 }
 
 fn isInside(ls: []const Layer, i: usize, group: usize) bool {
@@ -1818,31 +2034,16 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             rep.count = try l.prop(v, .number, &base_scope);
         }
         if (rn.get("each")) |v| {
-            try l.note(v.pos, null, false, &base_scope);
-            var problem: ?expr.Problem = null;
-            if (v.data != .string) {
-                try l.err(1103, v.pos, "repeat.each must be an expression giving a list", .{});
-            } else if (expr.parse(arena, v.data.string, 0, &problem)) |node| {
-                var c: expr.Checker = .{ .scope = &base_scope, .problem = &problem };
-                if (c.check(node)) |t| {
-                    if (t == .list) {
-                        rep.each = .{ .node = node, .pos = v.pos };
-                        if (rn.get("item")) |itn| {
-                            if (try l.literalString(itn, "repeat.item")) |s| {
-                                if (expr.isIdent(s) and !expr.isReserved(s)) {
-                                    rep.item_name = s;
-                                    try locals.append(arena, .{ .name = s, .ty = .{ .item = t.list } });
-                                } else try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
-                            }
-                        }
-                    } else try l.exprProblem(v.pos, .{ .code = 3003, .start = node.start, .end = node.end, .message = try std.fmt.allocPrint(arena, "repeat.each needs a list, got a {s}", .{t.name()}) });
-                } else |e| switch (e) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    error.Invalid => try l.exprProblem(v.pos, problem.?),
+            if (try l.listSource(v, "repeat.each", &base_scope)) |src| {
+                rep.each = src.prop;
+                if (rn.get("item")) |itn| {
+                    if (try l.literalString(itn, "repeat.item")) |s| {
+                        if (expr.isIdent(s) and !expr.isReserved(s)) {
+                            rep.item_name = s;
+                            try locals.append(arena, .{ .name = s, .ty = .{ .item = src.def } });
+                        } else try l.err(1103, itn.pos, "'{s}' is not a valid loop name", .{s});
+                    }
                 }
-            } else |e| switch (e) {
-                error.OutOfMemory => return error.OutOfMemory,
-                error.Invalid => try l.exprProblem(v.pos, problem.?),
             }
         } else if (rn.get("item")) |itn| try l.err(1101, itn.pos, "repeat.item only applies with \"each\"", .{});
         layer.repeat = rep;
@@ -1881,6 +2082,10 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             flow.cross_expr = got.expr;
         }
         layer.flow = flow;
+    };
+    if (m.get("clip_to")) |v| if (try l.literalString(v, "clip_to")) |s| {
+        layer.clip_to = s;
+        layer.clip_pos = v.pos;
     };
     if (m.get("visible")) |v| layer.visible = try l.prop(v, .bool, scope);
     if (m.get("opacity")) |v| layer.opacity = try l.prop(v, .number, scope);
@@ -1929,7 +2134,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
 
     const shape_polygon = kind == .polygon and m.get("shape") != null;
     switch (kind) {
-        .rect, .ellipse, .image, .qr, .polygon => if (kind != .polygon or shape_polygon) {
+        .rect, .ellipse, .image, .qr, .barcode, .polygon => if (kind != .polygon or shape_polygon) {
             if (m.get("box")) |bn| {
                 if (try l.expectObject(bn, "box")) {
                     try l.checkFields(bn, &.{ "x", "y", "w", "h" }, "box");
@@ -2055,21 +2260,30 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                     } else try l.err(1102, sn.pos, "shape needs a \"type\"", .{});
                 }
             } else if (m.get("points")) |pn| {
-                if (pn.data == .array) {
-                    const min_points: usize = if (layer.closed) 3 else 2;
-                    if (pn.data.array.len < min_points) try l.err(1109, pn.pos, "a {s} polygon needs at least {d} points, found {d}", .{ if (layer.closed) "closed" else "open", min_points, pn.data.array.len });
-                    var pts: std.ArrayList(Point) = .empty;
+                var pts: std.ArrayList(PointSpec) = .empty;
+                var all_fixed = true;
+                if (pn.data == .object) {
+                    all_fixed = false;
+                    if (try l.pointRun(pn, scope)) |run| try pts.append(arena, .{ .run = run });
+                } else if (pn.data == .array) {
                     for (pn.data.array) |*pt| {
+                        if (pt.data == .object) {
+                            all_fixed = false;
+                            if (try l.pointRun(pt, scope)) |run| try pts.append(arena, .{ .run = run });
+                            continue;
+                        }
                         if (pt.data != .array or pt.data.array.len != 2) {
-                            try l.err(1103, pt.pos, "a point must be an array [x, y]", .{});
+                            try l.err(1103, pt.pos, "a point must be an array [x, y] or an object with \"count\" or \"each\"", .{});
                             continue;
                         }
                         const px = try l.prop(&pt.data.array[0], .number, &sx);
                         const py = try l.prop(&pt.data.array[1], .number, &sy);
-                        if (px != null and py != null) try pts.append(arena, .{ .x = px.?, .y = py.? });
+                        if (px != null and py != null) try pts.append(arena, .{ .fixed = .{ .x = px.?, .y = py.? } });
                     }
-                    layer.points = pts.items;
-                } else try l.err(1103, pn.pos, "points must be an array of [x, y] pairs", .{});
+                    const min_points: usize = if (layer.closed) 3 else 2;
+                    if (all_fixed and pn.data.array.len < min_points) try l.err(1109, pn.pos, "a {s} polygon needs at least {d} points, found {d}", .{ if (layer.closed) "closed" else "open", min_points, pn.data.array.len });
+                } else try l.err(1103, pn.pos, "points must be an array of [x, y] pairs or point runs", .{});
+                layer.points = pts.items;
             } else try l.err(1102, m.pos, "polygon layer '{s}' needs \"points\" or \"shape\"", .{id});
         },
         .text => {
@@ -2104,6 +2318,7 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
             if (m.get("max_width")) |v| layer.max_width = try l.prop(v, .number, &sx);
             if (m.get("max_height")) |v| layer.max_height = try l.prop(v, .number, &sy);
             if (m.get("min_size")) |v| layer.min_size = try l.prop(v, .number, scope);
+            if (m.get("min_squeeze")) |v| layer.min_squeeze = try l.prop(v, .number, scope);
             if (m.get("shrink_group")) |v| layer.shrink_group = try l.literalString(v, "shrink_group");
             if (m.get("markup")) |v| {
                 if (v.data == .bool) layer.markup = v.data.bool else try l.err(1103, v.pos, "markup must be true or false", .{});
@@ -2117,11 +2332,47 @@ fn compileLayer(l: *Loader, d: *Design, lsyms: []const expr.LayerSymbol, m: *con
                 try l.report(.warning, 1101, v.pos, try std.fmt.allocPrint(arena, "'{s}' only applies with \"markup\": true", .{key}), "add \"markup\": true to the layer");
             };
         },
-        .qr => {
-            if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "qr layer '{s}' needs \"text\"", .{id});
+        .qr, .barcode => {
+            if (kind == .barcode) {
+                if (m.get("format")) |v| {
+                    const got = try l.enumOrExpr(BarcodeFormat, v, "format", scope);
+                    layer.format = got.lit orelse .qr;
+                    layer.format_expr = got.expr;
+                } else try l.err(1102, m.pos, "barcode layer '{s}' needs \"format\"", .{id});
+                if (m.get("check")) |v| {
+                    const got = try l.enumOrExpr(BarcodeCheck, v, "check", scope);
+                    layer.check = got.lit orelse .auto;
+                    layer.check_expr = got.expr;
+                }
+                if (m.get("label")) |v| layer.label = try l.prop(v, .bool, scope);
+                if (m.get("label_text")) |v| layer.label_text = try l.template(v, scope);
+                if (m.get("label_color")) |v| layer.label_color = try l.prop(v, .color, scope);
+                if (m.get("label_gap")) |v| layer.label_gap = try l.prop(v, .number, scope);
+                if (m.get("font")) |v| if (try l.literalString(v, "font")) |fs| {
+                    layer.font = fs;
+                    try checkFontName(l, d, fs, v.pos);
+                };
+                if (m.get("size")) |v| layer.size = try l.prop(v, .number, scope);
+            }
+            if (kind == .barcode) {
+                layer.alignment = .center;
+                if (m.get("align")) |v| {
+                    const got = try l.enumOrExpr(Align, v, "align", scope);
+                    layer.alignment = got.lit orelse .center;
+                    layer.align_expr = got.expr;
+                }
+                if (layer.format_expr == null) try warnIgnoredBarcodeFields(l, m, layer.format, id);
+            }
+            if (m.get("text")) |v| layer.text = try l.template(v, scope) else try l.err(1102, m.pos, "{s} layer '{s}' needs \"text\"", .{ @tagName(kind), id });
             if (m.get("color")) |v| layer.color = try l.prop(v, .color, scope);
             if (m.get("fill")) |v| layer.fill = try l.prop(v, .color, scope);
             if (m.get("margin")) |v| layer.margin = try l.prop(v, .number, scope);
+            if (m.get("ecc")) |v| layer.ecc = try l.prop(v, .number, scope);
+            if (m.get("mode")) |v| {
+                const got = try l.enumOrExpr(QrMode, v, "mode", scope);
+                layer.qr_mode = got.lit;
+                layer.qr_mode_expr = got.expr;
+            }
             if (m.get("level")) |v| {
                 const got = try l.enumOrExpr(QrLevel, v, "level", scope);
                 layer.qr_level = got.lit orelse .medium;
@@ -2430,6 +2681,64 @@ fn countCode(diags: *const diag.List, code: u16) usize {
     return n;
 }
 
+test "clip_to names a shape layer drawn once [1116, 3002, 3005]" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const ok =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "mask", "type": "ellipse", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "visible": false },
+        \\    { "id": "pic", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "mask" },
+        \\    { "id": "g", "type": "group", "clip_to": "mask", "layers": [] },
+        \\    { "id": "row", "type": "group", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell", "type": "polygon", "points": [[0, 0], [5, 0], [0, 5]] },
+        \\      { "id": "inner", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "cell" }
+        \\    ] },
+        \\    { "id": "whole", "type": "group", "clip_to": "cell2", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell2", "type": "rect", "box": { "x": 0, "y": 0, "w": 5, "h": 5 } }
+        \\    ] }
+        \\  ]
+        \\}
+    ;
+    const d = try load(a, &diags, "t.design.json", ok);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    try std.testing.expectEqual(@as(?usize, 0), d.layers[1].clip_layer);
+    try std.testing.expectEqual(@as(?usize, 0), d.layers[2].clip_layer);
+    try std.testing.expectEqual(d.findLayer("cell"), d.layers[d.findLayer("inner").?].clip_layer);
+
+    const bad =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "layers": [
+        \\    { "id": "words", "type": "text", "text": "x", "at": { "x": 0, "y": 0 } },
+        \\    { "id": "a", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "words" },
+        \\    { "id": "b", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "b" },
+        \\    { "id": "c", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "mask" },
+        \\    { "id": "many", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "repeat": { "count": 2 } },
+        \\    { "id": "d", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "many" },
+        \\    { "id": "row", "type": "group", "repeat": { "count": 2 }, "layers": [
+        \\      { "id": "cell", "type": "rect", "box": { "x": 0, "y": 0, "w": 5, "h": 5 } }
+        \\    ] },
+        \\    { "id": "e", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": "cell" },
+        \\    { "id": "f", "type": "rect", "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "clip_to": 3 }
+        \\  ]
+        \\}
+    ;
+    diags = diag.List.init(a);
+    _ = try load(a, &diags, "t.design.json", bad);
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 1116));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3002));
+    try std.testing.expectEqual(@as(usize, 2), countCode(&diags, 3005));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1103));
+}
+
 test "a stroke without a fill is warned about (1114), a fill or gradient is not" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -2485,4 +2794,38 @@ test "list constants: empty, mixed and ragged lists are errors; layer reading co
     try std.testing.expect(d.consts[0].value != null);
     try std.testing.expect(d.consts[1].reads_layers);
     try std.testing.expect(d.consts[2].reads_layers);
+}
+
+test "polygon point runs: shapes of the entries are checked when the design loads" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var diags = diag.List.init(a);
+    const src =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 50 },
+        \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [] } },
+        \\  "layers": [
+        \\    { "id": "ok1", "type": "polygon", "points": { "each": "pts", "item": "q", "x": "q.px", "y": "q.py" } },
+        \\    { "id": "ok2", "type": "polygon", "points": [[0, 0], { "count": 3, "x": "i * 10", "y": "10" }] },
+        \\    { "id": "both", "type": "polygon", "points": [{ "count": 3, "each": "pts", "x": "0", "y": "0" }] },
+        \\    { "id": "nox", "type": "polygon", "points": [{ "count": 3, "y": "0" }] },
+        \\    { "id": "badeach", "type": "polygon", "points": [{ "each": "1 + 1", "x": "0", "y": "0" }] },
+        \\    { "id": "item", "type": "polygon", "points": [{ "count": 3, "item": "q", "x": "0", "y": "0" }] },
+        \\    { "id": "unknown", "type": "polygon", "points": [{ "count": 3, "x": "j", "y": "0" }] },
+        \\    { "id": "few", "type": "polygon", "points": [[0, 0], [1, 1]] }
+        \\  ]
+        \\}
+    ;
+    _ = try load(a, &diags, "t.design.json", src);
+    // both: 1111; nox: 1102; badeach: 3003; item: 1101; unknown: 3002; few: 1109.
+    try std.testing.expectEqual(@as(usize, 6), diags.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1111));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1102));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3003));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1101));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 3002));
+    try std.testing.expectEqual(@as(usize, 1), countCode(&diags, 1109));
 }

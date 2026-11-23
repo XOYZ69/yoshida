@@ -32,6 +32,8 @@ A design file (`*.design.json`) describes one card layout: the canvas, the fonts
 | `functions` | object of name to function | no | `{}` | Named formulas with arguments. See [Constants and functions](@/docs/expressions-constants-and-functions.md) |
 | `layers` | array of layers | yes | | Drawn in array order, **first is bottom**. See [Layers](@/docs/layers.md) |
 
+A card can replace the canvas size, dpi and bleed for itself with the keys `_width`, `_height`, `_dpi` and `_bleed` in [card data](@/docs/card-data.md#per-card-canvas-size).
+
 Unknown top-level fields are error 1101.
 
 The word *kind* (number, bool, color, text, path, enum, ident) says how a JSON value in a field is read. See [Expressions](@/docs/expressions.md#value-kinds).

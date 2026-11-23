@@ -37,6 +37,51 @@ function byDate(entries, max = MAX_DAYS) {
 	return [...days.values()].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-max);
 }
 
+/**
+ * What a release file is, from its name alone (nothing is measured):
+ *   kind    `desktop` (an installer of the desktop app), `bundle` (the release
+ *           zip with the CLI, the server and the web editor) or `other`
+ *   system  `windows`, `linux` or `macos` for a desktop installer, else null
+ *   format  the file type, e.g. `exe`, `appimage`, `deb`, `rpm`, `dmg`, `zip`
+ * Signatures and checksums (`.sig`, `.sha256`, `latest.json`) are `meta`: they
+ * are fetched by the updater, not by people, so they stay out of the breakdowns.
+ */
+export function classifyAsset(name) {
+	const n = String(name).toLowerCase();
+	if (/\.(sig|sha256|sha512|asc|json|yml|yaml|txt)$/.test(n)) return { kind: 'meta', system: null, format: 'meta' };
+	if (/\.msi$/.test(n)) return { kind: 'desktop', system: 'windows', format: 'msi' };
+	if (/(-setup)?\.exe$/.test(n)) return { kind: 'desktop', system: 'windows', format: 'exe' };
+	if (/\.appimage$/.test(n)) return { kind: 'desktop', system: 'linux', format: 'appimage' };
+	if (/\.deb$/.test(n)) return { kind: 'desktop', system: 'linux', format: 'deb' };
+	if (/\.rpm$/.test(n)) return { kind: 'desktop', system: 'linux', format: 'rpm' };
+	if (/\.dmg$/.test(n) || /\.app\.tar\.gz$/.test(n)) return { kind: 'desktop', system: 'macos', format: 'dmg' };
+	if (/\.zip$/.test(n)) return { kind: 'bundle', system: null, format: 'zip' };
+	return { kind: 'other', system: null, format: 'other' };
+}
+
+/**
+ * Downloads added up by option, from a list of summarized releases. Only
+ * people's downloads count: `meta` files are skipped. `kinds`, `systems` and
+ * `formats` are maps of name to count; `systems` covers desktop installers.
+ */
+export function downloadBreakdown(releases) {
+	const out = { kinds: {}, systems: {}, formats: {} };
+	const add = (map, key, n) => {
+		if (key) map[key] = (map[key] ?? 0) + n;
+	};
+	for (const r of releases) {
+		for (const a of r.assets ?? []) {
+			const c = a.kind ? a : { ...a, ...classifyAsset(a.name) };
+			if (c.kind === 'meta') continue;
+			const n = count(a.downloads);
+			add(out.kinds, c.kind, n);
+			add(out.systems, c.system, n);
+			add(out.formats, c.format, n);
+		}
+	}
+	return out;
+}
+
 /** Total downloads of every asset of every release. */
 export function totalDownloads(releases) {
 	return releases.reduce((sum, r) => sum + count(r.downloads), 0);
@@ -47,7 +92,12 @@ export function summarizeReleases(raw) {
 	return (Array.isArray(raw) ? raw : [])
 		.filter((r) => r && !r.draft && typeof r.tag_name === 'string')
 		.map((r) => {
-			const assets = (r.assets ?? []).map((a) => ({ name: String(a.name), downloads: count(a.download_count) }));
+			const assets = (r.assets ?? []).map((a) => {
+				const { kind, system, format } = classifyAsset(a.name);
+				const asset = { name: String(a.name), downloads: count(a.download_count), kind, format };
+				if (system) asset.system = system;
+				return asset;
+			});
 			return {
 				tag: r.tag_name,
 				published_at: r.published_at ?? null,
@@ -93,7 +143,7 @@ export function mergeStats(prev, snapshot, at = new Date()) {
 	const now = snapshot.now;
 	const history = byDate([
 		...(Array.isArray(old.history) ? old.history : []),
-		{ date: today, stars: now.stars, forks: now.forks, downloads: now.downloads },
+		{ date: today, stars: now.stars, forks: now.forks, downloads: now.downloads, ...(now.downloads_by && { kinds: now.downloads_by.kinds, systems: now.downloads_by.systems }) },
 	]);
 	const doc = {
 		version: VERSION,
@@ -157,6 +207,7 @@ async function collect(repo, env) {
 			contributors: count(contributors),
 			releases: releases.length,
 			downloads: totalDownloads(releases),
+			downloads_by: downloadBreakdown(releases),
 			latest_release: latest && { tag: latest.tag, published_at: latest.published_at, url: latest.url },
 		},
 		releases,

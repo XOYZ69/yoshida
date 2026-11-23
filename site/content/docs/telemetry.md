@@ -97,7 +97,7 @@ Without either, the counts live in a volume that Docker creates for that one con
 
 ## Admin page
 
-With an admin token set, `/admin/telemetry` shows the stats: totals, a table per day, the events by group, and the public flags. It is not linked anywhere, answers 404 when no token is set, and asks for the token on the page; the token goes in an `Authorization` header (never in the URL) to `GET /api/admin/stats`. A wrong token is answered after a short delay. There is no TLS on the server, so put it behind a reverse proxy with HTTPS before you use the page over a network.
+With an admin token set, `/admin/telemetry` shows the stats in the same style as the public page: totals with a line per day, worked-out numbers (the last 7 days against the 7 before, the share of sessions at the Advanced level, sessions per visitor-day, the busiest day, sessions by weekday), the events by group with exports as a share of all exports and events per session, a table per day, and the public flags. The worked-out numbers are added up in the browser from the same counts; nothing new is collected. It is not linked anywhere, answers 404 when no token is set, and asks for the token on the page; the token goes in an `Authorization` header (never in the URL) to `GET /api/admin/stats`. A wrong token is answered after a short delay. There is no TLS on the server, so put it behind a reverse proxy with HTTPS before you use the page over a network.
 
 ## Public stats
 
@@ -114,7 +114,7 @@ The admin page lets you tick which stats are public. Ticked stats are served to 
 
 A flag is a base stat (`sessions`, `uniques`, `advanced_sessions`), a group (`feature`, `export`, `error`) that includes every event in it, or one event (`export:pdf`). Nothing is public until you tick it. The endpoint sends `Access-Control-Allow-Origin: *`, so a web page can show your numbers.
 
-The server also shows them as a page: `/api/stats/page` (for example `http://localhost:8080/api/stats/page`) has the totals for sessions and visitors with a line per day, and the events as bars per group. It reads the same `GET /api/stats`, so it never shows more than you ticked, and it says so when nothing is public. It needs no token, loads nothing from other servers and follows the light or dark theme chosen in the editor. The admin page links to it, and so does **Privacy** in the editor (**Public stats**). With `--no-telemetry` it answers 404 like the other endpoints.
+The server also shows them as a page: `/api/stats/page` (for example `http://localhost:8080/api/stats/page`) has the totals for sessions and visitors with a line per day, and the events as bars per group (exports with their share). When the matching counts are public it also shows the worked-out numbers and the weekday pattern. It reads the same `GET /api/stats`, so it never shows more than you ticked, and it says so when nothing is public. It needs no token, loads nothing from other servers and follows the light or dark theme chosen in the editor. The admin page links to it, and so does **Privacy** in the editor (**Public stats**). With `--no-telemetry` it answers 404 like the other endpoints.
 
 ## Not included
 

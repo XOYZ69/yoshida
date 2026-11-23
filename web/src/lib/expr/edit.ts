@@ -14,6 +14,76 @@ export type Format = (src: string, width: number) => string | null;
 /** The width the edits format to: the same as a field of the panel. */
 const WIDTH = 72;
 
+/** Wide enough that the formatter never breaks a line. */
+const FLAT_WIDTH = 1 << 16;
+
+/**
+ * The expression on one line, for saving it in a design: a JSON string can
+ * only hold a line break as an escape (`\n`), which reads badly in the source.
+ * The window shows the multi-line layout; this is what it writes.
+ *
+ * Text without a line break is returned as it is. Otherwise the formatter
+ * prints it flat (the same tree, canonical spacing). When the text has
+ * problems and cannot be formatted, only the whitespace between tokens is
+ * collapsed; `tokens` are the spans of the same parser, so a quoted string
+ * is never touched.
+ */
+export function compactText(
+	src: string,
+	format: Format,
+	tokens: (src: string) => Span[],
+): string {
+	if (!/[\r\n]/.test(src)) return src;
+	const flat = format(src, FLAT_WIDTH);
+	if (flat !== null) return flat;
+	let out = "";
+	let at = 0;
+	for (const [start, end] of tokens(src)) {
+		const gap = src.slice(at, start);
+		out += /[\r\n]/.test(gap) ? " " : gap;
+		out += src.slice(start, end);
+		at = end;
+	}
+	out += src.slice(at);
+	return out.trim();
+}
+
+/** A gap of the source that the layout shows as a line break: replaced by `text`. */
+export type LayoutBreak = { from: number; to: number; text: string };
+
+/**
+ * Where the canonical layout at `width` breaks a one-line expression, for a
+ * view that shows the layout without changing the text. Each break is a gap
+ * between two tokens of `src` (it may be empty) and the gap of the formatted
+ * text there, which has the line break and the indent.
+ *
+ * Empty when the text already has line breaks, does not parse, or fits. The
+ * formatter may also drop parentheses or respace; the breaks are only valid
+ * when both texts have the same tokens, so otherwise the result is empty.
+ */
+export function layoutBreaks(
+	src: string,
+	width: number,
+	format: Format,
+	tokens: (src: string) => Span[],
+): LayoutBreak[] {
+	if (/[\r\n]/.test(src)) return [];
+	const laid = format(src, width);
+	if (laid === null || !laid.includes("\n")) return [];
+	const a = tokens(src);
+	const b = tokens(laid);
+	if (a.length !== b.length) return [];
+	for (let i = 0; i < a.length; i++)
+		if (src.slice(a[i][0], a[i][1]) !== laid.slice(b[i][0], b[i][1])) return [];
+	const out: LayoutBreak[] = [];
+	for (let i = 0; i + 1 < a.length; i++) {
+		const text = laid.slice(b[i][1], b[i + 1][0]);
+		if (text.includes("\n"))
+			out.push({ from: a[i][1], to: a[i + 1][0], text });
+	}
+	return out;
+}
+
 /** A piece of the expression: a node with its source text. */
 export type Slot = {
 	/** The node id, for the live values of its trace. */

@@ -14,6 +14,7 @@
 
 import { getContext, onMount, untrack } from "svelte";
 import type { ScopeResult } from "../engine";
+import ExprInput from "../builder/ExprInput.svelte";
 import Icon from "../ui/Icon.svelte";
 import { askText, overlay } from "../ui/overlay.svelte";
 import Window from "../ui/Window.svelte";
@@ -23,6 +24,7 @@ import {
 	addChip,
 	addMatchRow,
 	children,
+	compactText,
 	condChain,
 	listView,
 	matchView,
@@ -74,10 +76,15 @@ let {
 
 const live = getContext<LiveContext | undefined>(LIVE_CONTEXT);
 
-/** The text the field has now: what Apply compares with. */
-let base = $state(untrack(() => text));
+/** The text as the window shows it: the canonical layout, when the text parses. */
+const opened = untrack(() => {
+	const laid = exprCoreReady() ? formatExpr(text, 72) : null;
+	return laid ?? text;
+});
+/** The text the window opened with or last applied: what Apply compares with. */
+let base = $state(opened);
 /** The full expression, as edited in the text area and the cells. */
-let draft = $state(untrack(() => text));
+let draft = $state(opened);
 /** Child indexes from the root to the selected node (see edit.ts `children`). */
 let selPath = $state<number[]>([]);
 /** Cells whose typed text does not parse, by span: they keep the typed text. */
@@ -317,12 +324,19 @@ function extract(kind: "const" | "function", name: string) {
 		note = `Cannot extract as '${name}': the name is taken or not valid.`;
 		return;
 	}
-	live.extract(r.design, path, r.text);
+	live.extract(r.design, path, oneLine(r.text));
 	base = r.text;
 	draft = r.text;
 	bad = {};
 	selPath = [];
 	note = "";
+}
+
+/** The text as the field gets it: on one line (see compactText). */
+function oneLine(src: string): string {
+	return compactText(src, formatExpr, (s) =>
+		parseExpr(s, false).tokens.map((t): [number, number] => [t[0], t[1]]),
+	);
 }
 
 function keyOf(s: Slot): string {
@@ -389,7 +403,9 @@ function openTo(s: Slot): number[] | null {
 
 function apply() {
 	if (!dirty) return;
-	onapply(draft);
+	// The window shows the multi-line layout; the field gets one line, since
+	// a line break would be saved in the design as `\n`.
+	onapply(oneLine(draft));
 	base = draft;
 }
 
@@ -446,12 +462,15 @@ function onKey(e: KeyboardEvent) {
 	// first, and the window stays.
 	if (e.defaultPrevented || overlay.dialog !== null || !inWindow(e)) return;
 	if (e.key === "Escape") {
+		// A suggestion list closes first, and the window stays.
+		if (document.querySelector(".cm-tooltip-autocomplete")) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// Blurring a cell commits what was typed in it.
-		if (document.activeElement instanceof HTMLInputElement)
+		// Blurring a cell commits what was typed in it (an editor does it on
+		// the next tick), so the window closes after that.
+		if (document.activeElement instanceof HTMLElement)
 			document.activeElement.blur();
-		close();
+		setTimeout(close, 0);
 	}
 }
 
@@ -488,20 +507,14 @@ onMount(() => {
 
 {#snippet cell(s: Slot, name: string)}
 	<span class="cell">
-		{#if s.kind === "color"}<span class="sw" style:background={s.text}></span>{/if}
-		<input
-			class="in"
-			class:invalid={cellBad(s)}
-			aria-label={name}
-			value={cellValue(s)}
-			spellcheck="false"
-			onchange={(e) => setCell(s, e.currentTarget.value)}
-			onkeydown={(e) => {
-				if (e.key === "Enter") {
-					e.preventDefault();
-					setCell(s, e.currentTarget.value);
-				}
-			}} />
+		<span class="cellin" class:invalid={cellBad(s)}>
+			<ExprInput
+				bare
+				mono
+				label={name}
+				value={cellValue(s)}
+				oncommit={(v) => setCell(s, v)} />
+		</span>
 		{@render val(s.id)}
 		{@render opener(s)}
 	</span>
@@ -633,19 +646,18 @@ onMount(() => {
 			</div>
 		{/if}
 
-		<textarea
-			class="text"
-			aria-label="Expression text"
-			rows={textRows}
-			spellcheck="false"
-			value={draft}
-			oninput={(e) => setText(e.currentTarget.value)}
-			onkeydown={(e) => {
-				if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-					e.preventDefault();
-					apply();
-				}
-			}}></textarea>
+		<div class="text">
+			<ExprInput
+				bare
+				mono
+				multiline
+				rows={textRows}
+				label="Expression text"
+				value={draft}
+				oninput={setText}
+				onsubmit={apply}
+				oncommit={() => {}} />
+		</div>
 
 		<footer>
 			<div class="status-line">
@@ -851,9 +863,6 @@ onMount(() => {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   }
-  .formula .in.invalid {
-    border-color: var(--err);
-  }
   /* Delete buttons of the rows and chips. */
   .x {
     flex: none;
@@ -971,23 +980,18 @@ onMount(() => {
     max-width: 100%;
   }
   /* The whole expression: as many rows as its lines, at least 2, then it scrolls. */
-  textarea {
-    display: block;
+  .text {
     flex: none;
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    padding: 6px 8px;
-    background: var(--bg-code);
-    color: var(--fg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    font: 12px/1.5 var(--mono);
+    display: flex;
   }
-  textarea:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  /* A cell: the editor of an Inspector field, as wide as the cell. */
+  .cellin {
+    flex: 1;
+    min-width: 56px;
+    display: flex;
+  }
+  .cellin.invalid :global(.expr) {
+    border-color: var(--err);
   }
   footer {
     display: flex;

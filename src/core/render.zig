@@ -14,6 +14,8 @@ const expr = @import("expr.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const qr_mod = @import("qr.zig");
+const symbol = @import("symbol.zig");
+const barcode_mod = @import("barcode.zig");
 const raster = @import("raster.zig");
 const svgread = @import("svgread.zig");
 const text = @import("text.zig");
@@ -781,45 +783,67 @@ const Resolved = struct {
     icon_paths: []const []const u8 = &.{},
     src: []const u8 = "",
     image: ?*raster.Image = null,
-    /// QR layers: the encoded symbol, the size of one module in canvas
-    /// pixels and the quiet zone in modules. The bounds are the symbol
-    /// including its quiet zone.
-    qr: ?*const qr_mod.Code = null,
+    /// QR and barcode layers: the encoded symbol, the size of one module in
+    /// canvas pixels and the quiet zone in modules. The bounds are the
+    /// symbol including its quiet zone.
+    sym: ?*const symbol.Symbol = null,
     qr_module: f64 = 0,
     qr_margin: usize = 0,
+    /// Quiet zone above and below, in modules (0 for 1D codes).
+    qr_margin_y: usize = 0,
     qr_style: design_mod.QrStyle = .square,
     qr_eye: design_mod.QrEye = .square,
     /// Color of the corner squares; null means the same as `color`.
     qr_eye_color: ?Color = null,
     /// Modules per side of the cleared square in the middle (odd), 0 for none.
     qr_logo: usize = 0,
+    /// 1D codes: where the bars end, and where the guard bars (EAN, UPC)
+    /// end, in canvas pixels from the top of the layer; the human-readable
+    /// text; the bearer bars' thickness (ITF-14).
+    bc_bar_h: f64 = 0,
+    bc_guard_h: f64 = 0,
+    bc_bearer: f64 = 0,
+    bc_labels: []const BarLabel = &.{},
+    bc_label_color: Color = .{ .r = 0, .g = 0, .b = 0, .a = 255 },
 };
 
-/// What a QR layer draws: which modules are dark once the cleared middle and
-/// the corner squares (drawn on their own when styled) are left out.
+/// A piece of human-readable text under a 1D code: its layout and where its
+/// top-left corner goes, in canvas pixels.
+const BarLabel = struct {
+    layout: text.Layout,
+    x: f64,
+    y: f64,
+    font: *text.Font,
+};
+
+/// What a 2D code layer draws: which modules are dark once the cleared middle
+/// and the corner squares (drawn on their own when styled) are left out.
 const QrView = struct {
-    code: *const qr_mod.Code,
-    size: usize,
+    code: *const symbol.Symbol,
+    w: usize,
+    h: usize,
     logo_lo: usize,
     logo_hi: usize,
     /// The corner squares are drawn as shapes, not as modules.
     eyes: bool,
 
     fn init(r: *const Resolved) QrView {
-        const code = r.qr.?;
-        const size: usize = code.size;
+        const code = r.sym.?;
+        const size: usize = code.w;
         const lo = (size - r.qr_logo) / 2;
+        const is_qr = code.format == .qr;
         return .{
             .code = code,
-            .size = size,
+            .w = code.w,
+            .h = code.h,
             .logo_lo = lo,
             .logo_hi = lo + r.qr_logo,
-            .eyes = r.qr_style != .square or r.qr_eye != .square or r.qr_eye_color != null,
+            .eyes = is_qr and (r.qr_style != .square or r.qr_eye != .square or r.qr_eye_color != null),
         };
     }
 
     fn inEye(v: QrView, x: usize, y: usize) bool {
-        const far = v.size - 7;
+        const far = v.w - 7;
         return (x < 7 and y < 7) or (x >= far and y < 7) or (x < 7 and y >= far);
     }
 
@@ -834,8 +858,8 @@ const QrView = struct {
     fn eyeOrigin(v: QrView, i: usize) [2]usize {
         return switch (i) {
             0 => .{ 0, 0 },
-            1 => .{ v.size - 7, 0 },
-            else => .{ 0, v.size - 7 },
+            1 => .{ v.w - 7, 0 },
+            else => .{ 0, v.w - 7 },
         };
     }
 };
@@ -1612,26 +1636,15 @@ const Ctx = struct {
                 r.pivot = .{ r.left + r.w / 2, r.top + r.h / 2 };
             },
             .rect, .ellipse, .image => try ctx.evalBox(&e, l, r),
-            .qr => try ctx.evalQr(&e, l, r),
+            .qr, .barcode => try ctx.evalBarcode(&e, l, r),
             .polygon => if (l.shape) |shape| {
                 try ctx.evalBox(&e, l, r);
                 r.points = try ctx.shapePoints(&e, l, shape, r);
                 if (l.fill) |p| r.fill = (try ctx.eval(&e, l, p)).color;
             } else {
-                const pts = try ctx.arena.alloc([2]f32, l.points.len);
-                var minx: f64 = std.math.inf(f64);
-                var miny: f64 = std.math.inf(f64);
-                var maxx: f64 = -std.math.inf(f64);
-                var maxy: f64 = -std.math.inf(f64);
-                for (l.points, 0..) |p, i| {
-                    const x = try ctx.num(&e, l, p.x);
-                    const y = try ctx.num(&e, l, p.y);
-                    pts[i] = .{ @floatCast(x), @floatCast(y) };
-                    minx = @min(minx, x);
-                    miny = @min(miny, y);
-                    maxx = @max(maxx, x);
-                    maxy = @max(maxy, y);
-                }
+                var bounds: [4]f64 = .{ std.math.inf(f64), std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+                const pts = try ctx.polygonPoints(&e, l, &bounds);
+                const minx, const miny, const maxx, const maxy = bounds;
                 r.points = pts;
                 if (pts.len > 0) {
                     r.left = minx;
@@ -1672,13 +1685,15 @@ const Ctx = struct {
                 // Auto-shrink: largest size (in 0.5 px steps) whose block fits.
                 const max_w: ?f64 = if (l.max_width) |p| try ctx.num(&e, l, p) else null;
                 const max_h: ?f64 = if (l.max_height) |p| try ctx.num(&e, l, p) else null;
+                // Squeezing: glyphs may get as narrow as this before the size shrinks.
+                const squeeze: f64 = if (l.min_squeeze) |p| std.math.clamp(try ctx.num(&e, l, p), 0.05, 1) else 1;
                 if (max_w != null or max_h != null) {
                     const fits = struct {
-                        fn f(x: text.Layout, mw: ?f64, mh: ?f64) bool {
-                            return (mw == null or x.block_w <= mw.? + 0.01) and (mh == null or x.block_h <= mh.? + 0.01);
+                        fn f(x: text.Layout, mw: ?f64, mh: ?f64, sq: f64) bool {
+                            return (mw == null or x.block_w * sq <= mw.? + 0.01) and (mh == null or x.block_h <= mh.? + 0.01);
                         }
                     }.f;
-                    if (!fits(lay, max_w, max_h)) {
+                    if (!fits(lay, max_w, max_h, squeeze)) {
                         const min_size = if (l.min_size) |p| @max(1, try ctx.num(&e, l, p)) else @min(r.size, 8);
                         var lo: f64 = @floor(@min(min_size, r.size) * 2);
                         var hi: f64 = @floor(r.size * 2);
@@ -1688,7 +1703,7 @@ const Ctx = struct {
                             const mid = @floor((lo + hi) / 2);
                             opts.size = @floatCast(mid / 2);
                             const t = try text.layout(ctx.arena, r.font.?, ltext, opts);
-                            if (fits(t, max_w, max_h)) {
+                            if (fits(t, max_w, max_h, squeeze)) {
                                 best = t;
                                 best_size = mid / 2;
                                 lo = mid + 1;
@@ -1712,10 +1727,13 @@ const Ctx = struct {
                         r.size = m;
                     }
                 };
+                if (max_w) |mw| if (squeeze < 1 and lay.block_w > mw) {
+                    lay.xscale = @floatCast(@max(squeeze, mw / lay.block_w));
+                };
                 r.layout = lay;
                 if (lay.truncated) try ctx.report(.warning, 3201, l.max_lines.?.pos, null, try ctx.layerMsg(l, "text was cut to {d} line(s)", .{max_lines.?}), null);
                 if (lay.missing_glyphs) try ctx.report(.warning, 4003, l.text.?.pos, null, try ctx.layerMsg(l, "neither the font nor the bundled fallback fonts have glyphs for some characters; they are drawn as boxes", .{}), null);
-                r.w = lay.block_w;
+                r.w = lay.block_w * lay.xscale;
                 r.h = lay.block_h;
                 r.left = r.at[0] - fx * r.w;
                 r.top = if (r.anchor.isBaseline()) r.at[1] - lay.ascent else r.at[1] - fy * r.h;
@@ -1901,9 +1919,44 @@ const Ctx = struct {
         }
     }
 
-    /// A QR code layer: encodes the text and fits the symbol, whole pixels
-    /// per module, in the middle of the box.
-    fn evalQr(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
+    /// A 1D code in pixels: bars in whole pixels, guard and bearer bars,
+    /// then the label.
+    fn paintLinear(ctx: *Ctx, target: *raster.Bitmap, r: *const Resolved, lf: f32, tf: f32, wf: f32, hf: f32, k: f32) Failed!void {
+        const code = r.sym.?;
+        if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
+        const ms: f32 = @floatCast(r.qr_module * ctx.k);
+        const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const oy = @round(tf);
+        const paint = raster.paint(r.color, 1);
+        const bt: f32 = @round(@as(f32, @floatCast(r.bc_bearer)) * k);
+        const bar_end: f32 = @round(@as(f32, @floatCast(r.bc_bar_h)) * k);
+        const guard_end: f32 = @round(@as(f32, @floatCast(r.bc_guard_h)) * k);
+        if (bt > 0) {
+            raster.drawShape(target, .rect, @round(lf), oy, @round(wf), bt, 0, paint, null);
+            raster.drawShape(target, .rect, @round(lf), oy + bar_end - bt, @round(wf), bt, 0, paint, null);
+        }
+        var x: usize = 0;
+        while (x < code.w) {
+            if (!code.get(x, 0)) {
+                x += 1;
+                continue;
+            }
+            const guard = guardAt(code, x);
+            var end = x + 1;
+            while (end < code.w and code.get(end, 0) and guardAt(code, end) == guard) end += 1;
+            const y1 = if (guard) guard_end else bar_end - bt;
+            raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), oy + bt, ms * @as(f32, @floatFromInt(end - x)), y1 - bt, 0, paint, null);
+            x = end;
+        }
+        const lp = raster.paint(r.bc_label_color, 1);
+        for (r.bc_labels) |lb| {
+            try text.draw(ctx.gpa, target, lb.font, null, &lb.layout, @as(f32, @floatCast(lb.x)) * k, @as(f32, @floatCast(lb.y)) * k, .left, lp, null, k);
+        }
+    }
+
+    /// A QR code or barcode layer: encodes the text and fits the symbol,
+    /// whole pixels per module, in the middle of the box.
+    fn evalBarcode(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved) Failed!void {
         try ctx.evalBox(e, l, r);
         r.text = try ctx.tmpl(e, l, l.text.?);
         if (l.color) |p| r.color = (try ctx.eval(e, l, p)).color;
@@ -1912,48 +1965,73 @@ const Ctx = struct {
         r.qr_style = try ctx.enumValue(design_mod.QrStyle, e, l, l.qr_style_expr, l.qr_style, "style");
         r.qr_eye = try ctx.enumValue(design_mod.QrEye, e, l, l.qr_eye_expr, l.qr_eye, "eye");
         const qr_level = try ctx.enumValue(design_mod.QrLevel, e, l, l.qr_level_expr, l.qr_level, "level");
-        const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else 4;
+        const format: design_mod.BarcodeFormat = if (l.kind == .qr) .qr else try ctx.enumValue(design_mod.BarcodeFormat, e, l, l.format_expr, l.format, "format");
+        const check: design_mod.BarcodeCheck = if (l.kind == .qr) .auto else try ctx.enumValue(design_mod.BarcodeCheck, e, l, l.check_expr, l.check, "check");
+        const is_qr = format == .qr;
+        const is_linear = format.isLinear();
+        const margin: f64 = if (l.margin) |p| std.math.clamp(@floor(try ctx.num(e, l, p)), 0, 16) else @floatFromInt(format.quietZone());
         // A logo picture clears a fifth of the side unless `logo` says otherwise.
-        const logo: f64 = if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
-        if (l.logo_src) |t| {
+        const logo: f64 = if (!is_qr) 0 else if (l.logo) |p| std.math.clamp(try ctx.num(e, l, p), 0, 0.5) else if (l.logo_src != null) 0.2 else 0;
+        if (is_qr) if (l.logo_src) |t| {
             r.src = try ctx.tmpl(e, l, t);
             if (r.src.len > 0) r.image = try ctx.loadImage(l, r.src, t.pos);
-        }
+        };
         const logo_pos = if (l.logo) |p| p.pos else if (l.logo_src) |t| t.pos else l.pos;
         const level: qr_mod.Level = @enumFromInt(@intFromEnum(qr_level));
-        const code = try ctx.arena.create(qr_mod.Code);
-        qr_mod.encode(code, r.text, level, null) catch {
-            try ctx.report(.err, 3108, l.text.?.pos, null, try ctx.layerMsg(l, "the text is {d} bytes, but a QR code of level {s} holds at most {d}", .{ r.text.len, @tagName(qr_level), qr_mod.capacity(level) }), "shorten the text or use a lower level");
-            return error.Failed;
+        const what: []const u8 = if (is_qr) "QR code" else "barcode";
+        var prob: symbol.Problem = .{};
+        const code = try ctx.arena.create(symbol.Symbol);
+        const qr_mode: qr_mod.Mode = if (l.qr_mode_expr != null or l.qr_mode != null)
+            @enumFromInt(@intFromEnum(try ctx.enumValue(design_mod.QrMode, e, l, l.qr_mode_expr, l.qr_mode orelse .auto, "mode")))
+        else if (l.kind == .qr) .byte else .auto;
+        const ecc_max: f64 = if (format == .aztec) 90 else 8;
+        const ecc_default: u8 = if (format == .aztec) 23 else if (format == .pdf417) 255 else 0;
+        const ecc_given: f64 = if (l.ecc) |p| @floor(try ctx.num(e, l, p)) else -1;
+        // A negative value (an unset param, say) means the default.
+        const ecc: u8 = if (ecc_given < 0) ecc_default else @intFromFloat(@min(ecc_given, ecc_max));
+        code.* = barcode_mod.encode(ctx.arena, &prob, format, r.text, .{ .check = check, .level = level, .qr_mode = qr_mode, .ecc = ecc }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Invalid => {
+                try ctx.report(.err, prob.code, l.text.?.pos, null, try ctx.layerMsg(l, "{s}", .{prob.msg}), prob.hint);
+                return error.Failed;
+            },
         };
+        if (code.note.len > 0) try ctx.report(.hint, 3213, l.text.?.pos, null, try ctx.layerMsg(l, "{s}", .{code.note}), null);
         const margin_modules: usize = @intFromFloat(margin);
-        const modules: f64 = @floatFromInt(@as(usize, code.size) + 2 * margin_modules);
-        const side = @min(r.w, r.h);
+        const margin_y: usize = if (is_linear) 0 else margin_modules;
+        const modules_x: f64 = @floatFromInt(code.w + 2 * margin_modules);
+        const modules_y: f64 = @floatFromInt(code.h + 2 * margin_y);
+        const side = if (is_linear) r.w else @min(r.w, r.h);
         // Whole bitmap pixels per module keep the edges sharp.
-        var px = @floor(side * ctx.k / modules);
+        const fit_x = r.w * ctx.k / modules_x;
+        const fit_y = if (is_linear) std.math.inf(f64) else r.h * ctx.k / modules_y;
+        var px = @floor(@min(fit_x, fit_y));
         if (px < 1) {
-            px = side * ctx.k / modules;
-            try ctx.report(.warning, 3204, l.pos, null, try ctx.layerMsg(l, "a module of the QR code is smaller than one pixel ({d} modules in {d} px)", .{ modules, side }), "make the box larger or the text shorter");
+            px = @min(fit_x, fit_y);
+            try ctx.report(.warning, 3204, l.pos, null, try ctx.layerMsg(l, "a module of the {s} is smaller than one pixel ({d} modules in {d} px)", .{ what, if (is_linear) modules_x else modules_x, side }), "make the box larger or the text shorter");
         }
         const module = px / ctx.k;
-        const total = module * modules;
+        const total_w = module * modules_x;
+        const total_h = if (is_linear) r.h else module * modules_y;
         const cx = r.left + r.w / 2;
         const cy = r.top + r.h / 2;
-        r.left = @round((cx - total / 2) * ctx.k) / ctx.k;
-        r.top = @round((cy - total / 2) * ctx.k) / ctx.k;
-        r.w = total;
-        r.h = total;
-        r.qr = code;
+        r.left = @round((cx - total_w / 2) * ctx.k) / ctx.k;
+        if (!is_linear) r.top = @round((cy - total_h / 2) * ctx.k) / ctx.k;
+        r.w = total_w;
+        r.h = total_h;
+        r.sym = code;
         r.qr_module = module;
         r.qr_margin = margin_modules;
+        r.qr_margin_y = margin_y;
+        if (is_linear) try ctx.evalBarLabels(e, l, r, code, module);
 
         // The cleared middle for a logo: an odd number of modules so that it
         // sits in the centre, and clear of the corner squares.
         if (logo > 0) {
-            const size: f64 = @floatFromInt(code.size);
+            const size: f64 = @floatFromInt(code.w);
             var n: usize = @intFromFloat(@round(logo * size));
             if (n % 2 == 0) n += 1;
-            n = @min(n, code.size - 18);
+            n = @min(n, code.w - 18);
             r.qr_logo = n;
             const nf: f64 = @floatFromInt(n);
             if (qr_level != .high) {
@@ -1969,12 +2047,12 @@ const Ctx = struct {
             const dark = bcolor.luminance(r.color);
             const light = bcolor.luminance(r.fill);
             if (dark > light) {
-                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code is lighter than its background; many scanners reject inverted codes", .{}), "use dark modules on a light fill");
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the {s} is lighter than its background; many scanners reject inverted codes", .{what}), "use dark modules on a light fill");
             } else if (light - dark < 0.4) {
-                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the QR code has little contrast (luminance differs by {d} %, 40 % is the usual minimum)", .{@round(100 * (light - dark))}), "darken \"color\" or lighten \"fill\"");
+                try ctx.report(.warning, 3205, l.pos, null, try ctx.layerMsg(l, "the {s} has little contrast (luminance differs by {d} %, 40 % is the usual minimum)", .{ what, @round(100 * (light - dark)) }), "darken \"color\" or lighten \"fill\"");
             }
         }
-        if (r.fill.a > 0) if (r.qr_eye_color) |ec| {
+        if (is_qr and r.fill.a > 0) if (r.qr_eye_color) |ec| {
             // Scanners find the code by its corner squares.
             if (bcolor.luminance(r.fill) - bcolor.luminance(ec) < 0.4) {
                 try ctx.report(.warning, 3205, l.eye_color.?.pos, null, try ctx.layerMsg(l, "the corner squares of the QR code have little contrast against the fill; scanners find the code by them", .{}), "darken \"eye_color\"");
@@ -1982,10 +2060,98 @@ const Ctx = struct {
         };
         if (ctx.dpi > 0) {
             const mm = module / ctx.dpi * 25.4;
-            if (mm < 0.5) {
-                try ctx.report(.warning, 3208, l.pos, null, try ctx.layerMsg(l, "a module of the QR code prints {d} mm wide at {d} dpi; 0.5 mm is the usual minimum", .{ @round(mm * 100) / 100, ctx.dpi }), "make the box larger, the text shorter or the level lower");
+            const min_mm: f64 = if (is_qr) 0.5 else 0.25;
+            if (mm < min_mm) {
+                try ctx.report(.warning, 3208, l.pos, null, try ctx.layerMsg(l, "a module of the {s} prints {d} mm wide at {d} dpi; {d} mm is the usual minimum", .{ what, @round(mm * 100) / 100, ctx.dpi, min_mm }), if (is_qr) "make the box larger, the text shorter or the level lower" else "make the box wider or the text shorter");
             }
         }
+    }
+
+    /// The human-readable text of a 1D code, and with it the heights of the
+    /// bars: the label takes the bottom of the box.
+    fn evalBarLabels(ctx: *Ctx, e: *expr.Env, l: *const Layer, r: *Resolved, code: *const symbol.Symbol, module: f64) Failed!void {
+        r.bc_bar_h = r.h;
+        r.bc_guard_h = r.h;
+        if (code.bearer) r.bc_bearer = 5 * module;
+        const want: bool = if (l.label) |p| (try ctx.eval(e, l, p)).bool else switch (code.format) {
+            .ean13, .ean8, .upca, .itf14 => true,
+            else => false,
+        };
+        if (!want) return;
+        const own = if (l.label_text) |t| try ctx.tmpl(e, l, t) else null;
+        const shown = own orelse code.normalized;
+        if (shown.len == 0) return;
+        const font = try ctx.fontFor(l);
+        const explicit: ?f64 = if (l.size) |p| try ctx.num(e, l, p) else null;
+        if (explicit) |sz| if (sz <= 0) {
+            try ctx.report(.err, 3101, l.size.?.pos, null, try ctx.layerMsg(l, "font size must be above 0, got {d}", .{sz}), null);
+            return error.Failed;
+        };
+        var size: f64 = explicit orelse std.math.clamp(module * 8, 6, r.h * 0.3);
+        r.bc_label_color = if (l.label_color) |p| (try ctx.eval(e, l, p)).color else r.color;
+        const bars_left = r.left + module * @as(f64, @floatFromInt(r.qr_margin));
+        const bars_w = module * @as(f64, @floatFromInt(code.w));
+        const groups: []const symbol.LabelGroup = if (own == null) code.groups else &.{};
+        var labels: std.ArrayList(BarLabel) = .empty;
+
+        // Plain text: shrink to the bars unless the size was asked for.
+        if (groups.len == 0 and r.alignment != .justify) {
+            var lay = try text.layout(ctx.arena, font, shown, .{ .size = @floatCast(size) });
+            if (explicit == null and lay.block_w > bars_w) {
+                size = @max(6, size * bars_w / lay.block_w);
+                lay = try text.layout(ctx.arena, font, shown, .{ .size = @floatCast(size) });
+            }
+            if (lay.block_w > bars_w + 0.01) try ctx.report(.warning, 3214, l.pos, null, try ctx.layerMsg(l, "the label is {d} px wide, wider than the bars ({d} px)", .{ @round(lay.block_w), @round(bars_w) }), "use a smaller \"size\" or a wider box");
+            const x: f64 = switch (r.alignment) {
+                .left => bars_left,
+                .right, .justify => bars_left + bars_w - lay.block_w,
+                .center => bars_left + (bars_w - lay.block_w) / 2,
+            };
+            try labels.append(ctx.arena, .{ .layout = lay, .x = x, .y = 0, .font = font });
+        } else {
+            // Each character on its own, in a slot of the bars: the digits of
+            // an EAN group under their bars, or spread over the whole code.
+            const Slot = struct { text: []const u8, x0: f64, x1: f64 };
+            var slots: std.ArrayList(Slot) = .empty;
+            if (groups.len > 0) {
+                for (groups) |g| {
+                    const gx0 = bars_left + module * @as(f64, @floatFromInt(g.x0));
+                    const gx1 = bars_left + module * @as(f64, @floatFromInt(g.x1));
+                    const n: f64 = @floatFromInt(g.text.len);
+                    for (0..g.text.len) |i| {
+                        const fi: f64 = @floatFromInt(i);
+                        try slots.append(ctx.arena, .{ .text = g.text[i .. i + 1], .x0 = gx0 + (gx1 - gx0) * fi / n, .x1 = gx0 + (gx1 - gx0) * (fi + 1) / n });
+                    }
+                }
+            } else {
+                const n: f64 = @floatFromInt(shown.len);
+                for (0..shown.len) |i| {
+                    const fi: f64 = @floatFromInt(i);
+                    try slots.append(ctx.arena, .{ .text = shown[i .. i + 1], .x0 = bars_left + bars_w * fi / n, .x1 = bars_left + bars_w * (fi + 1) / n });
+                }
+            }
+            for (slots.items) |sl| {
+                const lay = try text.layout(ctx.arena, font, sl.text, .{ .size = @floatCast(size) });
+                try labels.append(ctx.arena, .{ .layout = lay, .x = (sl.x0 + sl.x1) / 2 - lay.block_w / 2, .y = 0, .font = font });
+            }
+        }
+        const text_h = labels.items[0].layout.block_h;
+        const gap: f64 = if (l.label_gap) |p| @max(0, try ctx.num(e, l, p)) else size * 0.25;
+        const zone = r.h - text_h - gap;
+        if (zone < r.h * 0.25 or zone < 2 * r.bc_bearer + 1) {
+            try ctx.report(.warning, 3214, l.pos, null, try ctx.layerMsg(l, "the box is {d} px high, too short for bars and a label of {d} px; the label is left out", .{ @round(r.h), @round(text_h + gap) }), "make the box higher or the label smaller");
+            return;
+        }
+        for (labels.items) |*lb| lb.y = r.top + r.h - text_h;
+        r.bc_labels = labels.items;
+        r.bc_bar_h = zone;
+        r.bc_guard_h = if (code.guards.len > 0 and groups.len > 0) r.h else zone;
+    }
+
+    /// Whether the module `x` of a 1D code is drawn with the guard height.
+    fn guardAt(code: *const symbol.Symbol, x: usize) bool {
+        for (code.guards) |g| if (x >= g[0] and x < g[1]) return true;
+        return false;
     }
 
     /// Points of a preset shape filling the layer's box.
@@ -2039,6 +2205,67 @@ const Ctx = struct {
 
     fn indexOf(ctx: *Ctx, l: *const Layer) usize {
         return (@intFromPtr(l) - @intFromPtr(ctx.d.layers.ptr)) / @sizeOf(Layer);
+    }
+
+    fn extendBounds(bounds: *[4]f64, x: f64, y: f64) void {
+        bounds[0] = @min(bounds[0], x);
+        bounds[1] = @min(bounds[1], y);
+        bounds[2] = @max(bounds[2], x);
+        bounds[3] = @max(bounds[3], y);
+    }
+
+    /// The points of a polygon layer: its fixed points and the runs made
+    /// from a count or a list, in order.
+    fn polygonPoints(ctx: *Ctx, env: *expr.Env, l: *const Layer, bounds: *[4]f64) Failed![]const [2]f32 {
+        var out: std.ArrayList([2]f32) = .empty;
+        for (l.points) |spec| switch (spec) {
+            .fixed => |p| {
+                const x = try ctx.num(env, l, p.x);
+                const y = try ctx.num(env, l, p.y);
+                try out.append(ctx.arena, .{ @floatCast(x), @floatCast(y) });
+                extendBounds(bounds, x, y);
+            },
+            .run => |run| {
+                var count: usize = 0;
+                var list: []const []const Value = &.{};
+                var pos: u32 = 0;
+                if (run.count) |p| {
+                    pos = p.pos;
+                    const n = @floor(try ctx.num(env, l, p));
+                    if (n > limitF(limits.iterations)) {
+                        try ctx.report(.err, 5001, p.pos, null, try ctx.layerMsg(l, "point count {d} is above the limit of {d}", .{ n, limits.iterations }), null);
+                        return error.Failed;
+                    }
+                    count = if (n > 0) @intFromFloat(n) else 0;
+                } else if (run.each) |p| {
+                    pos = p.pos;
+                    list = (try ctx.eval(env, l, p)).list;
+                    if (list.len > limits.iterations) {
+                        try ctx.report(.err, 5001, p.pos, null, try ctx.layerMsg(l, "points over {d} items is above the limit of {d}", .{ list.len, limits.iterations }), null);
+                        return error.Failed;
+                    }
+                    count = list.len;
+                }
+                const saved = ctx.locals;
+                defer ctx.locals = saved;
+                for (0..count) |i| {
+                    const own = try ctx.arena.alloc(Local, if (run.item_name != null) 2 else 1);
+                    own[0] = .{ .name = run.index_name, .value = .{ .number = @floatFromInt(i) } };
+                    if (run.item_name) |name| own[1] = .{ .name = name, .value = .{ .item = list[i] } };
+                    ctx.locals = try std.mem.concat(ctx.arena, Local, &.{ saved, own });
+                    const x = try ctx.num(env, l, run.x);
+                    const y = try ctx.num(env, l, run.y);
+                    try out.append(ctx.arena, .{ @floatCast(x), @floatCast(y) });
+                    extendBounds(bounds, x, y);
+                }
+            },
+        };
+        const min_points: usize = if (l.closed) 3 else 2;
+        if (out.items.len < min_points) {
+            try ctx.report(.err, 3110, l.pos, null, try ctx.layerMsg(l, "a {s} polygon needs at least {d} points, got {d}", .{ if (l.closed) "closed" else "open", min_points, out.items.len }), null);
+            return error.Failed;
+        }
+        return out.items;
     }
 
     /// Evaluates every iteration of a repeated layer (once per card).
@@ -2205,6 +2432,15 @@ const Ctx = struct {
     fn drawGroup(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
         // Over the limit (or checking): keep counting the children.
         if (!ctx.countDrawn(gi) or ctx.opts.dry) return ctx.drawChildren(canvas, l, gi);
+        const path = (try ctx.clipPath(l)) orelse return ctx.drawGroupIn(canvas, l, gi, r);
+        var clip = (try ctx.beginClip(canvas, path)) orelse return;
+        defer clip.deinit(ctx.gpa);
+        errdefer if (ctx.scene) |sc| sc.items.shrinkRetainingCapacity(clip.mark);
+        try ctx.drawGroupIn(if (clip.tmp) |*t| t else canvas, l, gi, r);
+        try ctx.endClip(canvas, &clip);
+    }
+
+    fn drawGroupIn(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, gi: usize, r: *const Resolved) Failed!void {
         // A plain group (no effects, fully opaque, not rotated) composites
         // exactly like its children drawn one by one, so they draw straight
         // onto the target without a scratch bitmap.
@@ -2319,8 +2555,105 @@ const Ctx = struct {
             return;
         }
         if (ctx.opts.dry) return;
+        const path = (try ctx.clipPath(l)) orelse return ctx.drawLayerIn(canvas, l, r, bb);
+        var clip = (try ctx.beginClip(canvas, path)) orelse return;
+        defer clip.deinit(ctx.gpa);
+        errdefer if (ctx.scene) |sc| sc.items.shrinkRetainingCapacity(clip.mark);
+        try ctx.drawLayerIn(if (clip.tmp) |*t| t else canvas, l, r, bb);
+        try ctx.endClip(canvas, &clip);
+    }
+
+    fn drawLayerIn(ctx: *Ctx, canvas: *raster.Bitmap, l: *const Layer, r: *const Resolved, bb: [4]f64) Failed!void {
         if (ctx.scene) |sc| return if (hasConvolve(l) or paintsAlone(l, r)) ctx.captureLayer(sc, canvas, l, r, bb) else ctx.emitLayer(sc, l, r, bb);
         return ctx.paintLayer(canvas, l, r, bb);
+    }
+
+    // ---------------------------------------------------------- clip_to
+
+    /// The shape of the layer `l.clip_to` names, as a closed path in canvas
+    /// pixels with that layer's own rotation; null when `l` has no clip.
+    /// The shape layer is evaluated like any other, visible or not.
+    fn clipPath(ctx: *Ctx, l: *const Layer) Failed!?vector.Path {
+        const ti = l.clip_layer orelse return null;
+        const t = &ctx.d.layers[ti];
+        const r = try ctx.resolve(ti);
+        // A vector scene outlives the card's arena: its paths live in it.
+        const arena = if (ctx.scene) |sc| sc.allocator() else ctx.arena;
+        var b = vector.PathBuilder.init(arena);
+        const x: f32 = @floatCast(r.left);
+        const y: f32 = @floatCast(r.top);
+        const w: f32 = @floatCast(r.w);
+        const h: f32 = @floatCast(r.h);
+        switch (t.kind) {
+            .rect => try b.roundRect(x, y, w, h, @floatCast(r.radius)),
+            .ellipse => {
+                const cx = x + w / 2;
+                const cy = y + h / 2;
+                if (r.arc) |a| if (!fullSweep(a)) {
+                    // A part of the ellipse clips to its slice, open arc or not.
+                    try b.moveTo(.{ cx, cy });
+                    try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), false);
+                    try b.close();
+                };
+                if (b.cmds.items.len == 0) {
+                    try b.arc(cx, cy, w / 2, h / 2, 0, 360, true);
+                    try b.close();
+                }
+            },
+            // Open or closed: the area the points enclose.
+            .polygon => if (r.points.len >= 3) try b.polyline(r.points, true),
+            else => unreachable,
+        }
+        const path = b.finish();
+        if (r.rotate == 0 or path.cmds.len == 0) return path;
+        return try vector.rotatePath(arena, path, @floatCast(r.rotate), .{ @floatCast(r.pivot[0]), @floatCast(r.pivot[1]) });
+    }
+
+    /// A clip being drawn: a group in the vector scene (opened at item
+    /// `mark`), or a bitmap the clipped layer draws into, which is masked
+    /// by the shape and composited when the clip ends.
+    const Clip = struct {
+        mark: usize = 0,
+        tmp: ?raster.Bitmap = null,
+        /// The shape in bitmap pixels.
+        pts: []const [2]f32 = &.{},
+
+        fn deinit(cl: *Clip, gpa: Allocator) void {
+            if (cl.tmp) |*t| t.deinit(gpa);
+            cl.tmp = null;
+        }
+    };
+
+    /// Starts drawing inside `path`; null when the shape covers nothing
+    /// of `canvas`, so nothing is drawn.
+    fn beginClip(ctx: *Ctx, canvas: *raster.Bitmap, path: vector.Path) Failed!?Clip {
+        if (path.cmds.len == 0) return null;
+        if (ctx.scene) |sc| {
+            const mark = sc.items.items.len;
+            try sc.add(.{ .begin = .{ .clip = path } });
+            return .{ .mark = mark };
+        }
+        const pts = try vector.flatten(ctx.arena, path, @floatCast(ctx.k));
+        if (pts.len < 3) return null;
+        var bx = [4]f32{ pts[0][0], pts[0][1], pts[0][0], pts[0][1] };
+        for (pts) |p| bx = .{ @min(bx[0], p[0]), @min(bx[1], p[1]), @max(bx[2], p[0]), @max(bx[3], p[1]) };
+        if (!(std.math.isFinite(bx[0]) and std.math.isFinite(bx[1]) and std.math.isFinite(bx[2]) and std.math.isFinite(bx[3]))) return null;
+        const lim: f32 = 1e8;
+        const r = canvas.clip(@intFromFloat(@floor(std.math.clamp(bx[0], -lim, lim))), @intFromFloat(@floor(std.math.clamp(bx[1], -lim, lim))), @intFromFloat(@ceil(std.math.clamp(bx[2], -lim, lim))), @intFromFloat(@ceil(std.math.clamp(bx[3], -lim, lim)))) orelse return null;
+        if (r[2] <= r[0] or r[3] <= r[1]) return null;
+        return .{ .tmp = try raster.Bitmap.init(ctx.gpa, r[0], r[1], @intCast(r[2] - r[0]), @intCast(r[3] - r[1])), .pts = pts };
+    }
+
+    /// Ends a clip: closes the vector group, or keeps the part of the
+    /// bitmap inside the shape and composites it onto `canvas`.
+    fn endClip(ctx: *Ctx, canvas: *raster.Bitmap, cl: *Clip) Failed!void {
+        if (ctx.scene) |sc| return sc.add(.end);
+        const t = &cl.tmp.?;
+        var mask = try raster.Bitmap.init(ctx.gpa, t.x, t.y, t.w, t.h);
+        defer mask.deinit(ctx.gpa);
+        try raster.fillPolygon(ctx.gpa, &mask, cl.pts, raster.paint(Color.white, 1));
+        raster.maskBy(t, &mask);
+        raster.composite(canvas, t);
     }
 
     /// How far (canvas pixels) the soft effects of a layer reach past its
@@ -2409,24 +2742,24 @@ const Ctx = struct {
                     try ctx.paintShape(target, l, &plain, st);
                 }
             } else try ctx.paintShape(target, l, r, stroke),
-            .qr => {
+            .qr, .barcode => if (r.sym.?.format.isLinear()) try ctx.paintLinear(target, r, lf, tf, wf, hf, k) else {
                 const v = QrView.init(r);
                 if (r.fill.a > 0) raster.drawShape(target, .rect, lf, tf, wf, hf, 0, raster.paint(r.fill, 1), null);
                 const ms: f32 = @floatCast(r.qr_module * ctx.k);
                 const ox = @round(lf) + ms * @as(f32, @floatFromInt(r.qr_margin));
-                const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin));
+                const oy = @round(tf) + ms * @as(f32, @floatFromInt(r.qr_margin_y));
                 const paint = raster.paint(r.color, 1);
                 const mod_r = qrModuleRadius(r.qr_style) * ms;
                 // Dots are a little smaller than a module so they do not touch.
                 const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
-                for (0..v.size) |y| {
+                for (0..v.h) |y| {
                     var x: usize = 0;
-                    while (x < v.size) : (x += 1) {
+                    while (x < v.w) : (x += 1) {
                         if (!v.dark(x, y)) continue;
                         const my = oy + ms * @as(f32, @floatFromInt(y));
                         if (r.qr_style == .square) {
                             var end = x + 1;
-                            while (end < v.size and v.dark(end, y)) end += 1;
+                            while (end < v.w and v.dark(end, y)) end += 1;
                             raster.drawShape(target, .rect, ox + ms * @as(f32, @floatFromInt(x)), my, ms * @as(f32, @floatFromInt(end - x)), ms, 0, paint, null);
                             x = end;
                         } else {
@@ -2518,8 +2851,17 @@ const Ctx = struct {
             .ellipse => if (r.arc) |arc| {
                 const cx = lf + wf / 2;
                 const cy = tf + hf / 2;
+                const pie = l.arc.?.pie;
+                if (fullSweep(arc)) {
+                    // A whole turn is a closed ring (no spoke at the seam), still starting at the arc's start angle.
+                    const turn = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(turnEnd(arc)));
+                    const ring = turn[0 .. turn.len - 1];
+                    if (pie) try raster.fillPolygon(ctx.gpa, target, ring, raster.paint(r.fill, 1));
+                    if (stroke) |s| raster.strokePolyline(target, ring, true, s);
+                    return;
+                }
                 const curve = try raster.ellipsePath(ctx.arena, cx, cy, wf / 2, hf / 2, @floatCast(arc[0]), @floatCast(arc[1]));
-                if (l.arc.?.pie) {
+                if (pie) {
                     const slice = try ctx.arena.alloc([2]f32, curve.len + 1);
                     slice[0] = .{ cx, cy };
                     @memcpy(slice[1..], curve);
@@ -2653,7 +2995,7 @@ const Ctx = struct {
             .polygon => try ctx.emitPolygon(sc, l, r),
             .text => try ctx.emitText(sc, l, r),
             .image => try ctx.emitImage(sc, l, r),
-            .qr => try ctx.emitQr(sc, r),
+            .qr, .barcode => try ctx.emitBarcode(sc, r),
         }
         try closeFrame(sc, n);
     }
@@ -2721,9 +3063,15 @@ const Ctx = struct {
             const pie = l.arc.?.pie;
             const cx = x + w / 2;
             const cy = y + h / 2;
-            if (pie) try b.moveTo(.{ cx, cy });
-            try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), !pie);
-            if (pie) try b.close();
+            if (fullSweep(a)) {
+                // A whole turn is a closed ring: no spoke at the seam.
+                try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(turnEnd(a)), true);
+                try b.close();
+            } else {
+                if (pie) try b.moveTo(.{ cx, cy });
+                try b.arc(cx, cy, w / 2, h / 2, @floatCast(a[0]), @floatCast(a[1]), !pie);
+                if (pie) try b.close();
+            }
             fill = pie;
         } else {
             try b.arc(x + w / 2, y + h / 2, w / 2, h / 2, 0, 360, true);
@@ -2754,28 +3102,30 @@ const Ctx = struct {
     }
 
     /// The background square, then every dark run of modules as one path.
-    fn emitQr(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+    fn emitBarcode(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+        if (r.sym.?.format.isLinear()) return ctx.emitLinear(sc, r);
         const v = QrView.init(r);
         const left: f32 = @floatCast(r.left);
         const top: f32 = @floatCast(r.top);
         const total: f32 = @floatCast(r.w);
+        const total_h: f32 = @floatCast(r.h);
         var bg = vector.PathBuilder.init(sc.allocator());
-        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total }, .{ left, top + total } }, true);
+        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total_h }, .{ left, top + total_h } }, true);
         try addFill(sc, bg.finish(), r.fill);
         const ms: f32 = @floatCast(r.qr_module);
         const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
-        const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const oy = top + ms * @as(f32, @floatFromInt(r.qr_margin_y));
         const mod_r = qrModuleRadius(r.qr_style) * ms;
         const gap: f32 = if (r.qr_style == .dots) ms * 0.05 else 0;
         var b = vector.PathBuilder.init(sc.allocator());
-        for (0..v.size) |y| {
+        for (0..v.h) |y| {
             var x: usize = 0;
-            while (x < v.size) : (x += 1) {
+            while (x < v.w) : (x += 1) {
                 if (!v.dark(x, y)) continue;
                 const y0 = oy + ms * @as(f32, @floatFromInt(y));
                 if (r.qr_style == .square) {
                     var end = x + 1;
-                    while (end < v.size and v.dark(end, y)) end += 1;
+                    while (end < v.w and v.dark(end, y)) end += 1;
                     const x0 = ox + ms * @as(f32, @floatFromInt(x));
                     const x1 = ox + ms * @as(f32, @floatFromInt(end));
                     try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y0 + ms }, .{ x0, y0 + ms } }, true);
@@ -2810,6 +3160,51 @@ const Ctx = struct {
                 bytes = "";
             }
             try sc.add(.{ .image = .{ .image = drawn, .bytes = bytes, .rect = q, .clip = .{ q[0], q[1], q[0] + q[2], q[1] + q[3] }, .smooth = true } });
+        };
+    }
+
+    /// A 1D code: the background, every bar of one height as one path, the
+    /// guard and bearer bars, then the text.
+    fn emitLinear(ctx: *Ctx, sc: *vector.Scene, r: *const Resolved) Failed!void {
+        _ = ctx;
+        const code = r.sym.?;
+        const left: f32 = @floatCast(r.left);
+        const top: f32 = @floatCast(r.top);
+        const total: f32 = @floatCast(r.w);
+        const total_h: f32 = @floatCast(r.h);
+        var bg = vector.PathBuilder.init(sc.allocator());
+        try bg.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + total_h }, .{ left, top + total_h } }, true);
+        try addFill(sc, bg.finish(), r.fill);
+        const ms: f32 = @floatCast(r.qr_module);
+        const ox = left + ms * @as(f32, @floatFromInt(r.qr_margin));
+        const bt: f32 = @floatCast(r.bc_bearer);
+        const bar_end: f32 = @floatCast(r.bc_bar_h);
+        const guard_end: f32 = @floatCast(r.bc_guard_h);
+        var b = vector.PathBuilder.init(sc.allocator());
+        if (bt > 0) {
+            try b.polyline(&.{ .{ left, top }, .{ left + total, top }, .{ left + total, top + bt }, .{ left, top + bt } }, true);
+            try b.polyline(&.{ .{ left, top + bar_end - bt }, .{ left + total, top + bar_end - bt }, .{ left + total, top + bar_end }, .{ left, top + bar_end } }, true);
+        }
+        var x: usize = 0;
+        while (x < code.w) {
+            if (!code.get(x, 0)) {
+                x += 1;
+                continue;
+            }
+            const guard = guardAt(code, x);
+            var end = x + 1;
+            while (end < code.w and code.get(end, 0) and guardAt(code, end) == guard) end += 1;
+            const x0 = ox + ms * @as(f32, @floatFromInt(x));
+            const x1 = ox + ms * @as(f32, @floatFromInt(end));
+            const y0 = top + bt;
+            const y1 = top + (if (guard) guard_end else bar_end - bt);
+            try b.polyline(&.{ .{ x0, y0 }, .{ x1, y0 }, .{ x1, y1 }, .{ x0, y1 } }, true);
+            x = end;
+        }
+        try addFill(sc, b.finish(), r.color);
+        if (r.bc_label_color.a > 0) for (r.bc_labels) |lb| {
+            var pass: GlyphPass = .{ .scene = sc, .color = r.bc_label_color, .size = lb.layout.size };
+            try text.walkRich(lb.font, null, &lb.layout, @floatCast(lb.x), @floatCast(lb.y), .left, &pass, GlyphPass.add);
         };
     }
 
@@ -2990,6 +3385,16 @@ fn addFill(sc: *vector.Scene, path: vector.Path, color: Color) Allocator.Error!v
     try sc.add(.{ .fill = .{ .path = path, .color = color } });
 }
 
+/// An arc of a whole turn or more is a ring, not a slice with a seam.
+fn fullSweep(arc: [2]f64) bool {
+    return @abs(arc[1] - arc[0]) >= 360;
+}
+
+/// Where a whole turn from the arc's start ends (clockwise or not, as the arc runs).
+fn turnEnd(arc: [2]f64) f64 {
+    return if (arc[1] < arc[0]) arc[0] - 360 else arc[0] + 360;
+}
+
 /// The layer's stroke along `path`. Dash patterns are even in length (an
 /// odd pattern repeats twice, as in SVG), and empty when they are all 0.
 fn addStroke(sc: *vector.Scene, path: vector.Path, r: *const Resolved) Allocator.Error!void {
@@ -3021,6 +3426,7 @@ const GlyphPass = struct {
             .x = g.x,
             .y = g.baseline,
             .scale = g.scale,
+            .xscale = g.xscale,
             .color = p.color,
             .stroke = if (p.stroke > 0) p.stroke + thick else 0,
         } };
@@ -3222,11 +3628,14 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
 
     // Canvas
     var e = ctx.newEnv();
-    const cw = ctx.num(&e, null, d.canvas_w.?) catch |err| switch (err) {
+    // A card's own `_width` and `_height` replace the design's; the rest of
+    // the render, `canvas.w` and `canvas.h` included, sees the card's size.
+    const own = ctx.card.canvas;
+    const cw = own.width orelse ctx.num(&e, null, d.canvas_w.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => return null,
     };
-    const ch = ctx.num(&e, null, d.canvas_h.?) catch |err| switch (err) {
+    const ch = own.height orelse ctx.num(&e, null, d.canvas_h.?) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => return null,
     };
@@ -3244,11 +3653,11 @@ pub fn renderCard(gpa: Allocator, assets: *Assets, set: *const project.Set, inde
     ctx.canvas_h = h;
     var dpi: f64 = 0;
     var bleed: f64 = 0;
-    if (d.dpi) |p| dpi = ctx.num(&e, null, p) catch |err| switch (err) {
+    if (own.dpi) |v| dpi = v else if (d.dpi) |p| dpi = ctx.num(&e, null, p) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => 0,
     };
-    if (d.bleed) |p| bleed = ctx.num(&e, null, p) catch |err| switch (err) {
+    if (own.bleed) |v| bleed = v else if (d.bleed) |p| bleed = ctx.num(&e, null, p) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Failed => 0,
     };
@@ -3733,6 +4142,64 @@ test "vector scene of arcs, dashes, arrows and effects" {
     try std.testing.expect(fonts[1] != null);
 }
 
+fn ringDesign(comptime arc: []const u8) []const u8 {
+    return
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 120, "height": 120 },
+    \\  "layers": [
+    \\    { "id": "bg", "type": "rect", "box": { "x": 0, "y": 0, "w": 120, "h": 120 }, "fill": "#FFFFFF" },
+    \\    { "id": "ring", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 100, "h": 100 }, "fill": "#00000000", "arc":
+    ++ arc ++
+        \\, "stroke": { "color": "#000000", "width": 6 } }
+        \\  ]
+        \\}
+    ;
+}
+
+test "an arc of a whole turn is a ring without a spoke" {
+    const gpa = std.testing.allocator;
+    const arcs = [_][]const u8{
+        "{ \"start\": 0, \"end\": 360 }",
+        "{ \"start\": 0, \"end\": 360, \"pie\": false }",
+        "{ \"start\": 90, \"end\": 540 }",
+        "{ \"start\": 0, \"end\": -360 }",
+    };
+    inline for (arcs) |arc| {
+        var b = (try testRenderDesign(gpa, comptime ringDesign(arc), .{}, null)).?;
+        defer b.deinit(gpa);
+        // The seam is at 12 o'clock for the first, second and fourth: the old
+        // slice drew a line from the centre to it.
+        try std.testing.expect(pixel(&b, 60, 60)[0] > 60000);
+        try std.testing.expect(pixel(&b, 60, 35)[0] > 60000);
+        try std.testing.expect(pixel(&b, 85, 60)[0] > 60000);
+        // The ring itself is there: the top and the right.
+        try std.testing.expect(pixel(&b, 60, 10)[0] < 5000);
+        try std.testing.expect(pixel(&b, 109, 60)[0] < 5000);
+        var rig: VectorRig = undefined;
+        try rig.init(gpa, comptime ringDesign(arc));
+        defer rig.deinit();
+        const strokes = rig.scene.items.items;
+        try std.testing.expect(strokes[1] == .stroke);
+        const cmds = strokes[1].stroke.path.cmds;
+        // One move, curves only, closed: no line to the centre.
+        try std.testing.expect(cmds[0] == .move and cmds[cmds.len - 1] == .close);
+        for (cmds[1 .. cmds.len - 1]) |cmd| try std.testing.expect(cmd == .cubic);
+    }
+}
+
+test "a slice that is less than a turn keeps its spokes, an open arc has none" {
+    const gpa = std.testing.allocator;
+    var slice = (try testRenderDesign(gpa, comptime ringDesign("{ \"start\": 0, \"end\": 90 }"), .{}, null)).?;
+    defer slice.deinit(gpa);
+    try std.testing.expect(pixel(&slice, 60, 35)[0] < 5000);
+    var open = (try testRenderDesign(gpa, comptime ringDesign("{ \"start\": 0, \"end\": 90, \"pie\": false }"), .{}, null)).?;
+    defer open.deinit(gpa);
+    try std.testing.expect(pixel(&open, 60, 35)[0] > 60000);
+    try std.testing.expect(pixel(&open, 60, 10)[0] < 5000);
+}
+
 test "svg of a vector scene is well formed and repeatable" {
     const gpa = std.testing.allocator;
     var rig: VectorRig = undefined;
@@ -3749,6 +4216,100 @@ test "svg of a vector scene is well formed and repeatable" {
     // Glyphs are defined once and used per placement.
     try std.testing.expectEqual(@as(usize, 6), std.mem.count(u8, a, "<use xlink:href=\"#g"));
     try std.testing.expect(std.mem.count(u8, a, "<path id=\"g") <= 3);
+}
+
+const point_run_fixed =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "p", "type": "polygon", "points": [[10, 90], [60, 20], [110, 80], [170, 15]], "fill": "#2266CC", "stroke": { "color": "#000000", "width": 3 } }
+    \\  ]
+    \\}
+;
+
+const point_run_list =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [
+    \\    { "px": 60, "py": 20 }, { "px": 110, "py": 80 }, { "px": 170, "py": 15 }
+    \\  ] } },
+    \\  "layers": [
+    \\    { "id": "p", "type": "polygon", "points": [[10, 90], { "each": "pts", "item": "q", "x": "q.px", "y": "q.py" }], "fill": "#2266CC", "stroke": { "color": "#000000", "width": 3 } }
+    \\  ]
+    \\}
+;
+
+test "polygon points from a list draw like the same fixed points" {
+    const gpa = std.testing.allocator;
+    var a = (try testRenderDesign(gpa, point_run_fixed, .{}, null)).?;
+    defer a.deinit(gpa);
+    var b = (try testRenderDesign(gpa, point_run_list, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(a.px), std.mem.sliceAsBytes(b.px));
+    // Vector output: the same scene, so the same SVG (and PDF, which reads the scene).
+    var ra: VectorRig = undefined;
+    try ra.init(gpa, point_run_fixed);
+    defer ra.deinit();
+    var rb: VectorRig = undefined;
+    try rb.init(gpa, point_run_list);
+    defer rb.deinit();
+    const sa = try @import("svg.zig").write(gpa, &ra.scene);
+    defer gpa.free(sa);
+    const sb = try @import("svg.zig").write(gpa, &rb.scene);
+    defer gpa.free(sb);
+    try std.testing.expectEqualStrings(sa, sb);
+    try std.testing.expect(std.mem.indexOf(u8, sb, "<path") != null);
+}
+
+test "polygon points from a count make a star, and runs follow fixed points in order" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 200, "background": "#FFFFFF" },
+        \\  "params": { "n": { "type": "integer", "default": 5 } },
+        \\  "layers": [
+        \\    { "id": "star", "type": "polygon", "points": [
+        \\      { "count": "n * 2", "index": "k", "x": "100 + (k % 2 == 0 ? 80 : 35) * sin(k * pi / n)", "y": "100 - (k % 2 == 0 ? 80 : 35) * cos(k * pi / n)" }
+        \\    ], "fill": "#FFD166" }
+        \\  ]
+        \\}
+    ;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, design);
+    defer rig.deinit();
+    const fill = rig.scene.items.items[0].fill;
+    // A move, nine lines and a close for ten points.
+    try std.testing.expectEqual(@as(usize, 11), fill.path.cmds.len);
+    try std.testing.expectApproxEqAbs(@as(f32, 100), fill.path.cmds[0].move[0], 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 20), fill.path.cmds[0].move[1], 0.001);
+}
+
+test "polygon with too few generated points is an error at render time" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 100, "height": 100 },
+        \\  "params": { "pts": { "type": "list", "item": { "px": "number", "py": "number" }, "default": [{ "px": 5, "py": 5 }] } },
+        \\  "layers": [
+        \\    { "id": "p", "type": "polygon", "points": [{ "each": "pts", "x": "pts[i].px", "y": "pts[i].py" }] }
+        \\  ]
+        \\}
+    ;
+    var code: u16 = 0;
+    // The card is still drawn, without the layer.
+    if (try testRenderDesign(gpa, design, .{}, &code)) |bmp| {
+        var b = bmp;
+        b.deinit(gpa);
+    }
+    try std.testing.expectEqual(@as(u16, 3110), code);
 }
 
 const media_design =
@@ -3879,6 +4440,90 @@ test "vector scene of a qr layer" {
     try std.testing.expect(items[0] == .fill and items[1] == .fill);
     try std.testing.expect(items[1].fill.color.eql(Color.black));
     try std.testing.expect(items[1].fill.path.cmds.len > 100);
+}
+
+const barcode_design =
+    \\{
+    \\  "format": 1,
+    \\  "name": "t",
+    \\  "canvas": { "width": 200, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "code", "type": "barcode", "format": "code128", "text": "Yoshida", "box": { "x": 0, "y": 0, "w": 200, "h": 100 } }
+    \\  ]
+    \\}
+;
+
+test "barcode layer with format qr and mode byte is identical to a qr layer" {
+    const gpa = std.testing.allocator;
+    var a = (try testRenderDesign(gpa, qr_styled_design, .{}, null)).?;
+    defer a.deinit(gpa);
+    const same = try std.mem.replaceOwned(u8, gpa, qr_styled_design, "\"type\": \"qr\"", "\"type\": \"barcode\", \"format\": \"qr\", \"mode\": \"byte\"");
+    defer gpa.free(same);
+    var b = (try testRenderDesign(gpa, same, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqualSlices(u16, a.px[0 .. a.w * a.h * 4], b.px[0 .. b.w * b.h * 4]);
+}
+
+test "barcode layer draws code 128 in whole pixels, all bars as tall as the box" {
+    const gpa = std.testing.allocator;
+    var b = (try testRenderDesign(gpa, barcode_design, .{}, null)).?;
+    defer b.deinit(gpa);
+    for (0..b.w * b.h) |i| {
+        const v = b.px[i * 4];
+        try std.testing.expect(v == 0 or v == 65535);
+    }
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var prob: symbol.Problem = .{};
+    const sy = try barcode_mod.encode(arena.allocator(), &prob, .code128, "Yoshida", .{});
+    // 11 * 9 + 13 modules plus a quiet zone of 10 on each side: 132 modules
+    // in 200 px, 1 px each, centred at 34.
+    const modules = sy.w + 20;
+    try std.testing.expectEqual(@as(usize, 132), modules);
+    const x0 = (200 - modules) / 2;
+    for (0..sy.w) |m| {
+        const want: u16 = if (sy.get(m, 0)) 0 else 65535;
+        try std.testing.expectEqual(want, pixel(&b, x0 + 10 + m, 0)[0]);
+        try std.testing.expectEqual(want, pixel(&b, x0 + 10 + m, 99)[0]);
+    }
+}
+
+test "barcode layer: a wrong check digit is error 3112, a missing one is added" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 200, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "code", "type": "barcode", "format": "ean13", "text": "{digits}", "box": { "x": 0, "y": 0, "w": 200, "h": 100 } }
+        \\  ],
+        \\  "params": { "digits": { "type": "text", "default": "4006381333932" } }
+        \\}
+    ;
+    var code: u16 = 0;
+    if (try testRenderDesign(gpa, design, .{}, &code)) |*b| {
+        var bb = b.*;
+        bb.deinit(gpa);
+    }
+    try std.testing.expectEqual(@as(u16, 3112), code);
+    const good = try std.mem.replaceOwned(u8, gpa, design, "4006381333932", "400638133393");
+    defer gpa.free(good);
+    code = 0;
+    var b = (try testRenderDesign(gpa, good, .{}, &code)).?;
+    b.deinit(gpa);
+    try std.testing.expectEqual(@as(u16, 0), code);
+}
+
+test "vector scene of a barcode layer" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, barcode_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // The white background, then the bars as one path.
+    try std.testing.expectEqual(@as(usize, 2), items.len);
+    try std.testing.expect(items[1] == .fill and items[1].fill.color.eql(Color.black));
 }
 
 const qr_styled_design =
@@ -4675,6 +5320,96 @@ test "a repeated group in a row: one item per iteration" {
     try std.testing.expectApproxEqAbs(lefts[1] + 30, dots[1], 0.001);
 }
 
+test "min_squeeze squeezes a line sideways before the size shrinks" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const items = try testOutline(gpa, arena_state.allocator(),
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 800, "height": 400 },
+        \\  "layers": [
+        \\    { "id": "plain", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 10 }, "size": 40 },
+        \\    { "id": "fits", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 60 }, "size": 40, "max_width": 1000, "min_squeeze": 0.5 },
+        \\    { "id": "squeezed", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 110 }, "size": 40, "max_width": 300, "min_squeeze": 0.7 },
+        \\    { "id": "clamped", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 160 }, "size": 40, "max_width": 200, "min_squeeze": 0.7 },
+        \\    { "id": "off", "type": "text", "text": "Squeeze me please", "at": { "x": 10, "y": 210 }, "size": 40, "max_width": 300 }
+        \\  ]
+        \\}
+    );
+    const plain = findPlaced(items, "plain", null);
+    try std.testing.expect(plain.w > 300 and plain.w < 450);
+    // Already fits: untouched.
+    const fits = findPlaced(items, "fits", null);
+    try std.testing.expectApproxEqAbs(plain.w, fits.w, 0.001);
+    try std.testing.expectEqual(@as(f64, 40), fits.size.?);
+    // Needs a little: same size, squeezed to the box (not below 0.7).
+    const sq = findPlaced(items, "squeezed", null);
+    try std.testing.expectEqual(@as(f64, 40), sq.size.?);
+    try std.testing.expect(sq.w <= 300.01 and sq.w >= plain.w * 0.7 - 0.01);
+    try std.testing.expectApproxEqAbs(@as(f64, 300), sq.w, 0.01);
+    // Needs more than the minimum: squeezed to the minimum, then the size shrinks.
+    const cl = findPlaced(items, "clamped", null);
+    try std.testing.expect(cl.size.? < 40);
+    try std.testing.expect(cl.w <= 200.01);
+    // Without min_squeeze the size shrinks as before.
+    const off = findPlaced(items, "off", null);
+    try std.testing.expect(off.size.? < 40);
+    try std.testing.expect(off.w <= 300.01);
+    try std.testing.expect(cl.size.? > off.size.? * 0.99 - 8);
+}
+
+test "squeezed text draws narrower in pixels, SVG and PDF" {
+    const gpa = std.testing.allocator;
+    const design =
+        \\{
+        \\  "format": 1,
+        \\  "name": "t",
+        \\  "canvas": { "width": 400, "height": 80 },
+        \\  "layers": [
+        \\    { "id": "t", "type": "text", "text": "Squeeze me please", "at": { "x": 0, "y": 10 }, "size": 40, "max_width": 200, "min_squeeze": 0.4, "color": "#000000" }
+        \\  ]
+        \\}
+    ;
+    var b = (try testRenderDesign(gpa, design, .{}, null)).?;
+    defer b.deinit(gpa);
+    // Ink only inside the 200 px box, and reaching most of it.
+    var max_x: usize = 0;
+    var y: usize = 0;
+    while (y < b.h) : (y += 1) {
+        var x: usize = 0;
+        while (x < b.w) : (x += 1) if (pixel(&b, x, y)[3] > 0) {
+            max_x = @max(max_x, x);
+        };
+    }
+    try std.testing.expect(max_x > 150 and max_x <= 201);
+    // The vector scene carries the scale, and both writers apply it.
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, design);
+    defer rig.deinit();
+    var seen: usize = 0;
+    for (rig.scene.items.items) |it| if (it == .glyph) {
+        try std.testing.expect(it.glyph.xscale < 1 and it.glyph.xscale >= 0.4);
+        seen += 1;
+    };
+    try std.testing.expect(seen > 0);
+    const svg = try @import("svg.zig").write(gpa, &rig.scene);
+    defer gpa.free(svg);
+    const g0 = for (rig.scene.items.items) |it| {
+        if (it == .glyph) break it.glyph;
+    } else unreachable;
+    // The first glyph's matrix: x factor squeezed, y factor not.
+    const at = std.mem.indexOf(u8, svg, "matrix(").? + "matrix(".len;
+    var parts = std.mem.tokenizeAny(u8, svg[at..], " )");
+    const a = try std.fmt.parseFloat(f32, parts.next().?);
+    _ = parts.next();
+    _ = parts.next();
+    const d = try std.fmt.parseFloat(f32, parts.next().?);
+    try std.testing.expectApproxEqAbs(g0.xscale, a / d, 0.001);
+    try std.testing.expect(a < d);
+}
+
 test "blur softens the edge of a layer and keeps its ink" {
     const gpa = std.testing.allocator;
     const plain =
@@ -4788,4 +5523,163 @@ test "a list constant drives repeat and lookups" {
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 9, 17)[1]);
     try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 12, 17)[1]);
     try std.testing.expectEqual(@as(u16, 0), pixel(&b, 5, 17)[1]);
+}
+
+const clip_design =
+    \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100, "background": "#FFFFFF" },
+    \\  "layers": [
+    \\    { "id": "disc", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 80, "h": 80 }, "visible": false },
+    \\    { "id": "band", "type": "rect", "anchor": "center", "box": { "x": 50, "y": 50, "w": 100, "h": 20 }, "rotate": 90, "visible": false },
+    \\    { "id": "red", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#FF0000", "clip_to": "disc" },
+    \\    { "id": "g", "type": "group", "clip_to": "band", "layers": [
+    \\      { "id": "green", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#00FF00" }
+    \\    ] }
+    \\  ] }
+;
+
+test "clip_to: a layer and a group draw only inside their shape" {
+    const gpa = std.testing.allocator;
+    inline for (.{ 1, 2 }) |scale| {
+        var b = (try testRenderDesign(gpa, clip_design, .{ .scale = scale }, null)).?;
+        defer b.deinit(gpa);
+        const s: usize = scale;
+        const white = [4]u16{ 65535, 65535, 65535, 65535 };
+        const red = [4]u16{ 65535, 0, 0, 65535 };
+        const green = [4]u16{ 0, 65535, 0, 65535 };
+        // Inside the disc, outside the band: red.
+        try std.testing.expectEqual(red, pixel(&b, 25 * s, 50 * s));
+        // The box corner is outside the disc: the rect is cut away there.
+        try std.testing.expectEqual(white, pixel(&b, 12 * s, 12 * s));
+        try std.testing.expectEqual(white, pixel(&b, 95 * s, 50 * s));
+        // The band turned upright: the group shows from top to bottom in it,
+        // also where the disc does not reach, and nowhere else.
+        try std.testing.expectEqual(green, pixel(&b, 50 * s, 50 * s));
+        try std.testing.expectEqual(green, pixel(&b, 50 * s, 3 * s));
+        try std.testing.expectEqual(green, pixel(&b, 45 * s, 97 * s));
+        try std.testing.expectEqual(white, pixel(&b, 35 * s, 3 * s));
+        try std.testing.expectEqual(red, pixel(&b, 35 * s, 50 * s));
+    }
+}
+
+test "clip_to inside a repeated group takes the shape of the same iteration" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 30, "background": "#FFFFFF" },
+        \\  "layers": [
+        \\    { "id": "cells", "type": "group", "repeat": { "count": 2, "index": "i" }, "translate": { "x": "i * 50", "y": 0 }, "layers": [
+        \\      { "id": "hole", "type": "polygon", "points": [[5, 5], [25, 5], [25, 25], [5, 25]], "visible": false },
+        \\      { "id": "fill", "type": "rect", "box": { "x": 0, "y": 0, "w": 50, "h": 30 }, "fill": "#0000FF", "clip_to": "hole" }
+        \\    ] }
+        \\  ] }
+    ;
+    var b = (try testRenderDesign(gpa, d, .{}, null)).?;
+    defer b.deinit(gpa);
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 15, 15));
+    try std.testing.expectEqual([4]u16{ 0, 0, 65535, 65535 }, pixel(&b, 65, 15));
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 40, 15)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 90, 15)[0]);
+    try std.testing.expectEqual(@as(u16, 65535), pixel(&b, 15, 2)[0]);
+}
+
+test "clip_to in a vector scene, SVG and PDF is a real clip path" {
+    const gpa = std.testing.allocator;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, clip_design);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    // The hidden shapes draw nothing; each clipped layer sits in a clip group.
+    try std.testing.expectEqual(@as(usize, 6), items.len);
+    const disc = items[0].begin.clip;
+    try std.testing.expect(disc.cmds[0] == .move and disc.cmds[disc.cmds.len - 1] == .close);
+    try std.testing.expect(items[1] == .fill and items[2] == .end);
+    // The band's rotation is in its path: its corners now span x 40..60.
+    const band = items[3].begin.clip;
+    for (band.cmds) |cmd| if (cmd == .move or cmd == .line) {
+        const p = if (cmd == .move) cmd.move else cmd.line;
+        try std.testing.expect(@abs(p[0] - 40) < 0.01 or @abs(p[0] - 60) < 0.01);
+    };
+    try std.testing.expect(items[4] == .fill and items[5] == .end);
+
+    const out = try @import("svg.zig").write(gpa, &rig.scene);
+    defer gpa.free(out);
+    try @import("svg.zig").expectBalanced(out);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<clipPath id=\"c0\"><path d=\"M") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<clipPath id=\"c1\"><path d=\"M") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, out, "<g clip-path=\"url(#c"));
+
+    const content = try @import("pdf_vector.zig").contentOf(gpa, &rig.scene);
+    defer gpa.free(content);
+    // Two clips: a path, `W n` inside a saved state, closed with `Q`.
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, content, " W n\n"));
+    try std.testing.expect(std.mem.indexOf(u8, content, " c ") != null);
+}
+
+test "clip_to around a layer drawn as pixels in a vector scene" {
+    const gpa = std.testing.allocator;
+    const d =
+        \\{ "format": 1, "name": "t", "canvas": { "width": 100, "height": 100 },
+        \\  "layers": [
+        \\    { "id": "disc", "type": "ellipse", "box": { "x": 10, "y": 10, "w": 80, "h": 80 }, "visible": false },
+        \\    { "id": "soft", "type": "rect", "box": { "x": 0, "y": 0, "w": 100, "h": 100 }, "fill": "#FF0000", "clip_to": "disc", "effects": [{ "type": "blur", "radius": 4 }] }
+        \\  ] }
+    ;
+    var rig: VectorRig = undefined;
+    try rig.init(gpa, d);
+    defer rig.deinit();
+    const items = rig.scene.items.items;
+    try std.testing.expect(items[0] == .begin and items[0].begin == .clip);
+    try std.testing.expect(items[1] == .raster);
+    try std.testing.expect(items[2] == .end);
+}
+
+test "a card's _width and _height replace the design's canvas size" {
+    const gpa = std.testing.allocator;
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var fs = project.MemFs.init(gpa);
+    defer fs.deinit();
+    try fs.put("t.design.json",
+        \\{ "format": 1, "name": "t", "canvas": { "width": 200, "height": 100, "dpi": 300, "bleed": 4, "background": "#FFFFFF" },
+        \\  "layers": [ { "id": "bar", "type": "rect", "box": { "x": 0, "y": 0, "w": "canvas.w", "h": "50%" }, "fill": "#FF0000" } ] }
+    );
+    try fs.put("t.cards.json",
+        \\{ "format": 1, "design": "t.design.json", "cards": [
+        \\  { "id": "plain" },
+        \\  { "id": "wide", "_width": 300 },
+        \\  { "id": "tall", "_width": 120, "_height": 240, "_dpi": 600, "_bleed": 0 }
+        \\] }
+    );
+    var diags = diag.List.init(arena);
+    const proj = try project.load(arena, fs.vfs(), &diags);
+    try std.testing.expectEqual(@as(usize, 0), diags.errorCount());
+    var assets = Assets.init(gpa, fs.vfs());
+    defer assets.deinit();
+    const set = &proj.sets[0];
+    var plain = (try renderCard(gpa, &assets, set, 0, .{}, &diags)).?;
+    defer plain.deinit(gpa);
+    var wide = (try renderCard(gpa, &assets, set, 1, .{}, &diags)).?;
+    defer wide.deinit(gpa);
+    var tall = (try renderCard(gpa, &assets, set, 2, .{}, &diags)).?;
+    defer tall.deinit(gpa);
+    // No override: the design's size, dpi and bleed.
+    try std.testing.expectEqual(@as(u32, 200), plain.w);
+    try std.testing.expectEqual(@as(u32, 100), plain.h);
+    try std.testing.expectEqual(@as(f64, 300), plain.dpi);
+    try std.testing.expectEqual(@as(f64, 4), plain.bleed);
+    // One side overridden, the other inherited.
+    try std.testing.expectEqual(@as(u32, 300), wide.w);
+    try std.testing.expectEqual(@as(u32, 100), wide.h);
+    try std.testing.expectEqual(@as(u32, 300), wide.canvas_w);
+    try std.testing.expectEqual(@as(f64, 300), wide.dpi);
+    // Both, and dpi and bleed.
+    try std.testing.expectEqual(@as(u32, 120), tall.w);
+    try std.testing.expectEqual(@as(u32, 240), tall.h);
+    try std.testing.expectEqual(@as(f64, 600), tall.dpi);
+    try std.testing.expectEqual(@as(f64, 0), tall.bleed);
+    // Layers sized from the canvas follow the card: `canvas.w` and `50%`.
+    try std.testing.expect(pixel(&wide, 299, 10)[1] == 0);
+    try std.testing.expect(pixel(&wide, 299, 60)[1] != 0);
+    try std.testing.expect(pixel(&tall, 119, 100)[1] == 0);
+    try std.testing.expect(pixel(&tall, 119, 130)[1] != 0);
 }

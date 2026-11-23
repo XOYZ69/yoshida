@@ -3,7 +3,7 @@ title = "Repeat"
 description = "Draw a layer once per item, for example a row of stars or one line per list item."
 +++
 
-`repeat` draws a layer once per iteration. Inside the layer's fields the loop names are in scope.
+`repeat` draws a layer once per iteration. Inside the layer's fields the loop names are in scope. To make one *shape* from a list instead, with a point per item, see the [point runs of a polygon](@/docs/layer-polygon.md#points-from-a-list-or-a-count).
 
 ```json
 "repeat": { "count": "level", "index": "i" }

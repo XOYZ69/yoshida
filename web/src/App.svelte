@@ -35,6 +35,7 @@
 		getPath,
 		groupLayers,
 		type HandleMode,
+		hasPointRun,
 		identRe,
 		insertLayer,
 		isDivider,
@@ -223,12 +224,16 @@
 		hasBleed,
 		imagePath,
 		pdfPath,
+		printRequest,
 		type PlanSet,
+		type SampleRequest,
+		type SampleSet,
 		planExport,
 		setJpegDpi,
 		setMaxSide,
 		sheetCount,
 		sheetPath,
+		withCardSizes,
 	} from "./lib/exportPlan";
 	import {
 		type DragPreview,
@@ -3399,9 +3404,14 @@
 			case "text":
 				return "text";
 			case "polygon":
-				return isObj(l.shape) ? "box" : "polygon";
+				return isObj(l.shape) ? "box" : hasPointRun(l) ? "outline" : "polygon";
 			case "qr":
 				return "aspect";
+			case "barcode": {
+				// Square symbols keep their shape; bars take any box.
+				const f = typeof l.format === "string" ? l.format : "";
+				return ["qr", "aztec", "datamatrix"].includes(f) ? "aspect" : "box";
+			}
 			case "image": {
 				const box = isObj(l.box) ? l.box : {};
 				return box.w === "auto" || box.h === "auto" ? "aspect" : "box";
@@ -4003,6 +4013,7 @@
 		if (!currentSet) return;
 		track("export", "pdf");
 		if (onServer) return exportOnServer("pdf");
+		await sampleIdle;
 		const n = currentSet.cards.length;
 		const clock = renderClock();
 		const run = new Run(
@@ -4371,12 +4382,15 @@
 						only: [],
 					});
 					if (r.canvas_width && r.canvas_height)
-						out[x.name] = {
-							w: r.canvas_width,
-							h: r.canvas_height,
-							dpi: (r.dpi ?? 0) / k,
-							bleed: (r.bleed ?? 0) / k,
-						};
+						out[x.name] = withCardSizes(
+							{
+								w: r.canvas_width,
+								h: r.canvas_height,
+								dpi: (r.dpi ?? 0) / k,
+								bleed: (r.bleed ?? 0) / k,
+							},
+							x.cards,
+						);
 				} catch {
 					// Not measured: the dialog shows its size as unknown.
 				}
@@ -4420,6 +4434,130 @@
 		requestAnimationFrame(() => exportButton?.focus());
 	}
 
+
+	/** The last estimate's renders; exports wait for them (the PDF builder is shared). */
+	let sampleIdle: Promise<unknown> = Promise.resolve();
+
+	/**
+	 * One card in each requested format with the dialog's settings, for the
+	 * size estimate. Runs one at a time and after a running export is done.
+	 */
+	function sampleExport(r: SampleRequest): Promise<SampleSet> {
+		const run = sampleIdle.then(() => renderSample(r));
+		sampleIdle = run.catch(() => {});
+		return run;
+	}
+
+	async function renderSample(r: SampleRequest): Promise<SampleSet> {
+		if (busy) throw new Error("an export is running");
+		const clock = renderClock();
+		const st = r.settings;
+		const base = { set: r.set, ...clock, scale: r.scale };
+		const out: SampleSet = {};
+		const info = sets.find((x) => x.name === r.set);
+		const want = (f: ExportFormat) => r.formats.includes(f);
+		const mean = (v: number[]) =>
+			Math.round(v.reduce((a, b) => a + b, 0) / Math.max(1, v.length));
+		/** A PNG of each card: the mean size and the pixels. */
+		const png = async (
+			depth: 8 | 16,
+			compression: ExportSettings["pngCompression"],
+		) => {
+			const bytes: number[] = [];
+			let w = 0;
+			let h = 0;
+			for (const card of r.cards) {
+				const x = await engine.render({
+					...base,
+					card,
+					preview: false,
+					format: depth === 16 ? "png16" : "png",
+					compression,
+				});
+				if (!x.bin.length) return undefined;
+				bytes.push(x.bin.length);
+				w = x.width;
+				h = x.height;
+			}
+			return { bytes: mean(bytes), w, h };
+		};
+		if (want("png")) out.png = await png(st.pngDepth, st.pngCompression);
+		if (want("sheet")) {
+			// The cards on one sheet: it compresses a little better than the cards alone.
+			const n = r.cards.length;
+			await engine.sheetBegin(n, 1);
+			for (const card of r.cards)
+				await engine.sheetCard({ ...base, card });
+			const x = await engine.sheetFinish();
+			if (x.bin.length)
+				out.sheet = { bytes: x.bin.length, w: x.width, h: x.height };
+		}
+		const encodings = [
+			...(want("jpeg")
+				? [{ type: "image/jpeg" as const, quality: st.jpegQuality / 100, background: st.jpegBackground }]
+				: []),
+			...(want("webp")
+				? [{ type: "image/webp" as const, quality: st.webpLossless ? 1 : st.webpQuality / 100 }]
+				: []),
+		];
+		if (encodings.length) {
+			const bytes = encodings.map(() => [] as number[]);
+			let w = 0;
+			let h = 0;
+			for (const card of r.cards) {
+				const x = await engine.encode({ ...base, card, preview: false }, encodings);
+				w = x.width;
+				h = x.height;
+				encodings.forEach((_, k) => bytes[k].push(x.files[k]?.length ?? 0));
+			}
+			encodings.forEach((e, k) => {
+				if (bytes[k].every((n) => n > 0))
+					out[e.type === "image/jpeg" ? "jpeg" : "webp"] = {
+						bytes: mean(bytes[k]),
+						w,
+						h,
+					};
+			});
+		}
+		if (want("svg")) {
+			const bytes: number[] = [];
+			for (const card of r.cards) {
+				const x = await engine.svg({ ...base, card });
+				if (x.bin.length) bytes.push(x.bin.length);
+			}
+			if (bytes.length === r.cards.length)
+				out.svg = { bytes: mean(bytes), w: r.size.w, h: r.size.h };
+		}
+		if (want("pdf") && info) {
+			const marks = cropMarksFor(info, st.cropMarks);
+			const pdf = async (cards: number[]) => {
+				await engine.pdfBegin();
+				for (const card of cards)
+					await engine.pdfPage({
+						set: r.set,
+						card,
+						...clock,
+						crop_marks: marks,
+						scale: r.scale,
+						...(st.pdfVector ? { vector: true } : {}),
+					});
+				return (await engine.pdfFinish()).bin.length;
+			};
+			// One page, and all the sample cards: what each page adds is the difference.
+			const first = await pdf(r.cards.slice(0, 1));
+			const all = r.cards.length > 1 ? await pdf(r.cards) : undefined;
+			if (first)
+				out.pdf = {
+					bytes: first,
+					w: r.size.w,
+					h: r.size.h,
+					...(all ? { more: all, pages: r.cards.length } : {}),
+					...(st.pdfVector ? {} : { pixels: true }),
+				};
+		}
+		return out;
+	}
+
 	/** Crop marks for a set's PDF: the dialog's choice, or on when the design has a bleed. */
 	function cropMarksFor(set: SetInfo, mode: ExportSettings["cropMarks"]) {
 		if (mode !== "auto") return mode === "on";
@@ -4444,6 +4582,7 @@
 		exportSettings = st;
 		savePref(EXPORT_PREF, st);
 		closeExport();
+		await sampleIdle;
 		const plan = planExport(st, projectName, planSets, setName, cardIndex);
 		if (!plan.files) return;
 		for (const f of st.formats) track("export", f);
@@ -4465,8 +4604,11 @@
 		// JPEG and WebP are encoded by the browser, so they render here.
 		const viaServer = onServer && st.scope !== "card";
 		const remote: ExportFormat[] = viaServer
-			? (["png", "svg", "pdf", "sheet"] as const).filter((f) =>
-					st.formats.includes(f),
+			? (["png", "svg", "pdf", "sheet"] as const).filter(
+					// The print layout is made in this browser only.
+					(f) =>
+						st.formats.includes(f) &&
+						!(f === "pdf" && st.pdfLayout === "print"),
 				)
 			: [];
 		const localPng =
@@ -4681,9 +4823,24 @@
 							tick();
 						}
 					}
-					if (localPdf) {
+					if (localPdf && !plan.noPdf.includes(t.set)) {
 						const marks = cropMarksFor(info, st.cropMarks);
-						await engine.pdfBegin();
+						const print = st.pdfLayout === "print";
+						await engine.pdfBegin(print ? printRequest(st, marks) : undefined);
+						const back = print
+							? sets.find((x) => x.name === st.printBack && x.ok && x.cards.length)
+							: undefined;
+						if (back) {
+							const r = await engine.pdfBack({
+								set: back.name,
+								card: 0,
+								...clock,
+								scale,
+								...(st.pdfVector ? { vector: true } : {}),
+							});
+							diagnostics.push(...r.diagnostics);
+						}
+						let misfits = 0;
 						for (const i of t.cards) {
 							const r = await engine.pdfPage({
 								set: t.set,
@@ -4698,10 +4855,19 @@
 								return cancelled();
 							}
 							diagnostics.push(...r.diagnostics);
+							if (r.fits === false) misfits++;
 							tick();
 						}
 						const r = await engine.pdfFinish();
 						if (r.bin.length) out[pdfPath(t.set)] = r.bin;
+						if (print && r.cols)
+							run.log(
+								`Print layout of '${info.design_name}': ${r.cols} × ${r.rows} cards a page, ${r.pages} page(s)${back ? `, backs from '${back.design_name}' for flip on ${st.duplex} edge` : ""}`,
+							);
+						if (misfits)
+							run.log(
+								`${misfits} card(s) of '${info.design_name}' are not the size of the first one: centred on their place and cut to it`,
+							);
 					}
 					if (localSheet) {
 						const many =
@@ -4796,6 +4962,7 @@
 		text: "Text",
 		image: "Image",
 		qr: "QR code",
+		barcode: "Barcode / QR",
 		polygon: "Polygon",
 	};
 </script>
@@ -5534,6 +5701,7 @@
 						onback={() => (selectedLayers = [])}
 						{listKeys}
 						cardValues={currentCard?.values}
+						barcodeInfo={(r) => engine.barcode(r)}
 						focus={inspectorFocus}
 					/>
 					<p class="advanced">
@@ -5719,6 +5887,7 @@
 		webpLossless={webpLosslessOk}
 		canServer={!!server?.render}
 		measuring={exportMeasuring}
+		sample={sampleExport}
 		bind:useServer
 		onexport={exportWith}
 		onclose={closeExport}

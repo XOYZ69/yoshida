@@ -1,7 +1,7 @@
 // Tests for scripts/stats.mjs: node --test scripts/stats.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_DAYS, VERSION, lastPage, mergeStats, summarizeReleases, totalDownloads, trafficDays } from './stats.mjs';
+import { MAX_DAYS, VERSION, classifyAsset, downloadBreakdown, lastPage, mergeStats, summarizeReleases, totalDownloads, trafficDays } from './stats.mjs';
 
 const snapshot = (over = {}) => ({
 	repo: 'o/r',
@@ -109,4 +109,42 @@ test('the last page of a Link header is the count', () => {
 	const link = '<https://api.github.com/repositories/1/contributors?per_page=1&anon=1&page=2>; rel="next", <https://api.github.com/repositories/1/contributors?per_page=1&anon=1&page=17>; rel="last"';
 	assert.equal(lastPage(link), 17);
 	assert.equal(lastPage(null), null);
+});
+
+test('release files are sorted into download options by name', () => {
+	const c = (n) => [classifyAsset(n).kind, classifyAsset(n).system, classifyAsset(n).format];
+	assert.deepEqual(c('yoshida-0.8.0.zip'), ['bundle', null, 'zip']);
+	assert.deepEqual(c('yoshida-beta_0.8.0_x64-setup.exe'), ['desktop', 'windows', 'exe']);
+	assert.deepEqual(c('yoshida-beta_0.8.0_amd64.AppImage'), ['desktop', 'linux', 'appimage']);
+	assert.deepEqual(c('yoshida-beta_0.8.0_amd64.deb'), ['desktop', 'linux', 'deb']);
+	assert.deepEqual(c('yoshida-beta-0.8.0-1.x86_64.rpm'), ['desktop', 'linux', 'rpm']);
+	assert.deepEqual(c('yoshida-beta_0.8.0_aarch64.dmg'), ['desktop', 'macos', 'dmg']);
+	assert.deepEqual(c('yoshida-beta_0.8.0_amd64.AppImage.sig'), ['meta', null, 'meta']);
+	assert.deepEqual(c('mystery.bin'), ['other', null, 'other']);
+});
+
+test('downloads are added up by kind, system and format; meta files are skipped', () => {
+	const releases = summarizeReleases([
+		{ tag_name: 'v0.8.0', assets: [
+			{ name: 'yoshida-0.8.0.zip', download_count: 5 },
+			{ name: 'yoshida-beta_0.8.0_x64-setup.exe', download_count: 3 },
+			{ name: 'yoshida-beta_0.8.0_amd64.deb', download_count: 2 },
+			{ name: 'yoshida-beta_0.8.0_amd64.AppImage', download_count: 1 },
+			{ name: 'latest.json', download_count: 40 },
+		] },
+	]);
+	assert.deepEqual(downloadBreakdown(releases), {
+		kinds: { bundle: 5, desktop: 6 },
+		systems: { windows: 3, linux: 3 },
+		formats: { zip: 5, exe: 3, deb: 2, appimage: 1 },
+	});
+	// Releases stored by an older run have no tags on their files: they are classified on the fly.
+	assert.deepEqual(downloadBreakdown([{ assets: [{ name: 'yoshida-0.7.0.zip', downloads: 2 }] }]).kinds, { bundle: 2 });
+});
+
+test('the history keeps a per-day split of the downloads', () => {
+	const now = { ...snapshot().now, downloads_by: { kinds: { desktop: 2 }, systems: { linux: 2 }, formats: { deb: 2 } } };
+	const doc = mergeStats(null, snapshot({ now }), new Date('2026-11-15T00:00:00Z'));
+	assert.deepEqual(doc.history[0].kinds, { desktop: 2 });
+	assert.deepEqual(doc.history[0].systems, { linux: 2 });
 });

@@ -16,7 +16,11 @@
       "items": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+          "_width": { "type": "number", "minimum": 1, "description": "This card's canvas width in pixels; the design's canvas.width when absent" },
+          "_height": { "type": "number", "minimum": 1, "description": "This card's canvas height in pixels; the design's canvas.height when absent" },
+          "_dpi": { "type": "number", "minimum": 0, "maximum": 10000, "description": "This card's print resolution; the design's canvas.dpi when absent" },
+          "_bleed": { "type": "number", "minimum": 0, "description": "This card's bleed in pixels; the design's canvas.bleed when absent" }
         },
         "description": "Every other key is a param of the design"
       }

@@ -8,6 +8,9 @@ const value = @import("value.zig");
 const design_mod = @import("design.zig");
 const project = @import("project.zig");
 const render = @import("render.zig");
+const symbol = @import("symbol.zig");
+const barcode = @import("barcode.zig");
+const qr = @import("qr.zig");
 const Writer = std.Io.Writer;
 const Value = value.Value;
 
@@ -63,6 +66,7 @@ fn writeParamValue(w: *Writer, p: *const design_mod.Param, v: Value) Writer.Erro
 }
 
 /// `{"name", "sets": [{name, design, group, cards_file, ok, params, cards}]}`.
+/// A card that sets its own canvas size has `"canvas": {width?, height?, dpi?, bleed?}` after `values`.
 pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void {
     try w.writeAll("{\"name\":");
     try json.writeString(w, proj.name);
@@ -160,7 +164,22 @@ pub fn writeProject(w: *Writer, proj: *const project.Project) Writer.Error!void 
                 try w.writeByte(':');
                 try writeParamValue(w, p, v.?);
             }
-            try w.writeAll("}}");
+            try w.writeByte('}');
+            // Only a card that sets its own canvas has this.
+            const cv = card.canvas;
+            if (cv.width != null or cv.height != null or cv.dpi != null or cv.bleed != null) {
+                try w.writeAll(",\"canvas\":{");
+                var cfirst = true;
+                inline for (.{ "width", "height", "dpi", "bleed" }) |k| {
+                    if (@field(cv, k)) |x| {
+                        if (!cfirst) try w.writeByte(',');
+                        cfirst = false;
+                        try w.print("\"{s}\":{d}", .{ k, x });
+                    }
+                }
+                try w.writeByte('}');
+            }
+            try w.writeByte('}');
         }
         try w.writeAll("]}");
     }
@@ -227,3 +246,54 @@ pub fn writeOutline(w: *Writer, items: []const render.Placed) Writer.Error!void 
     }
     try w.writeByte(']');
 }
+
+/// What the editor asks about a barcode while the text is typed: the
+/// symbol's size, the text as it will be encoded (check digit added) and the
+/// problem if there is one. `bits` adds the module grid, row by row as
+/// "0" and "1", for previews. Answers
+/// `{"ok":true,"format","w","h","normalized","check_digit","note","version","capacity","modules"?}`
+/// or `{"ok":false,"code","message","hint"}`.
+pub fn writeBarcodeInfo(arena: std.mem.Allocator, w: *Writer, req: BarcodeRequest) !void {
+    var prob: symbol.Problem = .{};
+    const sy = barcode.encode(arena, &prob, req.format, req.text, .{
+        .check = req.check,
+        .level = req.level,
+        .qr_mode = req.qr_mode,
+        .ecc = req.ecc,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Invalid => {
+            try w.print("{{\"ok\":false,\"code\":{d},\"message\":", .{prob.code});
+            try json.writeString(w, prob.msg);
+            try w.writeAll(",\"hint\":");
+            if (prob.hint) |h| try json.writeString(w, h) else try w.writeAll("null");
+            try w.writeByte('}');
+            return;
+        },
+    };
+    try w.print("{{\"ok\":true,\"format\":\"{s}\",\"w\":{d},\"h\":{d},\"normalized\":", .{ @tagName(sy.format), sy.w, sy.h });
+    try json.writeString(w, sy.normalized);
+    if (sy.check_digit) |c| {
+        try w.writeAll(",\"check_digit\":");
+        try json.writeString(w, &.{c});
+    } else try w.writeAll(",\"check_digit\":null");
+    try w.writeAll(",\"note\":");
+    try json.writeString(w, sy.note);
+    try w.print(",\"version\":{d},\"capacity\":{d}", .{ sy.version, sy.capacity });
+    if (req.modules) {
+        try w.writeAll(",\"modules\":\"");
+        for (sy.cells) |c| try w.writeByte(if (c) '1' else '0');
+        try w.writeByte('"');
+    }
+    try w.writeByte('}');
+}
+
+pub const BarcodeRequest = struct {
+    format: symbol.Format,
+    text: []const u8,
+    check: symbol.Check = .auto,
+    level: qr.Level = .medium,
+    qr_mode: qr.Mode = .auto,
+    ecc: u8 = 23,
+    modules: bool = false,
+};

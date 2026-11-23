@@ -124,6 +124,51 @@
     }
   },
   "$defs": {
+    "points": {
+      "description": "Polygon points: [x, y] pairs, and runs of points made from a count or a list. An object stands for a one-entry array",
+      "anyOf": [
+        { "$ref": "#/$defs/pointRun" },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": ["number", "string"]
+                }
+              },
+              { "$ref": "#/$defs/pointRun" }
+            ]
+          }
+        }
+      ]
+    },
+    "pointRun": {
+      "description": "One point per iteration of count or of each (a list), from x and y, which see the loop names",
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        },
+        "each": { "type": "string" },
+        "index": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "item": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "x": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        },
+        "y": {
+          "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+          "type": ["number", "string"]
+        }
+      }
+    },
     "param": {
       "type": "object",
       "required": ["type"],
@@ -183,7 +228,7 @@
           "description": "Unique layer id"
         },
         "type": {
-          "enum": ["rect", "ellipse", "polygon", "text", "image", "qr", "group", "divider"]
+          "enum": ["rect", "ellipse", "polygon", "text", "image", "qr", "barcode", "group", "divider"]
         },
         "note": { "type": "string" },
         "tag": {
@@ -191,8 +236,8 @@
           "description": "Colour of the layer's row in the editor's layer list; never drawn"
         },
         "label": {
-          "type": "string",
-          "description": "Divider title shown in the editor's layer list"
+          "type": ["string", "boolean"],
+          "description": "Divider: the title shown in the editor's layer list. Barcode: whether the human-readable text is drawn (true or false, or an expression)"
         },
         "visible": {
           "description": "Boolean literal or expression",
@@ -242,6 +287,11 @@
           }
         },
         "extends": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "clip_to": {
+          "description": "Draw only inside the shape of this rect, ellipse or polygon layer (it may be hidden); also on groups",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "effects": {
           "type": "array",
           "items": {
@@ -341,15 +391,8 @@
           }
         },
         "points": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 2,
-            "items": {
-              "type": ["number", "string"]
-            }
-          }
+          "description": "[x, y] pairs in canvas coordinates, mixed with point runs: { count or each, index, item, x, y } makes one point per iteration. An object alone is one run",
+          "$ref": "#/$defs/points"
         },
         "closed": { "type": "boolean" },
         "text": { "description": "Text with {expression} placeholders", "type": "string" },
@@ -407,6 +450,10 @@
         },
         "min_size": {
           "description": "Smallest size auto-shrink may use (default 8)",
+          "type": ["number", "string"]
+        },
+        "min_squeeze": {
+          "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
           "type": ["number", "string"]
         },
         "src": { "description": "Text with {expression} placeholders", "type": "string" },
@@ -624,6 +671,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "box": {
                 "type": "object",
                 "additionalProperties": false,
@@ -740,6 +788,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "box": {
                 "type": "object",
                 "additionalProperties": false,
@@ -868,16 +917,10 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "points": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": ["number", "string"]
-                  }
-                }
+                "description": "[x, y] pairs in canvas coordinates, mixed with point runs: { count or each, index, item, x, y } makes one point per iteration. An object alone is one run",
+                "$ref": "#/$defs/points"
               },
               "closed": { "type": "boolean" },
               "fill": {
@@ -1011,6 +1054,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "text": { "description": "Text with {expression} placeholders", "type": "string" },
               "at": {
                 "type": "object",
@@ -1068,6 +1112,10 @@
                 "description": "Smallest size auto-shrink may use (default 8)",
                 "type": ["number", "string"]
               },
+              "min_squeeze": {
+                "description": "Squeeze sideways: the narrowest horizontal scale (0.05 to 1) glyphs may get so the block fits max_width, tried before the size shrinks (default 1, off)",
+                "type": ["number", "string"]
+              },
               "stroke": {
                 "description": "Outline around the glyphs",
                 "type": "object",
@@ -1121,6 +1169,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "src": { "description": "Text with {expression} placeholders", "type": "string" },
               "box": {
                 "type": "object",
@@ -1205,6 +1254,7 @@
               "repeat": true,
               "extends": true,
               "effects": true,
+              "clip_to": true,
               "text": {
                 "description": "What the code holds: text with {expression} placeholders, for example a link",
                 "type": "string"
@@ -1250,6 +1300,180 @@
                   },
                   { "type": "string" }
                 ]
+              },
+              "mode": {
+                "description": "QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default byte; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["auto", "byte", "numeric", "alphanumeric"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "style": {
+                "description": "Shape of the data modules: square (default), rounded or dots; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["square", "rounded", "dots"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "eye": {
+                "description": "Shape of the three corner squares: square (default), rounded or circle; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["square", "rounded", "circle"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "eye_color": {
+                "description": "Color of the corner squares. Default: the color of the code",
+                "type": "string"
+              },
+              "logo": {
+                "description": "Clears a square in the middle for a logo, as a share of the code's side, 0 to 0.5. Use level high",
+                "type": ["number", "string"]
+              },
+              "logo_src": {
+                "description": "Picture drawn in the cleared middle: a path with {expression} placeholders, like an image's src. Clears a fifth of the side unless logo is set",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "barcode" }
+            }
+          },
+          "then": {
+            "required": ["format", "text", "box"],
+            "properties": {
+              "id": true,
+              "type": true,
+              "note": true,
+              "tag": true,
+              "visible": true,
+              "opacity": true,
+              "rotate": true,
+              "anchor": true,
+              "repeat": true,
+              "extends": true,
+              "effects": true,
+              "clip_to": true,
+              "format": {
+                "description": "The kind of code: qr, code128, ean13, ean8, upca, code39, itf, itf14, codabar, code93, datamatrix, aztec or pdf417; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["qr", "code128", "ean13", "ean8", "upca", "code39", "itf", "itf14", "codabar", "code93", "datamatrix", "aztec", "pdf417"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "check": {
+                "description": "Check digit: auto (add a missing one, reject a wrong one; default), add (also append the optional check of code39 and itf) or none; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["auto", "add", "none"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "label": {
+                "description": "Linear codes: draw the human-readable text under the bars (true or false, or an expression). Default: on for ean13, ean8, upca and itf14, off for the others",
+                "type": ["boolean", "string"]
+              },
+              "label_text": {
+                "description": "Linear codes: text shown instead of the encoded text, with {expression} placeholders",
+                "type": "string"
+              },
+              "label_color": {
+                "description": "Linear codes: color of the text. Default: the color of the bars",
+                "type": "string"
+              },
+              "label_gap": {
+                "description": "Linear codes: space between bars and text in pixels. Default a quarter of the text size",
+                "type": ["number", "string"]
+              },
+              "font": {
+                "description": "Linear codes: the font of the text, a name from \"fonts\". Default: the default font",
+                "type": "string"
+              },
+              "size": {
+                "description": "Linear codes: text size in pixels. Default eight modules, at most 30% of the box height, shrunk to fit the bars",
+                "type": ["number", "string"]
+              },
+              "align": {
+                "description": "Linear codes: where the text sits under the bars: left, center (default), right or justify (spread over the bars); or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["left", "center", "right", "justify"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "text": {
+                "description": "What the code holds: text with {expression} placeholders, for example a link or the digits of an EAN",
+                "type": "string"
+              },
+              "box": {
+                "description": "The code is drawn with whole pixels per module, centred in this box. A 1D code is as wide as the box allows and as high as the box (label included); a QR code is a square",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "y": {
+                    "description": "Number literal or expression, see https://yoshida.xoyz.dev/docs/expressions/",
+                    "type": ["number", "string"]
+                  },
+                  "w": {
+                    "type": ["number", "string"]
+                  },
+                  "h": {
+                    "type": ["number", "string"]
+                  }
+                }
+              },
+              "color": {
+                "description": "Color of the dark modules. Default black",
+                "type": "string"
+              },
+              "fill": {
+                "description": "Color behind the code, quiet zone included. Default white; #00000000 for none",
+                "type": "string"
+              },
+              "margin": {
+                "description": "Quiet zone around the code in modules, 0 to 16. Default: what the format asks for (QR 4, 1D codes 7 to 11, Data Matrix and PDF417 2, Aztec 1). 1D codes get it left and right only",
+                "type": ["number", "string"]
+              },
+              "level": {
+                "description": "QR only. Error correction: low (7%), medium (15%, default), quartile (25%) or high (30%); or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["low", "medium", "quartile", "high"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "mode": {
+                "description": "QR only: how the text is cut into segments: auto (fewest bits), byte, numeric or alphanumeric. Default auto; or an expression that gives one",
+                "anyOf": [
+                  {
+                    "enum": ["auto", "byte", "numeric", "alphanumeric"]
+                  },
+                  { "type": "string" }
+                ]
+              },
+              "ecc": {
+                "description": "Aztec: the least share of error correction in percent of the data, 0 to 90 (default 23). PDF417: error correction level 0 to 8 (default: by size)",
+                "type": ["number", "string"]
               },
               "style": {
                 "description": "Shape of the data modules: square (default), rounded or dots; or an expression that gives one",
@@ -1301,6 +1525,7 @@
               "opacity": true,
               "rotate": true,
               "effects": true,
+              "clip_to": true,
               "layers": true,
               "repeat": true,
               "translate": {

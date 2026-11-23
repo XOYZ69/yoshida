@@ -86,7 +86,7 @@ A hidden image (`"visible": false`, or an expression that is false for the card)
 
 ## Rounded corners and clipping
 
-`"radius": 24` clips the image to its box with rounded corners. `"clip"` clips it to a polygon, given as points like a [polygon layer](@/docs/layer-polygon.md): `"clip": [[0, 0], [400, 0], [400, 300], [0, 360]]`. In SVG and vector PDF output a clipped image stays pixels (at the `--scale` resolution).
+`"radius": 24` clips the image to its box with rounded corners. `"clip"` clips it to a polygon, given as points like a [polygon layer](@/docs/layer-polygon.md): `"clip": [[0, 0], [400, 0], [400, 300], [0, 360]]`. In SVG and vector PDF output a clipped image stays pixels (at the `--scale` resolution). To clip with a real vector clip path, or to clip other layers and groups, use [`clip_to`](@/docs/layers.md#clip-to) with a shape layer.
 
 ## Images from the web
 

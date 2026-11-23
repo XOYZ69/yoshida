@@ -37,11 +37,11 @@ Typical use: put the project files with `vfs_put`, call `request` with a UTF-8 J
 
 ### `info`
 
-Returns `{ "version": "0.8.0", "format": 1, "channel": "" }`. `channel` is `"dev"` in a preview build (see [dev builds](@/docs/building-from-source.md#dev-builds)) and empty in a release build; the editor shows it as a red stamp beside the version.
+Returns `{ "version": "0.9.0", "format": 1, "channel": "" }`. `channel` is `"dev"` in a preview build (see [dev builds](@/docs/building-from-source.md#dev-builds)) and empty in a release build; the editor shows it as a red stamp beside the version.
 
 ### `check`
 
-Returns `{ "diagnostics": [...], "project": {...} }`. The project summary lists the sets with their designs, params, cards and layers; it is written by `src/core/api.zig`, which the editor reads. A list param's `item` maps field names to a type name, or to `{ "type", "options", "default" }` for enum fields and fields with a default. Each diagnostic has the shape described in [Diagnostics](@/docs/diagnostics.md#json-shape).
+Returns `{ "diagnostics": [...], "project": {...} }`. The project summary lists the sets with their designs, params, cards (a card that sets its own canvas has `"canvas": { "width"?, "height"?, "dpi"?, "bleed"? }` next to its `values`) and layers; it is written by `src/core/api.zig`, which the editor reads. A list param's `item` maps field names to a type name, or to `{ "type", "options", "default" }` for enum fields and fields with a default. Each diagnostic has the shape described in [Diagnostics](@/docs/diagnostics.md#json-shape).
 
 ### `render`
 
@@ -74,7 +74,7 @@ The answer's JSON is:
 }
 ```
 
-and the binary result holds the pixels or the PNG file. `width` and `height` are the bitmap's size (the canvas times `scale`), `dpi` is `canvas.dpi` times `scale` (0 when the design has none) and `bleed` is `canvas.bleed` times `scale`, in bitmap pixels. `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
+and the binary result holds the pixels or the PNG file. `width` and `height` are the bitmap's size (the canvas of the card, with its own `_width` and `_height` if it has them, times `scale`), `dpi` is `canvas.dpi` times `scale` (0 when the design has none) and `bleed` is `canvas.bleed` times `scale`, in bitmap pixels. `layout` is present only when requested: for each layer and each repeat iteration, the resolved bounds with rotation, pivot, polygon points and the text size after auto-shrink. Layers inside a repeated group appear once per group iteration, with `instance` set to the iteration. The editor draws its selection overlay from it.
 
 ### `svg`
 

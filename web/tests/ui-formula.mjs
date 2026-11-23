@@ -38,6 +38,8 @@ const rendered = () =>
 		null,
 		{ timeout: 30000 },
 	);
+// The text of a cell or of the window's text area (an editor, not an input).
+const val = (l) => l.evaluate((el) => (el.value ?? el.innerText).replace(/\n$/, ""));
 const row = (id) => p.locator(`.tree .row:has(.name:text-is("${id}"))`).first();
 const field = (label) =>
 	p.locator(`aside.right .cm-content[aria-label="${label}"]`).first();
@@ -62,11 +64,16 @@ await row("paper").click();
 const fill = field("fill");
 await fill.click();
 await p.keyboard.press("Control+a");
-await p.keyboard.type("match('x', 'a', #ff0000, 'b', #0000ff, #000000)", {
+await p.keyboard.type("match('x','a',#ff0000,  'b',#0000ff, #000000)", {
 	delay: 5,
 });
 await p.keyboard.press("Enter");
 await rendered();
+ok(
+	"leaving an edited field saves the expression in the canonical form",
+	(await fill.innerText()) === "match('x', 'a', #ff0000, 'b', #0000ff, #000000)",
+	JSON.stringify(await fill.innerText()),
+);
 
 // Open the panel from the ⤢ button of the field.
 await fill.click();
@@ -106,17 +113,17 @@ await p.screenshot({ path: `${shots}/formula-open.png` });
 const cell = drawer.getByLabel("result 1");
 ok(
 	"the first result cell shows its text",
-	(await cell.inputValue()) === "#ff0000",
-	await cell.inputValue(),
+	(await val(cell)) === "#ff0000",
+	await val(cell),
 );
 await cell.fill("#00ff00");
 await cell.press("Enter");
 await p.waitForTimeout(100);
-const text = drawer.locator("textarea");
+const text = drawer.getByLabel("Expression text");
 ok(
 	"editing a cell updates the text below",
-	(await text.inputValue()).includes("#00ff00"),
-	await text.inputValue(),
+	(await val(text)).includes("#00ff00"),
+	await val(text),
 );
 
 // Apply hands the text to the field.
@@ -134,6 +141,41 @@ ok(
 	!(await p.locator(".status").innerText()).match(/error|failed/i),
 	await p.locator(".status").innerText(),
 );
+
+// A long expression is laid out on several lines in the window, but the field
+// (and so the design) gets it on one line: a break would be saved as `\n`.
+{
+	const long =
+		"match('x', 'a-long-key-one', #ff0000, 'a-long-key-two', #0000ff, 'a-long-key-three', #00ff00, #000000)";
+	await text.fill(long);
+	await cell.fill("#112233");
+	await cell.press("Enter");
+	await p.waitForTimeout(100);
+	ok(
+		"an edit lays the long expression out on several lines in the window",
+		(await val(text)).includes("\n") &&
+			(await val(text)).includes("#112233"),
+		await val(text),
+	);
+	await drawer.getByRole("button", { name: "Apply" }).click();
+	await p.waitForTimeout(300);
+	ok(
+		"Apply writes the long expression to the field on one line",
+		(await fill.locator(".cm-line").count()) === 1 &&
+			(await fill.innerText()).includes("#112233"),
+		JSON.stringify(await fill.innerText()),
+	);
+	// The field still shows the layout: breaks drawn between the tokens of the
+	// one line of text, not characters of it.
+	ok(
+		"the field shows the multi-line layout without a line break in its text",
+		(await fill.locator(".yx-break").count()) > 1 &&
+			(await fill.evaluate((el) => el.closest(".expr")?.getBoundingClientRect().height ?? 0)) > 50,
+		String(await fill.locator(".yx-break").count()),
+	);
+	// Back to the short match for the checks below.
+	await text.fill("match('x', 'a', #00ff00, 'b', #0000ff, #000000)");
+}
 
 // Live values for the card on the stage: the default row is the one taken.
 await p.waitForTimeout(500);
@@ -155,8 +197,8 @@ ok(
 await drawer.getByRole("button", { name: "To ?: chain" }).click();
 ok(
 	"convert to ?: chain rewrites the text",
-	(await text.inputValue()).startsWith("'x' == 'a' ?"),
-	await text.inputValue(),
+	(await val(text)).startsWith("'x' == 'a' ?"),
+	await val(text),
 );
 // The chain rows read "when … then …": no arrows, and no "–" placeholder for
 // a value that is not there.
@@ -177,8 +219,8 @@ ok(
 await drawer.getByRole("button", { name: "To match" }).click();
 ok(
 	"convert to match restores it",
-	(await text.inputValue()).startsWith("match('x', 'a', #00ff00"),
-	await text.inputValue(),
+	(await val(text)).startsWith("match('x', 'a', #00ff00"),
+	await val(text),
 );
 
 // Drill in: a call in a result cell opens as the selection, with the
@@ -214,8 +256,8 @@ await cell.press("Enter");
 await p.waitForTimeout(100);
 ok(
 	"the match text is restored after the drill",
-	(await text.inputValue()).startsWith("match('x', 'a', #00ff00"),
-	await text.inputValue(),
+	(await val(text)).startsWith("match('x', 'a', #00ff00"),
+	await val(text),
 );
 
 // Extract to a constant: the part moves into a new design constant and its
@@ -315,9 +357,9 @@ await p.waitForTimeout(300);
 ok("a valid name closes the dialog", (await constDialog.count()) === 0);
 ok(
 	"extract constant puts the name in the field",
-	(await text.inputValue()) === "paper_fill" &&
+	(await val(text)) === "paper_fill" &&
 		(await fill.innerText()).trim() === "paper_fill",
-	`${await text.inputValue()} / ${await fill.innerText()}`,
+	`${await val(text)} / ${await fill.innerText()}`,
 );
 await rendered();
 ok(

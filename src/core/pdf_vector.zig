@@ -39,20 +39,8 @@ pub fn addPage(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
     const k: f64 = 72.0 / (if (scene.dpi > 0) scene.dpi else 72.0);
     const sheet = Sheet.of(scene, crop_marks);
     const root = try b.newStream();
-    const o = &root.out.writer;
     // Canvas pixels, y down, inside the margin.
-    try o.writeAll("q ");
-    try num(o, k);
-    try o.writeAll(" 0 0 ");
-    try num(o, -k);
-    try o.writeByte(' ');
-    try num(o, sheet.margin * k);
-    try o.writeByte(' ');
-    try num(o, (@as(f64, @floatFromInt(scene.height)) + sheet.margin) * k);
-    try o.writeAll(" cm\n");
-    if (scene.background) |bg| try b.fillRect(.{ 0, 0, @floatFromInt(scene.width), @floatFromInt(scene.height) }, bg);
-    try b.items();
-    try o.writeAll("Q\n");
+    try b.card(k, sheet.margin);
     if (crop_marks) try b.marks(sheet, k);
 
     const content = try raster.deflate(w.gpa, root.out.written());
@@ -72,6 +60,36 @@ pub fn addPage(w: *Writer, scene: *const vector.Scene, crop_marks: bool) !void {
         .{ pw, ph, m, m, pw - m, ph - m, m + bl, m + bl, pw - m - bl, ph - m - bl, resources, content_id },
     ) catch return error.OutOfMemory;
     try w.pages.append(w.gpa, page);
+}
+
+/// The page's content operators before compression, without the page
+/// transform (for tests). The caller owns the result.
+pub fn contentOf(gpa: Allocator, scene: *const vector.Scene) ![]u8 {
+    var w = try Writer.init(gpa);
+    defer w.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    var b: Builder = .{ .w = &w, .arena = arena_state.allocator(), .scene = scene };
+    const root = try b.newStream();
+    try b.items();
+    return gpa.dupe(u8, root.out.written());
+}
+
+/// The scene as a form XObject for print layout pages (print.zig): in
+/// points, from the card's bottom-left corner, the size of its page without
+/// crop marks.
+pub fn cardForm(w: *Writer, scene: *const vector.Scene) !pdf.Card {
+    var arena_state = std.heap.ArenaAllocator.init(w.gpa);
+    defer arena_state.deinit();
+    var b: Builder = .{ .w = w, .arena = arena_state.allocator(), .scene = scene };
+    const k: f64 = 72.0 / (if (scene.dpi > 0) scene.dpi else 72.0);
+    const root = try b.newStream();
+    try b.card(k, 0);
+    const cw = @as(f64, @floatFromInt(scene.width)) * k;
+    const ch = @as(f64, @floatFromInt(scene.height)) * k;
+    const bbox = try std.fmt.allocPrint(b.arena, "[0 0 {d:.4} {d:.4}]", .{ cw, ch });
+    const id = try b.writeForm(bbox, try b.resources(root), root.out.written(), false);
+    return .{ .id = id, .image = false, .w = cw, .h = ch, .bleed = scene.bleed * k };
 }
 
 /// The page in canvas pixels: the card and the margin for crop marks.
@@ -137,6 +155,25 @@ const Builder = struct {
 
     fn out(b: *Builder) *std.Io.Writer {
         return &b.cur().out.writer;
+    }
+
+    /// The card in canvas pixels, y down, `margin` pixels in from the
+    /// bottom-left of the page or form, at `k` points per pixel.
+    fn card(b: *Builder, k: f64, margin: f64) !void {
+        const o = b.out();
+        const scene = b.scene;
+        try o.writeAll("q ");
+        try num(o, k);
+        try o.writeAll(" 0 0 ");
+        try num(o, -k);
+        try o.writeByte(' ');
+        try num(o, margin * k);
+        try o.writeByte(' ');
+        try num(o, (@as(f64, @floatFromInt(scene.height)) + margin) * k);
+        try o.writeAll(" cm\n");
+        if (scene.background) |bg| try b.fillRect(.{ 0, 0, @floatFromInt(scene.width), @floatFromInt(scene.height) }, bg);
+        try b.items();
+        try b.out().writeAll("Q\n");
     }
 
     fn items(b: *Builder) !void {
@@ -229,7 +266,7 @@ const Builder = struct {
         const o = b.out();
         const shaded = g.color.a < 65535;
         if (shaded) try b.setAlpha(g.color.a, g.color.a) else try o.writeAll("q ");
-        try matrix(o, .{ g.scale, 0, 0, g.scale, g.x, g.y });
+        try matrix(o, .{ g.scale * g.xscale, 0, 0, g.scale, g.x, g.y });
         try o.writeAll(" cm ");
         try setColor(o, g.color, "rg");
         if (outline) {
@@ -367,6 +404,13 @@ const Builder = struct {
                     try o.writeAll(" cm ");
                 }
                 try rect(o, c.clip[0], c.clip[1], c.clip[2] - c.clip[0], c.clip[3] - c.clip[1]);
+                try o.writeAll(" W n\n");
+                try b.frames.append(b.arena, .save);
+            },
+            .clip => |path| {
+                const o = b.out();
+                try o.writeAll("q ");
+                try pathOps(o, path);
                 try o.writeAll(" W n\n");
                 try b.frames.append(b.arena, .save);
             },
@@ -657,6 +701,36 @@ pub fn expectWellFormed(gpa: Allocator, pdf_bytes: []const u8) !usize {
         }
     }
     return count - 1;
+}
+
+test "a clip group is a path with W n in a saved state" {
+    const gpa = std.testing.allocator;
+    var sc = vector.Scene.init(gpa);
+    defer sc.deinit();
+    sc.width = 100;
+    sc.height = 100;
+    var pb = vector.PathBuilder.init(sc.allocator());
+    try pb.arc(50, 50, 40, 40, 0, 360, true);
+    try pb.close();
+    const disc = pb.finish();
+    var rb = vector.PathBuilder.init(sc.allocator());
+    try rb.roundRect(0, 0, 100, 100, 0);
+    try sc.add(.{ .begin = .{ .clip = disc } });
+    try sc.add(.{ .fill = .{ .path = rb.finish(), .color = .{ .r = 65535, .g = 0, .b = 0, .a = 65535 } } });
+    try sc.add(.end);
+    const content = try contentOf(gpa, &sc);
+    defer gpa.free(content);
+    // q, the disc (a move and four curves), W n; the fill; Q.
+    try std.testing.expect(std.mem.startsWith(u8, content, "q 50 10 m "));
+    try std.testing.expectEqual(@as(usize, 4), std.mem.count(u8, content[0..std.mem.indexOf(u8, content, "W n").?], " c"));
+    try std.testing.expect(std.mem.indexOf(u8, content, " h W n\n") != null);
+    try std.testing.expect(std.mem.endsWith(u8, content, "Q\n"));
+    var w = try Writer.init(gpa);
+    defer w.deinit();
+    try w.addVector(&sc, false);
+    const bytes = try w.finish();
+    defer gpa.free(bytes);
+    _ = try expectWellFormed(gpa, bytes);
 }
 
 test "vector page structure" {

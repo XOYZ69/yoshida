@@ -16,6 +16,8 @@ const usage =
     \\                            [--utc-offset HOURS] [--16bit] [--preview]
     \\                            [--offline] [--pdf] [--crop-marks] [--svg]
     \\                            [--vector] [--scale N] [--sheet COLSxROWS]
+    \\                            [--page a4|letter|...|WxH] [--gap MM] [--margin MM]
+    \\                            [--back SET[:ID]] [--duplex long|short]
     \\                            [--format text|json]
     \\  yoshida fmt    <project or file>...  [--check]
     \\  yoshida version
@@ -36,6 +38,15 @@ const usage =
     \\        --sheet 10x7 tiles the cards of each set left to right, top to
     \\        bottom into <out>/<set>.png (a deck sheet for a tabletop
     \\        simulator), and <set>-2.png ... when they do not fit on one.
+    \\        --pdf --page a4 lays the cards out side by side on A4 pages
+    \\        (a3, a5, a6, letter, legal, tabloid, each also with -landscape,
+    \\        or WxH in mm such as 297x420): as many as fit inside --margin
+    \\        (default 5 mm), --gap mm apart (default 0), centred, at their
+    \\        printed size: print at 100% (actual size), not "fit to page".
+    \\        --crop-marks marks the trim lines around the grid. --back SET puts the first card of SET (or card
+    \\        ID) behind every card: a page of backs after each page of fronts,
+    \\        mirrored for a duplex printer that flips on the --duplex edge
+    \\        (default long). The back set is not rendered as fronts itself.
     \\clock   --now is the UTC instant the cards are rendered at (render.now,
     \\        render.date, render.time). Without --now or --date it is the
     \\        current UTC time; --date alone pins the local date at midnight.
@@ -78,6 +89,11 @@ const Args = struct {
     svg: bool = false,
     vector: bool = false,
     sheet: ?[]const u8 = null,
+    page: ?[]const u8 = null,
+    gap: ?[]const u8 = null,
+    margin: ?[]const u8 = null,
+    back: ?[]const u8 = null,
+    duplex: ?[]const u8 = null,
 };
 
 pub fn main(init: std.process.Init) !u8 {
@@ -162,6 +178,10 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
             return 2;
         }
     }
+    const print = printLayout(args, err) catch |e| switch (e) {
+        error.Usage => return 2,
+        else => |other| return other,
+    };
     if (args.now) |n| if (!validUtcInstant(n)) {
         try err.print("error: --now must be a UTC instant like 2026-10-15T09:30:00Z, got '{s}'\n", .{n});
         return 2;
@@ -230,10 +250,35 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
         var assets = y.render.Assets.init(gpa, disk.vfs());
         defer assets.deinit();
         var matched_set = args.set == null;
+        // --back: the card shown behind every card of the print layout.
+        var back_set: ?*const y.project.Set = null;
+        var back_index: usize = 0;
+        if (print) |pl| if (pl.back_set) |name| {
+            const bs = proj.findSet(name) orelse {
+                try err.print("error: --back: no set named '{s}'. Sets:", .{name});
+                for (proj.sets) |s| try err.print(" {s}", .{s.name});
+                try err.writeByte('\n');
+                return 2;
+            };
+            if (pl.back_card) |id| {
+                back_index = for (bs.cards, 0..) |c, i| {
+                    if (std.mem.eql(u8, c.id, id)) break i;
+                } else {
+                    try err.print("error: --back: set '{s}' has no card '{s}'\n", .{ name, id });
+                    return 2;
+                };
+            } else if (bs.cards.len == 0) {
+                try err.print("error: --back: set '{s}' has no cards\n", .{name});
+                return 2;
+            }
+            back_set = bs;
+        };
         for (proj.sets) |*set| {
             if (args.set) |s| if (!std.mem.eql(u8, s, set.name)) continue;
             matched_set = true;
             if (!set.ok) continue;
+            // The backs are not printed as fronts unless --set asks for them.
+            if (back_set) |bs| if (args.set == null and bs == set) continue;
             const dir = if (args.pdf or sheet_grid != null) out_root else try std.fs.path.join(arena, &.{ out_root, set.name });
             Io.Dir.cwd().createDirPath(io, dir) catch |e| {
                 try err.print("error: cannot create '{s}': {s}\n", .{ dir, @errorName(e) });
@@ -243,6 +288,9 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
             defer if (pdf) |*p| p.deinit();
             var pdf_pages: usize = 0;
             var pdf_errors = false;
+            // --page: the cards side by side on print pages (pdf_pages counts cards).
+            var sheets: ?y.print.Sheets = if (print) |pl| y.print.Sheets.init(&pdf.?, pl.opts) else null;
+            defer if (sheets) |*sh| sh.deinit();
             // --sheet: the sheet being filled, the cards on it and its number.
             var sheet: ?y.raster.Sheet = null;
             defer if (sheet) |*sh| sh.deinit(gpa);
@@ -254,9 +302,29 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
                 set_cards += 1;
             }
+            const ropts: y.render.Options = .{ .date = date, .now = now, .utc_offset = utc_offset, .preview = args.preview };
+            if (sheets) |*sh| if (back_set) |bs| if (set_cards > 0) {
+                const errors_before = diags.errorCount();
+                sh.back = try printCard(gpa, &assets, bs, back_index, ropts, args.vector, scale, &pdf.?, &diags);
+                if (diags.errorCount() > errors_before) pdf_errors = true;
+            };
             for (set.cards, 0..) |card, i| {
                 if (args.card) |cid| if (!std.mem.eql(u8, cid, card.id)) continue;
                 const errors_before = diags.errorCount();
+                if (sheets) |*sh| {
+                    const pc = (try printCard(gpa, &assets, set, i, ropts, args.vector, scale, &pdf.?, &diags)) orelse continue;
+                    const same = sh.add(pc) catch |e| switch (e) {
+                        error.CardTooLarge => {
+                            try err.print("error: card '{s}' ({d:.1} x {d:.1} mm) does not fit on the page inside the margins\n", .{ card.id, pc.w / y.print.mm, pc.h / y.print.mm });
+                            return 1;
+                        },
+                        else => |other| return other,
+                    };
+                    if (!same) try err.print("warning: card '{s}' is not the size of the first card; it is centred on its place and cut to it\n", .{card.id});
+                    pdf_pages += 1;
+                    if (diags.errorCount() > errors_before) pdf_errors = true;
+                    continue;
+                }
                 if (args.pdf and args.vector) {
                     var scene = y.vector.Scene.init(gpa);
                     defer scene.deinit();
@@ -351,6 +419,7 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
                 rendered += sheet_cards;
             };
             if (pdf) |*p| if (pdf_pages > 0) {
+                if (sheets) |*sh| try sh.finish();
                 const bytes = try p.finish();
                 defer gpa.free(bytes);
                 const file = try std.fmt.allocPrint(arena, "{s}/{s}.pdf", .{ dir, set.name });
@@ -361,7 +430,11 @@ fn checkOrRender(init: std.process.Init, args: Args, multi: bool, out: *Io.Write
                 rendered += pdf_pages;
                 try rendered_files.append(arena, file);
                 if (pdf_errors) try failed_files.append(arena, file);
-                if (!args.json) try out.print("wrote {s} ({d} page(s)){s}\n", .{ file, pdf_pages, if (pdf_errors) " with errors: parts of some cards are missing" else "" });
+                if (args.json) {} else if (sheets) |*sh| {
+                    const l = sh.layout.?;
+                    try out.print("wrote {s} ({d} card(s) of {d:.1} x {d:.1} mm on {d} page(s), {d}x{d} per page{s}){s}\n", .{ file, pdf_pages, l.trim_w / y.print.mm, l.trim_h / y.print.mm, p.pages.items.len, l.cols, l.rows, if (sh.back == null) "" else if (sh.opts.duplex == .long) ", backs for flip on long edge" else ", backs for flip on short edge", if (pdf_errors) " with errors: parts of some cards are missing" else "" });
+                    try out.print("  print at 100% (actual size), not \"fit to page\": the cards are {d:.1} x {d:.1} mm\n", .{ l.trim_w / y.print.mm, l.trim_h / y.print.mm });
+                } else try out.print("wrote {s} ({d} page(s)){s}\n", .{ file, pdf_pages, if (pdf_errors) " with errors: parts of some cards are missing" else "" });
             };
         }
         if (!matched_set) {
@@ -466,7 +539,7 @@ fn parseArgs(arena: Allocator, argv: []const [:0]const u8) !Args {
             if (i + 1 >= argv.len) return error.MissingOptionValue;
             i += 1;
             const v = argv[i];
-            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "scale")) a.scale = v else if (std.mem.eql(u8, name, "sheet")) a.sheet = v else if (std.mem.eql(u8, name, "format")) {
+            if (std.mem.eql(u8, name, "set")) a.set = v else if (std.mem.eql(u8, name, "card")) a.card = v else if (std.mem.eql(u8, name, "out")) a.out = v else if (std.mem.eql(u8, name, "date")) a.date = v else if (std.mem.eql(u8, name, "now")) a.now = v else if (std.mem.eql(u8, name, "utc-offset")) a.utc_offset = v else if (std.mem.eql(u8, name, "scale")) a.scale = v else if (std.mem.eql(u8, name, "sheet")) a.sheet = v else if (std.mem.eql(u8, name, "page")) a.page = v else if (std.mem.eql(u8, name, "gap")) a.gap = v else if (std.mem.eql(u8, name, "margin")) a.margin = v else if (std.mem.eql(u8, name, "back")) a.back = v else if (std.mem.eql(u8, name, "duplex")) a.duplex = v else if (std.mem.eql(u8, name, "format")) {
                 if (std.mem.eql(u8, v, "json")) a.json = true else if (!std.mem.eql(u8, v, "text")) return error.UnknownFormat;
             } else return error.UnknownOption;
         } else if (std.mem.eql(u8, s, "-h")) {
@@ -481,6 +554,87 @@ fn parseArgs(arena: Allocator, argv: []const [:0]const u8) !Args {
     a.paths = paths.items;
     if (paths.items.len > 1 and !(std.mem.eql(u8, a.command, "check") or std.mem.eql(u8, a.command, "fmt"))) return error.TooManyArguments;
     return a;
+}
+
+/// Card `index` of `set` written once into `w` for a print layout page: as
+/// vectors or as an image at `scale`. Null when nothing could be drawn.
+fn printCard(gpa: Allocator, assets: *y.render.Assets, set: *const y.project.Set, index: usize, ro: y.render.Options, vector: bool, scale: ?f64, w: *y.pdf.Writer, diags: *y.diag.List) !?y.pdf.Card {
+    if (vector) {
+        var scene = y.vector.Scene.init(gpa);
+        defer scene.deinit();
+        scene.raster_scale = @floatCast(scale orelse 2);
+        if (!try y.render.renderVector(gpa, assets, set, index, ro, &scene, diags)) return null;
+        return try w.vectorCard(&scene);
+    }
+    var o = ro;
+    o.scale = scale orelse 1;
+    var bmp = (try y.render.renderCard(gpa, assets, set, index, o, diags)) orelse return null;
+    defer bmp.deinit(gpa);
+    return try w.imageCard(&bmp);
+}
+
+/// The print layout of `--pdf --page` and the back behind every card.
+const PrintLayout = struct {
+    opts: y.print.Options,
+    /// `--back SET[:ID]`: the set, and the card id (its first card without one).
+    back_set: ?[]const u8 = null,
+    back_card: ?[]const u8 = null,
+};
+
+/// The print layout options, null without `--page`; error.Usage (after the
+/// message) when they are wrong or used without `--page` and `--pdf`.
+fn printLayout(args: Args, err: *Io.Writer) !?PrintLayout {
+    const page_text = args.page orelse {
+        const stray: ?[]const u8 = if (args.gap != null) "--gap" else if (args.margin != null) "--margin" else if (args.back != null) "--back" else if (args.duplex != null) "--duplex" else null;
+        if (stray) |name| {
+            try err.print("error: {s} goes with --pdf --page\n", .{name});
+            return error.Usage;
+        }
+        return null;
+    };
+    if (!args.pdf) {
+        try err.print("error: --page lays cards out on PDF pages; it needs --pdf\n", .{});
+        return error.Usage;
+    }
+    const page = y.print.parsePage(page_text) orelse {
+        try err.print("error: --page must be a3, a4, a5, a6, letter, legal or tabloid (each also with -landscape) or WxH in mm like 210x297 (each side {d} to {d}), got '{s}'\n", .{ y.print.min_page_mm, y.print.max_page_mm, page_text });
+        return error.Usage;
+    };
+    var p: PrintLayout = .{ .opts = .{ .page_w = page[0], .page_h = page[1], .crop_marks = args.crop_marks } };
+    if (args.gap) |g| {
+        const v = y.print.parseMm(g, 0, y.print.max_gap_mm) orelse {
+            try err.print("error: --gap must be millimetres from 0 to {d}, got '{s}'\n", .{ y.print.max_gap_mm, g });
+            return error.Usage;
+        };
+        p.opts.gap = v * y.print.mm;
+    }
+    if (args.margin) |m| {
+        const v = y.print.parseMm(m, 0, y.print.max_margin_mm) orelse {
+            try err.print("error: --margin must be millimetres from 0 to {d}, got '{s}'\n", .{ y.print.max_margin_mm, m });
+            return error.Usage;
+        };
+        p.opts.margin = v * y.print.mm;
+    }
+    if (args.duplex) |d| {
+        p.opts.duplex = std.meta.stringToEnum(y.print.Duplex, d) orelse {
+            try err.print("error: --duplex must be long or short, got '{s}'\n", .{d});
+            return error.Usage;
+        };
+        if (args.back == null) {
+            try err.print("error: --duplex goes with --back\n", .{});
+            return error.Usage;
+        }
+    }
+    if (args.back) |b| {
+        const colon = std.mem.indexOfScalar(u8, b, ':');
+        p.back_set = if (colon) |c| b[0..c] else b;
+        p.back_card = if (colon) |c| b[c + 1 ..] else null;
+        if (p.back_set.?.len == 0 or (p.back_card != null and p.back_card.?.len == 0)) {
+            try err.print("error: --back must be a set name, or SET:ID for one of its cards, got '{s}'\n", .{b});
+            return error.Usage;
+        }
+    }
+    return p;
 }
 
 /// `10x7`: columns and rows of a sheet, each 1 to 100.
@@ -682,4 +836,32 @@ test "check and fmt take several paths, the other commands one" {
     try std.testing.expectError(error.TooManyArguments, parseArgs(a, &.{ "render", "one", "two" }));
     const single = try parseArgs(a, &.{ "render", "one" });
     try std.testing.expectEqual(@as(usize, 1), single.paths.len);
+}
+
+test "print layout options" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var buf: [512]u8 = undefined;
+    var w: Io.Writer = .fixed(&buf);
+    const none = try printLayout(try parseArgs(a, &.{ "render", "p", "--pdf" }), &w);
+    try std.testing.expect(none == null);
+    const p = (try printLayout(try parseArgs(a, &.{ "render", "p", "--pdf", "--page", "letter", "--gap", "2.5", "--margin", "0", "--back", "backs:b1", "--duplex", "short", "--crop-marks" }), &w)).?;
+    try std.testing.expectApproxEqAbs(@as(f64, 612), p.opts.page_w, 1e-9);
+    try std.testing.expectApproxEqAbs(2.5 * y.print.mm, p.opts.gap, 1e-9);
+    try std.testing.expectEqual(@as(f64, 0), p.opts.margin);
+    try std.testing.expect(p.opts.crop_marks and p.opts.duplex == .short);
+    try std.testing.expectEqualStrings("backs", p.back_set.?);
+    try std.testing.expectEqualStrings("b1", p.back_card.?);
+    for ([_][]const []const u8{
+        &.{ "render", "p", "--page", "a4" },
+        &.{ "render", "p", "--pdf", "--back", "x" },
+        &.{ "render", "p", "--pdf", "--page", "a4", "--duplex", "long" },
+        &.{ "render", "p", "--pdf", "--page", "a4", "--back", "x", "--duplex", "both" },
+        &.{ "render", "p", "--pdf", "--page", "a4", "--back", ":x" },
+        &.{ "render", "p", "--pdf", "--page", "a4", "--margin", "60" },
+    }) |argv| {
+        const args = try parseArgs(a, @ptrCast(argv));
+        try std.testing.expectError(error.Usage, printLayout(args, &w));
+    }
 }

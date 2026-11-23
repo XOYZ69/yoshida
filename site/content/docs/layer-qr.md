@@ -5,6 +5,8 @@ description = "QR codes made on the fly from text, for example a link on each ca
 
 A QR code that holds text. The text is a [template](@/docs/expressions-templates.md), so every card can carry its own link, id or message, and nothing has to be prepared as an image.
 
+`qr` is the [`barcode` layer](@/docs/layer-barcode.md) with `format` set to `qr`: `{ "type": "barcode", "format": "qr", "mode": "byte", ... }` draws exactly the same pixels. Use `barcode` when the same design also needs other kinds of codes or a format picked per card.
+
 ```json
 {
   "id": "recipe_qr",
@@ -27,6 +29,7 @@ Plus the [fields every layer has](@/docs/layers.md).
 | `fill` | color | `#FFFFFFFF` | The area behind the code, quiet zone included. `#00000000` for none |
 | `margin` | number | `4` | Quiet zone in modules, 0 to 16. Scanners want 4 (the standard); with a light background around the code 1 or 2 usually works too |
 | `level` | enum | `medium` | Error correction: `low` (7 %), `medium` (15 %), `quartile` (25 %) or `high` (30 %). A higher level survives more damage but makes a bigger, denser code |
+| `mode` | enum | `byte` | How the text is cut into segments: `byte`, `auto` (the fewest bits), `numeric` or `alphanumeric`. See [Segments](#segments). Unlike on `barcode`, the default stays `byte`, so existing cards do not change |
 | `style` | enum | `square` | Shape of the data modules: `square`, `rounded` or `dots` |
 | `eye` | enum | `square` | Shape of the three corner squares: `square`, `rounded` or `circle` |
 | `eye_color` | color | same as `color` | Color of the corner squares |
@@ -38,6 +41,10 @@ Plus the [fields every layer has](@/docs/layers.md).
 The code is as small as the text allows (versions 1 to 40, 21 to 177 modules per side), so a short text gives a coarse, easy to scan code and a long text a fine one. Each module is a **whole number of pixels** wide (rounded down) so that its edges stay sharp, and the code is centred in the box. That means the layer can be a little smaller than `box`, and `@code.bounds.*` is the symbol that is really drawn, quiet zone included.
 
 Keep a module at least 2 px wide on screen and at least 0.5 mm in print, or scanners struggle. With a canvas `dpi` set, a module that prints narrower than 0.5 mm is warning 3208. A link of 40 characters at level `medium` is 29 modules, 37 with the default quiet zone, so it wants a box of about 16 mm at 300 dpi. Use the smallest level that does the job: a higher level makes the code denser, so the modules get smaller. Short links scan better than long ones.
+
+## Segments
+
+A QR code can store digits at 3.3 bits each, digits, capitals and ` $%*+-./:` at 5.5 and everything else at 8. With `"mode": "auto"` yoshida cuts the text into such segments for the fewest bits, which makes a code of digits, or a link with a long number in it, noticeably smaller. `numeric` and `alphanumeric` insist on one segment of that kind and make text that does not fit error 3111. The default is `byte` so that existing cards render exactly as before.
 
 ## Style
 
@@ -86,7 +93,7 @@ Gradients are not supported.
 
 - One code holds at most 2953 bytes at level `low`, 2331 at `medium`, 1663 at `quartile` and 1273 at `high`. More is error 3108.
 - A module narrower than one pixel is warning 3204.
-- The text is always encoded as bytes. There is no numeric or alphanumeric mode, so a code of digits only is a little larger than it could be.
+- Bytes holds the most (2953 at `low`); numeric and alphanumeric segments hold more digits and capitals, see `mode`.
 
 ## Exports
 

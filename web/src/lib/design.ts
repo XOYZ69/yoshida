@@ -17,7 +17,8 @@ export type LayerType =
 	| "polygon"
 	| "text"
 	| "image"
-	| "qr";
+	| "qr"
+	| "barcode";
 
 /** Resolved bounds of one layer (or one repeat iteration) from the core. */
 export type Placed = {
@@ -43,13 +44,15 @@ export type Bounds = { x: number; y: number; w: number; h: number };
 
 /**
  * Which canvas handles a layer gets. `aspect`: box handles that keep the
- * ratio; `group`: move and rotate only (its size comes from its layers).
+ * ratio; `group`: move and rotate only (its size comes from its layers);
+ * `outline`: move and rotate only (a polygon whose points are made by a run).
  */
 export type HandleMode =
 	| "box"
 	| "aspect"
 	| "text"
 	| "polygon"
+	| "outline"
 	| "group"
 	| "none";
 
@@ -65,7 +68,7 @@ export const layerTypes: LayerType[] = [
 	"ellipse",
 	"text",
 	"image",
-	"qr",
+	"barcode",
 	"polygon",
 ];
 
@@ -397,11 +400,18 @@ export function moveLayer(
 				setPath(own, ["box", "y"], shiftValue(box.y, dy, canvas.h));
 				return;
 			}
-			if (!Array.isArray(eff.points)) return;
-			own.points = eff.points.map((p) =>
+			const entries = pointEntries(eff.points);
+			if (!entries.length) return;
+			own.points = entries.map((p) =>
 				Array.isArray(p)
 					? [shiftValue(p[0], dx, canvas.w)!, shiftValue(p[1], dy, canvas.h)!]
-					: p,
+					: isObj(p)
+						? {
+								...p,
+								x: shiftValue(p.x, dx, canvas.w)!,
+								y: shiftValue(p.y, dy, canvas.h)!,
+							}
+						: p,
 			);
 			return;
 		}
@@ -412,6 +422,20 @@ export function moveLayer(
 			setPath(own, ["box", "y"], shiftValue(box.y, dy, canvas.h));
 		}
 	}
+}
+
+/**
+ * The entries of a polygon's `points`: `[x, y]` pairs and runs (objects with
+ * `count` or `each`, and `x`, `y`). A run on its own stands for a list of one.
+ */
+export function pointEntries(points: Json | undefined): Json[] {
+	if (Array.isArray(points)) return points;
+	return isObj(points) ? [points] : [];
+}
+
+/** True when a polygon's points include a run, whose points the canvas cannot drag. */
+export function hasPointRun(layer: Obj): boolean {
+	return pointEntries(layer.points).some((p) => isObj(p));
 }
 
 /** Moves one polygon point. */
@@ -654,9 +678,11 @@ export function newLayer(doc: Obj, type: LayerType, ctx: NewLayerContext): Obj {
 			};
 		}
 		case "qr":
+		case "barcode":
 			return {
 				id,
-				type,
+				type: "barcode",
+				format: "qr",
 				anchor: "center",
 				box: { x: cx, y: cy, w: side, h: side },
 				text: "https://example.com/",
@@ -813,7 +839,7 @@ function ownFields(l: Obj): Obj {
 	return rest;
 }
 
-/** Layers whose fields mention `@id` or extend it. */
+/** Layers whose fields mention `@id`, extend it or clip to it. */
 export function referencesTo(doc: Obj, id: string): string[] {
 	const re = refRe(id);
 	return layersOf(doc)
@@ -821,7 +847,9 @@ export function referencesTo(doc: Obj, id: string): string[] {
 			re.lastIndex = 0;
 			return (
 				l.id !== id &&
-				(l.extends === id || re.test(JSON.stringify(ownFields(l))))
+				(l.extends === id ||
+					l.clip_to === id ||
+					re.test(JSON.stringify(ownFields(l))))
 			);
 		})
 		.map((l) => String(l.id));
@@ -838,7 +866,10 @@ function mapLayerTree(list: Json[], f: (l: Obj) => Obj): Json[] {
 	});
 }
 
-/** Renames layers and every `@id` reference and `extends` pointing at them. */
+/**
+ * Renames layers and every `@id` reference, `extends` and `clip_to`
+ * pointing at them.
+ */
 function renameIds(list: Json[], renames: Map<string, string>): Json[] {
 	return mapLayerTree(list, (l) => {
 		const { id, layers, ...rest } = l;
@@ -851,13 +882,15 @@ function renameIds(list: Json[], renames: Map<string, string>): Json[] {
 		const n = next as Obj;
 		if (typeof n.extends === "string" && renames.has(n.extends))
 			n.extends = renames.get(n.extends)!;
+		if (typeof n.clip_to === "string" && renames.has(n.clip_to))
+			n.clip_to = renames.get(n.clip_to)!;
 		const out: Obj = { id: renames.get(String(id)) ?? id, ...n };
 		if (layers !== undefined) out.layers = layers;
 		return out;
 	});
 }
 
-/** Renames a layer and every `@id` reference and `extends` pointing at it. */
+/** Renames a layer and every `@id` reference, `extends` and `clip_to` pointing at it. */
 export function renameLayer(doc: Obj, from: string, to: string) {
 	if (Array.isArray(doc.layers))
 		doc.layers = renameIds(doc.layers as Json[], new Map([[from, to]]));
@@ -1042,6 +1075,7 @@ const plainFields = new Set([
 	"note",
 	"anchor",
 	"extends",
+	"clip_to",
 	"font",
 	"align",
 	"fit",

@@ -48,6 +48,11 @@
 	.bar-track { height: 10px; background: var(--soft); border-radius: 0 4px 4px 0; }
 	.bar-fill { display: block; height: 100%; min-width: 2px; background: var(--accent); border-radius: 0 4px 4px 0; }
 	.bar-value { text-align: right; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+	.facts { display: flex; flex-wrap: wrap; gap: 10px 0; margin: 18px 0 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+	.facts div { flex: 1 1 160px; padding: 0 18px; }
+	.facts div + div { border-left: 1px solid var(--line); }
+	.facts dt { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+	.facts dd { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 	details { margin-top: 10px; font-size: 14px; }
 	summary { cursor: pointer; color: var(--muted); }
 	details .bars { margin-top: 8px; }
@@ -136,15 +141,52 @@ function sparkline(points, note) {
 	return wrap;
 }
 
-function bars(parent, rows, max) {
+function bars(parent, rows, max, total) {
 	const list = parent.appendChild(el("ul", "bars"));
 	for (const [name, value] of rows) {
 		const li = list.appendChild(el("li"));
 		li.appendChild(el("span", "bar-name", name));
 		const fill = li.appendChild(el("span", "bar-track")).appendChild(el("span", "bar-fill"));
 		fill.style.width = (value / max) * 100 + "%";
-		li.appendChild(el("span", "bar-value", num(value)));
+		li.appendChild(el("span", "bar-value", num(value) + (total ? " · " + Math.round((value / total) * 100) + "%" : "")));
 	}
+}
+
+// Numbers worked out from the days that are shown; nothing is added to what the server publishes.
+function derived(days) {
+	const have = (key) => days.filter((d) => typeof d[key] === "number" && Number.isFinite(d[key]));
+	const total = (key) => have(key).reduce((s, d) => s + d[key], 0);
+	const items = [];
+	const sessions = have("sessions");
+	if (sessions.length >= 14) {
+		const week = (list) => list.reduce((s, d) => s + d.sessions, 0);
+		const now = week(sessions.slice(-7)), before = week(sessions.slice(-14, -7));
+		items.push(["Last 7 days", num(now) + (before ? " (" + (now >= before ? "+" : "−") + Math.round((Math.abs(now - before) / before) * 100) + "%)" : "")]);
+	}
+	if (sessions.length && have("advanced_sessions").length && total("sessions")) {
+		items.push(["Sharing details", Math.round((total("advanced_sessions") / total("sessions")) * 100) + "% of sessions"]);
+	}
+	if (have("uniques").length && sessions.length && total("uniques")) {
+		items.push(["Sessions per visitor-day", (Math.round((total("sessions") / total("uniques")) * 10) / 10).toLocaleString("en")]);
+	}
+	if (sessions.length > 1) {
+		const best = sessions.reduce((a, b) => (b.sessions > a.sessions ? b : a));
+		if (best.sessions > 0) items.push(["Busiest day", day(best.day) + " (" + num(best.sessions) + ")"]);
+	}
+	return items;
+}
+
+function weekdays(days) {
+	const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+	const sums = [0, 0, 0, 0, 0, 0, 0];
+	let n = 0;
+	for (const d of days) {
+		if (typeof d.sessions !== "number" || !Number.isFinite(d.sessions)) continue;
+		sums[new Date(d.day + "T00:00:00Z").getUTCDay()] += d.sessions;
+		n++;
+	}
+	if (n < 14 || !Math.max(...sums)) return null;
+	return [1, 2, 3, 4, 5, 6, 0].map((i) => [names[i], sums[i]]);
 }
 
 function message(text) {
@@ -170,6 +212,19 @@ function render(data) {
 		shown = true;
 	}
 	if (tiles.children.length) out.appendChild(tiles);
+	const items = derived(days);
+	if (items.length) {
+		const dl = out.appendChild(el("dl", "facts"));
+		for (const [label, value] of items) {
+			const d = dl.appendChild(el("div"));
+			d.append(el("dt", null, label), el("dd", null, value));
+		}
+	}
+	const wd = weekdays(days);
+	if (wd) {
+		out.appendChild(el("h2", null, "Sessions by weekday"));
+		bars(out, wd, Math.max(...wd.map((r) => r[1])));
+	}
 
 	const events = {};
 	for (const d of days) {
@@ -185,12 +240,14 @@ function render(data) {
 		shown = true;
 		const max = rows[0][1] || 1;
 		out.appendChild(el("h2", null, title));
-		bars(out, rows.slice(0, SHOWN), max);
+		// Exports are the files people take out of the editor: their share is the useful number.
+		const share = group === "export" ? rows.reduce((s, r) => s + r[1], 0) : 0;
+		bars(out, rows.slice(0, SHOWN), max, share);
 		const more = rows.slice(SHOWN);
 		if (more.length) {
 			const details = out.appendChild(el("details"));
 			details.appendChild(el("summary", null, "Show " + more.length + " more"));
-			bars(details, more, max);
+			bars(details, more, max, share);
 		}
 	}
 

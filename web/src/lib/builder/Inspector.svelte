@@ -25,11 +25,12 @@ import {
 	layersOf,
 	newParam,
 	type Obj,
+	pointEntries,
 	renameFunction,
 	setPath,
 	textAnchors,
 } from "../design";
-import type { Diagnostic } from "../engine";
+import type { BarcodeInfo, BarcodeRequest, Diagnostic } from "../engine";
 import {
 	fontEntry,
 	fontEntryNote,
@@ -45,6 +46,8 @@ import ImagePicker from "../ui/ImagePicker.svelte";
 import Select from "../ui/Select.svelte";
 import { chooseAction, confirmAction } from "../ui/overlay.svelte";
 import type { CompletionContext } from "./complete";
+import { BARCODE_FORMATS, ignores, minWidth, quietZone } from "../barcode";
+import BarcodePicker from "./BarcodePicker.svelte";
 import Field from "./Field.svelte";
 import Scope from "./Scope.svelte";
 
@@ -77,6 +80,7 @@ let {
 	onback,
 	listKeys = {},
 	cardValues = {},
+	barcodeInfo = async () => ({ ok: false, code: 0, message: "", hint: null }) as BarcodeInfo,
 	focus = null,
 }: {
 	doc: Obj;
@@ -110,6 +114,8 @@ let {
 	listKeys?: Record<string, string[]>;
 	/** The current card's values, shown when hovering a param. */
 	cardValues?: Record<string, unknown>;
+	/** What a barcode makes of a text (the engine's barcode call). */
+	barcodeInfo?: (req: BarcodeRequest) => Promise<BarcodeInfo>;
 	/** Scrolls to and highlights a part of the inspector (go to definition). */
 	focus?: { key: string; n: number } | null;
 	onalign: (mode: AlignMode) => void;
@@ -140,6 +146,93 @@ const usedBy = (path: string) => {
 		: "no other design uses it yet";
 };
 const type = $derived(String(eff?.type ?? ""));
+
+// Barcodes: the format as a literal (a qr layer is a qr barcode), the text as
+// the current card shows it where that can be told, and what the encoder says.
+const barcodeFormat = $derived(
+	type === "qr"
+		? "qr"
+		: typeof eff?.format === "string" &&
+				BARCODE_FORMATS.some((f) => f.id === eff?.format)
+			? (eff.format as string)
+			: "",
+);
+const barcodeText = $derived.by(() => {
+	const t = eff?.text;
+	if (typeof t !== "string") return null;
+	let unknown = false;
+	const out = t.replace(/\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}/g, (_m, name) => {
+		const v = cardValues[name];
+		if (typeof v === "string" || typeof v === "number") return String(v);
+		unknown = true;
+		return "";
+	});
+	return unknown || out.includes("{") ? null : out;
+});
+let barcodeNote = $state<{ ok: boolean; line: string; hint?: string }>({ ok: true, line: "" });
+$effect(() => {
+	const f = barcodeFormat;
+	const text = barcodeText;
+	if (type !== "barcode" && type !== "qr") return;
+	if (!f) {
+		barcodeNote = { ok: true, line: "The format comes from a formula." };
+		return;
+	}
+	if (text === null) {
+		barcodeNote = { ok: true, line: "The text uses formulas; see the preview for the result." };
+		return;
+	}
+	const req: BarcodeRequest = {
+		format: f,
+		text,
+		check: typeof eff?.check === "string" ? eff.check : undefined,
+		level: typeof eff?.level === "string" ? eff.level : undefined,
+		mode: typeof eff?.mode === "string" ? eff.mode : type === "qr" ? "byte" : undefined,
+		ecc: typeof eff?.ecc === "number" ? eff.ecc : undefined,
+	};
+	let stale = false;
+	const timer = setTimeout(() => {
+		barcodeInfo(req)
+			.then((r) => {
+				if (stale) return;
+				if (!r.ok) {
+					barcodeNote = { ok: false, line: r.message, hint: r.hint ?? undefined };
+					return;
+				}
+				const name = BARCODE_FORMATS.find((x) => x.id === f)?.name ?? f;
+				const parts = [name];
+				parts.push(r.h > 1 ? `${r.w} × ${r.h} modules` : `${r.w} modules wide`);
+				if (r.check_digit) parts.push(`check digit ${r.check_digit} added`);
+				else if (r.normalized !== text && /^\d+$/.test(r.normalized)) parts.push(`encodes ${r.normalized}`);
+				if (r.note) parts.push(r.note);
+				const margin = typeof eff?.margin === "number" ? eff.margin : quietZone(f);
+				const canvas = isObj(doc.canvas) ? doc.canvas : {};
+				const dpi = typeof canvas.dpi === "number" ? canvas.dpi : null;
+				const mw = minWidth(f, r.w, margin, dpi);
+				barcodeNote = {
+					ok: true,
+					line: parts.join(" · "),
+					hint: `Box at least ${mw.px} px wide (${mw.why}).`,
+				};
+			})
+			.catch(() => {});
+	}, 150);
+	return () => {
+		stale = true;
+		clearTimeout(timer);
+	};
+});
+
+/** Picking a format: a qr layer becomes a barcode layer when the format is not qr. */
+function pickFormat(f: string) {
+	editLayer((own) => {
+		if (own.type === "qr" && f === "qr") return;
+		own.type = "barcode";
+		own.format = f;
+		// A barcode of format qr cuts its text into segments by itself; keep the
+		// byte mode a qr layer had, so converting does not change the code.
+	}, "format");
+}
 const params = $derived(
 	isObj(doc.params)
 		? (Object.entries(doc.params).filter(([, v]) => isObj(v)) as [
@@ -369,6 +462,16 @@ const sameTypeIds = $derived(
 		.filter((l) => l.type === type && l.id !== id)
 		.map((l) => String(l.id)),
 );
+/** Layers whose shape `clip_to` can use (docs: layers.md#clip-to). */
+const clipIds = $derived(
+	layersOf(doc)
+		.filter(
+			(l) =>
+				(l.type === "rect" || l.type === "ellipse" || l.type === "polygon") &&
+				l.id !== id,
+		)
+		.map((l) => String(l.id)),
+);
 
 // ------------------------------------------------------------ effects
 
@@ -452,16 +555,58 @@ function setRepeatMode(mode: string) {
 
 // ------------------------------------------------------------ polygon points
 
-const points = $derived(
-	Array.isArray(eff?.points) ? (eff!.points as Json[][]) : [],
-);
+/** Entries of `points`: [x, y] pairs and runs (objects with count or each). */
+const points = $derived(pointEntries(eff?.points));
+const fixedOnly = $derived(points.every((p) => Array.isArray(p)));
 
-function editPoints(fn: (pts: Json[][]) => void, key?: string) {
+function editPoints(fn: (pts: Json[]) => void, key?: string) {
 	editLayer((l) => {
 		const pts = structuredClone(points);
 		fn(pts);
 		l.points = pts;
 	}, key);
+}
+
+/** Sets one coordinate of the fixed point at `i`. */
+function setCoord(i: number, axis: 0 | 1, raw: string) {
+	editPoints((pts) => ((pts[i] as Json[])[axis] = parseCoord(raw)));
+}
+
+/** Sets a field of the run at `i`; empty text removes an optional name. */
+function setRun(i: number, key: string, raw: string) {
+	editPoints((pts) => {
+		const r = pts[i] as Obj;
+		const v = raw.trim();
+		if (key === 'x' || key === 'y' || key === 'count') r[key] = parseCoord(raw);
+		else if (v === '' && key !== 'each') delete r[key];
+		else r[key] = v;
+	});
+}
+
+/** Switches a run between making points from a count and from a list. */
+function setRunMode(i: number, mode: string) {
+	editPoints((pts) => {
+		const r = pts[i] as Obj;
+		if (mode === 'each') {
+			delete r.count;
+			r.each = listParams[0] ?? 'items';
+			r.item = 'item';
+		} else {
+			delete r.each;
+			delete r.item;
+			r.count = 3;
+		}
+	});
+}
+
+function addPoint() {
+	editPoints((pts) => {
+		const fixed = pts.filter((p) => Array.isArray(p)) as Json[][];
+		const a = fixed[fixed.length - 1] ?? [0, 0];
+		const b = fixed[0] ?? [0, 0];
+		const n = (v: Json) => (typeof v === 'number' ? v : 0);
+		pts.push([Math.round((n(a[0]) + n(b[0])) / 2), Math.round((n(a[1]) + n(b[1])) / 2)]);
+	});
 }
 
 const isShape = $derived(type === "polygon" && isObj(eff?.shape));
@@ -508,6 +653,7 @@ function shapeBox(): Obj {
 	const xs: number[] = [];
 	const ys: number[] = [];
 	for (const p of points) {
+		if (!Array.isArray(p)) continue;
 		if (typeof p[0] === "number") xs.push(p[0]);
 		if (typeof p[1] === "number") ys.push(p[1]);
 	}
@@ -836,6 +982,7 @@ let newFunction = $state("");
       <Field label="rotate" kind="number" optional value={ownVal(['rotate'])} fallback={0} title="Degrees clockwise around the group's centre" bindings={numberParams} error={errorAt(['rotate'])} path={pathOf(['rotate'])} onchange={(v) => set(['rotate'], v)} />
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
       {#if typeof eff.include !== 'string'}
         <div class="row">
           <button onclick={onungroup} title="Ctrl+Shift+G">Ungroup</button>
@@ -872,22 +1019,49 @@ let newFunction = $state("");
       {#if type === 'polygon' && !isShape}
         <div class="points">
           {#each points as p, i}
-            <div class="pt">
-              <span class="lbl">{i + 1}</span>
-              <input class="mono" value={String(p[0])} onchange={(e) => editPoints((pts) => (pts[i][0] = parseCoord(e.currentTarget.value)))} />
-              <input class="mono" value={String(p[1])} onchange={(e) => editPoints((pts) => (pts[i][1] = parseCoord(e.currentTarget.value)))} />
-              <button class="mini" title="Remove point" disabled={points.length <= (effVal(['closed']) === false ? 2 : 3)} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
-            </div>
+            {#if Array.isArray(p)}
+              <div class="pt">
+                <span class="lbl">{i + 1}</span>
+                <input class="mono" value={String(p[0])} onchange={(e) => setCoord(i, 0, e.currentTarget.value)} />
+                <input class="mono" value={String(p[1])} onchange={(e) => setCoord(i, 1, e.currentTarget.value)} />
+                <button class="mini" title="Remove point" disabled={fixedOnly && points.length <= (effVal(['closed']) === false ? 2 : 3)} onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
+              </div>
+            {:else if isObj(p)}
+              <div class="run">
+                <div class="run-head">
+                  <span class="lbl">{i + 1}</span>
+                  <Select
+                    value={p.each !== undefined ? 'each' : 'count'}
+                    label="Points made from"
+                    options={[
+                      { value: 'count', label: 'count', detail: 'a number of points' },
+                      { value: 'each', label: 'each', detail: listParams.length ? 'one per list item' : 'a list param' },
+                    ]}
+                    onchange={(m) => setRunMode(i, m)} />
+                  <input class="mono" title={p.each !== undefined ? 'List expression' : 'Number of points'} value={String(p.each ?? p.count ?? '')} onchange={(e) => setRun(i, p.each !== undefined ? 'each' : 'count', e.currentTarget.value)} />
+                  <button class="mini" title="Remove run" onclick={() => editPoints((pts) => pts.splice(i, 1))}>×</button>
+                </div>
+                <div class="pt">
+                  <span class="lbl">x, y</span>
+                  <input class="mono" value={String(p.x ?? '')} onchange={(e) => setRun(i, 'x', e.currentTarget.value)} />
+                  <input class="mono" value={String(p.y ?? '')} onchange={(e) => setRun(i, 'y', e.currentTarget.value)} />
+                </div>
+                <div class="pt">
+                  <span class="lbl">names</span>
+                  <input class="mono" placeholder="i" title="Name of the iteration number" value={String(p.index ?? '')} onchange={(e) => setRun(i, 'index', e.currentTarget.value)} />
+                  {#if p.each !== undefined}
+                    <input class="mono" placeholder="item" title="Name of the current list item" value={String(p.item ?? '')} onchange={(e) => setRun(i, 'item', e.currentTarget.value)} />
+                  {:else}
+                    <span></span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
           {/each}
-          <button
-            class="add"
-            onclick={() =>
-              editPoints((pts) => {
-                const a = pts[pts.length - 1];
-                const b = pts[0];
-                const n = (v: Json) => (typeof v === 'number' ? v : 0);
-                pts.push([Math.round((n(a[0]) + n(b[0])) / 2), Math.round((n(a[1]) + n(b[1])) / 2)]);
-              })}>+ point</button>
+          <div class="add-row">
+            <button class="add" onclick={addPoint}>+ point</button>
+            <button class="add" title="Points made from a count or a list" onclick={() => editPoints((pts) => pts.push({ count: 3, x: 'i * 50', y: 'i * 20' }))}>+ run</button>
+          </div>
         </div>
         {#if errorAt(['points'])}<div class="err">{errorAt(['points'])}</div>{/if}
         <Field label="closed" kind="enum" optional value={ownVal(['closed']) === undefined ? undefined : String(ownVal(['closed']))} fallback="true" options={['true', 'false']} onchange={(v) => set(['closed'], v === undefined ? undefined : v === 'true')} />
@@ -935,27 +1109,66 @@ let newFunction = $state("");
         <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
         <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'left')} options={['left', 'center', 'right', 'justify']} onchange={(v) => set(['align'], v)} />
         <Field label="line_spacing" kind="number" optional value={ownVal(['line_spacing'])} fallback={effVal(['line_spacing']) ?? 4} bindings={numberParams} error={errorAt(['line_spacing'])} path={pathOf(['line_spacing'])} onchange={(v) => set(['line_spacing'], v)} />
-        <p class="sub">Auto-shrink: the size goes down until the text fits.</p>
+        <p class="sub">Auto-shrink needs max_width (or max_height): without a width to fit to, nothing is squeezed. The letters squeeze sideways (min_squeeze) first, then the size goes down (min_size), until the text fits.</p>
         <Field label="max_width" kind="number" optional value={ownVal(['max_width'])} fallback={effVal(['max_width'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_width'])} path={pathOf(['max_width'])} onchange={(v) => set(['max_width'], v)} />
         <Field label="max_height" kind="number" optional value={ownVal(['max_height'])} fallback={effVal(['max_height'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_height'])} path={pathOf(['max_height'])} onchange={(v) => set(['max_height'], v)} />
         <Field label="min_size" kind="number" optional value={ownVal(['min_size'])} fallback={effVal(['min_size']) ?? 8} bindings={numberParams} error={errorAt(['min_size'])} path={pathOf(['min_size'])} onchange={(v) => set(['min_size'], v)} />
+        <Field label="min_squeeze" kind="number" min={0.05} max={1} optional value={ownVal(['min_squeeze'])} fallback={effVal(['min_squeeze']) ?? 1} bindings={numberParams} error={errorAt(['min_squeeze'])} path={pathOf(['min_squeeze'])} title="Narrowest horizontal scale (0.05 to 1) the letters may be squeezed to so the text fits max_width (squeezing does nothing without max_width), before the size shrinks" onchange={(v) => set(['min_squeeze'], v)} />
         <Field label="max_lines" kind="number" optional value={ownVal(['max_lines'])} fallback={effVal(['max_lines'])} placeholder="no limit" bindings={numberParams} error={errorAt(['max_lines'])} path={pathOf(['max_lines'])} onchange={(v) => set(['max_lines'], v)} />
         <Field label="shrink_group" kind="text" optional value={ownVal(['shrink_group'])} fallback={effVal(['shrink_group'])} placeholder="none" title="Texts with the same name (and all their iterations) use the smallest size any of them shrank to" onchange={(v) => set(['shrink_group'], v === '' ? undefined : v)} />
-      {:else if type === 'qr'}
+      {:else if type === 'qr' || type === 'barcode'}
+        <div class="field-like">
+          <span class="lbl">format</span>
+          <BarcodePicker value={barcodeFormat} lookup={barcodeInfo} onpick={pickFormat} />
+        </div>
         <Field label="text" kind="template" value={ownVal(['text']) ?? effVal(['text'])} bindings={textParams} error={errorAt(['text'])} path={pathOf(['text'])} onchange={(v) => set(['text'], v)} />
+        <p class="sub" class:bad={!barcodeNote.ok} role="status">{barcodeNote.line}{#if barcodeNote.hint}{' '}<span class="hint">{barcodeNote.hint}</span>{/if}</p>
+        <p class="sub">Look</p>
         <Field label="color" kind="color" optional value={ownVal(['color'])} fallback={effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['color'])} path={pathOf(['color'])} onchange={(v) => set(['color'], v)} />
         <Field label="fill" kind="color" optional value={ownVal(['fill'])} fallback={effVal(['fill']) ?? '#FFFFFFFF'} bindings={colorParams} error={errorAt(['fill'])} path={pathOf(['fill'])} title="Behind the code, quiet zone included" onchange={(v) => set(['fill'], v)} />
-        <Field label="margin" kind="number" optional value={ownVal(['margin'])} fallback={effVal(['margin']) ?? 4} bindings={numberParams} error={errorAt(['margin'])} path={pathOf(['margin'])} title="Quiet zone around the code, in modules (0 to 16)" onchange={(v) => set(['margin'], v)} />
-        <Field label="level" kind="enum" optional value={ownVal(['level'])} fallback={String(effVal(['level']) ?? 'medium')} options={['low', 'medium', 'quartile', 'high']} title="Error correction: 7, 15, 25 or 30 percent" onchange={(v) => set(['level'], v)} />
-        <Field label="style" kind="enum" optional value={ownVal(['style'])} fallback={String(effVal(['style']) ?? 'square')} options={['square', 'rounded', 'dots']} title="Shape of the data modules" onchange={(v) => set(['style'], v)} />
-        <Field label="eye" kind="enum" optional value={ownVal(['eye'])} fallback={String(effVal(['eye']) ?? 'square')} options={['square', 'rounded', 'circle']} title="Shape of the three corner squares" onchange={(v) => set(['eye'], v)} />
-        <Field label="eye_color" kind="color" optional value={ownVal(['eye_color'])} fallback={effVal(['eye_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['eye_color'])} path={pathOf(['eye_color'])} title="Color of the corner squares" onchange={(v) => set(['eye_color'], v)} />
-        <Field label="logo" kind="number" optional value={ownVal(['logo'])} fallback={effVal(['logo']) ?? 0} bindings={numberParams} error={errorAt(['logo'])} path={pathOf(['logo'])} title="Clears the middle for a logo: share of the code's side (0 to 0.5). Use level high" onchange={(v) => set(['logo'], v)} />
-        <Field label="logo_src" kind="template" optional value={ownVal(['logo_src'])} fallback={effVal(['logo_src'])} placeholder="none" bindings={imageParams} error={errorAt(['logo_src'])} path={pathOf(['logo_src'])} title="Picture in the cleared middle: a file or an image param. Clears a fifth of the side unless logo is set" onchange={(v) => set(['logo_src'], v === '' ? undefined : v)} />
-        <div class="field-like">
-          <span class="lbl"></span>
-          <ImagePicker {imageFiles} {upload} onpick={(v) => set(['logo_src'], v)} />
-        </div>
+        <Field label="margin" kind="number" optional value={ownVal(['margin'])} fallback={effVal(['margin']) ?? (barcodeFormat ? quietZone(barcodeFormat) : 4)} bindings={numberParams} error={errorAt(['margin'])} path={pathOf(['margin'])} title="Quiet zone around the code, in modules (0 to 16). 1D codes get it left and right" onchange={(v) => set(['margin'], v)} />
+        {#if barcodeFormat === '' || barcodeFormat === 'qr' || !ignores(barcodeFormat, 'style')}
+          <Field label="style" kind="enum" optional value={ownVal(['style'])} fallback={String(effVal(['style']) ?? 'square')} options={['square', 'rounded', 'dots']} title="Shape of the data modules" onchange={(v) => set(['style'], v)} />
+        {:else}
+          <div class="ignored" inert title="A {barcodeFormat} code has no module shapes"><Field label="style" kind="enum" optional value={ownVal(['style'])} fallback="square" options={['square']} onchange={() => {}} /></div>
+        {/if}
+        {#if barcodeFormat === '' || barcodeFormat === 'qr'}
+          <p class="sub">QR</p>
+          <Field label="level" kind="enum" optional value={ownVal(['level'])} fallback={String(effVal(['level']) ?? 'medium')} options={['low', 'medium', 'quartile', 'high']} title="Error correction: 7, 15, 25 or 30 percent" onchange={(v) => set(['level'], v)} />
+          <Field label="mode" kind="enum" optional value={ownVal(['mode'])} fallback={String(effVal(['mode']) ?? (type === 'qr' ? 'byte' : 'auto'))} options={['auto', 'byte', 'numeric', 'alphanumeric']} title="How the text is cut into segments: auto uses the fewest bits (digits and capitals are smaller)" onchange={(v) => set(['mode'], v)} />
+          <Field label="eye" kind="enum" optional value={ownVal(['eye'])} fallback={String(effVal(['eye']) ?? 'square')} options={['square', 'rounded', 'circle']} title="Shape of the three corner squares" onchange={(v) => set(['eye'], v)} />
+          <Field label="eye_color" kind="color" optional value={ownVal(['eye_color'])} fallback={effVal(['eye_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['eye_color'])} path={pathOf(['eye_color'])} title="Color of the corner squares" onchange={(v) => set(['eye_color'], v)} />
+          <Field label="logo" kind="number" optional value={ownVal(['logo'])} fallback={effVal(['logo']) ?? 0} bindings={numberParams} error={errorAt(['logo'])} path={pathOf(['logo'])} title="Clears the middle for a logo: share of the code's side (0 to 0.5). Use level high" onchange={(v) => set(['logo'], v)} />
+          <Field label="logo_src" kind="template" optional value={ownVal(['logo_src'])} fallback={effVal(['logo_src'])} placeholder="none" bindings={imageParams} error={errorAt(['logo_src'])} path={pathOf(['logo_src'])} title="Picture in the cleared middle: a file or an image param. Clears a fifth of the side unless logo is set" onchange={(v) => set(['logo_src'], v === '' ? undefined : v)} />
+          <div class="field-like">
+            <span class="lbl"></span>
+            <ImagePicker {imageFiles} {upload} onpick={(v) => set(['logo_src'], v)} />
+          </div>
+        {/if}
+        {#if barcodeFormat !== 'qr' && type === 'barcode'}
+          {@const labelFont = String(effVal(['font']) ?? 'default')}
+          {@const labelOn = effVal(['label']) !== false && (effVal(['label']) !== undefined || ['ean13', 'ean8', 'upca', 'itf14'].includes(barcodeFormat))}
+          {@const linearLike = barcodeFormat === '' || BARCODE_FORMATS.find((x) => x.id === barcodeFormat)?.kind === 'linear'}
+          {#if barcodeFormat === '' || !ignores(barcodeFormat, 'check')}
+            <p class="sub">Check digit</p>
+            <Field label="check" kind="enum" optional value={ownVal(['check'])} fallback={String(effVal(['check']) ?? 'auto')} options={['auto', 'add', 'none']} title="auto: add a missing check digit, reject a wrong one. add: also the optional check of Code 39 and ITF. none: digits as given" onchange={(v) => set(['check'], v)} />
+          {/if}
+          {#if barcodeFormat === 'aztec' || barcodeFormat === 'pdf417'}
+            <Field label="ecc" kind="number" optional value={ownVal(['ecc'])} fallback={effVal(['ecc']) ?? (barcodeFormat === 'aztec' ? 23 : undefined)} placeholder="auto" bindings={numberParams} error={errorAt(['ecc'])} path={pathOf(['ecc'])} title={barcodeFormat === 'aztec' ? 'Aztec: the least share of error correction, in percent of the data' : 'PDF417: error correction level 0 to 8; automatic when empty'} onchange={(v) => set(['ecc'], v)} />
+          {/if}
+          {#if linearLike}
+          <p class="sub">Label</p>
+            <Field label="label" kind="bool" optional value={ownVal(['label'])} fallback={effVal(['label']) ?? ['ean13', 'ean8', 'upca', 'itf14'].includes(barcodeFormat)} bindings={boolParams} error={errorAt(['label'])} path={pathOf(['label'])} title="Print the text under the bars" onchange={(v) => set(['label'], v)} />
+            {#if labelOn}
+              <Field label="label_text" kind="template" optional value={ownVal(['label_text'])} fallback={effVal(['label_text'])} placeholder="the encoded text" bindings={textParams} error={errorAt(['label_text'])} path={pathOf(['label_text'])} onchange={(v) => set(['label_text'], v === '' ? undefined : v)} />
+              <Field label="font" kind="enum" optional value={ownVal(['font'])} fallback={labelFont} options={fontOptions} sample={sampleOf(labelFont) ?? null} defaultSample={sampleOf(labelFont)} onchange={pickFont} />
+              <Field label="size" kind="number" optional value={ownVal(['size'])} fallback={effVal(['size'])} placeholder="auto" bindings={numberParams} error={errorAt(['size'])} path={pathOf(['size'])} title="Text size in pixels; automatic when empty" onchange={(v) => set(['size'], v)} />
+              <Field label="align" kind="enum" optional value={ownVal(['align'])} fallback={String(effVal(['align']) ?? 'center')} options={['left', 'center', 'right', 'justify']} title="justify spreads the characters over the bars; EAN and UPC digits stay under their bars" onchange={(v) => set(['align'], v)} />
+              <Field label="label_color" kind="color" optional value={ownVal(['label_color'])} fallback={effVal(['label_color']) ?? effVal(['color']) ?? '#000000FF'} bindings={colorParams} error={errorAt(['label_color'])} path={pathOf(['label_color'])} onchange={(v) => set(['label_color'], v)} />
+              <Field label="label_gap" kind="number" optional value={ownVal(['label_gap'])} fallback={effVal(['label_gap'])} placeholder="auto" bindings={numberParams} error={errorAt(['label_gap'])} path={pathOf(['label_gap'])} title="Space between bars and text in pixels" onchange={(v) => set(['label_gap'], v)} />
+            {/if}
+          {/if}
+        {/if}
       {:else if type === 'image'}
         <Field label="src" kind="template" value={ownVal(['src']) ?? effVal(['src'])} bindings={imageParams} error={errorAt(['src'])} path={pathOf(['src'])} onchange={(v) => set(['src'], v)} />
         <div class="field-like">
@@ -981,7 +1194,7 @@ let newFunction = $state("");
           {/if}
         {/if}
       {/if}
-      {#if type !== 'image' && type !== 'qr'}
+      {#if type !== 'image' && type !== 'qr' && type !== 'barcode'}
         <div class="field-like">
           <span class="lbl">{type === 'text' ? 'outline' : 'stroke'}</span>
           <input type="checkbox" checked={isObj(eff.stroke)} onchange={(e) => set(['stroke'], e.currentTarget.checked ? { color: '#000000', width: type === 'text' ? 2 : 4 } : undefined)} />
@@ -1003,6 +1216,7 @@ let newFunction = $state("");
       {/if}
       <Field label="visible" kind="bool" optional value={ownVal(['visible'])} fallback={effVal(['visible']) ?? true} bindings={boolParams} error={errorAt(['visible'])} path={pathOf(['visible'])} onchange={(v) => set(['visible'], v === true ? undefined : v)} />
       <Field label="opacity" kind="number" optional value={ownVal(['opacity'])} fallback={effVal(['opacity']) ?? 1} bindings={numberParams} error={errorAt(['opacity'])} path={pathOf(['opacity'])} onchange={(v) => set(['opacity'], v)} />
+      <Field label="clip_to" kind="enum" optional value={ownVal(['clip_to'])} fallback={effVal(['clip_to'])} options={clipIds} title="Draw only inside the shape of this rect, ellipse or polygon layer; hide that layer to use it only as a clip" error={errorAt(['clip_to'])} onchange={(v) => set(['clip_to'], v)} />
     </section>
 
     {@render repeatSection()}
@@ -1335,6 +1549,27 @@ let newFunction = $state("");
   .pt input {
     min-width: 0;
   }
+  .run {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .run-head {
+    display: grid;
+    grid-template-columns: 20px auto 1fr auto;
+    gap: 4px;
+    align-items: center;
+  }
+  .run-head input {
+    min-width: 0;
+  }
+  .add-row {
+    display: flex;
+    gap: 4px;
+  }
   .add {
     align-self: flex-start;
     font-size: 12px;
@@ -1370,6 +1605,15 @@ let newFunction = $state("");
     width: 30px;
     height: 26px;
     padding: 0;
+  }
+  .ignored {
+    opacity: 0.4;
+  }
+  .sub.bad {
+    color: var(--danger, #c0392b);
+  }
+  .sub .hint {
+    opacity: 0.75;
   }
   .sub {
     font-size: 11px;

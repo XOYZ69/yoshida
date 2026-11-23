@@ -66,24 +66,203 @@ pub fn capacity(level: Level) usize {
     return dataCodewords(40, level) - 3;
 }
 
-/// Encodes `data` (as bytes, normally UTF-8). `force_mask` is for tests;
-/// null picks the mask with the lowest penalty, as the standard asks.
+/// How the text is cut into segments. `byte` is one byte-mode segment, as
+/// `encode` always did; `auto` picks numeric, alphanumeric and byte segments
+/// for the fewest bits; `numeric` and `alphanumeric` insist on one segment of
+/// that kind (the text must be digits, or digits, capitals and ` $%*+-./:`).
+pub const Mode = enum { byte, auto, numeric, alphanumeric };
+
+pub const SegKind = enum(u2) { numeric, alphanumeric, byte };
+
+const Seg = struct { kind: SegKind, start: usize, len: usize };
+
+/// Most segments a symbol can have; the search never produces more.
+const max_segs = 512;
+
+fn isDigit(c: u8) bool {
+    return c >= '0' and c <= '9';
+}
+
+const alnum_chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+
+fn alnumValue(c: u8) ?usize {
+    return std.mem.indexOfScalar(u8, alnum_chars, c);
+}
+
+fn canEncode(kind: SegKind, c: u8) bool {
+    return switch (kind) {
+        .numeric => isDigit(c),
+        .alphanumeric => alnumValue(c) != null,
+        .byte => true,
+    };
+}
+
+const count_bits_table = [3][3]usize{
+    .{ 10, 12, 14 }, // numeric
+    .{ 9, 11, 13 }, // alphanumeric
+    .{ 8, 16, 16 }, // byte
+};
+
+fn countBits(kind: SegKind, version: usize) usize {
+    const cls: usize = if (version <= 9) 0 else if (version <= 26) 1 else 2;
+    return count_bits_table[@intFromEnum(kind)][cls];
+}
+
+fn segBits(seg: Seg, version: usize) usize {
+    const head = 4 + countBits(seg.kind, version);
+    return head + switch (seg.kind) {
+        .numeric => (seg.len / 3) * 10 + (if (seg.len % 3 == 1) @as(usize, 4) else if (seg.len % 3 == 2) @as(usize, 7) else @as(usize, 0)),
+        .alphanumeric => (seg.len / 2) * 11 + (seg.len % 2) * 6,
+        .byte => seg.len * 8,
+    };
+}
+
+fn totalBits(segs: []const Seg, version: usize) usize {
+    var n: usize = 0;
+    for (segs) |sg| n += segBits(sg, version);
+    return n;
+}
+
+/// The cheapest cut of `data` into segments for the count field sizes of
+/// `version`, found by dynamic programming over (position, mode). Costs are
+/// in sixths of a bit.
+fn segmentAuto(gpa: std.mem.Allocator, data: []const u8, version: usize, out: *[max_segs]Seg) error{ OutOfMemory, TooLong }![]Seg {
+    const n = data.len;
+    const kinds = [_]SegKind{ .numeric, .alphanumeric, .byte };
+    const inf = std.math.maxInt(u32) / 2;
+    const cost = try gpa.alloc(u32, (n + 1) * 3);
+    defer gpa.free(cost);
+    const from = try gpa.alloc(u8, (n + 1) * 3);
+    defer gpa.free(from);
+    const per_char = [3]u32{ 20, 33, 48 };
+    var header: [3]u32 = undefined;
+    for (kinds, 0..) |k, i| header[i] = @intCast((4 + countBits(k, version)) * 6);
+    for (0..3) |m| {
+        cost[m] = header[m];
+        from[m] = @intCast(m);
+    }
+    for (0..n) |i| {
+        for (0..3) |m| {
+            cost[(i + 1) * 3 + m] = inf;
+            if (!canEncode(kinds[m], data[i])) continue;
+            var best = cost[i * 3 + m];
+            var best_from: u8 = @intCast(m);
+            for (0..3) |o| {
+                if (o == m or cost[i * 3 + o] >= inf) continue;
+                const c = cost[i * 3 + o] + header[m];
+                if (c < best) {
+                    best = c;
+                    best_from = @intCast(o);
+                }
+            }
+            if (best >= inf) continue;
+            cost[(i + 1) * 3 + m] = best + per_char[m];
+            from[(i + 1) * 3 + m] = best_from;
+        }
+    }
+    var m: usize = 2;
+    for (0..3) |k| if (cost[n * 3 + k] < cost[n * 3 + m]) {
+        m = k;
+    };
+    // Walk back, collecting segments from the end.
+    var rev: [max_segs]Seg = undefined;
+    var count: usize = 0;
+    var i = n;
+    var seg_end = n;
+    while (i > 0) {
+        const prev: usize = from[i * 3 + m];
+        if (prev != m or i == 1) {
+            if (count >= max_segs) return error.TooLong;
+            rev[count] = .{ .kind = kinds[m], .start = i - 1, .len = seg_end - (i - 1) };
+            count += 1;
+            seg_end = i - 1;
+            m = prev;
+        }
+        i -= 1;
+    }
+    for (0..count) |k| out[k] = rev[count - 1 - k];
+    return out[0..count];
+}
+
+pub const EncodeError = error{ TooLong, NotNumeric, NotAlphanumeric, OutOfMemory };
+
+/// Encodes `data` (as bytes, normally UTF-8) in byte mode. `force_mask` is
+/// for tests; null picks the mask with the lowest penalty, as the standard
+/// asks.
 pub fn encode(code: *Code, data: []const u8, level: Level, force_mask: ?u3) Error!void {
-    // Smallest version that fits: mode (4 bits), count (8 or 16), bytes.
+    return encodeMode(null, code, data, level, .byte, force_mask) catch |e| switch (e) {
+        error.TooLong => error.TooLong,
+        else => unreachable,
+    };
+}
+
+/// Like `encode`, with the text cut into segments as `mode` says. `gpa` is
+/// only used by `auto` for the search (null is fine for the other modes).
+pub fn encodeMode(gpa: ?std.mem.Allocator, code: *Code, data: []const u8, level: Level, mode: Mode, force_mask: ?u3) EncodeError!void {
+    var segs_buf: [max_segs]Seg = undefined;
+    var single: [1]Seg = undefined;
+    var by_class: [3][]const Seg = undefined;
+    var class_bufs: [3][max_segs]Seg = undefined;
+    switch (mode) {
+        .byte, .numeric, .alphanumeric => {
+            const kind: SegKind = switch (mode) {
+                .numeric => .numeric,
+                .alphanumeric => .alphanumeric,
+                else => .byte,
+            };
+            if (kind != .byte) for (data) |c| if (!canEncode(kind, c)) return if (kind == .numeric) error.NotNumeric else error.NotAlphanumeric;
+            single[0] = .{ .kind = kind, .start = 0, .len = data.len };
+            by_class = .{ &single, &single, &single };
+        },
+        .auto => {
+            if (data.len > 7089) return error.TooLong;
+            const ga = gpa orelse return error.OutOfMemory;
+            for ([_]usize{ 1, 10, 27 }, 0..) |v, i| by_class[i] = try segmentAuto(ga, data, v, &class_bufs[i]);
+            _ = &segs_buf;
+        },
+    }
+    // Smallest version that fits.
     var version: usize = 1;
     while (true) : (version += 1) {
         if (version > 40) return error.TooLong;
-        const count_bits: usize = if (version <= 9) 8 else 16;
-        if (4 + count_bits + 8 * data.len <= dataCodewords(version, level) * 8) break;
+        const cls: usize = if (version <= 9) 0 else if (version <= 26) 1 else 2;
+        if (totalBits(by_class[cls], version) <= dataCodewords(version, level) * 8) break;
     }
+    const cls: usize = if (version <= 9) 0 else if (version <= 26) 1 else 2;
+    const segs = by_class[cls];
     const n_data = dataCodewords(version, level);
 
-    // Bit stream: 0100, count, bytes, terminator, padding.
+    // Bit stream: each segment's mode, count and data, terminator, padding.
     var buf: [max_codewords]u8 = @splat(0);
     var bits: usize = 0;
-    appendBits(&buf, &bits, 0b0100, 4);
-    appendBits(&buf, &bits, data.len, if (version <= 9) 8 else 16);
-    for (data) |b| appendBits(&buf, &bits, b, 8);
+    for (segs) |sg| {
+        const chunk = data[sg.start .. sg.start + sg.len];
+        switch (sg.kind) {
+            .numeric => {
+                appendBits(&buf, &bits, 0b0001, 4);
+                appendBits(&buf, &bits, sg.len, countBits(.numeric, version));
+                var i: usize = 0;
+                while (i < chunk.len) : (i += 3) {
+                    const take: usize = @min(3, chunk.len - i);
+                    var v: usize = 0;
+                    for (chunk[i .. i + take]) |c| v = v * 10 + (c - '0');
+                    appendBits(&buf, &bits, v, take * 3 + 1);
+                }
+            },
+            .alphanumeric => {
+                appendBits(&buf, &bits, 0b0010, 4);
+                appendBits(&buf, &bits, sg.len, countBits(.alphanumeric, version));
+                var i: usize = 0;
+                while (i + 1 < chunk.len) : (i += 2) appendBits(&buf, &bits, alnumValue(chunk[i]).? * 45 + alnumValue(chunk[i + 1]).?, 11);
+                if (i < chunk.len) appendBits(&buf, &bits, alnumValue(chunk[i]).?, 6);
+            },
+            .byte => {
+                appendBits(&buf, &bits, 0b0100, 4);
+                appendBits(&buf, &bits, sg.len, countBits(.byte, version));
+                for (chunk) |b| appendBits(&buf, &bits, b, 8);
+            },
+        }
+    }
     const cap_bits = n_data * 8;
     appendBits(&buf, &bits, 0, @min(4, cap_bits - bits));
     appendBits(&buf, &bits, 0, (8 - bits % 8) % 8);
@@ -497,6 +676,22 @@ test "too much data" {
     try testing.expectError(error.TooLong, encode(&c, &big, .low, null));
     try encode(&c, big[0..2953], .low, null);
     try testing.expectEqual(@as(u8, 40), c.version);
+}
+
+test "segments: digits and capitals take fewer bits than bytes" {
+    var a: Code = .{};
+    var b: Code = .{};
+    const gpa = testing.allocator;
+    // 30 digits: byte mode needs version 3 at level M, numeric fits version 1.
+    const digits = "123456789012345678901234567890";
+    try encodeMode(gpa, &a, digits, .medium, .byte, null);
+    try encodeMode(gpa, &b, digits, .medium, .auto, null);
+    try testing.expectEqual(@as(u8, 3), a.version);
+    try testing.expectEqual(@as(u8, 1), b.version);
+    try testing.expectError(error.NotNumeric, encodeMode(gpa, &a, "12a", .low, .numeric, null));
+    try testing.expectError(error.NotAlphanumeric, encodeMode(gpa, &a, "hello", .low, .alphanumeric, null));
+    // A mixed text still fits whatever the cut.
+    try encodeMode(gpa, &a, "https://example.com/12345678901234567890/ABC", .medium, .auto, null);
 }
 
 test "alignment positions" {

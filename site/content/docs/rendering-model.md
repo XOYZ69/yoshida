@@ -21,7 +21,7 @@ How a card becomes pixels.
 
 ## Vectors
 
-For an SVG file or a vector PDF, steps 1 to 3 are the same, and step 4 records drawing commands instead of pixels: filled and stroked paths (rounded rectangles, ellipses and arcs as true curves), each letter as its glyph outline at the position the PNG uses (an outline is the letter stroked at twice the outline width, under the fill), images with their box and clip, and groups for opacity, rotation, `crop` and `fade`. A layer or group with a convolution filter is drawn with the pixel code at the export resolution (2x when none is given; less for a very large area, to bound memory) and placed as an image, still rotated and faded as a vector. The SVG and the PDF writer turn the same commands into their format. See [Command Line: SVG](@/docs/command-line.md#svg).
+For an SVG file or a vector PDF, steps 1 to 3 are the same, and step 4 records drawing commands instead of pixels: filled and stroked paths (rounded rectangles, ellipses and arcs as true curves), each letter as its glyph outline at the position the PNG uses (an outline is the letter stroked at twice the outline width, under the fill), images with their box and clip, and groups for opacity, rotation, `crop`, `fade` and [`clip_to`](@/docs/layers.md#clip-to) (a clip path). A layer or group with a convolution filter is drawn with the pixel code at the export resolution (2x when none is given; less for a very large area, to bound memory) and placed as an image, still rotated and faded as a vector. The SVG and the PDF writer turn the same commands into their format. See [Command Line: SVG](@/docs/command-line.md#svg).
 
 ## Output
 

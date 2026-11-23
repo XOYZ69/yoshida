@@ -39,6 +39,7 @@ To write or change yoshida files, read the reference first: it is one page with 
 - [text](https://yoshida.xoyz.dev/docs/layer-text/): Text with wrapping, alignment, line limits and auto-shrink.
 - [image](https://yoshida.xoyz.dev/docs/layer-image/): Pictures from the project or the web, with fill, contain and cover fitting.
 - [qr](https://yoshida.xoyz.dev/docs/layer-qr/): QR codes made on the fly from text, for example a link on each card.
+- [barcode](https://yoshida.xoyz.dev/docs/layer-barcode/): Barcodes and 2D codes made on the fly from text: Code 128, EAN, UPC, Code 39, ITF, Codabar, Code 93, QR, Data Matrix, Aztec and PDF417.
 - [group](https://yoshida.xoyz.dev/docs/layer-group/): Draw several layers as one picture: move, fade and clip them together.
 - [divider](https://yoshida.xoyz.dev/docs/layer-divider/): A heading in the layer list that draws nothing.
 - [Repeat](https://yoshida.xoyz.dev/docs/repeat/): Draw a layer once per item, for example a row of stars or one line per list item.

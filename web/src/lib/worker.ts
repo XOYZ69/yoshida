@@ -43,7 +43,8 @@ type Msg = { id: number } & (
 	| { op: "check" }
 	| { op: "render"; args: object }
 	| { op: "encode"; args: object; encodings: Encoding[] }
-	| { op: "pdfBegin" }
+	| { op: "pdfBegin"; print?: object }
+	| { op: "pdfBack"; args: object }
 	| { op: "pdfPage"; args: object }
 	| { op: "pdfFinish" }
 	| { op: "sheetBegin"; cols: number; rows: number }
@@ -53,6 +54,16 @@ type Msg = { id: number } & (
 	| { op: "renderAll"; args: object; ids: string[] }
 	| { op: "checkCards"; set: string; date: string; now: string }
 	| { op: "scope"; set: string; path: string }
+	| {
+			op: "barcode";
+			format: string;
+			text: string;
+			check?: string;
+			level?: string;
+			mode?: string;
+			ecc?: number;
+			modules?: boolean;
+	  }
 	| {
 			op: "eval";
 			set: string;
@@ -240,7 +251,14 @@ async function handle(
 			};
 		}
 		case "pdfBegin":
-			return { result: request({ op: "pdf_begin" }).json };
+			return {
+				result: request({
+					op: "pdf_begin",
+					...(msg.print ? { print: msg.print } : {}),
+				}).json,
+			};
+		case "pdfBack":
+			return { result: request({ op: "pdf_back", ...msg.args }).json };
 		case "pdfPage":
 			return { result: request({ op: "pdf_page", ...msg.args }).json };
 		case "pdfFinish": {
@@ -289,6 +307,7 @@ async function handle(
 					now: msg.now,
 				}).json,
 			};
+		case "barcode":
 		case "scope":
 		case "eval": {
 			const { id: _, ...req } = msg;

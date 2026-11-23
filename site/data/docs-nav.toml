@@ -69,6 +69,9 @@ path = "docs/layer-image.md"
 title = "qr"
 path = "docs/layer-qr.md"
 [[group.item.child]]
+title = "barcode"
+path = "docs/layer-barcode.md"
+[[group.item.child]]
 title = "group"
 path = "docs/layer-group.md"
 [[group.item.child]]

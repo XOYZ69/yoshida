@@ -18,7 +18,7 @@ The canvas shows the card as it will be rendered (the real core, running in your
 - **Drag** to move; all selected layers move together.
 - **Handles** resize: box layers on all sides, text layers left and right (which sets `wrap`).
 - The **round handle** above the box rotates. Hold <kbd>Shift</kbd> for 15° steps.
-- Drag **polygon points** to reshape a polygon.
+- Drag **polygon points** to reshape a polygon. A polygon whose points include a [point run](@/docs/layer-polygon.md#points-from-a-list-or-a-count) moves and rotates as a whole, but its points are not dragged; edit the run in the inspector.
 - Resizing a rotated layer works in the layer's own (rotated) frame; snapping is off while a rotated layer is resized.
 
 Moves and resizes keep how the value was written (a number stays a number, a percentage stays a percentage, an expression gets an offset appended). See [Builder: how edits are written](@/docs/builder.md#how-edits-are-written).

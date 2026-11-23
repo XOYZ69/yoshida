@@ -24,11 +24,22 @@
 //!   With "vector": true the pages are drawn as vectors (sharp at any zoom,
 //!   text as outlines) and "scale" works as for svg. The page size does not
 //!   change with the scale.
+//!   pdf_begin takes an optional print layout, "print": {"page":"a4","gap":3,
+//!   "margin":5,"crop_marks":true,"duplex":"long"} (page as for `yoshida
+//!   render --page`, gap and margin in mm): the cards of pdf_page then go
+//!   side by side on pages of that size, and {"op":"pdf_back","set":"name",
+//!   "card":0,"date":"...","scale":2,"vector":false} before them adds a page
+//!   of backs after each page of fronts. pdf_page answers "cards" (placed so
+//!   far) and "fits" (false for a card of another size than the first);
+//!   pdf_finish answers "cols" and "rows" of the grid.
 //!   {"op":"sheet_begin","cols":10,"rows":7}, then {"op":"sheet_card","set":"name","card":0,"date":"...","scale":1}
 //!   per card until its answer says "full": true (or the cards are done), then
 //!   {"op":"sheet_finish"}: the cards tiled left to right, top to bottom into
 //!   one PNG (result_bin), like `yoshida render --sheet`. Begin again for the
 //!   next sheet of a set with more cards than one sheet holds.
+//!   {"op":"barcode","format":"ean13","text":"...","check":"auto","level":"medium","mode":"auto","ecc":23,"modules":false}:
+//!   the size, the encoded text and the problem (if any) of a barcode, for
+//!   the editor's info line; "modules" adds the grid as a string of 0 and 1.
 //!   {"op":"scope","set":"name","path":"/layers/3/fill"}: the names and types an
 //!   expression field can use.
 //!   {"op":"eval","set":"name","card":0,"date":"...","path":"/layers/3/fill","src":"..."}:
@@ -55,6 +66,57 @@ var result_json: std.ArrayList(u8) = .empty;
 var result_bin: []u8 = &.{};
 /// The PDF being built by pdf_begin / pdf_page / pdf_finish.
 var pdf_pages: ?y.pdf.Writer = null;
+/// The print layout of the PDF being built, when pdf_begin asked for one.
+var print_sheets: ?y.print.Sheets = null;
+
+fn printReset() void {
+    if (print_sheets) |*s| s.deinit();
+    print_sheets = null;
+}
+
+/// The print layout of a pdf_begin request; null without "print", error
+/// text for options out of range.
+fn printOptionsOf(req: *const y.json.Node) union(enum) { none, ok: y.print.Options, err: []const u8 } {
+    const p = req.get("print") orelse return .none;
+    if (p.data != .object) return .none;
+    var o: y.print.Options = .{};
+    const page_text = if (p.get("page")) |v| (if (v.data == .string) v.data.string else "") else "a4";
+    const page = y.print.parsePage(page_text) orelse return .{ .err = "print.page must be a4, letter, a4-landscape, letter-landscape or WxH in mm" };
+    o.page_w = page[0];
+    o.page_h = page[1];
+    if (p.get("gap")) |v| {
+        if (!(v.data == .number and v.data.number >= 0 and v.data.number <= y.print.max_gap_mm)) return .{ .err = "print.gap must be 0 to 50 mm" };
+        o.gap = v.data.number * y.print.mm;
+    }
+    if (p.get("margin")) |v| {
+        if (!(v.data == .number and v.data.number >= 0 and v.data.number <= y.print.max_margin_mm)) return .{ .err = "print.margin must be 0 to 50 mm" };
+        o.margin = v.data.number * y.print.mm;
+    }
+    if (p.get("crop_marks")) |v| o.crop_marks = v.data == .bool and v.data.bool;
+    if (p.get("duplex")) |v| {
+        o.duplex = if (v.data == .string) std.meta.stringToEnum(y.print.Duplex, v.data.string) orelse return .{ .err = "print.duplex must be long or short" } else return .{ .err = "print.duplex must be long or short" };
+    }
+    return .{ .ok = o };
+}
+
+/// Card `index` written once into `pdf` for a print layout page: as vectors
+/// with "vector": true, otherwise as an image at "scale". Null when nothing
+/// could be drawn.
+fn printCard(pdf: *y.pdf.Writer, set: *const y.project.Set, index: usize, date: []const u8, clock: Clock, req: *const y.json.Node, diags: *y.diag.List) !?y.pdf.Card {
+    const opts: y.render.Options = .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset };
+    if (wantsVector(req)) {
+        var scene = y.vector.Scene.init(gpa);
+        defer scene.deinit();
+        scene.raster_scale = rasterScale(req);
+        if (!try y.render.renderVector(gpa, getAssets(), set, index, opts, &scene, diags)) return null;
+        return try pdf.vectorCard(&scene);
+    }
+    var o = opts;
+    o.scale = scaleOf(req);
+    var bmp = (try y.render.renderCard(gpa, getAssets(), set, index, o, diags)) orelse return null;
+    defer bmp.deinit(gpa);
+    return try pdf.imageCard(&bmp);
+}
 
 /// The sheet being filled by sheet_begin / sheet_card / sheet_finish: its
 /// grid, the sheet itself (made when the first card gives the cell size)
@@ -194,6 +256,30 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
 
     if (std.mem.eql(u8, op, "info")) {
         try w.print("{{\"version\":\"{s}\",\"format\":{d},\"channel\":\"{s}\"}}", .{ y.version, y.format_version, y.channel });
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "barcode")) {
+        const str = struct {
+            fn of(r: *const y.json.Node, key: []const u8) ?[]const u8 {
+                const n = r.get(key) orelse return null;
+                return if (n.data == .string) n.data.string else null;
+            }
+        }.of;
+        const format = std.meta.stringToEnum(y.symbol.Format, str(&req, "format") orelse "") orelse {
+            try w.writeAll("{\"error\":\"unknown barcode format\"}");
+            return 1;
+        };
+        var br: y.api.BarcodeRequest = .{ .format = format, .text = str(&req, "text") orelse "" };
+        if (format == .pdf417) br.ecc = y.pdf417.auto_level;
+        if (str(&req, "check")) |c| br.check = std.meta.stringToEnum(y.symbol.Check, c) orelse .auto;
+        if (str(&req, "level")) |c| br.level = std.meta.stringToEnum(y.qr.Level, c) orelse .medium;
+        if (str(&req, "mode")) |c| br.qr_mode = std.meta.stringToEnum(y.qr.Mode, c) orelse .auto;
+        if (req.get("ecc")) |e| if (e.data == .number) {
+            br.ecc = @intFromFloat(std.math.clamp(@floor(e.data.number), 0, 90));
+        };
+        if (req.get("modules")) |m| br.modules = m.data == .bool and m.data.bool;
+        try y.api.writeBarcodeInfo(arena, w, br);
         return 0;
     }
 
@@ -390,9 +476,39 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
     }
 
     if (std.mem.eql(u8, op, "pdf_begin")) {
+        printReset();
         if (pdf_pages) |*p| p.deinit();
+        pdf_pages = null;
+        const print = switch (printOptionsOf(&req)) {
+            .none => null,
+            .ok => |o| o,
+            .err => |e| {
+                try w.print("{{\"error\":\"{s}\"}}", .{e});
+                return 1;
+            },
+        };
         pdf_pages = try y.pdf.Writer.init(gpa);
+        if (print) |o| print_sheets = y.print.Sheets.init(&pdf_pages.?, o);
         try w.writeAll("{\"pages\":0}");
+        return 0;
+    }
+
+    if (std.mem.eql(u8, op, "pdf_back")) {
+        const sheets = if (print_sheets) |*p| p else {
+            try w.writeAll("{\"error\":\"no pdf_begin with a print layout\"}");
+            return 1;
+        };
+        const set_name = if (req.get("set")) |s| (if (s.data == .string) s.data.string else "") else "";
+        const card_index: usize = if (req.get("card")) |c| (if (c.data == .number and c.data.number >= 0) @intFromFloat(c.data.number) else 0) else 0;
+        const date = if (req.get("date")) |d| (if (d.data == .string) d.data.string else "1970-01-01") else "1970-01-01";
+        const set = proj.findSet(set_name) orelse {
+            try w.writeAll("{\"error\":\"unknown set\"}");
+            return 1;
+        };
+        if (set.ok) sheets.back = try printCard(&pdf_pages.?, set, card_index, date, clock, &req, &diags);
+        try w.print("{{\"back\":{},\"diagnostics\":", .{sheets.back != null});
+        try diags.writeJson(w);
+        try w.writeAll("}");
         return 0;
     }
 
@@ -409,6 +525,22 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
             try w.writeAll("{\"error\":\"unknown set\"}");
             return 1;
         };
+        if (print_sheets) |*sheets| {
+            var fits = true;
+            if (set.ok) if (try printCard(pdf, set, card_index, date, clock, &req, &diags)) |card| {
+                fits = sheets.add(card) catch |e| switch (e) {
+                    error.CardTooLarge => {
+                        try w.print("{{\"error\":\"the card ({d:.1} x {d:.1} mm) does not fit on the page inside the margins\"}}", .{ card.w / y.print.mm, card.h / y.print.mm });
+                        return 1;
+                    },
+                    else => |other| return other,
+                };
+            };
+            try w.print("{{\"pages\":{d},\"cards\":{d},\"fits\":{},\"diagnostics\":", .{ pdf.pages.items.len, sheets.count, fits });
+            try diags.writeJson(w);
+            try w.writeAll("}");
+            return 0;
+        }
         if (set.ok and wantsVector(&req)) {
             _ = try addVectorPage(pdf, getAssets(), set, card_index, date, clock, marks, rasterScale(&req), &diags);
         } else if (set.ok) if (try y.render.renderCard(gpa, getAssets(), set, card_index, .{ .date = date, .now = clock.now, .utc_offset = clock.utc_offset, .scale = scaleOf(&req) }, &diags)) |bmp_const| {
@@ -434,9 +566,17 @@ fn handle(arena: std.mem.Allocator, req_text: []const u8) !i32 {
         };
         pdf_pages = null;
         defer pdf.deinit();
+        defer printReset();
+        var grid: [2]u32 = .{ 0, 0 };
+        if (print_sheets) |*sheets| {
+            // The writer moved out of pdf_pages: the last page goes to this copy.
+            sheets.w = &pdf;
+            try sheets.finish();
+            if (sheets.layout) |l| grid = .{ l.cols, l.rows };
+        }
         const pages = pdf.pages.items.len;
         if (pages > 0) result_bin = try pdf.finish();
-        try w.print("{{\"pages\":{d}}}", .{pages});
+        try w.print("{{\"pages\":{d},\"cols\":{d},\"rows\":{d}}}", .{ pages, grid[0], grid[1] });
         return 0;
     }
 
