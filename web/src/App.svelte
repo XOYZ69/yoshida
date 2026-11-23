@@ -156,6 +156,7 @@
 		cardHash,
 		designFingerprint,
 		parseQa,
+		reconcileQa,
 		statusOf,
 		withNote,
 		withReview,
@@ -536,15 +537,26 @@
 
 	// Card review (qa.json): the status of each card of the current set. An
 	// approval is stale once the card or the design inputs hash differently.
+	// Reviews follow renamed and moved cards (`reconcileQa`); the file is
+	// brought up to date with the next review that is recorded.
+	const qaSets = $derived(
+		sets.map((s) => {
+			const inputs = designFingerprint(files, s.design);
+			return {
+				key: s.cards_file ?? s.name,
+				cards: s.cards.map((c) => ({ id: c.id, hash: cardHash(c, inputs) })),
+			};
+		}),
+	);
 	const qaDoc = $derived(
-		parseQa(files.has(QA_FILE) ? textOf(files.get(QA_FILE)!) : undefined),
+		reconcileQa(
+			parseQa(files.has(QA_FILE) ? textOf(files.get(QA_FILE)!) : undefined),
+			qaSets,
+		),
 	);
 	const qaKey = $derived(currentSet?.cards_file ?? currentSet?.name ?? "");
-	const qaPrint = $derived(
-		currentSet ? designFingerprint(files, currentSet.design) : "",
-	);
 	const qaHashes = $derived(
-		(currentSet?.cards ?? []).map((c) => cardHash(c, qaPrint)),
+		qaSets.find((s) => s.key === qaKey)?.cards.map((c) => c.hash) ?? [],
 	);
 	const qaStatuses = $derived(
 		(currentSet?.cards ?? []).map((c, i) =>

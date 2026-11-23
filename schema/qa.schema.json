@@ -22,7 +22,7 @@
             "status": { "enum": ["approved", "needs-changes"] },
             "hash": {
               "type": "string",
-              "description": "Hash of the card (id and values) and the design inputs (the design file and every *.component.json) when it was reviewed. A different hash turns an approval into 'changed since review'."
+              "description": "Hash of the card's values (and its id when the design reads card.id) and the design inputs (the design file and the components it includes) when it was reviewed. A different hash turns an approval into 'changed since review'."
             },
             "note": { "type": "string" }
           }

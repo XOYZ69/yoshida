@@ -4,7 +4,8 @@
 // project's normal file path (docs: site/content/docs/qa-review.md).
 //
 // An approval stores a hash of what the card's render depends on: the card's
-// id and values plus the design inputs (see `designFingerprint`). When the hash no
+// values (and its id when the design reads `card.id`) plus the design inputs
+// (see `designFingerprint`). Renamed or moved cards keep their review (`reconcileQa`). When the hash no
 // longer matches, the approval counts as stale ("changed since review").
 
 import { formatJson } from "./project.ts";
@@ -52,28 +53,94 @@ export function hashText(s: string): string {
 	return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
 }
 
+/** What a card's render depends on besides its own values. */
+export type DesignInputs = { print: string; usesId: boolean };
+
+/** The text of a JSON file with key order and layout removed, so a reformat or a reordering does not count as an edit. */
+function normalized(text: string): string {
+	try {
+		return stableJson(JSON.parse(text));
+	} catch {
+		return text;
+	}
+}
+
 /**
- * A fingerprint of the design inputs of a set's cards: the design file and
- * every component file. Any change there can change every card's render, so it
- * makes all approvals of the set stale. Images and fonts are not included.
+ * The design inputs of a set's cards: the design file plus the component
+ * files it includes (also through other components), and nothing else, so
+ * editing a component only touches the designs that use it. Files are
+ * compared by their parsed content, so reformatting changes nothing. Images
+ * and fonts are not included. `usesId` is true when any of these files reads
+ * `card.id`; only then does a card's id count as part of its content.
  */
 export function designFingerprint(
 	files: ReadonlyMap<string, Uint8Array>,
 	designPath: string,
-): string {
+): DesignInputs {
 	const dec = new TextDecoder();
-	const parts = [designPath, dec.decode(files.get(designPath) ?? new Uint8Array())];
-	for (const p of [...files.keys()].sort())
-		if (/\.component\.json$/i.test(p)) parts.push(p, dec.decode(files.get(p)));
-	return hashText(parts.join("\0"));
+	const seen = new Set<string>();
+	const parts: string[] = [];
+	let usesId = false;
+	const visit = (path: string) => {
+		if (seen.has(path)) return;
+		seen.add(path);
+		const bytes = files.get(path);
+		if (!bytes) {
+			parts.push(path, "\0missing");
+			return;
+		}
+		const text = dec.decode(bytes);
+		parts.push(path, normalized(text));
+		if (/\bcard\.id\b/.test(text)) usesId = true;
+		for (const m of text.matchAll(/"include"\s*:\s*"([^"]+)"/g)) visit(m[1]);
+	};
+	visit(designPath);
+	return { print: hashText(parts.join("\0")), usesId };
 }
 
-/** The hash an approval of this card records: its id and values plus the design fingerprint. */
+/** The hash an approval of this card records: its values and the design inputs, plus its id when the design reads `card.id`. */
 export function cardHash(
 	card: { id: string; values: Record<string, unknown> },
-	fingerprint: string,
+	inputs: DesignInputs,
 ): string {
-	return hashText(`${fingerprint}\0${stableJson([card.id, card.values])}`);
+	return hashText(
+		`${inputs.print}\0${stableJson(inputs.usesId ? [card.id, card.values] : [card.values])}`,
+	);
+}
+
+/** One set as the reconciliation sees it: its key in qa.json and its cards with their current hashes. */
+export type QaSet = { key: string; cards: { id: string; hash: string }[] };
+
+/**
+ * Follows renamed and moved cards. A review whose card id is gone from its
+ * set is given to a card (in any set) that has no review of its own and the
+ * same hash, so renaming an id or moving a card to another set keeps its
+ * review. Renaming a card file works the same way, as every card of the old
+ * key is looked for under the new one. A card whose values also changed
+ * does not match and starts over. Entries that find no card are kept.
+ */
+export function reconcileQa(doc: QaDoc, sets: QaSet[]): QaDoc {
+	const live = new Map(sets.map((s) => [s.key, new Set(s.cards.map((c) => c.id))]));
+	const orphans: { key: string; id: string; entry: QaEntry }[] = [];
+	for (const [key, byId] of Object.entries(doc.cards))
+		for (const [id, entry] of Object.entries(byId))
+			if (!live.get(key)?.has(id)) orphans.push({ key, id, entry });
+	if (!orphans.length) return doc;
+	const cards = Object.fromEntries(
+		Object.entries(doc.cards).map(([k, v]) => [k, { ...v }]),
+	);
+	let changed = false;
+	for (const set of sets)
+		for (const c of set.cards) {
+			if (cards[set.key]?.[c.id]) continue;
+			const i = orphans.findIndex((o) => o.entry.hash === c.hash);
+			if (i < 0) continue;
+			const [o] = orphans.splice(i, 1);
+			delete cards[o.key][o.id];
+			(cards[set.key] ??= {})[c.id] = o.entry;
+			changed = true;
+		}
+	return changed ? { format: 1, cards } : doc;
 }
 
 /** The status of a card, given its entry (if any) and its current hash. */
@@ -83,8 +150,8 @@ export function statusOf(entry: QaEntry | undefined, hash: string): QaStatus {
 	return entry.hash === hash ? "approved" : "stale";
 }
 
-/** Cards that still need a look: not reviewed, or approved before they changed. */
-export const needsReview = (s: QaStatus) => s === "unreviewed" || s === "stale";
+/** Cards that still need a look: not reviewed, approved before they changed, or marked as needing changes. Only an up to date approval is done. */
+export const needsReview = (s: QaStatus) => s !== "approved";
 
 export const statusLabel: Record<QaStatus, string> = {
 	unreviewed: "Unreviewed",
