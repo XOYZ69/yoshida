@@ -312,11 +312,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd desktop/src-tauri/target/release/bundle
-          files=$(find . -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*-setup.exe' \))
-          echo "$files"
-          test -n "$files"
-          # shellcheck disable=SC2086
-          gh release upload "$TAG" $files --clobber --repo "$GITHUB_REPOSITORY"
+          # The file names say beta: yoshida_0.8.0_amd64.AppImage becomes
+          # yoshida-beta_0.8.0_amd64.AppImage (the installed app keeps its name).
+          mkdir -p ../../../../upload
+          find . -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*-setup.exe' \) | while read -r f; do
+            b=$(basename "$f")
+            cp "$f" "../../../../upload/yoshida-beta${b#yoshida}"
+          done
+          cd ../../../../upload
+          ls -l
+          test -n "$(ls)"
+          gh release upload "$TAG" * --clobber --repo "$GITHUB_REPOSITORY"
 
   site:
     name: Site

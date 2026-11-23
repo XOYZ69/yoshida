@@ -33,7 +33,7 @@ Designs are simple JSON files that are easy to share, modify and abuse as much a
 | --- | --- |
 | **In the browser** | Open <https://yoshida.xoyz.dev/editor/>, nothing to install. Pick an example from the project menu, change it, export. |
 | **On your computer** | Download the [latest release](https://github.com/XOYZ69/yoshida/releases/latest) zip (Linux, macOS, Windows), unzip it and run `./start.sh`, `start.command` or `start.bat`. Then open <http://localhost:8080/editor/>. |
-| **Desktop app (beta)** | Download the installer from the [latest release](https://github.com/XOYZ69/yoshida/releases/latest): `yoshida_<version>_x64-setup.exe` for Windows, `.AppImage`, `.deb` or `.rpm` for Linux. It links projects to real folders on disk and renders with its own built-in renderer. On Arch Linux build the package from a checkout: [`desktop/packaging/arch`](desktop/packaging/arch). More in [Desktop App](https://yoshida.xoyz.dev/docs/desktop-app/). |
+| **Desktop app (beta)** | Download the installer from the [latest release](https://github.com/XOYZ69/yoshida/releases/latest): `yoshida-beta_<version>_x64-setup.exe` for Windows, `.AppImage`, `.deb` or `.rpm` for Linux. It links projects to real folders on disk and renders with its own built-in renderer. On Arch Linux build the package from a checkout: [`desktop/packaging/arch`](desktop/packaging/arch). More in [Desktop App](https://yoshida.xoyz.dev/docs/desktop-app/). |
 | **With Docker** | `docker compose up --build`, then open <http://localhost:8080/editor/>. |
 | **From the command line** | `yoshida check examples/forge` and `yoshida render examples/forge --out out` (the `yoshida` program is in the release zip). |
 

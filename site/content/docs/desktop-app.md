@@ -13,7 +13,7 @@ The desktop app is the [web editor](@/docs/builder.md) in a native window (built
 
 ### Windows
 
-Download `yoshida_<version>_x64-setup.exe` from the [latest release](https://github.com/XOYZ69/yoshida/releases/latest) and run it. It installs for your user account and needs no administrator rights. The installer is not code-signed yet, so Windows SmartScreen may say *Windows protected your PC*: choose *More info*, then *Run anyway*. Windows 10 and 11 have the WebView2 runtime the app needs; the installer fetches it if it is missing.
+Download `yoshida-beta_<version>_x64-setup.exe` from the [latest release](https://github.com/XOYZ69/yoshida/releases/latest) and run it. It installs for your user account and needs no administrator rights. The file names carry `beta` while the app is in beta. The installer is not code-signed yet, so Windows SmartScreen may say *Windows protected your PC*: choose *More info*, then *Run anyway*. Windows 10 and 11 have the WebView2 runtime the app needs; the installer fetches it if it is missing.
 
 ### Linux
 
@@ -21,9 +21,9 @@ Download one file from the [latest release](https://github.com/XOYZ69/yoshida/re
 
 | File | Use it when |
 | --- | --- |
-| `yoshida_<version>_amd64.AppImage` | On any distribution: `chmod +x` it and run it. Nothing is installed |
-| `yoshida_<version>_amd64.deb` | On Debian, Ubuntu and derivatives: `sudo apt install ./yoshida_<version>_amd64.deb` |
-| `yoshida-<version>-1.x86_64.rpm` | On Fedora, openSUSE and derivatives: `sudo dnf install ./yoshida-<version>-1.x86_64.rpm` |
+| `yoshida-beta_<version>_amd64.AppImage` | On any distribution: `chmod +x` it and run it. Nothing is installed |
+| `yoshida-beta_<version>_amd64.deb` | On Debian, Ubuntu and derivatives: `sudo apt install ./yoshida-beta_<version>_amd64.deb` |
+| `yoshida-beta-<version>-1.x86_64.rpm` | On Fedora, openSUSE and derivatives: `sudo dnf install ./yoshida-beta-<version>-1.x86_64.rpm` |
 
 The `.deb` and `.rpm` need WebKitGTK 4.1 (`libwebkit2gtk-4.1`) and GTK 3, which the package manager installs. They are built on Ubuntu 22.04, so they run on systems that are about as new or newer.
 
