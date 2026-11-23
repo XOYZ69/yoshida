@@ -4,5 +4,12 @@
 	"description": "The editor window, served from the bundle or from the yoshida-server sidecar on 127.0.0.1.",
 	"windows": ["main"],
 	"remote": { "urls": ["http://127.0.0.1:*"] },
-	"permissions": ["core:default"]
+	"permissions": [
+		"core:default",
+		"allow-pick-folder",
+		"allow-read-folder",
+		"allow-read-file",
+		"allow-write-file",
+		"allow-remove-file"
+	]
 }
