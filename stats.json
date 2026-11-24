@@ -1,21 +1,21 @@
 {
 	"version": 1,
 	"repo": "XOYZ69/yoshida",
-	"generated_at": "2026-11-23T11:58:39.204Z",
+	"generated_at": "2026-11-24T13:25:04.174Z",
 	"now": {
 		"stars": 1,
 		"forks": 0,
 		"watchers": 1,
 		"contributors": 3,
 		"releases": 11,
-		"downloads": 48,
+		"downloads": 51,
 		"downloads_by": {
 			"kinds": {
-				"bundle": 48
+				"bundle": 51
 			},
 			"systems": {},
 			"formats": {
-				"zip": 48
+				"zip": 51
 			}
 		},
 		"latest_release": {
@@ -30,11 +30,11 @@
 			"published_at": "2026-11-23T07:22:53Z",
 			"prerelease": false,
 			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.9.0",
-			"downloads": 2,
+			"downloads": 4,
 			"assets": [
 				{
 					"name": "yoshida-0.9.0.zip",
-					"downloads": 2,
+					"downloads": 4,
 					"kind": "bundle",
 					"format": "zip"
 				}
@@ -45,11 +45,11 @@
 			"published_at": "2026-11-16T16:40:53Z",
 			"prerelease": false,
 			"url": "https://github.com/XOYZ69/yoshida/releases/tag/v0.8.0",
-			"downloads": 16,
+			"downloads": 17,
 			"assets": [
 				{
 					"name": "yoshida-0.8.0.zip",
-					"downloads": 16,
+					"downloads": 17,
 					"kind": "bundle",
 					"format": "zip"
 				}
@@ -242,6 +242,16 @@
 				"bundle": 48
 			},
 			"systems": {}
+		},
+		{
+			"date": "2026-11-24",
+			"stars": 1,
+			"forks": 0,
+			"downloads": 51,
+			"kinds": {
+				"bundle": 51
+			},
+			"systems": {}
 		}
 	],
 	"traffic": [
@@ -398,6 +408,13 @@
 			"visitors": 1,
 			"clones": 103,
 			"cloners": 24
+		},
+		{
+			"date": "2026-11-23",
+			"views": 0,
+			"visitors": 0,
+			"clones": 230,
+			"cloners": 29
 		}
 	]
 }
